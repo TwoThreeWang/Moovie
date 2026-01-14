@@ -26,11 +26,11 @@
         </div>
         <div class="card-content">
             <h3 class="card-title">{{ .Title }} ({{ .Year }})</h3>
-            <p class="card-meta">{{ .Genres }}类型 / 地区{{ .Region }}</p>
+            <p class="card-meta">{{ .Genres }} / {{ .Region }}</p>
             <div class="card-sources">
                 {{ range .Sources }}
                 <span class="source-item {{ .Status }}">
-                    {{ .Name }}来源 {{ if .Speed }}<span class="speed">{{ .Speed }}</span>{{ end }}
+                    {{ .Name }} {{ if .Speed }}<span class="speed">{{ .Speed }}</span>{{ end }}
                 </span>
                 {{ end }}
             </div>

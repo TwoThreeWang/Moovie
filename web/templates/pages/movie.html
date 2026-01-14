@@ -1,5 +1,43 @@
 
 {{ define "content" }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Movie",
+  "name": "{{ .Movie.Title }}",
+  "image": "{{ .Movie.Poster }}",
+  "datePublished": "{{ .Movie.Year }}",
+  {{ if .Movie.Rating }}
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "{{ .Movie.Rating }}",
+    "bestRating": "10",
+    "ratingCount": "{{ .Movie.RatingCount | default 0 }}"
+  },
+  {{ end }}
+  {{ if .Movie.Directors }}
+  "director": [
+    {{ range $index, $director := .Movie.Directors }}{{ if $index }},{{ end }}
+    {
+      "@type": "Person",
+      "name": "{{ $director.Name }}"
+    }
+    {{ end }}
+  ],
+  {{ end }}
+  {{ if .Movie.Actors }}
+  "actor": [
+    {{ range $index, $actor := .Movie.Actors }}{{ if $index }},{{ end }}
+    {
+      "@type": "Person",
+      "name": "{{ $actor.Name }}"
+    }
+    {{ end }}
+  ],
+  {{ end }}
+  "description": "{{ .Movie.Summary | js }}"
+}
+</script>
 <div class="movie-detail">
     <div class="movie-detail-poster">
         <img src="{{ .Movie.Poster }}" alt="{{ .Movie.Title }}">

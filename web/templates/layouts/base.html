@@ -5,11 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ .Title }}</title>
     <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie - 聚合电影搜索，一站式找片看片{{ end }}">
+    <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}电影,电视剧,在线观看,Moovie,聚合搜索{{ end }}">
+    <meta name="robots" content="index, follow">
+    {{ if .Canonical }}<link rel="canonical" href="{{ .Canonical }}">{{ end }}
 
     <!-- Open Graph -->
     <meta property="og:title" content="{{ .Title }}">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Moovie">
+    <meta property="og:description" content="{{ if .Description }}{{ .Description }}{{ else }}发现好的电影和剧集，Moovie 为您聚合全网资源。{{ end }}">
+    {{ if .Cover }}<meta property="og:image" content="{{ .Cover }}">{{ end }}
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ .Title }}">
+    <meta name="twitter:description" content="{{ if .Description }}{{ .Description }}{{ else }}发现好的电影和剧集，Moovie 为您聚合全网资源。{{ end }}">
+    {{ if .Cover }}<meta name="twitter:image" content="{{ .Cover }}">{{ end }}
 
     <!-- CSS -->
     <link rel="stylesheet" href="/static/css/style.css">

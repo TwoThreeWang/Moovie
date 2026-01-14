@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"html/template"
 	"log"
 	"os"
 	"path/filepath"
-	"text/template"
 
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
@@ -165,6 +165,24 @@ func loadTemplates(templatesDir string) multitemplate.Renderer {
 				dict[key] = values[i+1]
 			}
 			return dict, nil
+		},
+		"default": func(defaultValue, value interface{}) interface{} {
+			switch v := value.(type) {
+			case string:
+				if v == "" {
+					return defaultValue
+				}
+			case int:
+				if v == 0 {
+					return defaultValue
+				}
+			case nil:
+				return defaultValue
+			}
+			return value
+		},
+		"js": func(s string) template.JS {
+			return template.JS(s)
 		},
 	}
 
