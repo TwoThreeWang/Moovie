@@ -1,0 +1,37 @@
+
+{{ define "content" }}
+<div class="admin-header">
+    <h1 class="page-title">爬虫监控</h1>
+    <nav class="admin-nav">
+        <a href="/admin">概览</a>
+        <a href="/admin/users">用户管理</a>
+        <a href="/admin/crawlers" class="active">爬虫监控</a>
+    </nav>
+</div>
+
+<div class="crawler-list">
+    <div class="crawler-card">
+        <h3>🎬 豆瓣爬虫</h3>
+        <div class="crawler-status">
+            <span class="status-badge status-idle">待实现</span>
+        </div>
+        <div class="crawler-stats">
+            <p>最后运行：--</p>
+            <p>成功率：--%</p>
+        </div>
+        <button class="btn btn-primary" disabled>手动运行</button>
+    </div>
+
+    <div class="crawler-card">
+        <h3>📺 资源站聚合</h3>
+        <div class="crawler-status">
+            <span class="status-badge status-idle">待实现</span>
+        </div>
+        <div class="crawler-stats">
+            <p>缓存数量：-- 条</p>
+            <p>过期数量：-- 条</p>
+        </div>
+        <button class="btn btn-secondary" disabled>清理过期</button>
+    </div>
+</div>
+{{ end }}

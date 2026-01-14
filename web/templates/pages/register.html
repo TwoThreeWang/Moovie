@@ -1,0 +1,32 @@
+
+{{ define "content" }}
+<h1 class="page-title">注册</h1>
+
+{{ if .Error }}
+<div class="alert alert-error">{{ .Error }}</div>
+{{ end }}
+
+<form class="auth-form" action="/auth/register" method="POST">
+    <div class="form-group">
+        <label for="email">邮箱</label>
+        <input type="email" id="email" name="email" required autofocus>
+    </div>
+
+    <div class="form-group">
+        <label for="password">密码</label>
+        <input type="password" id="password" name="password" required minlength="6">
+        <small>至少 6 个字符</small>
+    </div>
+
+    <div class="form-group">
+        <label for="confirm_password">确认密码</label>
+        <input type="password" id="confirm_password" name="confirm_password" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-block">注册</button>
+
+    <p class="auth-link">
+        已有账号？<a href="/auth/login">立即登录</a>
+    </p>
+</form>
+{{ end }}

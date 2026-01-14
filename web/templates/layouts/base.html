@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .Title }}</title>
+    <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie - 聚合电影搜索，一站式找片看片{{ end }}">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="{{ .Title }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Moovie">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    <!-- htmx -->
+    <script src="/static/js/htmx.min.js" defer></script>
+</head>
+<body>
+    <!-- 固定边框层 -->
+    <div class="app-frame"></div>
+
+    <!-- 主容器 -->
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <a href="/" class="logo">
+                    <span class="logo-icon">🐮</span>
+                    <span class="logo-text">Moovie</span>
+                </a>
+                <p class="logo-subtitle">发现你的下一部电影</p>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="/" class="nav-item {{ if eq .Active "home" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                    </svg>
+                    <span>首页</span>
+                </a>
+                <a href="/discover" class="nav-item {{ if eq .Active "discover" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg>
+                    <span>为你推荐</span>
+                </a>
+                <a href="/search?type=movie" class="nav-item {{ if eq .Active "movie" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                        <line x1="7" y1="2" x2="7" y2="22"></line>
+                        <line x1="17" y1="2" x2="17" y2="22"></line>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <line x1="2" y1="7" x2="7" y2="7"></line>
+                        <line x1="2" y1="17" x2="7" y2="17"></line>
+                        <line x1="17" y1="17" x2="22" y2="17"></line>
+                        <line x1="17" y1="7" x2="22" y2="7"></line>
+                    </svg>
+                    <span>热门电影</span>
+                </a>
+                <a href="/search?type=tv" class="nav-item {{ if eq .Active "tv" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+                        <polyline points="17 2 12 7 7 2"></polyline>
+                    </svg>
+                    <span>热门剧集</span>
+                </a>
+                <a href="/search?type=variety" class="nav-item {{ if eq .Active "variety" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    <span>热播综艺</span>
+                </a>
+                <a href="/search?type=anime" class="nav-item {{ if eq .Active "anime" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <circle cx="12" cy="12" r="4"></circle>
+                        <line x1="4.93" y1="4.93" x2="9.17" y2="9.17"></line>
+                        <line x1="14.83" y1="14.83" x2="19.07" y2="19.07"></line>
+                        <line x1="14.83" y1="9.17" x2="19.07" y2="4.93"></line>
+                        <line x1="4.93" y1="19.07" x2="9.17" y2="14.83"></line>
+                    </svg>
+                    <span>日本动漫</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-section">
+                <div class="section-label">More</div>
+                <a href="/feedback" class="nav-item">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span>建议反馈</span>
+                </a>
+                <a href="/about" class="nav-item">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>关于本站</span>
+                </a>
+                <a href="/trends" class="nav-item">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                        <polyline points="17 6 23 6 23 12"></polyline>
+                    </svg>
+                    <span>更新记录</span>
+                </a>
+            </div>
+
+            <!-- 用户区域 -->
+            <div class="sidebar-footer">
+                {{ if .UserID }}
+                <a href="/dashboard" class="nav-item">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span>用户中心</span>
+                </a>
+                {{ else }}
+                <a href="/auth/login" class="nav-item">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                        <polyline points="10 17 15 12 10 7"></polyline>
+                        <line x1="15" y1="12" x2="3" y2="12"></line>
+                    </svg>
+                    <span>登录 / 注册</span>
+                </a>
+                {{ end }}
+            </div>
+        </aside>
+
+        <!-- 遮罩层（移动端） -->
+        <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 移动端顶栏 -->
+            <header class="mobile-header">
+                <button class="hamburger" onclick="toggleSidebar()">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+                <a href="/" class="mobile-logo">🐮 Moovie</a>
+                {{ if .UserID }}
+                <a href="/dashboard" class="mobile-user">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </a>
+                {{ else }}
+                <a href="/auth/login" class="mobile-user">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                        <polyline points="10 17 15 12 10 7"></polyline>
+                        <line x1="15" y1="12" x2="3" y2="12"></line>
+                    </svg>
+                </a>
+                {{ end }}
+            </header>
+
+            <div class="content-wrapper">
+                {{ template "content" . }}
+            </div>
+
+            <!-- Footer -->
+            <footer class="main-footer">
+                <div class="footer-content">
+                    <div class="footer-links">
+                        <a href="/about">关于我们</a>
+                        <a href="/feedback">反馈建议</a>
+                        <a href="/dmca">DMCA</a>
+                        <a href="/privacy">隐私政策</a>
+                        <a href="/terms">服务协议</a>
+                    </div>
+                    <p class="footer-copyright">
+                        © 2026 Moovie. 本站不存储任何视频文件，仅提供搜索服务。
+                    </p>
+                    <p class="footer-also">
+                        除了这个项目，我还在做一些方向相近的实验：<a href="https://zhulink.vip/" target="_blank" rel="noopener">竹林</a>（去算法社区）· <a href="https://pockoo.app/" target="_blank" rel="noopener">Pockoo</a>（智能导航）
+                    </p>
+        </main>
+    </div>
+
+    <!-- 应用脚本 -->
+    <script src="/static/js/app.js" defer></script>
+    <script>
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('sidebarOverlay').classList.toggle('open');
+            document.body.classList.toggle('sidebar-open');
+        }
+    </script>
+</body>
+</html>

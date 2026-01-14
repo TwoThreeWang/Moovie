@@ -1,0 +1,22 @@
+
+{{ define "content" }}
+<h1 class="page-title">排行榜</h1>
+
+<section class="section">
+    <h2 class="section-title">🔥 今日热搜</h2>
+    {{ if .Trending }}
+    <div class="trending-tags">
+        {{ range .Trending }}
+        <a href="/search?q={{ .Keyword }}" class="tag">{{ .Keyword }} ({{ .Count }})</a>
+        {{ end }}
+    </div>
+    {{ else }}
+    <p class="empty-state">暂无数据</p>
+    {{ end }}
+</section>
+
+<section class="section">
+    <h2 class="section-title">📊 豆瓣热门</h2>
+    <p class="empty-state">即将上线...</p>
+</section>
+{{ end }}

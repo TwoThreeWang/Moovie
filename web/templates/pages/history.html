@@ -1,0 +1,25 @@
+
+{{ define "content" }}
+<h1 class="page-title">观影历史</h1>
+
+{{ if .History }}
+<div class="movie-grid">
+    {{ range .History }}
+    <a href="/play/{{ .DoubanID }}?source={{ .Source }}&ep={{ .Episode }}" class="movie-card">
+        <div class="movie-poster">
+            <img src="{{ .Poster }}" alt="{{ .Title }}" loading="lazy">
+        </div>
+        <div class="movie-info">
+            <h3 class="movie-title">{{ .Title }}</h3>
+            <p class="movie-year">{{ .Episode }}</p>
+        </div>
+    </a>
+    {{ end }}
+</div>
+{{ else }}
+<div class="empty-state">
+    <p>还没有观影记录</p>
+    <a href="/" class="btn btn-primary">去看片</a>
+</div>
+{{ end }}
+{{ end }}

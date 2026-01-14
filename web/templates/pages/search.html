@@ -1,0 +1,47 @@
+
+{{ define "content" }}
+<div class="search-hero">
+    <form class="search-form" action="/search" method="GET">
+        <div class="search-input-wrapper">
+            <input
+                type="text"
+                name="q"
+                class="search-input"
+                value="{{ .Keyword }}"
+                placeholder="搜索电影、电视剧..."
+                autocomplete="off"
+            >
+            <button type="submit" class="search-btn">搜索</button>
+        </div>
+    </form>
+    <p class="search-result-hint">「{{ .Keyword }}」的搜索结果</p>
+</div>
+
+{{ if .Results }}
+<div class="search-result-grid">
+    {{ range .Results }}
+    <a href="/movie/{{ .DoubanID }}" class="search-result-card">
+        <div class="card-poster">
+            <img src="{{ .Poster }}" alt="{{ .Title }}" loading="lazy">
+        </div>
+        <div class="card-content">
+            <h3 class="card-title">{{ .Title }} ({{ .Year }})</h3>
+            <p class="card-meta">{{ .Genres }}类型 / 地区{{ .Region }}</p>
+            <div class="card-sources">
+                {{ range .Sources }}
+                <span class="source-item {{ .Status }}">
+                    {{ .Name }}来源 {{ if .Speed }}<span class="speed">{{ .Speed }}</span>{{ end }}
+                </span>
+                {{ end }}
+            </div>
+        </div>
+    </a>
+    {{ end }}
+</div>
+{{ else }}
+<div class="empty-state">
+    <p>😕 未找到相关结果</p>
+    <p>试试其他关键词，或<a href="/feedback">告诉我们</a>您想找的影片</p>
+</div>
+{{ end }}
+{{ end }}

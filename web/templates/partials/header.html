@@ -1,0 +1,28 @@
+{{ define "header" }}
+<header class="header">
+    <div class="container header-content">
+        <a href="/" class="logo">
+            <span class="logo-icon">🎬</span>
+            <span class="logo-text">Moovie</span>
+        </a>
+
+        <nav class="nav">
+            <a href="/" class="nav-link">首页</a>
+            <a href="/discover" class="nav-link">发现</a>
+            <a href="/rankings" class="nav-link">排行榜</a>
+        </nav>
+
+        <div class="header-actions">
+            {{ if .UserID }}
+            <a href="/dashboard" class="btn btn-secondary">用户中心</a>
+            <form action="/auth/logout" method="POST" style="display:inline;">
+                <button type="submit" class="btn btn-ghost">退出</button>
+            </form>
+            {{ else }}
+            <a href="/auth/login" class="btn btn-secondary">登录</a>
+            <a href="/auth/register" class="btn btn-primary">注册</a>
+            {{ end }}
+        </div>
+    </div>
+</header>
+{{ end }}

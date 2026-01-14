@@ -1,0 +1,19 @@
+{{ define "favorite_btn" }}
+{{ if .IsFavorited }}
+<button
+    class="btn btn-favorite favorited"
+    hx-delete="/api/favorites/{{ .MovieID }}"
+    hx-swap="outerHTML"
+>
+    <span class="icon">❤️</span> 已收藏
+</button>
+{{ else }}
+<button
+    class="btn btn-favorite"
+    hx-post="/api/favorites/{{ .MovieID }}"
+    hx-swap="outerHTML"
+>
+    <span class="icon">🤍</span> 收藏
+</button>
+{{ end }}
+{{ end }}

@@ -1,0 +1,37 @@
+
+{{ define "content" }}
+<div class="admin-header">
+    <h1 class="page-title">管理后台</h1>
+    <nav class="admin-nav">
+        <a href="/admin" class="active">概览</a>
+        <a href="/admin/users">用户管理</a>
+        <a href="/admin/crawlers">爬虫监控</a>
+    </nav>
+</div>
+
+<div class="dashboard-grid">
+    <div class="dashboard-card">
+        <span class="icon">👥</span>
+        <h3>用户统计</h3>
+        <p class="stat">-- 名用户</p>
+    </div>
+
+    <div class="dashboard-card">
+        <span class="icon">🎬</span>
+        <h3>电影数据</h3>
+        <p class="stat">-- 部电影</p>
+    </div>
+
+    <div class="dashboard-card">
+        <span class="icon">🔍</span>
+        <h3>搜索缓存</h3>
+        <p class="stat">-- 条缓存</p>
+    </div>
+
+    <div class="dashboard-card">
+        <span class="icon">💬</span>
+        <h3>待处理反馈</h3>
+        <p class="stat">-- 条反馈</p>
+    </div>
+</div>
+{{ end }}

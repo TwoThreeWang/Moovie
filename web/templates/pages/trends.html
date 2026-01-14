@@ -1,0 +1,18 @@
+
+{{ define "content" }}
+<h1 class="page-title">热门搜索趋势</h1>
+
+{{ if .Trending }}
+<div class="trends-list">
+    {{ range $i, $item := .Trending }}
+    <div class="trend-item">
+        <span class="trend-rank">{{ $i }}</span>
+        <a href="/search?q={{ $item.Keyword }}" class="trend-keyword">{{ $item.Keyword }}</a>
+        <span class="trend-count">{{ $item.Count }} 次搜索</span>
+    </div>
+    {{ end }}
+</div>
+{{ else }}
+<p class="empty-state">暂无热搜数据</p>
+{{ end }}
+{{ end }}

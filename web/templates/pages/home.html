@@ -1,0 +1,43 @@
+{{ define "content" }}
+<div class="home-hero">
+    <h1><span class="icon">🐮</span> Moovie</h1>
+    <p class="hero-subtitle">搜全网，只为你想看的那一部</p>
+    <p class="hero-subtitle-small">你的新葡京澳门威尼斯朋友来了</p>
+
+    <form class="search-form" action="/search" method="GET">
+        <div class="search-input-wrapper">
+            <input
+                type="text"
+                name="q"
+                class="search-input"
+                placeholder="想看就搜，看你想看..."
+                autocomplete="off"
+                required
+            >
+            <button type="submit" class="search-btn">搜索</button>
+        </div>
+    </form>
+</div>
+
+<!-- 最近搜索 -->
+<div class="tags-section" id="recent-searches-section">
+    <div class="tags-header">
+        <span class="tags-title">🕐 最近搜索</span>
+        <span class="tags-toggle" onclick="clearRecentSearches()" style="cursor: pointer;">清空全部</span>
+    </div>
+    <div class="trending-tags" id="recent-searches">
+        <!-- 由 JavaScript 从 localStorage 填充 -->
+    </div>
+</div>
+
+<!-- 继续观看 -->
+<section class="section">
+    <div class="section-header">
+        <span class="section-title"><span class="icon">▷</span> 继续观看 <small style="color: var(--text-muted); font-weight: normal;">该数据存于您的浏览器本地</small></span>
+    </div>
+    <div id="continue-watching" class="movie-grid">
+        <!-- 由 JavaScript 从 localStorage 填充 -->
+        <p class="empty-state">暂无观看记录</p>
+    </div>
+</section>
+{{ end }}

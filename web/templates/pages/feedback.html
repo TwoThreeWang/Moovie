@@ -1,0 +1,29 @@
+
+{{ define "content" }}
+<h1 class="page-title">反馈建议</h1>
+<p class="page-subtitle">发现问题或有想看的影片？告诉我们！</p>
+
+<form class="feedback-form" hx-post="/api/feedback" hx-swap="outerHTML">
+    <div class="form-group">
+        <label for="type">反馈类型</label>
+        <select id="type" name="type" required>
+            <option value="bug">Bug 报告</option>
+            <option value="request">求片</option>
+            <option value="suggestion">功能建议</option>
+            <option value="dmca">版权投诉</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="movie_url">相关链接（可选）</label>
+        <input type="url" id="movie_url" name="movie_url" placeholder="如有相关页面，请粘贴链接">
+    </div>
+
+    <div class="form-group">
+        <label for="content">详细描述</label>
+        <textarea id="content" name="content" rows="5" required placeholder="请详细描述您的反馈内容..."></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">提交反馈</button>
+</form>
+{{ end }}

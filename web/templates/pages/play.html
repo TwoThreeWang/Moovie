@@ -1,0 +1,58 @@
+
+{{ define "content" }}
+<div class="player-page">
+    <div class="player-container" id="player-container">
+        <!-- 播放器由 JavaScript 初始化 -->
+        <div class="player-loading">加载中...</div>
+    </div>
+
+    <div class="player-controls">
+        {{ if .Sources }}
+        <div class="source-tabs">
+            <h4>线路选择</h4>
+            {{ range $i, $source := .Sources }}
+            <button class="source-tab {{ if eq $i 0 }}active{{ end }}" data-source="{{ $source.Name }}">
+                {{ $source.Name }}
+            </button>
+            {{ end }}
+        </div>
+
+        <div class="episode-list">
+            <h4>选集</h4>
+            <div class="episodes">
+                {{ range .Episodes }}
+                <a href="/play/{{ $.DoubanID }}?source={{ $.Source }}&ep={{ .Title }}"
+                   class="episode {{ if eq .Title $.Episode }}active{{ end }}">
+                    {{ .Title }}
+                </a>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
+
+        <div class="player-actions">
+            <button class="btn btn-secondary"
+                    hx-post="/api/feedback"
+                    hx-vals='{"type":"error","content":"播放失败","movie_url":"{{.PlayURL}}"}'
+                    hx-swap="outerHTML">
+                🚫 播放失败反馈
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 记录观影历史
+    document.addEventListener('DOMContentLoaded', function() {
+        if (typeof recordWatch === 'function') {
+            recordWatch({
+                doubanId: '{{ .DoubanID }}',
+                title: '{{ .Title }}',
+                poster: '{{ .Poster }}',
+                episode: '{{ .Episode }}',
+                source: '{{ .Source }}'
+            });
+        }
+    });
+</script>
+{{ end }}

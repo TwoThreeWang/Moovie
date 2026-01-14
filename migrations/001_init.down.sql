@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS feedbacks;
+DROP TABLE IF EXISTS search_logs;
+DROP TABLE IF EXISTS watch_history;
+DROP TABLE IF EXISTS favorites;
+DROP TABLE IF EXISTS search_cache;
+DROP TABLE IF EXISTS movies;
+DROP TABLE IF EXISTS users;

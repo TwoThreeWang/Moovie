@@ -1,0 +1,44 @@
+
+{{ define "content" }}
+<div class="admin-header">
+    <h1 class="page-title">用户管理</h1>
+    <nav class="admin-nav">
+        <a href="/admin">概览</a>
+        <a href="/admin/users" class="active">用户管理</a>
+        <a href="/admin/crawlers">爬虫监控</a>
+    </nav>
+</div>
+
+<div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>邮箱</th>
+                <th>角色</th>
+                <th>注册时间</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{ if .Users }}
+            {{ range .Users }}
+            <tr>
+                <td>{{ .ID }}</td>
+                <td>{{ .Email }}</td>
+                <td>{{ .Role }}</td>
+                <td>{{ .CreatedAt }}</td>
+                <td>
+                    <button class="btn btn-secondary btn-sm">编辑</button>
+                </td>
+            </tr>
+            {{ end }}
+            {{ else }}
+            <tr>
+                <td colspan="5" class="empty-state">暂无用户数据</td>
+            </tr>
+            {{ end }}
+        </tbody>
+    </table>
+</div>
+{{ end }}

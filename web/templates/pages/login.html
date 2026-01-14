@@ -1,0 +1,28 @@
+
+{{ define "content" }}
+<h1 class="page-title">登录</h1>
+
+{{ if .Error }}
+<div class="alert alert-error">{{ .Error }}</div>
+{{ end }}
+
+<form class="auth-form" action="/auth/login" method="POST">
+    <input type="hidden" name="redirect" value="{{ .Redirect }}">
+
+    <div class="form-group">
+        <label for="email">邮箱</label>
+        <input type="email" id="email" name="email" required autofocus>
+    </div>
+
+    <div class="form-group">
+        <label for="password">密码</label>
+        <input type="password" id="password" name="password" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-block">登录</button>
+
+    <p class="auth-link">
+        还没有账号？<a href="/auth/register">立即注册</a>
+    </p>
+</form>
+{{ end }}

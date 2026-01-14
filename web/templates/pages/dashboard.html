@@ -1,0 +1,24 @@
+
+{{ define "content" }}
+<h1 class="page-title">用户中心</h1>
+
+<div class="dashboard-grid">
+    <a href="/dashboard/favorites" class="dashboard-card">
+        <span class="icon">❤️</span>
+        <h3>我的收藏</h3>
+        <p>查看收藏的影片</p>
+    </a>
+
+    <a href="/dashboard/history" class="dashboard-card">
+        <span class="icon">📺</span>
+        <h3>观影历史</h3>
+        <p>继续观看</p>
+    </a>
+
+    <a href="/dashboard/settings" class="dashboard-card">
+        <span class="icon">⚙️</span>
+        <h3>账号设置</h3>
+        <p>修改密码等</p>
+    </a>
+</div>
+{{ end }}
