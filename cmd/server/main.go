@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
@@ -57,18 +62,54 @@ func main() {
 	// 注册路由
 	registerRoutes(r, h)
 
-	// 启动服务器
+	// 配置 HTTP 服务器
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("服务器启动于 http://localhost:%s", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("服务器启动失败: %v", err)
+
+	srv := &http.Server{
+		Addr:           ":" + port,
+		Handler:        r,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
+
+	// 在 goroutine 中启动服务器，这样我们就可以监听信号
+	go func() {
+		log.Printf("服务器启动于 http://localhost:%s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("服务器启动失败: %v", err)
+		}
+	}()
+
+	// 等待中断信号以优雅地关闭服务器
+	quit := make(chan os.Signal, 1)
+	// kill (no parameter) 默认发送 syscall.SIGTERM
+	// kill -2 是 syscall.SIGINT
+	// kill -9 是 syscall.SIGKILL，但它不能被捕获，所以不需要添加
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("正在关闭服务器...")
+
+	// 5 秒超时上下文用于关闭过程
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("服务器强制关闭:", err)
+	}
+
+	log.Println("服务器已退出")
 }
 
 func registerRoutes(r *gin.Engine, h *handler.Handler) {
+	// 健康检查
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
 	// ==================== 公开页面 ====================
 	r.GET("/", h.Home)
 	r.GET("/search", h.Search)
