@@ -154,6 +154,9 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		"js": func(s string) template.JS {
 			return template.JS(s)
 		},
+		"add": func(a, b int) int {
+			return a + b
+		},
 	}
 
 	// 注册所有页面模板

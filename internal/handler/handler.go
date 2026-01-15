@@ -245,8 +245,103 @@ func (h *Handler) Discover(c *gin.Context) {
 
 // Rankings 排行榜
 func (h *Handler) Rankings(c *gin.Context) {
+	// 假数据：热门电影列表
+	hotMovies := []model.Movie{
+		{
+			DoubanID:  "35465232",
+			Title:     "封神第一部：朝歌风云",
+			Year:      "2023",
+			Poster:    "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2898748250.webp",
+			Rating:    7.8,
+			Genres:    []string{"剧情", "动作", "奇幻"},
+			Directors: []model.Person{{Name: "乌尔善"}},
+		},
+		{
+			DoubanID:  "26647087",
+			Title:     "三体",
+			Year:      "2023",
+			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2885955777.webp",
+			Rating:    8.7,
+			Genres:    []string{"剧情", "科幻"},
+			Directors: []model.Person{{Name: "杨磊"}},
+		},
+		{
+			DoubanID:  "35267208",
+			Title:     "流浪地球2",
+			Year:      "2023",
+			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2885842436.webp",
+			Rating:    8.3,
+			Genres:    []string{"科幻", "冒险", "灾难"},
+			Directors: []model.Person{{Name: "郭帆"}},
+		},
+		{
+			DoubanID:  "35183042",
+			Title:     "狂飙",
+			Year:      "2023",
+			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2884063548.webp",
+			Rating:    8.5,
+			Genres:    []string{"剧情", "犯罪"},
+			Directors: []model.Person{{Name: "徐纪周"}},
+		},
+		{
+			DoubanID:  "36190039",
+			Title:     "繁花",
+			Year:      "2023",
+			Poster:    "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2904209695.webp",
+			Rating:    8.7,
+			Genres:    []string{"剧情"},
+			Directors: []model.Person{{Name: "王家卫"}},
+		},
+		{
+			DoubanID:  "35069Mo4",
+			Title:     "漫长的季节",
+			Year:      "2023",
+			Poster:    "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2894989679.webp",
+			Rating:    9.4,
+			Genres:    []string{"剧情", "悬疑"},
+			Directors: []model.Person{{Name: "辛爽"}},
+		},
+		{
+			DoubanID:  "26873Mo3",
+			Title:     "奥本海默",
+			Year:      "2023",
+			Poster:    "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2893907974.webp",
+			Rating:    8.9,
+			Genres:    []string{"剧情", "传记", "历史"},
+			Directors: []model.Person{{Name: "克里斯托弗·诺兰"}},
+		},
+		{
+			DoubanID:  "35551Mo9",
+			Title:     "芭比",
+			Year:      "2023",
+			Poster:    "https://img3.doubanio.com/view/photo/s_ratio_poster/public/p2895879710.webp",
+			Rating:    8.3,
+			Genres:    []string{"喜剧", "冒险", "奇幻"},
+			Directors: []model.Person{{Name: "格蕾塔·葛韦格"}},
+		},
+		{
+			DoubanID:  "30475768",
+			Title:     "坠落的审判",
+			Year:      "2023",
+			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2899335708.webp",
+			Rating:    8.8,
+			Genres:    []string{"剧情", "悬疑", "家庭"},
+			Directors: []model.Person{{Name: "茹斯汀·特里耶"}},
+		},
+		{
+			DoubanID:  "35900652",
+			Title:     "年会不能停！",
+			Year:      "2023",
+			Poster:    "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2902429131.webp",
+			Rating:    8.1,
+			Genres:    []string{"喜剧"},
+			Directors: []model.Person{{Name: "董润年"}},
+		},
+	}
+
 	c.HTML(http.StatusOK, "rankings.html", h.RenderData(c, gin.H{
-		"Title": "排行榜 - " + h.Config.SiteName,
+		"Title":     "热门电影 - " + h.Config.SiteName,
+		"HotMovies": hotMovies,
 	}))
 }
 
