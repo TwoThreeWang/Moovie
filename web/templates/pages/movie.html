@@ -1,4 +1,3 @@
-
 {{ define "content" }}
 <script type="application/ld+json">
 {
@@ -11,98 +10,100 @@
   "aggregateRating": {
     "@type": "AggregateRating",
     "ratingValue": "{{ .Movie.Rating }}",
-    "bestRating": "10",
-    "ratingCount": "{{ .Movie.RatingCount | default 0 }}"
+    "bestRating": "10"
   },
-  {{ end }}
-  {{ if .Movie.Directors }}
-  "director": [
-    {{ range $index, $director := .Movie.Directors }}{{ if $index }},{{ end }}
-    {
-      "@type": "Person",
-      "name": "{{ $director.Name }}"
-    }
-    {{ end }}
-  ],
-  {{ end }}
-  {{ if .Movie.Actors }}
-  "actor": [
-    {{ range $index, $actor := .Movie.Actors }}{{ if $index }},{{ end }}
-    {
-      "@type": "Person",
-      "name": "{{ $actor.Name }}"
-    }
-    {{ end }}
-  ],
   {{ end }}
   "description": "{{ .Movie.Summary | js }}"
 }
 </script>
-<div class="movie-detail">
-    <div class="movie-detail-poster">
-        <img src="{{ .Movie.Poster }}" alt="{{ .Movie.Title }}">
-    </div>
 
-    <div class="movie-detail-info">
-        <h1 class="movie-detail-title">
-            {{ .Movie.Title }}
-            {{ if .Movie.Year }}<span class="year">({{ .Movie.Year }})</span>{{ end }}
-        </h1>
+<div class="movie-page">
+    <!-- 主要内容区：左海报+右信息 -->
+    <div class="movie-header">
+        <!-- 海报 -->
+        <div class="movie-poster-col">
+            <img src="{{ .Movie.Poster }}" alt="{{ .Movie.Title }}" class="movie-poster-img" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+        </div>
 
-        {{ if .Movie.OriginalTitle }}
-        <p class="original-title">{{ .Movie.OriginalTitle }}</p>
-        {{ end }}
+        <!-- 信息列 -->
+        <div class="movie-info-col">
+            <h1 class="movie-name">{{ .Movie.Title }}{{ if .Movie.Year }} <span class="movie-year-text">({{ .Movie.Year }})</span>{{ end }}</h1>
 
-        <div class="movie-meta">
+            {{ if .Movie.OriginalTitle }}
+            <div class="movie-alt-name">{{ .Movie.OriginalTitle }}</div>
+            {{ end }}
+
+            <!-- 详细信息列表 -->
+            <div class="movie-attrs">
+                {{ if .Movie.Directors }}
+                <div class="attr-row">
+                    <span class="attr-label">导演:</span>
+                    <span class="attr-value">{{ range $i, $d := .Movie.Directors }}{{ if $i }} / {{ end }}{{ $d.Name }}{{ end }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.Actors }}
+                <div class="attr-row">
+                    <span class="attr-label">主演:</span>
+                    <span class="attr-value">{{ range $i, $a := .Movie.Actors }}{{ if $i }} / {{ end }}{{ $a.Name }}{{ end }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.Genres }}
+                <div class="attr-row">
+                    <span class="attr-label">类型:</span>
+                    <span class="attr-value">{{ range $i, $g := .Movie.Genres }}{{ if $i }} / {{ end }}{{ $g }}{{ end }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.Countries }}
+                <div class="attr-row">
+                    <span class="attr-label">地区:</span>
+                    <span class="attr-value">{{ range $i, $c := .Movie.Countries }}{{ if $i }} / {{ end }}{{ $c }}{{ end }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.Duration }}
+                <div class="attr-row">
+                    <span class="attr-label">片长:</span>
+                    <span class="attr-value">{{ .Movie.Duration }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.IMDbID }}
+                <div class="attr-row">
+                    <span class="attr-label">IMDb:</span>
+                    <span class="attr-value">{{ .Movie.IMDbID }}</span>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+
+        <!-- 评分与操作 -->
+        <div class="movie-rating-col">
             {{ if .Movie.Rating }}
-            <span class="meta-item rating">⭐ {{ .Movie.Rating }}</span>
+            <div class="rating-block">
+                <div class="rating-title">豆瓣评分</div>
+                <div class="rating-num">{{ .Movie.Rating }}</div>
+                <div class="rating-stars">
+                    ★★★★★
+                </div>
+            </div>
             {{ end }}
-            {{ if .Movie.Duration }}
-            <span class="meta-item">⏱️ {{ .Movie.Duration }}</span>
-            {{ end }}
-        </div>
 
-        {{ if .Movie.Genres }}
-        <div class="movie-genres">
-            {{ range .Movie.Genres }}
-            <span class="tag">{{ . }}</span>
-            {{ end }}
-        </div>
-        {{ end }}
-
-        <div class="movie-actions">
-            <a href="/play/{{ .Movie.DoubanID }}" class="btn btn-primary btn-lg">▶️ 播放</a>
-            {{ template "favorite_btn.html" (dict "MovieID" .Movie.ID "IsFavorited" .IsFavorited) }}
-        </div>
-
-        {{ if .Movie.Summary }}
-        <div class="movie-summary">
-            <h3>剧情简介</h3>
-            <p>{{ .Movie.Summary }}</p>
-        </div>
-        {{ end }}
-
-        {{ if .Movie.Directors }}
-        <div class="movie-crew">
-            <h3>导演</h3>
-            <div class="person-list">
-                {{ range .Movie.Directors }}
-                <span class="person">{{ .Name }}</span>
-                {{ end }}
+            <div class="movie-actions">
+                <a href="/play/{{ .Movie.DoubanID }}" class="btn btn-primary">▶ 播放</a>
+                {{ template "favorite_btn.html" (dict "MovieID" .Movie.ID "IsFavorited" .IsFavorited) }}
             </div>
         </div>
-        {{ end }}
-
-        {{ if .Movie.Actors }}
-        <div class="movie-crew">
-            <h3>主演</h3>
-            <div class="person-list">
-                {{ range .Movie.Actors }}
-                <span class="person">{{ .Name }}{{ if .Role }} 饰 {{ .Role }}{{ end }}</span>
-                {{ end }}
-            </div>
-        </div>
-        {{ end }}
     </div>
+
+    <!-- 剧情简介 -->
+    {{ if .Movie.Summary }}
+    <div class="movie-section">
+        <h2 class="section-title">剧情简介</h2>
+        <p class="movie-summary">{{ .Movie.Summary }}</p>
+    </div>
+    {{ end }}
 </div>
 {{ end }}

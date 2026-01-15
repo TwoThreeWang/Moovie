@@ -336,6 +336,7 @@ img {
 .search-form {
     max-width: 600px;
     margin: 24px auto;
+    position: relative;
 }
 
 .search-input-wrapper {
@@ -390,18 +391,19 @@ img {
     right: 0;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-top: none;
-    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    border-radius: 12px;
     max-height: 400px;
     overflow-y: auto;
-    z-index: 100;
-    box-shadow: var(--shadow);
-    margin-top: 4px;
+    z-index: 1000;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    margin-top: 8px;
+    text-align: left;
 }
 
 .search-suggestion-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    gap: 12px;
     padding: 12px 16px;
     cursor: pointer;
     transition: background var(--transition);
@@ -418,23 +420,27 @@ img {
 }
 
 .suggestion-poster {
-    width: 40px;
-    height: 60px;
+    width: 48px;
+    height: 68px;
     object-fit: cover;
-    border-radius: 4px;
-    margin-right: 12px;
+    border-radius: 6px;
     flex-shrink: 0;
+    background: var(--border);
 }
 
 .suggestion-info {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: left;
 }
 
 .suggestion-title {
-    font-weight: 500;
+    font-weight: 600;
+    font-size: 0.95rem;
     color: var(--text);
-    margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -444,16 +450,15 @@ img {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.85rem;
-    color: var(--text-secondary);
+    font-size: 0.8rem;
 }
 
 .suggestion-type {
     background: var(--primary);
     color: white;
-    padding: 2px 6px;
+    padding: 2px 8px;
     border-radius: 4px;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 500;
 }
 
@@ -461,8 +466,12 @@ img {
     color: var(--text-muted);
 }
 
-.suggestion-episode {
-    color: var(--text-muted);
+.suggestion-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ==================== 提示信息 ==================== */
@@ -1016,5 +1025,207 @@ img {
 
     .search-btn {
         padding: 14px 20px;
+    }
+}
+
+/* ==================== 电影详情页（豆瓣风格） ==================== */
+.movie-page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 30px 20px;
+}
+
+/* 主要头部区域：三栏布局 */
+.movie-header {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 30px;
+}
+
+/* 海报列 */
+.movie-poster-col {
+    flex-shrink: 0;
+    width: 135px;
+}
+
+.movie-poster-img {
+    width: 100%;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 信息列 */
+.movie-info-col {
+    flex: 1;
+    min-width: 0;
+}
+
+.movie-name {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+    line-height: 1.4;
+}
+
+.movie-year-text {
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+.movie-alt-name {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+}
+
+/* 属性列表 */
+.movie-attrs {
+    font-size: 0.85rem;
+    line-height: 1.7;
+}
+
+.attr-row {
+    margin-bottom: 2px;
+}
+
+.attr-label {
+    color: var(--text-muted);
+}
+
+.attr-value {
+    color: var(--text-secondary);
+}
+
+.attr-value a {
+    color: var(--primary);
+}
+
+/* 评分列 */
+.movie-rating-col {
+    flex-shrink: 0;
+    width: 120px;
+    text-align: center;
+}
+
+.rating-block {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.rating-title {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.rating-num {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+}
+
+.rating-stars {
+    color: #ffac2d;
+    font-size: 0.7rem;
+    letter-spacing: -1px;
+}
+
+/* 操作按钮 */
+.movie-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.movie-actions .btn {
+    font-size: 0.85rem;
+    padding: 8px 16px;
+    border-radius: 4px;
+}
+
+/* 内容区块 */
+.movie-section {
+    margin-bottom: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.movie-section .section-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 10px;
+}
+
+.movie-summary {
+    font-size: 0.9rem;
+    line-height: 1.8;
+    color: var(--text-secondary);
+    text-indent: 2em;
+}
+
+/* ==================== 电影详情页响应式 ==================== */
+@media (max-width: 640px) {
+    .movie-page {
+        padding: 20px 16px;
+    }
+
+    .movie-header {
+        flex-wrap: wrap;
+    }
+
+    .movie-poster-col {
+        width: 100px;
+    }
+
+    .movie-info-col {
+        flex: 1;
+        min-width: 150px;
+    }
+
+    .movie-rating-col {
+        width: 100%;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-top: 12px;
+    }
+
+    .rating-block {
+        margin-bottom: 0;
+        padding: 10px 16px;
+    }
+
+    .movie-actions {
+        flex: 1;
+        flex-direction: row;
+        justify-content: flex-start;
+    }
+
+    .movie-name {
+        font-size: 1.2rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .movie-poster-col {
+        width: 80px;
+    }
+
+    .movie-name {
+        font-size: 1.1rem;
+    }
+
+    .movie-attrs {
+        font-size: 0.8rem;
+    }
+
+    .rating-num {
+        font-size: 1.5rem;
     }
 }

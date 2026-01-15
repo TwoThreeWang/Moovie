@@ -251,3 +251,59 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 	// 流式转发响应体
 	io.Copy(c.Writer, resp.Body)
 }
+
+// ==================== 电影检查 API ====================
+
+// CheckMovieResponse 检查电影响应
+type CheckMovieResponse struct {
+	Exists      bool   `json:"exists"`
+	MovieID     int    `json:"movie_id,omitempty"`
+	RedirectURL string `json:"redirect_url"`
+}
+
+// CheckMovie 检查电影是否存在，并决定跳转目标
+// GET /api/movies/check/:doubanId?title=xxx
+func (h *Handler) CheckMovie(c *gin.Context) {
+	doubanID := c.Param("doubanId")
+	title := c.Query("title")
+
+	if doubanID == "" {
+		utils.BadRequest(c, "豆瓣ID不能为空")
+		return
+	}
+
+	// 查询数据库中是否存在该电影
+	movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
+	if err != nil {
+		log.Printf("查询电影失败: %v", err)
+		utils.InternalServerError(c, "查询失败")
+		return
+	}
+
+	if movie != nil {
+		// 电影存在，跳转到详情页（使用豆瓣ID）
+		utils.Success(c, CheckMovieResponse{
+			Exists:      true,
+			MovieID:     movie.ID,
+			RedirectURL: fmt.Sprintf("/movie/%s", movie.DoubanID),
+		})
+		return
+	}
+
+	// 电影不存在，触发异步爬取
+	if h.Crawler != nil {
+		h.Crawler.CrawlAsync(doubanID)
+		log.Printf("[API] 触发异步爬取豆瓣电影: %s", doubanID)
+	}
+
+	// 跳转到搜索页
+	redirectURL := "/search"
+	if title != "" {
+		redirectURL = fmt.Sprintf("/search?q=%s", title)
+	}
+
+	utils.Success(c, CheckMovieResponse{
+		Exists:      false,
+		RedirectURL: redirectURL,
+	})
+}

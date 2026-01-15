@@ -10,17 +10,26 @@ import (
 	"github.com/user/moovie/internal/middleware"
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
+	"github.com/user/moovie/internal/service"
 )
 
 // Handler HTTP 处理器
 type Handler struct {
-	Repos  *repository.Repositories
-	Config *config.Config
+	Repos   *repository.Repositories
+	Config  *config.Config
+	Crawler *service.Crawler
 }
 
 // NewHandler 创建处理器
 func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
-	return &Handler{Repos: repos, Config: cfg}
+	// 创建爬虫服务
+	crawler := service.NewCrawler(repos.Movie)
+
+	return &Handler{
+		Repos:   repos,
+		Config:  cfg,
+		Crawler: crawler,
+	}
 }
 
 // ==================== 公开页面 ====================

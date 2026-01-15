@@ -163,6 +163,7 @@ func registerRoutes(r *gin.Engine, h *handler.Handler) {
 		api.POST("/feedback", h.SubmitFeedback)
 		api.POST("/history/sync", h.SyncHistory)
 		api.GET("/movies/suggest", h.MovieSuggest)
+		api.GET("/movies/check/:doubanId", h.CheckMovie)
 		api.GET("/proxy/image", h.ProxyImage)
 	}
 

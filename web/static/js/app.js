@@ -231,12 +231,12 @@ let selectedSuggestionIndex = -1;
  */
 function handleSearchInput(value) {
     clearTimeout(searchTimeout);
-    
+
     if (!value || value.trim().length < 1) {
         hideSuggestions();
         return;
     }
-    
+
     // 防抖，300ms后执行搜索
     searchTimeout = setTimeout(() => {
         fetchSuggestions(value.trim());
@@ -247,20 +247,26 @@ function handleSearchInput(value) {
  * 获取搜索建议
  */
 async function fetchSuggestions(keyword) {
+    console.log('[搜索建议] 开始获取:', keyword);
     try {
         const response = await fetch(`/api/movies/suggest?q=${encodeURIComponent(keyword)}`);
+        console.log('[搜索建议] API响应状态:', response.status);
+
         if (!response.ok) {
             throw new Error('搜索服务暂时不可用');
         }
-        
+
         const result = await response.json();
+        console.log('[搜索建议] API返回数据:', result);
+
         if (result.data && result.data.length > 0) {
             renderSuggestions(result.data);
         } else {
+            console.log('[搜索建议] 无数据，隐藏下拉框');
             hideSuggestions();
         }
     } catch (error) {
-        console.error('获取搜索建议失败:', error);
+        console.error('[搜索建议] 获取失败:', error);
         hideSuggestions();
     }
 }
@@ -269,28 +275,48 @@ async function fetchSuggestions(keyword) {
  * 渲染搜索建议
  */
 function renderSuggestions(suggestions) {
+    console.log('[搜索建议] 开始渲染，数量:', suggestions.length);
     const container = document.getElementById('search-suggestions');
-    if (!container) return;
-    
+    if (!container) {
+        console.error('[搜索建议] 容器未找到');
+        return;
+    }
+
     selectedSuggestionIndex = -1;
-    
-    container.innerHTML = suggestions.map((item, index) => `
-        <div class="search-suggestion-item" 
-             data-index="${index}"
-             onclick="selectSuggestion('${item.id}', '${item.title.replace(/'/g, "\\'")}')">
-            <img src="${item.img}" alt="${item.title}" class="suggestion-poster" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
-            <div class="suggestion-info">
-                <div class="suggestion-title">${item.title}</div>
-                <div class="suggestion-meta">
-                    <span class="suggestion-type">${item.type === 'movie' ? '电影' : '剧集'}</span>
-                    <span class="suggestion-year">${item.year}</span>
-                    ${item.episode ? `<span class="suggestion-episode">${item.episode}集</span>` : ''}
+
+    // 根据 API 返回的字段: id, title, sub_title, type, year, img
+    container.innerHTML = suggestions.map((item, index) => {
+        // 转换 type 显示
+        let typeText = '其他';
+        if (item.type === 'movie') typeText = '电影';
+        else if (item.type === 'tv') typeText = '剧集';
+
+        // 安全处理 title 中的引号
+        const safeTitle = (item.title || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+        return `
+            <div class="search-suggestion-item"
+                 data-index="${index}"
+                 data-id="${item.id}"
+                 onclick="selectSuggestion('${item.id}', '${safeTitle}')">
+                <img src="${item.img || '/static/img/placeholder.jpg'}"
+                     alt="${safeTitle}"
+                     class="suggestion-poster"
+                     onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+                <div class="suggestion-info">
+                    <div class="suggestion-title">${item.title || ''}</div>
+                    <div class="suggestion-meta">
+                        <span class="suggestion-type">${typeText}</span>
+                        ${item.year ? `<span class="suggestion-year">${item.year}</span>` : ''}
+                    </div>
+                    ${item.sub_title ? `<div class="suggestion-subtitle">${item.sub_title}</div>` : ''}
                 </div>
             </div>
-        </div>
-    `).join('');
-    
+        `;
+    }).join('');
+
     container.style.display = 'block';
+    console.log('[搜索建议] 渲染完成，已显示');
 }
 
 /**
@@ -307,16 +333,39 @@ function hideSuggestions() {
 
 /**
  * 选择搜索建议
+ * 调用 API 检查电影是否存在，决定跳转到详情页还是搜索页
  */
-function selectSuggestion(id, title) {
+async function selectSuggestion(doubanId, title) {
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
         searchInput.value = title;
-        hideSuggestions();
-        // 跳转到电影详情页
-        window.location.href = `/movie/${id}`;
+    }
+    hideSuggestions();
+
+    try {
+        // 调用检查 API
+        const response = await fetch(`/api/movies/check/${doubanId}?title=${encodeURIComponent(title)}`);
+        if (!response.ok) {
+            throw new Error('API 请求失败');
+        }
+
+        const result = await response.json();
+        console.log('[搜索建议] 检查结果:', result);
+
+        if (result.data && result.data.redirect_url) {
+            // 跳转到 API 返回的地址
+            window.location.href = result.data.redirect_url;
+        } else {
+            // 备用：跳转到搜索页
+            window.location.href = `/search?q=${encodeURIComponent(title)}`;
+        }
+    } catch (error) {
+        console.error('[搜索建议] 检查失败:', error);
+        // 出错时直接跳转到搜索页
+        window.location.href = `/search?q=${encodeURIComponent(title)}`;
     }
 }
+
 
 /**
  * 键盘导航
@@ -324,10 +373,10 @@ function selectSuggestion(id, title) {
 function handleSuggestionNavigation(event) {
     const container = document.getElementById('search-suggestions');
     if (!container || container.style.display === 'none') return;
-    
+
     const items = container.querySelectorAll('.search-suggestion-item');
     if (items.length === 0) return;
-    
+
     switch (event.key) {
         case 'ArrowDown':
             event.preventDefault();
@@ -506,7 +555,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // 鼠标进入建议区域时，不清除建议
             clearTimeout(searchTimeout);
         });
-        
+
         suggestionsContainer.addEventListener('mouseleave', function() {
             // 鼠标离开建议区域时，延迟隐藏建议
             setTimeout(() => {
