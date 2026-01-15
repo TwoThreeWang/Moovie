@@ -1,12 +1,18 @@
 package handler
 
 import (
+	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/user/moovie/internal/middleware"
 	"github.com/user/moovie/internal/model"
+	"github.com/user/moovie/internal/utils"
 )
 
 // ==================== htmx API ====================
@@ -89,7 +95,7 @@ func (h *Handler) SubmitFeedback(c *gin.Context) {
 func (h *Handler) SyncHistory(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		utils.Unauthorized(c, "未登录")
 		return
 	}
 
@@ -99,7 +105,7 @@ func (h *Handler) SyncHistory(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
+		utils.BadRequest(c, "无效的请求数据")
 		return
 	}
 
@@ -112,8 +118,136 @@ func (h *Handler) SyncHistory(c *gin.Context) {
 	// 获取服务端最新记录返回给客户端
 	serverRecords, _ := h.Repos.History.ListByUser(userID, 100, 0)
 
-	c.JSON(http.StatusOK, gin.H{
+	var serverSyncedAt int64
+	if len(serverRecords) > 0 {
+		serverSyncedAt = serverRecords[0].WatchedAt.Unix()
+	}
+
+	utils.Success(c, gin.H{
 		"serverRecords":  serverRecords,
-		"serverSyncedAt": serverRecords[0].WatchedAt.Unix(),
+		"serverSyncedAt": serverSyncedAt,
 	})
+}
+
+// ==================== 豆瓣电影搜索API ====================
+
+// DoubanMovieSuggest 豆瓣电影搜索建议
+type DoubanMovieSuggest struct {
+	Episode  string `json:"episode"`
+	Img      string `json:"img"`
+	Title    string `json:"title"`
+	URL      string `json:"url"`
+	Type     string `json:"type"`
+	Year     string `json:"year"`
+	SubTitle string `json:"sub_title"`
+	ID       string `json:"id"`
+}
+
+// MovieSuggestResponse 返回给前端的电影建议
+type MovieSuggestResponse struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	SubTitle string `json:"sub_title"`
+	Type     string `json:"type"`
+	Year     string `json:"year"`
+	Episode  string `json:"episode"`
+	Img      string `json:"img"`
+}
+
+// MovieSuggest 电影搜索建议API
+func (h *Handler) MovieSuggest(c *gin.Context) {
+	keyword := strings.TrimSpace(c.Query("q"))
+	if keyword == "" {
+		utils.BadRequest(c, "搜索关键词不能为空")
+		return
+	}
+
+	// 检查缓存
+	cacheKey := fmt.Sprintf("douban_suggest:%s", keyword)
+	if cached, found := utils.CacheGet(cacheKey); found {
+		utils.Success(c, cached)
+		return
+	}
+
+	// 调用豆瓣API
+	url := fmt.Sprintf("https://movie.douban.com/j/subject_suggest?q=%s", keyword)
+
+	// 使用自定义HTTP客户端
+	client := utils.NewHTTPClient()
+	var doubanResults []DoubanMovieSuggest
+
+	if err := client.GetJSON(url, &doubanResults); err != nil {
+		utils.InternalServerError(c, "搜索服务暂时不可用")
+		log.Printf("豆瓣API调用失败: %v", err)
+		return
+	}
+
+	// 转换数据格式
+	var results []MovieSuggestResponse
+	for _, item := range doubanResults {
+		// 使用本地图片代理，绕过防盗链
+		proxyImg := fmt.Sprintf("/api/proxy/image?url=%s", item.Img)
+
+		results = append(results, MovieSuggestResponse{
+			ID:       item.ID,
+			Title:    item.Title,
+			SubTitle: item.SubTitle,
+			Type:     item.Type,
+			Year:     item.Year,
+			Episode:  item.Episode,
+			Img:      proxyImg,
+		})
+	}
+
+	// 缓存结果，缓存时间5分钟
+	utils.CacheSet(cacheKey, results, 5*time.Minute)
+
+	utils.Success(c, results)
+}
+
+// ProxyImage 图片代理，绕过防盗链
+func (h *Handler) ProxyImage(c *gin.Context) {
+	targetURL := c.Query("url")
+	if targetURL == "" {
+		c.String(http.StatusBadRequest, "URL 不能为空")
+		return
+	}
+
+	// 只允许代理特定的域名（安全考虑）
+	if !strings.Contains(targetURL, "doubanio.com") {
+		c.String(http.StatusForbidden, "不支持的图片源")
+		return
+	}
+
+	// 创建请求
+	req, err := http.NewRequest("GET", targetURL, nil)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "创建请求失败")
+		return
+	}
+
+	// 设置伪造的 Referer
+	req.Header.Set("Referer", "https://movie.douban.com/")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	// 使用默认客户端发送请求
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.String(http.StatusBadGateway, "代理请求失败")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.String(resp.StatusCode, "图片源返回错误")
+		return
+	}
+
+	// 转发 Content-Type
+	c.Header("Content-Type", resp.Header.Get("Content-Type"))
+	c.Header("Cache-Control", "public, max-age=86400") // 缓存一天
+
+	// 流式转发响应体
+	io.Copy(c.Writer, resp.Body)
 }

@@ -13,9 +13,13 @@
                 placeholder="想看就搜，看你想看..."
                 autocomplete="off"
                 required
+                id="search-input"
+                oninput="handleSearchInput(this.value)"
             >
             <button type="submit" class="search-btn">搜索</button>
         </div>
+        <!-- 搜索建议下拉框 -->
+        <div id="search-suggestions" class="search-suggestions" style="display: none;"></div>
     </form>
 </div>
 

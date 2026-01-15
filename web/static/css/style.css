@@ -343,8 +343,8 @@ img {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 50px;
-    overflow: hidden;
     transition: all var(--transition);
+    position: relative;
 }
 
 .search-input-wrapper:focus-within {
@@ -360,6 +360,7 @@ img {
     font-size: 1rem;
     color: var(--text);
     outline: none;
+    border-radius: 50px 0 0 50px;
 }
 
 .search-input::placeholder {
@@ -374,10 +375,94 @@ img {
     border: none;
     cursor: pointer;
     transition: background var(--transition);
+    border-radius: 0 50px 50px 0;
 }
 
 .search-btn:hover {
     background: var(--primary-dark);
+}
+
+/* ==================== 搜索建议 ==================== */
+.search-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    max-height: 400px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: var(--shadow);
+    margin-top: 4px;
+}
+
+.search-suggestion-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: background var(--transition);
+    border-bottom: 1px solid var(--border);
+}
+
+.search-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.search-suggestion-item:hover,
+.search-suggestion-item.selected {
+    background: var(--bg-secondary);
+}
+
+.suggestion-poster {
+    width: 40px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.suggestion-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.suggestion-title {
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.suggestion-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.suggestion-type {
+    background: var(--primary);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.suggestion-year {
+    color: var(--text-muted);
+}
+
+.suggestion-episode {
+    color: var(--text-muted);
 }
 
 /* ==================== 提示信息 ==================== */

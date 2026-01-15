@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -19,6 +20,7 @@ import (
 	"github.com/user/moovie/internal/handler"
 	"github.com/user/moovie/internal/middleware"
 	"github.com/user/moovie/internal/repository"
+	"github.com/user/moovie/internal/utils"
 )
 
 func main() {
@@ -40,11 +42,17 @@ func main() {
 	// 初始化仓库
 	repos := repository.NewRepositories(db)
 
+	// 初始化缓存
+	utils.InitCache()
+
 	// 初始化 Gin
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.Default()
+
+	// 启用 gzip，默认压缩级别
+	r.Use(gzip.Gzip(gzip.DefaultCompression))
 
 	// 加载模板（使用 multitemplate 解决继承问题）
 	r.HTMLRender = loadTemplates("./web/templates")
@@ -154,6 +162,8 @@ func registerRoutes(r *gin.Engine, h *handler.Handler) {
 		api.DELETE("/favorites/:id", h.RemoveFavorite)
 		api.POST("/feedback", h.SubmitFeedback)
 		api.POST("/history/sync", h.SyncHistory)
+		api.GET("/movies/suggest", h.MovieSuggest)
+		api.GET("/proxy/image", h.ProxyImage)
 	}
 
 	// ==================== 管理后台 ====================

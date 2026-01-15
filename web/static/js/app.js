@@ -211,7 +211,7 @@ function renderContinueWatching() {
     container.innerHTML = history.map(item => `
         <a href="/play/${item.doubanId}?source=${item.source || ''}&ep=${item.episode || ''}" class="movie-card">
             <div class="movie-poster">
-                <img src="${item.poster || '/static/img/placeholder.jpg'}" alt="${item.title}" loading="lazy">
+                <img src="${item.poster || '/static/img/placeholder.jpg'}" alt="${item.title}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
             </div>
             <div class="movie-info">
                 <h3 class="movie-title">${item.title}</h3>
@@ -219,6 +219,150 @@ function renderContinueWatching() {
             </div>
         </a>
     `).join('');
+}
+
+// ==================== 搜索建议 ====================
+
+let searchTimeout = null;
+let selectedSuggestionIndex = -1;
+
+/**
+ * 处理搜索输入
+ */
+function handleSearchInput(value) {
+    clearTimeout(searchTimeout);
+    
+    if (!value || value.trim().length < 1) {
+        hideSuggestions();
+        return;
+    }
+    
+    // 防抖，300ms后执行搜索
+    searchTimeout = setTimeout(() => {
+        fetchSuggestions(value.trim());
+    }, 300);
+}
+
+/**
+ * 获取搜索建议
+ */
+async function fetchSuggestions(keyword) {
+    try {
+        const response = await fetch(`/api/movies/suggest?q=${encodeURIComponent(keyword)}`);
+        if (!response.ok) {
+            throw new Error('搜索服务暂时不可用');
+        }
+        
+        const result = await response.json();
+        if (result.data && result.data.length > 0) {
+            renderSuggestions(result.data);
+        } else {
+            hideSuggestions();
+        }
+    } catch (error) {
+        console.error('获取搜索建议失败:', error);
+        hideSuggestions();
+    }
+}
+
+/**
+ * 渲染搜索建议
+ */
+function renderSuggestions(suggestions) {
+    const container = document.getElementById('search-suggestions');
+    if (!container) return;
+    
+    selectedSuggestionIndex = -1;
+    
+    container.innerHTML = suggestions.map((item, index) => `
+        <div class="search-suggestion-item" 
+             data-index="${index}"
+             onclick="selectSuggestion('${item.id}', '${item.title.replace(/'/g, "\\'")}')">
+            <img src="${item.img}" alt="${item.title}" class="suggestion-poster" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+            <div class="suggestion-info">
+                <div class="suggestion-title">${item.title}</div>
+                <div class="suggestion-meta">
+                    <span class="suggestion-type">${item.type === 'movie' ? '电影' : '剧集'}</span>
+                    <span class="suggestion-year">${item.year}</span>
+                    ${item.episode ? `<span class="suggestion-episode">${item.episode}集</span>` : ''}
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    container.style.display = 'block';
+}
+
+/**
+ * 隐藏搜索建议
+ */
+function hideSuggestions() {
+    const container = document.getElementById('search-suggestions');
+    if (container) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+    }
+    selectedSuggestionIndex = -1;
+}
+
+/**
+ * 选择搜索建议
+ */
+function selectSuggestion(id, title) {
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+        searchInput.value = title;
+        hideSuggestions();
+        // 跳转到电影详情页
+        window.location.href = `/movie/${id}`;
+    }
+}
+
+/**
+ * 键盘导航
+ */
+function handleSuggestionNavigation(event) {
+    const container = document.getElementById('search-suggestions');
+    if (!container || container.style.display === 'none') return;
+    
+    const items = container.querySelectorAll('.search-suggestion-item');
+    if (items.length === 0) return;
+    
+    switch (event.key) {
+        case 'ArrowDown':
+            event.preventDefault();
+            selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, items.length - 1);
+            updateSelectedSuggestion(items);
+            break;
+        case 'ArrowUp':
+            event.preventDefault();
+            selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+            updateSelectedSuggestion(items);
+            break;
+        case 'Enter':
+            event.preventDefault();
+            if (selectedSuggestionIndex >= 0) {
+                items[selectedSuggestionIndex].click();
+            }
+            break;
+        case 'Escape':
+            hideSuggestions();
+            break;
+    }
+}
+
+/**
+ * 更新选中的建议项
+ */
+function updateSelectedSuggestion(items) {
+    items.forEach((item, index) => {
+        if (index === selectedSuggestionIndex) {
+            item.classList.add('selected');
+            item.scrollIntoView({ block: 'nearest' });
+        } else {
+            item.classList.remove('selected');
+        }
+    });
 }
 
 // ==================== 最近搜索管理 ====================
@@ -337,6 +481,39 @@ document.addEventListener('DOMContentLoaded', function() {
             if (input && input.value) {
                 addRecentSearch(input.value);
             }
+        });
+    }
+
+    // 监听搜索输入框键盘事件
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+        searchInput.addEventListener('keydown', handleSuggestionNavigation);
+    }
+
+    // 点击外部区域关闭搜索建议
+    document.addEventListener('click', function(e) {
+        const searchContainer = document.querySelector('.search-form');
+        const suggestions = document.getElementById('search-suggestions');
+        if (searchContainer && !searchContainer.contains(e.target)) {
+            hideSuggestions();
+        }
+    });
+
+    // 防止鼠标进入搜索建议区域时关闭下拉框
+    const suggestionsContainer = document.getElementById('search-suggestions');
+    if (suggestionsContainer) {
+        suggestionsContainer.addEventListener('mouseenter', function() {
+            // 鼠标进入建议区域时，不清除建议
+            clearTimeout(searchTimeout);
+        });
+        
+        suggestionsContainer.addEventListener('mouseleave', function() {
+            // 鼠标离开建议区域时，延迟隐藏建议
+            setTimeout(() => {
+                if (!suggestionsContainer.matches(':hover') && !document.getElementById('search-input').matches(':focus')) {
+                    hideSuggestions();
+                }
+            }, 200);
         });
     }
 });

@@ -22,7 +22,7 @@
     {{ range .Results }}
     <a href="/movie/{{ .DoubanID }}" class="search-result-card">
         <div class="card-poster">
-            <img src="{{ .Poster }}" alt="{{ .Title }}" loading="lazy">
+            <img src="{{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
         </div>
         <div class="card-content">
             <h3 class="card-title">{{ .Title }} ({{ .Year }})</h3>
