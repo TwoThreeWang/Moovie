@@ -1,8 +1,17 @@
 package utils
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+
 	"github.com/gin-gonic/gin"
 )
+
+// HashIP 对 IP 地址进行哈希处理（用于匿名统计）
+func HashIP(ip string) string {
+	hash := sha256.Sum256([]byte(ip))
+	return hex.EncodeToString(hash[:8]) // 只取前8字节，足够用于统计
+}
 
 // Response 统一API响应结构
 type Response struct {

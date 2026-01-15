@@ -1,0 +1,61 @@
+
+{{ define "content" }}
+<div class="admin-header">
+    <h1 class="page-title">搜索缓存管理</h1>
+    <nav class="admin-nav">
+        <a href="/admin">概览</a>
+        <a href="/admin/users">用户管理</a>
+        <a href="/admin/sites">资源网管理</a>
+        <a href="/admin/cache" class="active">搜索缓存</a>
+        <a href="/admin/crawlers">爬虫监控</a>
+    </nav>
+</div>
+
+<div class="admin-content">
+    <!-- 缓存操作 -->
+    <div class="admin-card">
+        <h3>缓存操作</h3>
+        <p class="description">搜索缓存会自动在 24 小时后过期。过期的缓存会在下次搜索时自动刷新。</p>
+        <div class="button-group">
+            <button class="btn btn-primary" onclick="cleanExpiredCache()">清理过期缓存</button>
+        </div>
+        <div id="cleanResult" class="result-message"></div>
+    </div>
+
+    <!-- 缓存说明 -->
+    <div class="admin-card">
+        <h3>缓存策略说明</h3>
+        <ul class="info-list">
+            <li><strong>缓存时长</strong>：24 小时</li>
+            <li><strong>缓存命中</strong>：如果搜索词在缓存中且未过期，直接返回缓存结果</li>
+            <li><strong>过期刷新</strong>：如果缓存已过期，先返回旧数据，后台异步刷新</li>
+            <li><strong>缓存未命中</strong>：实时查询所有启用的资源网，结果自动缓存</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+async function cleanExpiredCache() {
+    const resultDiv = document.getElementById('cleanResult');
+    resultDiv.textContent = '正在清理...';
+    resultDiv.className = 'result-message loading';
+
+    try {
+        const resp = await fetch('/admin/cache/clean', {
+            method: 'POST'
+        });
+        const data = await resp.json();
+        if (data.success) {
+            resultDiv.textContent = '清理完成，共删除 ' + data.data.affected + ' 条过期缓存';
+            resultDiv.className = 'result-message success';
+        } else {
+            resultDiv.textContent = '清理失败: ' + data.message;
+            resultDiv.className = 'result-message error';
+        }
+    } catch (err) {
+        resultDiv.textContent = '请求失败: ' + err.message;
+        resultDiv.className = 'result-message error';
+    }
+}
+</script>
+{{ end }}

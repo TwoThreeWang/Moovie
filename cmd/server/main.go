@@ -165,6 +165,10 @@ func registerRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/movies/suggest", h.MovieSuggest)
 		api.GET("/movies/check/:doubanId", h.CheckMovie)
 		api.GET("/proxy/image", h.ProxyImage)
+
+		// 资源网视频搜索 API
+		api.GET("/vod/search", h.VodSearch)
+		api.GET("/vod/detail", h.VodDetail)
 	}
 
 	// ==================== 管理后台 ====================
@@ -175,6 +179,16 @@ func registerRoutes(r *gin.Engine, h *handler.Handler) {
 		admin.GET("", h.AdminDashboard)
 		admin.GET("/users", h.AdminUsers)
 		admin.GET("/crawlers", h.AdminCrawlers)
+
+		// 资源网管理
+		admin.GET("/sites", h.AdminSites)
+		admin.POST("/sites", h.AdminSiteCreate)
+		admin.PUT("/sites/:id", h.AdminSiteUpdate)
+		admin.DELETE("/sites/:id", h.AdminSiteDelete)
+
+		// 搜索缓存管理
+		admin.GET("/cache", h.AdminCache)
+		admin.POST("/cache/clean", h.AdminCacheClean)
 	}
 }
 
@@ -245,7 +259,7 @@ func loadTemplates(templatesDir string) multitemplate.Renderer {
 		"about", "dmca", "privacy", "terms", "404",
 		"login", "register",
 		"dashboard", "favorites", "history", "settings",
-		"admin_dashboard", "admin_users", "admin_crawlers",
+		"admin_dashboard", "admin_users", "admin_crawlers", "admin_sites", "admin_cache",
 	}
 
 	for _, page := range pages {

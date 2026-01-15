@@ -15,9 +15,10 @@ import (
 
 // Handler HTTP 处理器
 type Handler struct {
-	Repos   *repository.Repositories
-	Config  *config.Config
-	Crawler *service.Crawler
+	Repos         *repository.Repositories
+	Config        *config.Config
+	Crawler       *service.Crawler
+	SearchService *service.SearchService
 }
 
 // NewHandler 创建处理器
@@ -25,10 +26,17 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	// 创建爬虫服务
 	crawler := service.NewCrawler(repos.Movie)
 
+	// 创建资源网爬虫
+	sourceCrawler := service.NewSourceCrawler(10 * time.Second)
+
+	// 创建搜索服务
+	searchService := service.NewSearchService(repos.Site, repos.SearchCache, sourceCrawler)
+
 	return &Handler{
-		Repos:   repos,
-		Config:  cfg,
-		Crawler: crawler,
+		Repos:         repos,
+		Config:        cfg,
+		Crawler:       crawler,
+		SearchService: searchService,
 	}
 }
 
@@ -263,9 +271,15 @@ func (h *Handler) Sitemap(c *gin.Context) {
 
 // LoginPage 登录页面
 func (h *Handler) LoginPage(c *gin.Context) {
+	// 如果已经登录，直接跳转到首页
+	if middleware.GetUserID(c) > 0 {
+		c.Redirect(http.StatusFound, "/")
+		return
+	}
 	c.HTML(http.StatusOK, "login.html", gin.H{
 		"Title":    "登录 - Moovie",
 		"Redirect": c.Query("redirect"),
+		"UserID":   middleware.GetUserID(c),
 	})
 }
 
@@ -315,8 +329,14 @@ func (h *Handler) Login(c *gin.Context) {
 
 // RegisterPage 注册页面
 func (h *Handler) RegisterPage(c *gin.Context) {
+	// 如果已经登录，直接跳转到首页
+	if middleware.GetUserID(c) > 0 {
+		c.Redirect(http.StatusFound, "/")
+		return
+	}
 	c.HTML(http.StatusOK, "register.html", gin.H{
-		"Title": "注册 - Moovie",
+		"Title":  "注册 - Moovie",
+		"UserID": middleware.GetUserID(c),
 	})
 }
 

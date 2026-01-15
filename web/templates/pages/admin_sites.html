@@ -1,0 +1,141 @@
+
+{{ define "content" }}
+<div class="admin-header">
+    <h1 class="page-title">资源网管理</h1>
+    <nav class="admin-nav">
+        <a href="/admin">概览</a>
+        <a href="/admin/users">用户管理</a>
+        <a href="/admin/sites" class="active">资源网管理</a>
+        <a href="/admin/cache">搜索缓存</a>
+        <a href="/admin/crawlers">爬虫监控</a>
+    </nav>
+</div>
+
+<div class="admin-content">
+    <!-- 添加资源网表单 -->
+    <div class="admin-card">
+        <h3>添加资源网</h3>
+        <form id="addSiteForm" class="admin-form">
+            <div class="form-group">
+                <label for="key">网站标识 (Key)</label>
+                <input type="text" id="key" name="key" placeholder="如: hhys" required>
+            </div>
+            <div class="form-group">
+                <label for="base_url">API 地址</label>
+                <input type="text" id="base_url" name="base_url" placeholder="如: https://api.example.com/api.php" required>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="enabled" checked> 启用
+                </label>
+            </div>
+            <button type="submit" class="btn btn-primary">添加</button>
+        </form>
+    </div>
+
+    <!-- 资源网列表 -->
+    <div class="admin-card">
+        <h3>资源网列表</h3>
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Key</th>
+                    <th>API 地址</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="sitesTable">
+                {{ range .Sites }}
+                <tr data-id="{{ .ID }}">
+                    <td>{{ .ID }}</td>
+                    <td>{{ .Key }}</td>
+                    <td class="url-cell">{{ .BaseUrl }}</td>
+                    <td>
+                        <span class="status-badge {{ if .Enabled }}status-active{{ else }}status-inactive{{ end }}">
+                            {{ if .Enabled }}启用{{ else }}禁用{{ end }}
+                        </span>
+                    </td>
+                    <td class="actions">
+                        <button class="btn btn-sm btn-toggle" onclick="toggleSite({{ .ID }}, {{ not .Enabled }})">
+                            {{ if .Enabled }}禁用{{ else }}启用{{ end }}
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteSite({{ .ID }})">删除</button>
+                    </td>
+                </tr>
+                {{ else }}
+                <tr>
+                    <td colspan="5" class="empty-message">暂无资源网配置</td>
+                </tr>
+                {{ end }}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+// 添加资源网
+document.getElementById('addSiteForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    try {
+        const resp = await fetch('/admin/sites', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert('添加成功');
+            location.reload();
+        } else {
+            alert('添加失败: ' + data.message);
+        }
+    } catch (err) {
+        alert('请求失败: ' + err.message);
+    }
+});
+
+// 切换启用状态
+async function toggleSite(id, enabled) {
+    const formData = new FormData();
+    formData.append('enabled', enabled);
+
+    try {
+        const resp = await fetch('/admin/sites/' + id, {
+            method: 'PUT',
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('操作失败: ' + data.message);
+        }
+    } catch (err) {
+        alert('请求失败: ' + err.message);
+    }
+}
+
+// 删除资源网
+async function deleteSite(id) {
+    if (!confirm('确定要删除这个资源网吗？')) return;
+
+    try {
+        const resp = await fetch('/admin/sites/' + id, {
+            method: 'DELETE'
+        });
+        const data = await resp.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('删除失败: ' + data.message);
+        }
+    } catch (err) {
+        alert('请求失败: ' + err.message);
+    }
+}
+</script>
+{{ end }}

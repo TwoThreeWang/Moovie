@@ -16,13 +16,14 @@ func NewSearchCacheRepository(db *sql.DB) *SearchCacheRepository {
 }
 
 // Find 查找缓存（未过期）
-func (r *SearchCacheRepository) Find(keyword, source string) (*model.SearchCache, error) {
+func (r *SearchCacheRepository) Find(keyword string) (*model.SearchCache, error) {
 	cache := &model.SearchCache{}
 	err := r.db.QueryRow(`
 		SELECT id, keyword, source, result_json, created_at, expires_at
 		FROM search_cache
-		WHERE keyword = $1 AND source = $2 AND expires_at > NOW()
-	`, keyword, source).Scan(
+		WHERE keyword = $1 AND expires_at > NOW()
+		LIMIT 1
+	`, keyword).Scan(
 		&cache.ID, &cache.Keyword, &cache.Source,
 		&cache.ResultJSON, &cache.CreatedAt, &cache.ExpiresAt,
 	)
@@ -37,9 +38,36 @@ func (r *SearchCacheRepository) Find(keyword, source string) (*model.SearchCache
 	return cache, nil
 }
 
-// Upsert 创建或更新缓存
-func (r *SearchCacheRepository) Upsert(keyword, source, resultJSON string, ttl time.Duration) error {
+// FindWithExpiry 查找缓存，返回缓存及是否过期
+// 即使过期也返回缓存，用于"先返回旧数据"策略
+func (r *SearchCacheRepository) FindWithExpiry(keyword string) (*model.SearchCache, bool, error) {
+	cache := &model.SearchCache{}
+	err := r.db.QueryRow(`
+		SELECT id, keyword, source, result_json, created_at, expires_at
+		FROM search_cache
+		WHERE keyword = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, keyword).Scan(
+		&cache.ID, &cache.Keyword, &cache.Source,
+		&cache.ResultJSON, &cache.CreatedAt, &cache.ExpiresAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	isExpired := cache.ExpiresAt.Before(time.Now())
+	return cache, isExpired, nil
+}
+
+// Upsert 创建或更新缓存（按keyword唯一）
+func (r *SearchCacheRepository) Upsert(keyword, resultJSON string, ttl time.Duration) error {
 	expiresAt := time.Now().Add(ttl)
+	source := "vod" // 资源网搜索固定使用 "vod" 作为 source
 
 	_, err := r.db.Exec(`
 		INSERT INTO search_cache (keyword, source, result_json, created_at, expires_at)

@@ -307,3 +307,70 @@ func (h *Handler) CheckMovie(c *gin.Context) {
 		RedirectURL: redirectURL,
 	})
 }
+
+// ==================== 资源网视频搜索 API ====================
+
+// VodSearchResponse 资源网搜索响应
+type VodSearchResponse struct {
+	Items     []model.VodItem `json:"items"`
+	FromCache bool            `json:"from_cache"`
+	Expired   bool            `json:"expired"`
+	Total     int             `json:"total"`
+}
+
+// VodSearch 资源网视频搜索
+// GET /api/vod/search?keyword=xxx
+func (h *Handler) VodSearch(c *gin.Context) {
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	if keyword == "" {
+		utils.BadRequest(c, "搜索关键词不能为空")
+		return
+	}
+
+	// 使用 SearchService 搜索
+	result, err := h.SearchService.Search(c.Request.Context(), keyword)
+	if err != nil {
+		log.Printf("[VodSearch] 搜索失败: %v", err)
+		utils.InternalServerError(c, "搜索服务暂时不可用")
+		return
+	}
+
+	// 记录搜索日志
+	go func() {
+		_ = h.Repos.SearchLog.Log(keyword, middleware.GetUserIDPtr(c), utils.HashIP(c.ClientIP()))
+	}()
+
+	utils.Success(c, VodSearchResponse{
+		Items:     result.Items,
+		FromCache: result.FromCache,
+		Expired:   result.Expired,
+		Total:     len(result.Items),
+	})
+}
+
+// VodDetail 资源网视频详情
+// GET /api/vod/detail?source_key=xxx&vod_id=xxx
+func (h *Handler) VodDetail(c *gin.Context) {
+	sourceKey := strings.TrimSpace(c.Query("source_key"))
+	vodId := strings.TrimSpace(c.Query("vod_id"))
+
+	if sourceKey == "" || vodId == "" {
+		utils.BadRequest(c, "source_key 和 vod_id 不能为空")
+		return
+	}
+
+	// 获取详情
+	detail, err := h.SearchService.GetDetail(c.Request.Context(), sourceKey, vodId)
+	if err != nil {
+		log.Printf("[VodDetail] 获取详情失败: %v", err)
+		utils.InternalServerError(c, "获取详情失败")
+		return
+	}
+
+	if detail == nil {
+		utils.NotFound(c, "视频不存在")
+		return
+	}
+
+	utils.Success(c, detail)
+}

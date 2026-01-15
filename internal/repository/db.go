@@ -36,6 +36,7 @@ type Repositories struct {
 	History     *HistoryRepository
 	Feedback    *FeedbackRepository
 	SearchLog   *SearchLogRepository
+	Site        *SiteRepository
 }
 
 // NewRepositories 创建仓库集合
@@ -49,5 +50,6 @@ func NewRepositories(db *sql.DB) *Repositories {
 		History:     NewHistoryRepository(db),
 		Feedback:    NewFeedbackRepository(db),
 		SearchLog:   NewSearchLogRepository(db),
+		Site:        NewSiteRepository(db),
 	}
 }
