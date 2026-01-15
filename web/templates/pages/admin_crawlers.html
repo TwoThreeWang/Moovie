@@ -1,39 +1,66 @@
 
 {{ define "content" }}
-<div class="admin-header">
-    <h1 class="page-title">爬虫监控</h1>
-    <nav class="admin-nav">
-        <a href="/admin">概览</a>
-        <a href="/admin/users">用户管理</a>
-        <a href="/admin/sites">资源网管理</a>
-        <a href="/admin/cache">搜索缓存</a>
-        <a href="/admin/crawlers" class="active">爬虫监控</a>
-    </nav>
-</div>
-
-<div class="crawler-list">
-    <div class="crawler-card">
-        <h3>🎬 豆瓣爬虫</h3>
-        <div class="crawler-status">
-            <span class="status-badge status-idle">待实现</span>
-        </div>
-        <div class="crawler-stats">
-            <p>最后运行：--</p>
-            <p>成功率：--%</p>
-        </div>
-        <button class="btn btn-primary" disabled>手动运行</button>
+<div class="admin-page">
+    <!-- 页面标题和导航 -->
+    <div class="admin-header">
+        <h1 class="admin-title">爬虫监控</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab">用户</a>
+            <a href="/admin/sites" class="admin-tab">资源网</a>
+            <a href="/admin/cache" class="admin-tab">缓存</a>
+            <a href="/admin/crawlers" class="admin-tab active">爬虫</a>
+        </nav>
     </div>
 
-    <div class="crawler-card">
-        <h3>📺 资源站聚合</h3>
-        <div class="crawler-status">
-            <span class="status-badge status-idle">待实现</span>
+    <div class="crawler-grid">
+        <!-- 豆瓣爬虫 -->
+        <div class="crawler-card">
+            <div class="crawler-header">
+                <div class="crawler-icon movies">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+                </div>
+                <div class="crawler-title">
+                    <h3>豆瓣爬虫</h3>
+                    <span class="status-badge status-pending">待实现</span>
+                </div>
+            </div>
+            <div class="crawler-stats">
+                <div class="crawler-stat">
+                    <span class="stat-label">最后运行</span>
+                    <span class="stat-value">--</span>
+                </div>
+                <div class="crawler-stat">
+                    <span class="stat-label">成功率</span>
+                    <span class="stat-value">--%</span>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-block" disabled>手动运行</button>
         </div>
-        <div class="crawler-stats">
-            <p>缓存数量：-- 条</p>
-            <p>过期数量：-- 条</p>
+
+        <!-- 资源站聚合 -->
+        <div class="crawler-card">
+            <div class="crawler-header">
+                <div class="crawler-icon sites">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                </div>
+                <div class="crawler-title">
+                    <h3>资源站聚合</h3>
+                    <span class="status-badge status-pending">待实现</span>
+                </div>
+            </div>
+            <div class="crawler-stats">
+                <div class="crawler-stat">
+                    <span class="stat-label">缓存数量</span>
+                    <span class="stat-value">-- 条</span>
+                </div>
+                <div class="crawler-stat">
+                    <span class="stat-label">过期数量</span>
+                    <span class="stat-value">-- 条</span>
+                </div>
+            </div>
+            <button class="btn btn-secondary btn-block" disabled>清理过期</button>
         </div>
-        <button class="btn btn-secondary" disabled>清理过期</button>
     </div>
 </div>
 {{ end }}

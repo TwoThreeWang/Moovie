@@ -72,3 +72,10 @@ func (r *FavoriteRepository) ListByUser(userID, limit, offset int) ([]*model.Fav
 
 	return favorites, nil
 }
+
+// CountByUser 统计用户收藏数量
+func (r *FavoriteRepository) CountByUser(userID int) (int, error) {
+	var count int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM favorites WHERE user_id = $1`, userID).Scan(&count)
+	return count, err
+}

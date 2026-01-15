@@ -1,76 +1,84 @@
 
 {{ define "content" }}
-<div class="admin-header">
-    <h1 class="page-title">资源网管理</h1>
-    <nav class="admin-nav">
-        <a href="/admin">概览</a>
-        <a href="/admin/users">用户管理</a>
-        <a href="/admin/sites" class="active">资源网管理</a>
-        <a href="/admin/cache">搜索缓存</a>
-        <a href="/admin/crawlers">爬虫监控</a>
-    </nav>
-</div>
+<div class="admin-page">
+    <!-- 页面标题和导航 -->
+    <div class="admin-header">
+        <h1 class="admin-title">资源网管理</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab">用户</a>
+            <a href="/admin/sites" class="admin-tab active">资源网</a>
+            <a href="/admin/cache" class="admin-tab">缓存</a>
+            <a href="/admin/crawlers" class="admin-tab">爬虫</a>
+        </nav>
+    </div>
 
-<div class="admin-content">
-    <!-- 添加资源网表单 -->
+    <!-- 添加资源网 -->
     <div class="admin-card">
-        <h3>添加资源网</h3>
+        <div class="admin-card-header">
+            <h3>添加资源网</h3>
+        </div>
         <form id="addSiteForm" class="admin-form">
-            <div class="form-group">
-                <label for="key">网站标识 (Key)</label>
-                <input type="text" id="key" name="key" placeholder="如: hhys" required>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="key">网站标识 (Key)</label>
+                    <input type="text" id="key" name="key" placeholder="如: hhys" required>
+                </div>
+                <div class="form-group flex-2">
+                    <label for="base_url">API 地址</label>
+                    <input type="text" id="base_url" name="base_url" placeholder="如: https://api.example.com/api.php" required>
+                </div>
+                <div class="form-group form-checkbox">
+                    <label><input type="checkbox" name="enabled" checked> 启用</label>
+                </div>
+                <button type="submit" class="btn btn-primary">添加</button>
             </div>
-            <div class="form-group">
-                <label for="base_url">API 地址</label>
-                <input type="text" id="base_url" name="base_url" placeholder="如: https://api.example.com/api.php" required>
-            </div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" name="enabled" checked> 启用
-                </label>
-            </div>
-            <button type="submit" class="btn btn-primary">添加</button>
         </form>
     </div>
 
     <!-- 资源网列表 -->
     <div class="admin-card">
-        <h3>资源网列表</h3>
-        <table class="admin-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Key</th>
-                    <th>API 地址</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody id="sitesTable">
-                {{ range .Sites }}
-                <tr data-id="{{ .ID }}">
-                    <td>{{ .ID }}</td>
-                    <td>{{ .Key }}</td>
-                    <td class="url-cell">{{ .BaseUrl }}</td>
-                    <td>
-                        <span class="status-badge {{ if .Enabled }}status-active{{ else }}status-inactive{{ end }}">
-                            {{ if .Enabled }}启用{{ else }}禁用{{ end }}
-                        </span>
-                    </td>
-                    <td class="actions">
-                        <button class="btn btn-sm btn-toggle" onclick="toggleSite({{ .ID }}, {{ not .Enabled }})">
-                            {{ if .Enabled }}禁用{{ else }}启用{{ end }}
-                        </button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteSite({{ .ID }})">删除</button>
-                    </td>
-                </tr>
-                {{ else }}
-                <tr>
-                    <td colspan="5" class="empty-message">暂无资源网配置</td>
-                </tr>
-                {{ end }}
-            </tbody>
-        </table>
+        <div class="admin-card-header">
+            <h3>资源网列表</h3>
+            <span class="badge">{{ if .Sites }}{{ len .Sites }}{{ else }}0{{ end }} 个资源网</span>
+        </div>
+        <div class="admin-table-wrapper">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Key</th>
+                        <th>API 地址</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="sitesTable">
+                    {{ range .Sites }}
+                    <tr data-id="{{ .ID }}">
+                        <td><span class="id-badge">{{ .ID }}</span></td>
+                        <td><code class="key-badge">{{ .Key }}</code></td>
+                        <td class="url-cell">{{ .BaseUrl }}</td>
+                        <td>
+                            <span class="status-badge {{ if .Enabled }}status-active{{ else }}status-inactive{{ end }}">
+                                {{ if .Enabled }}启用{{ else }}禁用{{ end }}
+                            </span>
+                        </td>
+                        <td class="actions-cell">
+                            <button class="btn btn-secondary btn-sm" onclick="toggleSite({{ .ID }}, {{ not .Enabled }})">
+                                {{ if .Enabled }}禁用{{ else }}启用{{ end }}
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteSite({{ .ID }})">删除</button>
+                        </td>
+                    </tr>
+                    {{ else }}
+                    <tr>
+                        <td colspan="5" class="empty-cell">暂无资源网配置</td>
+                    </tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 

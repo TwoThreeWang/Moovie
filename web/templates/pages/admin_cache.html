@@ -1,36 +1,60 @@
 
 {{ define "content" }}
-<div class="admin-header">
-    <h1 class="page-title">搜索缓存管理</h1>
-    <nav class="admin-nav">
-        <a href="/admin">概览</a>
-        <a href="/admin/users">用户管理</a>
-        <a href="/admin/sites">资源网管理</a>
-        <a href="/admin/cache" class="active">搜索缓存</a>
-        <a href="/admin/crawlers">爬虫监控</a>
-    </nav>
-</div>
-
-<div class="admin-content">
-    <!-- 缓存操作 -->
-    <div class="admin-card">
-        <h3>缓存操作</h3>
-        <p class="description">搜索缓存会自动在 24 小时后过期。过期的缓存会在下次搜索时自动刷新。</p>
-        <div class="button-group">
-            <button class="btn btn-primary" onclick="cleanExpiredCache()">清理过期缓存</button>
-        </div>
-        <div id="cleanResult" class="result-message"></div>
+<div class="admin-page">
+    <!-- 页面标题和导航 -->
+    <div class="admin-header">
+        <h1 class="admin-title">搜索缓存管理</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab">用户</a>
+            <a href="/admin/sites" class="admin-tab">资源网</a>
+            <a href="/admin/cache" class="admin-tab active">缓存</a>
+            <a href="/admin/crawlers" class="admin-tab">爬虫</a>
+        </nav>
     </div>
 
-    <!-- 缓存说明 -->
+    <!-- 缓存操作 -->
     <div class="admin-card">
-        <h3>缓存策略说明</h3>
-        <ul class="info-list">
-            <li><strong>缓存时长</strong>：24 小时</li>
-            <li><strong>缓存命中</strong>：如果搜索词在缓存中且未过期，直接返回缓存结果</li>
-            <li><strong>过期刷新</strong>：如果缓存已过期，先返回旧数据，后台异步刷新</li>
-            <li><strong>缓存未命中</strong>：实时查询所有启用的资源网，结果自动缓存</li>
-        </ul>
+        <div class="admin-card-header">
+            <h3>缓存操作</h3>
+        </div>
+        <div class="admin-card-body">
+            <p class="description">搜索缓存会自动在 24 小时后过期。过期的缓存会在下次搜索时自动刷新。</p>
+            <div class="action-row">
+                <button class="btn btn-primary" onclick="cleanExpiredCache()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    清理过期缓存
+                </button>
+                <div id="cleanResult" class="result-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 缓存策略说明 -->
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3>缓存策略说明</h3>
+        </div>
+        <div class="admin-card-body">
+            <ul class="info-list">
+                <li>
+                    <span class="info-label">缓存时长</span>
+                    <span class="info-value">24 小时</span>
+                </li>
+                <li>
+                    <span class="info-label">缓存命中</span>
+                    <span class="info-value">如果搜索词在缓存中且未过期，直接返回缓存结果</span>
+                </li>
+                <li>
+                    <span class="info-label">过期刷新</span>
+                    <span class="info-value">如果缓存已过期，先返回旧数据，后台异步刷新</span>
+                </li>
+                <li>
+                    <span class="info-label">缓存未命中</span>
+                    <span class="info-value">实时查询所有启用的资源网，结果自动缓存</span>
+                </li>
+            </ul>
+        </div>
     </div>
 </div>
 
@@ -46,14 +70,14 @@ async function cleanExpiredCache() {
         });
         const data = await resp.json();
         if (data.success) {
-            resultDiv.textContent = '清理完成，共删除 ' + data.data.affected + ' 条过期缓存';
+            resultDiv.textContent = '✓ 清理完成，共删除 ' + data.data.affected + ' 条过期缓存';
             resultDiv.className = 'result-message success';
         } else {
-            resultDiv.textContent = '清理失败: ' + data.message;
+            resultDiv.textContent = '✗ 清理失败: ' + data.message;
             resultDiv.className = 'result-message error';
         }
     } catch (err) {
-        resultDiv.textContent = '请求失败: ' + err.message;
+        resultDiv.textContent = '✗ 请求失败: ' + err.message;
         resultDiv.className = 'result-message error';
     }
 }

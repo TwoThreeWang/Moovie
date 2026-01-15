@@ -1,32 +1,110 @@
 
 {{ define "content" }}
-<h1 class="page-title">账号设置</h1>
+<div class="settings-page">
+    <h1 class="page-title">账号设置</h1>
 
-<div class="auth-form">
-    <div class="form-group">
-        <label>邮箱</label>
-        <input type="email" value="{{ .Email }}" disabled>
+    {{ if .Error }}
+    <div class="auth-alert auth-alert-error">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+        {{ .Error }}
+    </div>
+    {{ end }}
+
+    {{ if eq .Success "username" }}
+    <div class="auth-alert auth-alert-success">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        用户名已更新
+    </div>
+    {{ end }}
+
+    {{ if eq .Success "password" }}
+    <div class="auth-alert auth-alert-success">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        密码已更新
+    </div>
+    {{ end }}
+
+    {{ if eq .Success "email" }}
+    <div class="auth-alert auth-alert-success">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        邮箱已更新
+    </div>
+    {{ end }}
+
+    {{ if .User }}
+    <!-- 账号信息 -->
+    <div class="settings-section">
+        <h2 class="section-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            账号信息
+        </h2>
+        <div class="settings-card">
+            <form action="/dashboard/settings/email" method="POST" class="settings-form">
+                <div class="settings-item">
+                    <label for="email">邮箱</label>
+                    <div class="settings-input-group">
+                        <input type="email" id="email" name="email" value="{{ .User.Email }}" placeholder="请输入邮箱" required>
+                        <button type="submit" class="btn btn-primary btn-sm">保存</button>
+                    </div>
+                </div>
+            </form>
+            <form action="/dashboard/settings/username" method="POST" class="settings-form">
+                <div class="settings-item">
+                    <label for="username">用户名</label>
+                    <div class="settings-input-group">
+                        <input type="text" id="username" name="username" value="{{ .User.Username }}" placeholder="请输入用户名" minlength="2" maxlength="20" required>
+                        <button type="submit" class="btn btn-primary btn-sm">保存</button>
+                    </div>
+                </div>
+            </form>
+            <div class="settings-item">
+                <label>注册时间</label>
+                <div class="settings-value">
+                    <span>{{ .User.CreatedAt.Format "2006-01-02 15:04" }}</span>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <h3 style="margin: 2rem 0 1rem;">修改密码</h3>
-
-    <form action="/dashboard/settings/password" method="POST">
-        <div class="form-group">
-            <label for="current_password">当前密码</label>
-            <input type="password" id="current_password" name="current_password" required>
+    <!-- 安全设置 -->
+    <div class="settings-section">
+        <h2 class="section-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            安全设置
+        </h2>
+        <div class="settings-card">
+            <form action="/dashboard/settings/password" method="POST">
+                <div class="settings-item">
+                    <label for="current_password">当前密码</label>
+                    <input type="password" id="current_password" name="current_password" placeholder="请输入当前密码" required>
+                </div>
+                <div class="settings-item">
+                    <label for="new_password">新密码</label>
+                    <input type="password" id="new_password" name="new_password" placeholder="至少 6 个字符" minlength="6" required>
+                </div>
+                <div class="settings-item">
+                    <label for="confirm_password">确认新密码</label>
+                    <input type="password" id="confirm_password" name="confirm_password" placeholder="请再次输入新密码" minlength="6" required>
+                </div>
+                <div class="settings-actions">
+                    <button type="submit" class="btn btn-primary">更新密码</button>
+                </div>
+            </form>
         </div>
+    </div>
+    {{ else }}
+    <div class="empty-state">
+        <p>无法加载用户信息</p>
+        <a href="/auth/login" class="btn btn-primary">重新登录</a>
+    </div>
+    {{ end }}
 
-        <div class="form-group">
-            <label for="new_password">新密码</label>
-            <input type="password" id="new_password" name="new_password" required minlength="6">
-        </div>
-
-        <div class="form-group">
-            <label for="confirm_password">确认新密码</label>
-            <input type="password" id="confirm_password" name="confirm_password" required>
-        </div>
-
-        <button type="submit" class="btn btn-primary">更新密码</button>
-    </form>
+    <!-- 返回用户中心 -->
+    <div class="settings-back">
+        <a href="/dashboard" class="btn btn-secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            返回用户中心
+        </a>
+    </div>
 </div>
 {{ end }}

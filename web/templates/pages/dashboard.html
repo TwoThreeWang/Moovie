@@ -1,24 +1,148 @@
 
 {{ define "content" }}
-<h1 class="page-title">用户中心</h1>
+<div class="user-center">
+    <!-- 用户信息卡片 -->
+    <div class="user-profile-card">
+        <div class="user-avatar">
+            {{ if .User }}
+                {{ $initial := slice .User.Username 0 1 }}
+                {{ $initial }}
+            {{ else }}
+                U
+            {{ end }}
+        </div>
+        <div class="user-info">
+            <h2 class="user-name">{{ .User.Username }}</h2>
+            <p class="user-email">{{ .User.Email }}</p>
+            <p class="user-since">注册于 {{ .User.CreatedAt.Format "2006-01-02" }}</p>
+        </div>
+        <a href="/dashboard/settings" class="settings-link" title="账号设置">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </a>
+    </div>
 
-<div class="dashboard-grid">
-    <a href="/dashboard/favorites" class="dashboard-card">
-        <span class="icon">❤️</span>
-        <h3>我的收藏</h3>
-        <p>查看收藏的影片</p>
-    </a>
+    <!-- 统计信息 -->
+    <div class="user-stats">
+        <div class="stat-item" data-tab="favorites">
+            <span class="stat-icon">❤️</span>
+            <span class="stat-value">{{ .FavoriteCount }}</span>
+            <span class="stat-label">部收藏</span>
+        </div>
+        <div class="stat-item" data-tab="history">
+            <span class="stat-icon">📺</span>
+            <span class="stat-value">{{ .HistoryCount }}</span>
+            <span class="stat-label">条记录</span>
+        </div>
+    </div>
 
-    <a href="/dashboard/history" class="dashboard-card">
-        <span class="icon">📺</span>
-        <h3>观影历史</h3>
-        <p>继续观看</p>
-    </a>
+    <!-- Tab 切换 -->
+    <div class="tab-nav">
+        <button class="tab-btn active" data-tab="favorites">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            我的收藏
+        </button>
+        <button class="tab-btn" data-tab="history">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            观影历史
+        </button>
+    </div>
 
-    <a href="/dashboard/settings" class="dashboard-card">
-        <span class="icon">⚙️</span>
-        <h3>账号设置</h3>
-        <p>修改密码等</p>
-    </a>
+    <!-- Tab 内容区域 -->
+    <div class="tab-content">
+        <!-- 收藏 Tab -->
+        <div class="tab-pane active" id="tab-favorites">
+            {{ if .Favorites }}
+            <div class="movie-grid">
+                {{ range .Favorites }}
+                <a href="/movie/{{ .Movie.DoubanID }}" class="movie-card">
+                    <div class="movie-poster">
+                        <img src="{{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy">
+                        {{ if .Movie.Rating }}
+                        <span class="movie-rating">{{ .Movie.Rating }}</span>
+                        {{ end }}
+                    </div>
+                    <div class="movie-info">
+                        <h3 class="movie-title">{{ .Movie.Title }}</h3>
+                        <p class="movie-year">{{ .Movie.Year }}</p>
+                    </div>
+                </a>
+                {{ end }}
+            </div>
+            {{ if gt .FavoriteCount 20 }}
+            <div class="tab-more">
+                <a href="/dashboard/favorites" class="btn btn-secondary">查看全部收藏</a>
+            </div>
+            {{ end }}
+            {{ else }}
+            <div class="empty-state">
+                <p>还没有收藏任何影片</p>
+                <a href="/" class="btn btn-primary">去发现好片</a>
+            </div>
+            {{ end }}
+        </div>
+
+        <!-- 历史 Tab -->
+        <div class="tab-pane" id="tab-history">
+            {{ if .History }}
+            <div class="movie-grid">
+                {{ range .History }}
+                <a href="/play/{{ .DoubanID }}?source={{ .Source }}&ep={{ .Episode }}" class="movie-card">
+                    <div class="movie-poster">
+                        <img src="{{ .Poster }}" alt="{{ .Title }}" loading="lazy">
+                    </div>
+                    <div class="movie-info">
+                        <h3 class="movie-title">{{ .Title }}</h3>
+                        <p class="movie-year">{{ .Episode }}</p>
+                    </div>
+                </a>
+                {{ end }}
+            </div>
+            {{ if gt .HistoryCount 20 }}
+            <div class="tab-more">
+                <a href="/dashboard/history" class="btn btn-secondary">查看全部历史</a>
+            </div>
+            {{ end }}
+            {{ else }}
+            <div class="empty-state">
+                <p>还没有观影记录</p>
+                <a href="/" class="btn btn-primary">去看片</a>
+            </div>
+            {{ end }}
+        </div>
+    </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Tab 切换逻辑
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const tabId = this.dataset.tab;
+
+            // 移除所有 active 类
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabPanes.forEach(p => p.classList.remove('active'));
+
+            // 添加 active 类
+            this.classList.add('active');
+            document.getElementById('tab-' + tabId).classList.add('active');
+        });
+    });
+
+    // 统计卡片点击跳转到对应 Tab
+    const statItems = document.querySelectorAll('.stat-item');
+    statItems.forEach(item => {
+        item.addEventListener('click', function() {
+            const tabId = this.dataset.tab;
+            const targetBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+            if (targetBtn) {
+                targetBtn.click();
+            }
+        });
+    });
+});
+</script>
 {{ end }}

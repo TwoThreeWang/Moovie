@@ -1,46 +1,64 @@
 
 {{ define "content" }}
-<div class="admin-header">
-    <h1 class="page-title">用户管理</h1>
-    <nav class="admin-nav">
-        <a href="/admin">概览</a>
-        <a href="/admin/users" class="active">用户管理</a>
-        <a href="/admin/sites">资源网管理</a>
-        <a href="/admin/cache">搜索缓存</a>
-        <a href="/admin/crawlers">爬虫监控</a>
-    </nav>
-</div>
+<div class="admin-page">
+    <!-- 页面标题和导航 -->
+    <div class="admin-header">
+        <h1 class="admin-title">用户管理</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab active">用户</a>
+            <a href="/admin/sites" class="admin-tab">资源网</a>
+            <a href="/admin/cache" class="admin-tab">缓存</a>
+            <a href="/admin/crawlers" class="admin-tab">爬虫</a>
+        </nav>
+    </div>
 
-<div class="table-container">
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>邮箱</th>
-                <th>角色</th>
-                <th>注册时间</th>
-                <th>操作</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{ if .Users }}
-            {{ range .Users }}
-            <tr>
-                <td>{{ .ID }}</td>
-                <td>{{ .Email }}</td>
-                <td>{{ .Role }}</td>
-                <td>{{ .CreatedAt }}</td>
-                <td>
-                    <button class="btn btn-secondary btn-sm">编辑</button>
-                </td>
-            </tr>
-            {{ end }}
-            {{ else }}
-            <tr>
-                <td colspan="5" class="empty-state">暂无用户数据</td>
-            </tr>
-            {{ end }}
-        </tbody>
-    </table>
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3>用户列表</h3>
+            <span class="badge">{{ if .Users }}{{ len .Users }}{{ else }}0{{ end }} 位用户</span>
+        </div>
+        <div class="admin-table-wrapper">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>用户名</th>
+                        <th>邮箱</th>
+                        <th>角色</th>
+                        <th>注册时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{ if .Users }}
+                    {{ range .Users }}
+                    <tr>
+                        <td><span class="id-badge">{{ .ID }}</span></td>
+                        <td class="user-cell">
+                            <div class="user-avatar-sm">{{ slice .Username 0 1 }}</div>
+                            <span>{{ .Username }}</span>
+                        </td>
+                        <td>{{ .Email }}</td>
+                        <td>
+                            <span class="role-badge {{ if eq .Role "admin" }}role-admin{{ else }}role-user{{ end }}">
+                                {{ if eq .Role "admin" }}管理员{{ else }}普通用户{{ end }}
+                            </span>
+                        </td>
+                        <td>{{ .CreatedAt.Format "2006-01-02" }}</td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm">编辑</button>
+                        </td>
+                    </tr>
+                    {{ end }}
+                    {{ else }}
+                    <tr>
+                        <td colspan="6" class="empty-cell">暂无用户数据</td>
+                    </tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 {{ end }}

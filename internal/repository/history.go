@@ -79,3 +79,10 @@ func (r *HistoryRepository) GetAfter(userID int, after time.Time) ([]*model.Watc
 
 	return histories, nil
 }
+
+// CountByUser 统计用户观影历史数量
+func (r *HistoryRepository) CountByUser(userID int) (int, error) {
+	var count int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM watch_history WHERE user_id = $1`, userID).Scan(&count)
+	return count, err
+}

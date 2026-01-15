@@ -484,8 +484,30 @@ func (h *Handler) generateToken(user *model.User) (string, error) {
 
 // Dashboard 用户中心
 func (h *Handler) Dashboard(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	// 获取完整用户信息
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+
+	// 获取统计数据
+	favoriteCount, _ := h.Repos.Favorite.CountByUser(userID)
+	historyCount, _ := h.Repos.History.CountByUser(userID)
+
+	// 获取收藏和历史列表（用于 Tab 默认显示）
+	favorites, _ := h.Repos.Favorite.ListByUser(userID, 20, 0)
+	histories, _ := h.Repos.History.ListByUser(userID, 20, 0)
+
 	c.HTML(http.StatusOK, "dashboard.html", h.RenderData(c, gin.H{
-		"Title": "用户中心 - " + h.Config.SiteName,
+		"Title":         "用户中心 - " + h.Config.SiteName,
+		"User":          user,
+		"FavoriteCount": favoriteCount,
+		"HistoryCount":  historyCount,
+		"Favorites":     favorites,
+		"History":       histories,
 	}))
 }
 
@@ -513,7 +535,159 @@ func (h *Handler) History(c *gin.Context) {
 
 // Settings 账号设置
 func (h *Handler) Settings(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	// 获取完整用户信息
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+
+	// 获取 success 参数用于显示成功提示
+	success := c.Query("success")
+
 	c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
-		"Title": "账号设置 - " + h.Config.SiteName,
+		"Title":   "账号设置 - " + h.Config.SiteName,
+		"User":    user,
+		"Success": success,
 	}))
+}
+
+// UpdateUsername 修改用户名
+func (h *Handler) UpdateUsername(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	newUsername := strings.TrimSpace(c.PostForm("username"))
+
+	if newUsername == "" || len(newUsername) < 2 || len(newUsername) > 20 {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"Error": "用户名应在 2-20 个字符之间",
+		}))
+		return
+	}
+
+	err := h.Repos.User.UpdateUsername(userID, newUsername)
+	if err != nil {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"Error": "用户名更新失败",
+		}))
+		return
+	}
+
+	// 更新 Session 中的用户名
+	session := sessions.Default(c)
+	if userinfo := session.Get("userinfo"); userinfo != nil {
+		if su, ok := userinfo.(model.SessionUser); ok {
+			su.Username = newUsername
+			session.Set("userinfo", su)
+			session.Save()
+		}
+	}
+
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=username")
+}
+
+// UpdateEmail 修改邮箱
+func (h *Handler) UpdateEmail(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	newEmail := strings.TrimSpace(c.PostForm("email"))
+
+	// 简单邮箱格式验证
+	if newEmail == "" || !strings.Contains(newEmail, "@") {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"Error": "请输入有效的邮箱地址",
+		}))
+		return
+	}
+
+	// 检查邮箱是否已被使用
+	existing, _ := h.Repos.User.FindByEmail(newEmail)
+	if existing != nil && existing.ID != userID {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"Error": "该邮箱已被其他账号使用",
+		}))
+		return
+	}
+
+	err := h.Repos.User.UpdateEmail(userID, newEmail)
+	if err != nil {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"Error": "邮箱更新失败",
+		}))
+		return
+	}
+
+	// 更新 Session 中的邮箱
+	session := sessions.Default(c)
+	if userinfo := session.Get("userinfo"); userinfo != nil {
+		if su, ok := userinfo.(model.SessionUser); ok {
+			su.Email = newEmail
+			session.Set("userinfo", su)
+			session.Save()
+		}
+	}
+
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=email")
+}
+
+// UpdatePassword 修改密码
+func (h *Handler) UpdatePassword(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	currentPassword := c.PostForm("current_password")
+	newPassword := c.PostForm("new_password")
+	confirmPassword := c.PostForm("confirm_password")
+
+	// 获取当前用户
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+
+	// 验证当前密码
+	if !h.Repos.User.CheckPassword(user, currentPassword) {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "当前密码错误",
+		}))
+		return
+	}
+
+	// 验证新密码
+	if newPassword != confirmPassword {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "两次输入的新密码不一致",
+		}))
+		return
+	}
+
+	if len(newPassword) < 6 {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "新密码至少需要 6 个字符",
+		}))
+		return
+	}
+
+	// 更新密码
+	err = h.Repos.User.UpdatePassword(userID, newPassword)
+	if err != nil {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "密码更新失败",
+		}))
+		return
+	}
+
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=password")
 }

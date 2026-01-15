@@ -53,6 +53,9 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		dashboard.GET("/favorites", h.Favorites)
 		dashboard.GET("/history", h.History)
 		dashboard.GET("/settings", h.Settings)
+		dashboard.POST("/settings/email", h.UpdateEmail)
+		dashboard.POST("/settings/username", h.UpdateUsername)
+		dashboard.POST("/settings/password", h.UpdatePassword)
 	}
 
 	// ==================== htmx API ====================

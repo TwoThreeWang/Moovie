@@ -86,3 +86,25 @@ func (r *UserRepository) CheckPassword(user *model.User, password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	return err == nil
 }
+
+// UpdateUsername 更新用户名
+func (r *UserRepository) UpdateUsername(userID int, username string) error {
+	_, err := r.db.Exec(`UPDATE users SET username = $1 WHERE id = $2`, username, userID)
+	return err
+}
+
+// UpdateEmail 更新邮箱
+func (r *UserRepository) UpdateEmail(userID int, email string) error {
+	_, err := r.db.Exec(`UPDATE users SET email = $1 WHERE id = $2`, email, userID)
+	return err
+}
+
+// UpdatePassword 更新密码
+func (r *UserRepository) UpdatePassword(userID int, newPassword string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(`UPDATE users SET password_hash = $1 WHERE id = $2`, string(hash), userID)
+	return err
+}
