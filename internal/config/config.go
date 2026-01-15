@@ -10,10 +10,12 @@ import (
 // Config 应用配置
 type Config struct {
 	Env         string
+	AppSecret   string
 	DatabaseURL string
-	JWTSecret   string
 	JWTExpiry   time.Duration
 	Port        string
+	SiteName    string
+	SiteUrl     string
 }
 
 // Load 加载配置
@@ -30,12 +32,16 @@ func Load() *Config {
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		dbUser, dbPass, dbHost, dbPort, dbName, dbSSL)
 
+	appSecret := getEnv("APP_SECRET", getEnv("JWT_SECRET", "your-secret-key-change-in-production"))
+
 	return &Config{
 		Env:         getEnv("APP_ENV", "development"),
+		AppSecret:   appSecret,
 		DatabaseURL: dbURL,
-		JWTSecret:   getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		JWTExpiry:   time.Duration(expiryHours) * time.Hour,
 		Port:        getEnv("PORT", "8080"),
+		SiteName:    getEnv("SITE_NAME", "Moovie"),
+		SiteUrl:     getEnv("SITE_URL", "http://localhost:8080"),
 	}
 }
 

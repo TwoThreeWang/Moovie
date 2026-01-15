@@ -17,7 +17,7 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 }
 
 // Create 创建用户
-func (r *UserRepository) Create(email, password string) (*model.User, error) {
+func (r *UserRepository) Create(email, username, password string) (*model.User, error) {
 	// 密码哈希
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -26,16 +26,17 @@ func (r *UserRepository) Create(email, password string) (*model.User, error) {
 
 	user := &model.User{
 		Email:        email,
+		Username:     username,
 		PasswordHash: string(hash),
 		Role:         "user",
 		CreatedAt:    time.Now(),
 	}
 
 	err = r.db.QueryRow(`
-		INSERT INTO users (email, password_hash, role, created_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO users (email, username, password_hash, role, created_at)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
-	`, user.Email, user.PasswordHash, user.Role, user.CreatedAt).Scan(&user.ID)
+	`, user.Email, user.Username, user.PasswordHash, user.Role, user.CreatedAt).Scan(&user.ID)
 
 	if err != nil {
 		return nil, err
@@ -48,9 +49,9 @@ func (r *UserRepository) Create(email, password string) (*model.User, error) {
 func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(`
-		SELECT id, email, password_hash, role, created_at
+		SELECT id, email, username, password_hash, role, created_at
 		FROM users WHERE email = $1
-	`, email).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt)
+	`, email).Scan(&user.ID, &user.Email, &user.Username, &user.PasswordHash, &user.Role, &user.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -66,9 +67,9 @@ func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 func (r *UserRepository) FindByID(id int) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(`
-		SELECT id, email, password_hash, role, created_at
+		SELECT id, email, username, password_hash, role, created_at
 		FROM users WHERE id = $1
-	`, id).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Role, &user.CreatedAt)
+	`, id).Scan(&user.ID, &user.Email, &user.Username, &user.PasswordHash, &user.Role, &user.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil

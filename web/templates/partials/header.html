@@ -13,7 +13,7 @@
         </nav>
 
         <div class="header-actions">
-            {{ if .UserID }}
+            {{ if .UserInfo }}
             <a href="/dashboard" class="btn btn-secondary">用户中心</a>
             <form action="/auth/logout" method="POST" style="display:inline;">
                 <button type="submit" class="btn btn-ghost">退出</button>

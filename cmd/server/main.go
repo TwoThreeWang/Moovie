@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/gob"
 	"fmt"
 	"html/template"
 	"log"
@@ -14,16 +15,22 @@ import (
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/multitemplate"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/user/moovie/internal/config"
 	"github.com/user/moovie/internal/handler"
 	"github.com/user/moovie/internal/middleware"
+	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
 	"github.com/user/moovie/internal/utils"
 )
 
 func main() {
+	// 注册 Session 模型
+	gob.Register(model.SessionUser{})
+
 	// 加载环境变量
 	if err := godotenv.Load(); err != nil {
 		log.Println("未找到 .env 文件，使用系统环境变量")
@@ -53,6 +60,10 @@ func main() {
 
 	// 启用 gzip，默认压缩级别
 	r.Use(gzip.Gzip(gzip.DefaultCompression))
+
+	// 设置 Session 中间件
+	store := cookie.NewStore([]byte(cfg.AppSecret))
+	r.Use(sessions.Sessions("mysession", store))
 
 	// 加载模板（使用 multitemplate 解决继承问题）
 	r.HTMLRender = loadTemplates("./web/templates")
@@ -146,7 +157,7 @@ func registerRoutes(r *gin.Engine, h *handler.Handler) {
 
 	// ==================== 用户中心（需要登录）====================
 	dashboard := r.Group("/dashboard")
-	dashboard.Use(middleware.RequireAuth(h.Config.JWTSecret))
+	dashboard.Use(middleware.RequireAuth(h.Config.AppSecret))
 	{
 		dashboard.GET("", h.Dashboard)
 		dashboard.GET("/favorites", h.Favorites)
@@ -156,7 +167,7 @@ func registerRoutes(r *gin.Engine, h *handler.Handler) {
 
 	// ==================== htmx API ====================
 	api := r.Group("/api")
-	api.Use(middleware.OptionalAuth(h.Config.JWTSecret))
+	api.Use(middleware.OptionalAuth(h.Config.AppSecret))
 	{
 		api.POST("/favorites/:id", h.AddFavorite)
 		api.DELETE("/favorites/:id", h.RemoveFavorite)
@@ -173,7 +184,7 @@ func registerRoutes(r *gin.Engine, h *handler.Handler) {
 
 	// ==================== 管理后台 ====================
 	admin := r.Group("/admin")
-	admin.Use(middleware.RequireAuth(h.Config.JWTSecret))
+	admin.Use(middleware.RequireAuth(h.Config.AppSecret))
 	admin.Use(middleware.RequireAdmin())
 	{
 		admin.GET("", h.AdminDashboard)

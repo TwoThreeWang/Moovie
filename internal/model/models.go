@@ -8,9 +8,18 @@ import (
 type User struct {
 	ID           int       `json:"id" db:"id"`
 	Email        string    `json:"email" db:"email"`
+	Username     string    `json:"username" db:"username"`
 	PasswordHash string    `json:"-" db:"password_hash"`
 	Role         string    `json:"role" db:"role"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+}
+
+// SessionUser 专门用于 Session 存储的用户信息结构
+type SessionUser struct {
+	ID       int
+	Email    string
+	Username string
+	Role     string
 }
 
 // Movie 电影模型（豆瓣信息）

@@ -2,8 +2,10 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/user/moovie/internal/config"
@@ -40,6 +42,53 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	}
 }
 
+// RenderData 统一封装公共渲染数据
+func (h *Handler) RenderData(c *gin.Context, data gin.H) gin.H {
+	// 基础数据
+	res := gin.H{
+		"SiteName": h.Config.SiteName,
+		"SiteUrl":  h.Config.SiteUrl,
+		"Path":     c.Request.URL.Path,
+		"Referer":  c.Request.Referer(),
+	}
+
+	// 注入用户信息
+	session := sessions.Default(c)
+	if userinfo := session.Get("userinfo"); userinfo != nil {
+		if su, ok := userinfo.(model.SessionUser); ok {
+			res["UserInfo"] = su
+		}
+	}
+
+	// 菜单高亮逻辑
+	res["ActiveMenu"] = h.getActiveMenu(c.Request.URL.Path)
+
+	// 合并传入的数据
+	for k, v := range data {
+		res[k] = v
+	}
+
+	return res
+}
+
+// getActiveMenu 根据路径判断当前高亮菜单
+func (h *Handler) getActiveMenu(path string) string {
+	switch path {
+	case "/":
+		return "home"
+	case "/discover":
+		return "discover"
+	case "/rankings":
+		return "rankings"
+	case "/trends":
+		return "trends"
+	case "/dashboard", "/favorites", "/history", "/settings":
+		return "user"
+	default:
+		return ""
+	}
+}
+
 // ==================== 公开页面 ====================
 
 // Home 首页
@@ -47,11 +96,10 @@ func (h *Handler) Home(c *gin.Context) {
 	// 获取热搜关键词
 	trending, _ := h.Repos.SearchLog.GetTrending(24, 10)
 
-	c.HTML(http.StatusOK, "home.html", gin.H{
-		"Title":    "Moovie - 聚合电影搜索",
+	c.HTML(http.StatusOK, "home.html", h.RenderData(c, gin.H{
+		"Title":    h.Config.SiteName + " - 聚合电影搜索",
 		"Trending": trending,
-		"UserID":   middleware.GetUserID(c),
-	})
+	}))
 }
 
 // Search 搜索结果页
@@ -131,12 +179,11 @@ func (h *Handler) Search(c *gin.Context) {
 		},
 	}
 
-	c.HTML(http.StatusOK, "search.html", gin.H{
-		"Title":   keyword + " - 搜索结果 - Moovie",
+	c.HTML(http.StatusOK, "search.html", h.RenderData(c, gin.H{
+		"Title":   keyword + " - 搜索结果 - " + h.Config.SiteName,
 		"Keyword": keyword,
 		"Results": mockResults,
-		"UserID":  middleware.GetUserID(c),
-	})
+	}))
 }
 
 // Movie 电影详情页
@@ -145,9 +192,9 @@ func (h *Handler) Movie(c *gin.Context) {
 
 	movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
 	if err != nil || movie == nil {
-		c.HTML(http.StatusNotFound, "404.html", gin.H{
-			"Title": "电影未找到 - Moovie",
-		})
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title": "电影未找到 - " + h.Config.SiteName,
+		}))
 		return
 	}
 
@@ -158,12 +205,11 @@ func (h *Handler) Movie(c *gin.Context) {
 		isFavorited, _ = h.Repos.Favorite.IsFavorited(userID, movie.ID)
 	}
 
-	c.HTML(http.StatusOK, "movie.html", gin.H{
-		"Title":       movie.Title + " (" + movie.Year + ") - Moovie",
+	c.HTML(http.StatusOK, "movie.html", h.RenderData(c, gin.H{
+		"Title":       movie.Title + " (" + movie.Year + ") - " + h.Config.SiteName,
 		"Movie":       movie,
 		"IsFavorited": isFavorited,
-		"UserID":      userID,
-	})
+	}))
 }
 
 // Play 播放页
@@ -173,13 +219,12 @@ func (h *Handler) Play(c *gin.Context) {
 	episode := c.Query("ep")
 
 	// TODO: 获取播放链接
-	c.HTML(http.StatusOK, "play.html", gin.H{
-		"Title":    "正在播放 - Moovie",
+	c.HTML(http.StatusOK, "play.html", h.RenderData(c, gin.H{
+		"Title":    "正在播放 - " + h.Config.SiteName,
 		"DoubanID": doubanID,
 		"Source":   source,
 		"Episode":  episode,
-		"UserID":   middleware.GetUserID(c),
-	})
+	}))
 }
 
 // Player m3u8 专用播放器
@@ -193,68 +238,60 @@ func (h *Handler) Player(c *gin.Context) {
 
 // Discover 发现/分类页
 func (h *Handler) Discover(c *gin.Context) {
-	c.HTML(http.StatusOK, "discover.html", gin.H{
-		"Title":  "发现 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "discover.html", h.RenderData(c, gin.H{
+		"Title": "发现 - " + h.Config.SiteName,
+	}))
 }
 
 // Rankings 排行榜
 func (h *Handler) Rankings(c *gin.Context) {
-	c.HTML(http.StatusOK, "rankings.html", gin.H{
-		"Title":  "排行榜 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "rankings.html", h.RenderData(c, gin.H{
+		"Title": "排行榜 - " + h.Config.SiteName,
+	}))
 }
 
 // Trends 热搜趋势
 func (h *Handler) Trends(c *gin.Context) {
 	trending, _ := h.Repos.SearchLog.GetTrending(24, 50)
-	c.HTML(http.StatusOK, "trends.html", gin.H{
-		"Title":    "热门搜索 - Moovie",
+	c.HTML(http.StatusOK, "trends.html", h.RenderData(c, gin.H{
+		"Title":    "热门搜索 - " + h.Config.SiteName,
 		"Trending": trending,
-		"UserID":   middleware.GetUserID(c),
-	})
+	}))
 }
 
 // FeedbackPage 反馈页面
 func (h *Handler) FeedbackPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "feedback.html", gin.H{
-		"Title":  "反馈建议 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "feedback.html", h.RenderData(c, gin.H{
+		"Title": "反馈建议 - " + h.Config.SiteName,
+	}))
 }
 
 // About 关于页面
 func (h *Handler) About(c *gin.Context) {
-	c.HTML(http.StatusOK, "about.html", gin.H{
-		"Title":  "关于 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "about.html", h.RenderData(c, gin.H{
+		"Title": "关于 - " + h.Config.SiteName,
+	}))
 }
 
 // DMCA DMCA 声明
 func (h *Handler) DMCA(c *gin.Context) {
-	c.HTML(http.StatusOK, "dmca.html", gin.H{
-		"Title":  "DMCA 声明 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "dmca.html", h.RenderData(c, gin.H{
+		"Title": "DMCA 声明 - " + h.Config.SiteName,
+	}))
 }
 
 // Privacy 隐私政策
 func (h *Handler) Privacy(c *gin.Context) {
-	c.HTML(http.StatusOK, "privacy.html", gin.H{
-		"Title":  "隐私政策 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "privacy.html", h.RenderData(c, gin.H{
+		"Title": "隐私政策 - " + h.Config.SiteName,
+	}))
 }
 
 // Terms 服务协议
 func (h *Handler) Terms(c *gin.Context) {
-	c.HTML(http.StatusOK, "terms.html", gin.H{
-		"Title":  "服务协议 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "terms.html", h.RenderData(c, gin.H{
+		"Title": "服务协议 - " + h.Config.SiteName,
+	}))
 }
 
 // Sitemap 站点地图
@@ -276,11 +313,10 @@ func (h *Handler) LoginPage(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/")
 		return
 	}
-	c.HTML(http.StatusOK, "login.html", gin.H{
-		"Title":    "登录 - Moovie",
+	c.HTML(http.StatusOK, "login.html", h.RenderData(c, gin.H{
+		"Title":    "登录 - " + h.Config.SiteName,
 		"Redirect": c.Query("redirect"),
-		"UserID":   middleware.GetUserID(c),
-	})
+	}))
 }
 
 // Login 登录处理
@@ -322,8 +358,19 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	// 设置 Cookie
+	// 设置 Cookie (JWT)
 	c.SetCookie("token", token, int(h.Config.JWTExpiry.Seconds()), "/", "", false, true)
+
+	// 保存 UserInfo 到 Session
+	session := sessions.Default(c)
+	session.Set("userinfo", model.SessionUser{
+		ID:       user.ID,
+		Email:    user.Email,
+		Username: user.Username,
+		Role:     user.Role,
+	})
+	session.Save()
+
 	c.Redirect(http.StatusFound, redirect)
 }
 
@@ -334,10 +381,9 @@ func (h *Handler) RegisterPage(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/")
 		return
 	}
-	c.HTML(http.StatusOK, "register.html", gin.H{
-		"Title":  "注册 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "register.html", h.RenderData(c, gin.H{
+		"Title": "注册 - " + h.Config.SiteName,
+	}))
 }
 
 // Register 注册处理
@@ -374,7 +420,13 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	// 创建用户
-	user, err := h.Repos.User.Create(email, password)
+	// 默认截取邮箱 @ 符号前的内容作为用户名
+	username := email
+	if parts := strings.Split(email, "@"); len(parts) > 0 {
+		username = parts[0]
+	}
+
+	user, err := h.Repos.User.Create(email, username, password)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "register.html", gin.H{
 			"Title": "注册 - Moovie",
@@ -386,12 +438,29 @@ func (h *Handler) Register(c *gin.Context) {
 	// 生成 JWT 并登录
 	token, _ := h.generateToken(user)
 	c.SetCookie("token", token, int(h.Config.JWTExpiry.Seconds()), "/", "", false, true)
+
+	// 保存 UserInfo 到 Session
+	session := sessions.Default(c)
+	session.Set("userinfo", model.SessionUser{
+		ID:       user.ID,
+		Email:    user.Email,
+		Username: user.Username,
+		Role:     user.Role,
+	})
+	session.Save()
+
 	c.Redirect(http.StatusFound, "/")
 }
 
 // Logout 登出
 func (h *Handler) Logout(c *gin.Context) {
 	c.SetCookie("token", "", -1, "/", "", false, true)
+
+	// 清理 Session
+	session := sessions.Default(c)
+	session.Clear()
+	session.Save()
+
 	c.Redirect(http.StatusFound, "/")
 }
 
@@ -408,19 +477,16 @@ func (h *Handler) generateToken(user *model.User) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.Config.JWTSecret))
+	return token.SignedString([]byte(h.Config.AppSecret))
 }
 
 // ==================== 用户中心 ====================
 
 // Dashboard 用户中心
 func (h *Handler) Dashboard(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-
-	c.HTML(http.StatusOK, "dashboard.html", gin.H{
-		"Title":  "用户中心 - Moovie",
-		"UserID": userID,
-	})
+	c.HTML(http.StatusOK, "dashboard.html", h.RenderData(c, gin.H{
+		"Title": "用户中心 - " + h.Config.SiteName,
+	}))
 }
 
 // Favorites 收藏夹
@@ -428,11 +494,10 @@ func (h *Handler) Favorites(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	favorites, _ := h.Repos.Favorite.ListByUser(userID, 50, 0)
 
-	c.HTML(http.StatusOK, "favorites.html", gin.H{
-		"Title":     "我的收藏 - Moovie",
+	c.HTML(http.StatusOK, "favorites.html", h.RenderData(c, gin.H{
+		"Title":     "我的收藏 - " + h.Config.SiteName,
 		"Favorites": favorites,
-		"UserID":    userID,
-	})
+	}))
 }
 
 // History 观影历史
@@ -440,19 +505,15 @@ func (h *Handler) History(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	histories, _ := h.Repos.History.ListByUser(userID, 50, 0)
 
-	c.HTML(http.StatusOK, "history.html", gin.H{
-		"Title":   "观影历史 - Moovie",
+	c.HTML(http.StatusOK, "history.html", h.RenderData(c, gin.H{
+		"Title":   "观影历史 - " + h.Config.SiteName,
 		"History": histories,
-		"UserID":  userID,
-	})
+	}))
 }
 
 // Settings 账号设置
 func (h *Handler) Settings(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-
-	c.HTML(http.StatusOK, "settings.html", gin.H{
-		"Title":  "账号设置 - Moovie",
-		"UserID": userID,
-	})
+	c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+		"Title": "账号设置 - " + h.Config.SiteName,
+	}))
 }
