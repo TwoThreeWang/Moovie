@@ -2414,3 +2414,396 @@ img {
     }
 }
 
+/* ==================== 视频播放页面 ==================== */
+.watch-page {
+    display: flex;
+    flex-direction: column;
+    margin: -32px -40px; /* 抵消 content-wrapper 的 padding */
+}
+
+/* 面包屑导航 */
+.watch-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 40px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+
+.watch-breadcrumb a {
+    color: var(--primary);
+    transition: opacity var(--transition);
+}
+
+.watch-breadcrumb a:hover {
+    opacity: 0.8;
+}
+
+.breadcrumb-sep {
+    color: var(--text-muted);
+}
+
+.breadcrumb-current {
+    color: var(--text-muted);
+}
+
+/* 视频区域 - 第一屏 */
+.video-section {
+    width: 100%;
+    background: #000;
+}
+
+.video-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #0a0a0a;
+}
+
+.video-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9rem;
+}
+
+.loading-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Artplayer 容器适配 */
+.video-container .artplayer-app {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* 视频信息区域 */
+.video-info-section {
+    padding: 24px 40px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* 电影信息卡片：左海报 + 右信息 */
+.video-detail-card {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.detail-poster {
+    flex-shrink: 0;
+    width: 120px;
+}
+
+.detail-poster img {
+    width: 100%;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.detail-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.detail-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+    line-height: 1.4;
+}
+
+.current-ep {
+    color: var(--primary);
+    margin-left: 8px;
+}
+
+/* 标签行 */
+.detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.tag-item {
+    display: inline-block;
+    padding: 3px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.tag-item.type {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+/* 信息行 */
+.detail-meta {
+    font-size: 0.85rem;
+    line-height: 1.8;
+}
+
+.meta-row {
+    display: flex;
+}
+
+.meta-label {
+    color: var(--primary);
+    flex-shrink: 0;
+    margin-right: 4px;
+}
+
+.meta-value {
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 剧情简介 */
+.video-summary {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+}
+
+.video-summary p {
+    font-size: 0.85rem;
+    line-height: 1.8;
+    color: var(--text-secondary);
+}
+
+/* 选集播放区域 */
+.video-episodes-section {
+    margin-bottom: 24px;
+}
+
+.episodes-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.episodes-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.source-selector {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+}
+
+.source-btn {
+    padding: 4px 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    transition: all var(--transition);
+}
+
+.source-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.source-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+/* 选集列表 */
+.episodes-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.ep-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 60px;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--text);
+    transition: all var(--transition);
+}
+
+.ep-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.ep-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+/* 操作栏 */
+.video-actions-bar {
+    display: flex;
+    gap: 16px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+}
+
+.action-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color var(--transition);
+}
+
+.action-link:hover {
+    color: var(--primary);
+}
+
+.action-link .action-icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* ==================== 视频播放页面响应式 ==================== */
+@media (max-width: 768px) {
+    .watch-page {
+        margin: -20px -16px;
+    }
+
+    .watch-breadcrumb {
+        padding: 10px 16px;
+        font-size: 0.8rem;
+    }
+
+    .video-info-section {
+        padding: 20px 16px;
+    }
+
+    .video-detail-card {
+        gap: 16px;
+    }
+
+    .detail-poster {
+        width: 90px;
+    }
+
+    .detail-title {
+        font-size: 1.1rem;
+    }
+
+    .detail-tags {
+        gap: 6px;
+    }
+
+    .tag-item {
+        padding: 2px 8px;
+        font-size: 0.7rem;
+    }
+
+    .detail-meta {
+        font-size: 0.8rem;
+    }
+
+    .episodes-header {
+        flex-wrap: wrap;
+        font-size: 0.9rem;
+    }
+
+    .source-selector {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 8px;
+    }
+
+    .ep-btn {
+        min-width: 50px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .video-detail-card {
+        gap: 12px;
+    }
+
+    .detail-poster {
+        width: 75px;
+    }
+
+    .detail-title {
+        font-size: 1rem;
+    }
+
+    .current-ep {
+        display: block;
+        margin-left: 0;
+        margin-top: 4px;
+        font-size: 0.9rem;
+    }
+
+    .meta-row {
+        flex-direction: column;
+    }
+
+    .meta-label {
+        margin-bottom: 2px;
+    }
+
+    .meta-value {
+        white-space: normal;
+    }
+
+    .video-actions-bar {
+        flex-wrap: wrap;
+    }
+
+    .action-link {
+        font-size: 0.85rem;
+    }
+}

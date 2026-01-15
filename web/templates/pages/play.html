@@ -1,28 +1,110 @@
 
 {{ define "content" }}
-<div class="player-page">
-    <div class="player-container" id="player-container">
-        <!-- 播放器由 JavaScript 初始化 -->
-        <div class="player-loading">加载中...</div>
-    </div>
+<div class="watch-page">
+    <!-- 面包屑导航 -->
+    <nav class="watch-breadcrumb">
+        <a href="/">首页</a>
+        <span class="breadcrumb-sep">/</span>
+        <a href="/movie/{{ .DoubanID }}">{{ .Title }}</a>
+        {{ if .Episode }}
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current">{{ .Episode }} 在线观看</span>
+        {{ end }}
+    </nav>
 
-    <div class="player-controls">
-        {{ if .Sources }}
-        <div class="source-tabs">
-            <h4>线路选择</h4>
-            {{ range $i, $source := .Sources }}
-            <button class="source-tab {{ if eq $i 0 }}active{{ end }}" data-source="{{ $source.Name }}">
-                {{ $source.Name }}
-            </button>
-            {{ end }}
+    <!-- 视频区域 - 第一屏，全宽播放器 -->
+    <section class="video-section">
+        <div class="video-container" id="player-container">
+            <div class="video-loading">
+                <div class="loading-spinner"></div>
+                <span>加载中...</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- 视频信息区域 -->
+    <section class="video-info-section">
+        <!-- 电影信息卡片：左海报 + 右信息 -->
+        <div class="video-detail-card">
+            <div class="detail-poster">
+                <img src="{{ .Poster }}" alt="{{ .Title }}" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+            </div>
+            <div class="detail-info">
+                <h1 class="detail-title">
+                    {{ .Title }}
+                    {{ if .Episode }}<span class="current-ep">{{ .Episode }}</span>{{ end }}
+                </h1>
+
+                <!-- 标签行 -->
+                {{ if or .Genres .Year .Country }}
+                <div class="detail-tags">
+                    {{ if .Type }}<span class="tag-item type">{{ .Type }}</span>{{ end }}
+                    {{ range .Genres }}<span class="tag-item">{{ . }}</span>{{ end }}
+                    {{ if .Country }}<span class="tag-item">{{ .Country }}</span>{{ end }}
+                    {{ if .Year }}<span class="tag-item">{{ .Year }}</span>{{ end }}
+                </div>
+                {{ end }}
+
+                <!-- 信息行 -->
+                <div class="detail-meta">
+                    {{ if .Directors }}
+                    <div class="meta-row">
+                        <span class="meta-label">导演：</span>
+                        <span class="meta-value">{{ range $i, $d := .Directors }}{{ if $i }} / {{ end }}{{ $d }}{{ end }}</span>
+                    </div>
+                    {{ end }}
+                    {{ if .Actors }}
+                    <div class="meta-row">
+                        <span class="meta-label">主演：</span>
+                        <span class="meta-value">{{ range $i, $a := .Actors }}{{ if $i }} / {{ end }}{{ $a }}{{ end }}</span>
+                    </div>
+                    {{ end }}
+                    {{ if .EpisodeCount }}
+                    <div class="meta-row">
+                        <span class="meta-label">集数：</span>
+                        <span class="meta-value">全{{ .EpisodeCount }}集</span>
+                    </div>
+                    {{ end }}
+                    {{ if .UpdateTime }}
+                    <div class="meta-row">
+                        <span class="meta-label">更新：</span>
+                        <span class="meta-value">{{ .UpdateTime }}</span>
+                    </div>
+                    {{ end }}
+                </div>
+            </div>
         </div>
 
-        <div class="episode-list">
-            <h4>选集</h4>
-            <div class="episodes">
+        <!-- 剧情简介 -->
+        {{ if .Summary }}
+        <div class="video-summary">
+            <p>{{ .Summary }}</p>
+        </div>
+        {{ end }}
+
+        <!-- 选集播放 -->
+        {{ if .Episodes }}
+        <div class="video-episodes-section">
+            <div class="episodes-header">
+                <svg class="episodes-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>选集播放</span>
+                {{ if .Sources }}
+                <div class="source-selector">
+                    {{ range $i, $source := .Sources }}
+                    <a href="/play/{{ $.DoubanID }}?source={{ $source.Name }}{{ if $.Episode }}&ep={{ $.Episode }}{{ end }}"
+                       class="source-btn {{ if eq $source.Name $.Source }}active{{ end }}">
+                        {{ $source.Name }}
+                    </a>
+                    {{ end }}
+                </div>
+                {{ end }}
+            </div>
+            <div class="episodes-list">
                 {{ range .Episodes }}
                 <a href="/play/{{ $.DoubanID }}?source={{ $.Source }}&ep={{ .Title }}"
-                   class="episode {{ if eq .Title $.Episode }}active{{ end }}">
+                   class="ep-btn {{ if eq .Title $.Episode }}active{{ end }}">
                     {{ .Title }}
                 </a>
                 {{ end }}
@@ -30,15 +112,29 @@
         </div>
         {{ end }}
 
-        <div class="player-actions">
-            <button class="btn btn-secondary"
+        <!-- 操作区域 -->
+        <div class="video-actions-bar">
+            <a href="/movie/{{ .DoubanID }}" class="action-link">
+                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <span>查看详情</span>
+            </a>
+            <button class="action-link"
                     hx-post="/api/feedback"
                     hx-vals='{"type":"error","content":"播放失败","movie_url":"{{.PlayURL}}"}'
                     hx-swap="outerHTML">
-                🚫 播放失败反馈
+                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <span>播放失败反馈</span>
             </button>
         </div>
-    </div>
+    </section>
 </div>
 
 <script>
