@@ -25,8 +25,17 @@
             <img src="{{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
         </div>
         <div class="card-content">
-            <h3 class="card-title">{{ .Title }} ({{ .Year }})</h3>
-            <p class="card-meta">{{ .Genres }} / {{ .Region }}</p>
+            <h3 class="card-title">{{ .Title }}</h3>
+            <div class="card-meta-row">
+                {{ if .Year }}<span class="card-year">{{ .Year }}</span>{{ end }}
+                {{ if .Region }}<span class="card-region">{{ .Region }}</span>{{ end }}
+            </div>
+            {{ if .Genres }}
+            <p class="card-genres">{{ .Genres }}</p>
+            {{ end }}
+            {{ if .Director }}
+            <p class="card-director">导演: {{ .Director }}</p>
+            {{ end }}
             <div class="card-sources">
                 {{ range .Sources }}
                 <span class="source-item {{ .Status }}">

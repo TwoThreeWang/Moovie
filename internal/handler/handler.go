@@ -347,10 +347,41 @@ func (h *Handler) Rankings(c *gin.Context) {
 
 // Trends 热搜趋势
 func (h *Handler) Trends(c *gin.Context) {
-	trending, _ := h.Repos.SearchLog.GetTrending(24, 50)
+	// 假数据：热门搜索关键词
+	type TrendItem struct {
+		Keyword  string
+		Count    string
+		Tag      string
+		TagClass string
+	}
+
+	trending := []TrendItem{
+		{Keyword: "三体", Count: "2.3万", Tag: "热", TagClass: "hot"},
+		{Keyword: "繁花", Count: "1.8万", Tag: "新", TagClass: "new"},
+		{Keyword: "漫长的季节", Count: "1.5万", Tag: "荐", TagClass: "recommend"},
+		{Keyword: "狂飙", Count: "1.2万", Tag: "剧", TagClass: "tv"},
+		{Keyword: "流浪地球2", Count: "9876", Tag: "影", TagClass: "movie"},
+		{Keyword: "封神第一部", Count: "8234", Tag: "", TagClass: ""},
+		{Keyword: "奥本海默", Count: "7652", Tag: "影", TagClass: "movie"},
+		{Keyword: "年会不能停", Count: "6543", Tag: "新", TagClass: "new"},
+		{Keyword: "芭比", Count: "5432", Tag: "", TagClass: ""},
+		{Keyword: "坠落的审判", Count: "4321", Tag: "", TagClass: ""},
+		{Keyword: "涉过愤怒的海", Count: "3890", Tag: "", TagClass: ""},
+		{Keyword: "周处除三害", Count: "3654", Tag: "热", TagClass: "hot"},
+		{Keyword: "热辣滚烫", Count: "3210", Tag: "", TagClass: ""},
+		{Keyword: "第二十条", Count: "2987", Tag: "", TagClass: ""},
+		{Keyword: "飞驰人生2", Count: "2765", Tag: "", TagClass: ""},
+		{Keyword: "你想活出怎样的人生", Count: "2543", Tag: "", TagClass: ""},
+		{Keyword: "沙丘2", Count: "2321", Tag: "新", TagClass: "new"},
+		{Keyword: "哥斯拉大战金刚2", Count: "2109", Tag: "", TagClass: ""},
+		{Keyword: "功夫熊猫4", Count: "1987", Tag: "", TagClass: ""},
+		{Keyword: "猩球崛起：新世界", Count: "1765", Tag: "", TagClass: ""},
+	}
+
 	c.HTML(http.StatusOK, "trends.html", h.RenderData(c, gin.H{
-		"Title":    "热门搜索 - " + h.Config.SiteName,
-		"Trending": trending,
+		"Title":      "热门搜索 - " + h.Config.SiteName,
+		"Trending":   trending,
+		"UpdateTime": "刚刚",
 	}))
 }
 

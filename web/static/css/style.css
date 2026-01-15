@@ -210,6 +210,7 @@ img {
     padding: 32px 40px;
     margin: 0 auto;
     width: 100%;
+    max-width: 1200px;
 }
 
 /* ==================== Footer ==================== */
@@ -775,65 +776,128 @@ img {
     margin-top: 16px;
 }
 
-/* ==================== 搜索结果网格 (两列) ==================== */
+/* ==================== 搜索结果网格 ==================== */
 .search-result-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     gap: 16px;
     margin-top: 12px;
 }
 
-@media (min-width: 992px) {
-    .search-result-grid {
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-    }
-}
-
 .search-result-card {
     display: flex;
-    gap: 12px;
-    padding: 12px 0;
+    gap: 16px;
+    padding: 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
     transition: all var(--transition);
-    align-items: center;
-    border-bottom: 1px solid var(--border);
-}
-
-.search-result-card:last-child {
-    border-bottom: none;
+    align-items: flex-start;
 }
 
 .search-result-card:hover {
-    opacity: 0.8;
+    border-color: var(--primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    transform: translateY(-3px);
 }
 
+/* 搜索结果海报 */
 .card-poster {
-    width: 60px;
-    height: 84px;
+    position: relative;
+    width: 90px;
+    height: 127px;
     flex-shrink: 0;
-    border-radius: 4px;
+    border-radius: 8px;
     overflow: hidden;
-    background: var(--border);
+    background: var(--bg-secondary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .card-poster img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transition: transform var(--transition);
 }
 
+.search-result-card:hover .card-poster img {
+    transform: scale(1.05);
+}
+
+/* 评分徽章 */
+.card-rating-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.7) 100%);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+}
+
+.card-rating-badge .rating-star {
+    color: #ffc107;
+    font-size: 0.7rem;
+}
+
+.card-rating-badge .rating-value {
+    color: #ffc107;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+/* 内容区域 */
 .card-content {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
 }
 
 .card-title {
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--text);
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 2px;
+}
+
+/* 元信息行 */
+.card-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.8rem;
+}
+
+.card-year {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.card-region {
+    color: var(--text-muted);
+}
+
+.card-genres {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-director {
+    font-size: 0.75rem;
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -848,19 +912,20 @@ img {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-top: 2px;
+    margin-top: 4px;
 }
 
 .source-item {
-    font-size: 0.75rem;
-    padding: 2px 6px;
-    background: var(--bg);
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 12px;
     color: var(--text-secondary);
     display: flex;
     align-items: center;
     gap: 4px;
+    transition: all var(--transition);
 }
 
 .source-item.available {
@@ -878,6 +943,27 @@ img {
 .source-item .speed {
     font-weight: 600;
     opacity: 0.8;
+}
+
+/* 响应式 - 搜索结果 */
+@media (max-width: 600px) {
+    .search-result-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .search-result-card {
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .card-poster {
+        width: 70px;
+        height: 99px;
+    }
+
+    .card-title {
+        font-size: 0.95rem;
+    }
 }
 
 /* ==================== 内容页面 ==================== */
