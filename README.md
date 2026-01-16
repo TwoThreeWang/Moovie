@@ -57,16 +57,20 @@ moovie/
 ├── cmd/server/         # 应用程序入口点
 ├── internal/           # 内部包（不对外暴露）
 │   ├── config/         # 配置管理
-│   ├── handler/        # HTTP 请求处理器
+│   ├── handler/        # HTTP 请求处理器（API、Admin、通用）
 │   ├── middleware/     # 中间件（JWT认证、CORS、日志）
 │   ├── model/          # 数据模型定义
 │   ├── repository/     # 数据访问层（数据库操作）
+│   ├── router/         # 路由定义
+│   ├── service/        # 业务逻辑层（爬虫、搜索服务）
 │   └── utils/          # 工具包（缓存、HTTP客户端、响应格式）
 ├── web/                # Web前端资源
 │   ├── static/         # 静态文件（CSS、JS、图片）
-│   └── templates/      # Go HTML模板
+│   └── templates/      # Go HTML模板（Layouts、Pages、Partials）
 ├── migrations/         # 数据库迁移文件
-└── docker-compose.yml  # Docker Compose配置
+├── Dockerfile          # Docker 镜像构建配置
+├── docker-compose.yml  # Docker Compose 容器编排配置
+└── Makefile            # 项目自动化命令
 ```
 
 ## 技术栈

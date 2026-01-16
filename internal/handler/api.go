@@ -129,78 +129,20 @@ func (h *Handler) SyncHistory(c *gin.Context) {
 	})
 }
 
-// ==================== 豆瓣电影搜索API ====================
-
-// DoubanMovieSuggest 豆瓣电影搜索建议
-type DoubanMovieSuggest struct {
-	Episode  string `json:"episode"`
-	Img      string `json:"img"`
-	Title    string `json:"title"`
-	URL      string `json:"url"`
-	Type     string `json:"type"`
-	Year     string `json:"year"`
-	SubTitle string `json:"sub_title"`
-	ID       string `json:"id"`
-}
-
-// MovieSuggestResponse 返回给前端的电影建议
-type MovieSuggestResponse struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	SubTitle string `json:"sub_title"`
-	Type     string `json:"type"`
-	Year     string `json:"year"`
-	Episode  string `json:"episode"`
-	Img      string `json:"img"`
-}
-
-// MovieSuggest 电影搜索建议API
+// MovieSuggest 电影搜索建议（JSON API）
 func (h *Handler) MovieSuggest(c *gin.Context) {
-	keyword := strings.TrimSpace(c.Query("q"))
+	keyword := strings.TrimSpace(c.Query("kw"))
 	if keyword == "" {
 		utils.BadRequest(c, "搜索关键词不能为空")
 		return
 	}
 
-	// 检查缓存
-	cacheKey := fmt.Sprintf("douban_suggest:%s", keyword)
-	if cached, found := utils.CacheGet(cacheKey); found {
-		utils.Success(c, cached)
+	results, err := h.DoubanCrawler.SearchSuggest(keyword)
+	if err != nil {
+		utils.InternalServerError(c, "搜索建议服务暂时不可用")
+		log.Printf("豆瓣搜索建议失败: %v", err)
 		return
 	}
-
-	// 调用豆瓣API
-	url := fmt.Sprintf("https://movie.douban.com/j/subject_suggest?q=%s", keyword)
-
-	// 使用自定义HTTP客户端
-	client := utils.NewHTTPClient()
-	var doubanResults []DoubanMovieSuggest
-
-	if err := client.GetJSON(url, &doubanResults); err != nil {
-		utils.InternalServerError(c, "搜索服务暂时不可用")
-		log.Printf("豆瓣API调用失败: %v", err)
-		return
-	}
-
-	// 转换数据格式
-	var results []MovieSuggestResponse
-	for _, item := range doubanResults {
-		// 使用本地图片代理，绕过防盗链
-		proxyImg := fmt.Sprintf("/api/proxy/image?url=%s", item.Img)
-
-		results = append(results, MovieSuggestResponse{
-			ID:       item.ID,
-			Title:    item.Title,
-			SubTitle: item.SubTitle,
-			Type:     item.Type,
-			Year:     item.Year,
-			Episode:  item.Episode,
-			Img:      proxyImg,
-		})
-	}
-
-	// 缓存结果，缓存时间5分钟
-	utils.CacheSet(cacheKey, results, 5*time.Minute)
 
 	utils.Success(c, results)
 }
@@ -291,15 +233,15 @@ func (h *Handler) CheckMovie(c *gin.Context) {
 	}
 
 	// 电影不存在，触发异步爬取
-	if h.Crawler != nil {
-		h.Crawler.CrawlAsync(doubanID)
+	if h.DoubanCrawler != nil {
+		h.DoubanCrawler.CrawlAsync(doubanID)
 		log.Printf("[API] 触发异步爬取豆瓣电影: %s", doubanID)
 	}
 
 	// 跳转到搜索页
 	redirectURL := "/search"
 	if title != "" {
-		redirectURL = fmt.Sprintf("/search?q=%s", title)
+		redirectURL = fmt.Sprintf("/search?kw=%s", title)
 	}
 
 	utils.Success(c, CheckMovieResponse{
@@ -312,16 +254,14 @@ func (h *Handler) CheckMovie(c *gin.Context) {
 
 // VodSearchResponse 资源网搜索响应
 type VodSearchResponse struct {
-	Items     []model.VodItem `json:"items"`
-	FromCache bool            `json:"from_cache"`
-	Expired   bool            `json:"expired"`
-	Total     int             `json:"total"`
+	Items []model.VodItem `json:"items"`
+	Total int             `json:"total"`
 }
 
 // VodSearch 资源网视频搜索
-// GET /api/vod/search?keyword=xxx
+// GET /api/vod/search?kw=xxx
 func (h *Handler) VodSearch(c *gin.Context) {
-	keyword := strings.TrimSpace(c.Query("keyword"))
+	keyword := strings.TrimSpace(c.Query("kw"))
 	if keyword == "" {
 		utils.BadRequest(c, "搜索关键词不能为空")
 		return
@@ -341,10 +281,8 @@ func (h *Handler) VodSearch(c *gin.Context) {
 	}()
 
 	utils.Success(c, VodSearchResponse{
-		Items:     result.Items,
-		FromCache: result.FromCache,
-		Expired:   result.Expired,
-		Total:     len(result.Items),
+		Items: result.Items,
+		Total: len(result.Items),
 	})
 }
 
@@ -373,4 +311,37 @@ func (h *Handler) VodDetail(c *gin.Context) {
 	}
 
 	utils.Success(c, detail)
+}
+
+// SearchHTMX 资源网搜索（htmx 片段）
+// GET /api/htmx/search?kw=xxx
+func (h *Handler) SearchHTMX(c *gin.Context) {
+	keyword := strings.TrimSpace(c.Query("kw"))
+	if keyword == "" {
+		c.String(http.StatusBadRequest, "搜索关键词不能为空")
+		return
+	}
+
+	// 使用 SearchService 搜索
+	result, err := h.SearchService.Search(c.Request.Context(), keyword)
+	if err != nil {
+		log.Printf("[SearchHTMX] 搜索失败: %v", err)
+		c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
+			"Results": nil,
+			"Error":   "搜索服务暂时不可用",
+		})
+		return
+	}
+
+	// 仅当有结果时记录搜索日志
+	if len(result.Items) > 0 {
+		go func() {
+			_ = h.Repos.SearchLog.Log(keyword, middleware.GetUserIDPtr(c), utils.HashIP(c.ClientIP()))
+		}()
+	}
+
+	// 返回结果片段
+	c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
+		"Results": result.Items,
+	})
 }

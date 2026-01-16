@@ -20,59 +20,62 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	})
 
 	// ==================== 公开页面 ====================
-	r.GET("/", h.Home)
-	r.GET("/search", h.Search)
-	r.GET("/movie/:id", h.Movie)
-	r.GET("/play/:id", h.Play)
-	r.GET("/player", h.Player)
-	r.GET("/discover", h.Discover)
-	r.GET("/rankings", h.Rankings)
-	r.GET("/trends", h.Trends)
-	r.GET("/feedback", h.FeedbackPage)
-	r.GET("/about", h.About)
-	r.GET("/dmca", h.DMCA)
-	r.GET("/privacy", h.Privacy)
-	r.GET("/terms", h.Terms)
-	r.GET("/sitemap.xml", h.Sitemap)
+	r.GET("/", h.Home)                 // 首页
+	r.GET("/search", h.Search)         // 搜索页面
+	r.GET("/movie/:id", h.Movie)       // 电影详情
+	r.GET("/play/:id", h.Play)         // 播放页面
+	r.GET("/player", h.Player)         // 视频播放页
+	r.GET("/discover", h.Discover)     // 发现页
+	r.GET("/rankings", h.Rankings)     // 排行榜
+	r.GET("/trends", h.Trends)         // 热门
+	r.GET("/feedback", h.FeedbackPage) // 反馈页
+	r.GET("/about", h.About)           // 关于页
+	r.GET("/dmca", h.DMCA)             // DMCA页
+	r.GET("/privacy", h.Privacy)       // 隐私政策
+	r.GET("/terms", h.Terms)           // 使用条款
+	r.GET("/sitemap.xml", h.Sitemap)   // 网站地图
 
 	// ==================== 认证页面 ====================
 	auth := r.Group("/auth")
 	{
-		auth.GET("/login", h.LoginPage)
-		auth.POST("/login", h.Login)
-		auth.GET("/register", h.RegisterPage)
-		auth.POST("/register", h.Register)
-		auth.POST("/logout", h.Logout)
+		auth.GET("/login", h.LoginPage)       // 登录页
+		auth.POST("/login", h.Login)          // 登录
+		auth.GET("/register", h.RegisterPage) // 注册页
+		auth.POST("/register", h.Register)    // 注册
+		auth.POST("/logout", h.Logout)        // 退出登陆
 	}
 
 	// ==================== 用户中心（需要登录）====================
 	dashboard := r.Group("/dashboard")
 	dashboard.Use(middleware.RequireAuth(h.Config.AppSecret))
 	{
-		dashboard.GET("", h.Dashboard)
-		dashboard.GET("/favorites", h.Favorites)
-		dashboard.GET("/history", h.History)
-		dashboard.GET("/settings", h.Settings)
-		dashboard.POST("/settings/email", h.UpdateEmail)
-		dashboard.POST("/settings/username", h.UpdateUsername)
-		dashboard.POST("/settings/password", h.UpdatePassword)
+		dashboard.GET("", h.Dashboard)                         // 用户中心首页
+		dashboard.GET("/favorites", h.Favorites)               // 收藏
+		dashboard.GET("/history", h.History)                   // 历史记录
+		dashboard.GET("/settings", h.Settings)                 // 设置
+		dashboard.POST("/settings/email", h.UpdateEmail)       // 更新邮箱
+		dashboard.POST("/settings/username", h.UpdateUsername) // 更新用户名
+		dashboard.POST("/settings/password", h.UpdatePassword) // 更新密码
 	}
 
 	// ==================== htmx API ====================
 	api := r.Group("/api")
 	api.Use(middleware.OptionalAuth(h.Config.AppSecret))
 	{
-		api.POST("/favorites/:id", h.AddFavorite)
-		api.DELETE("/favorites/:id", h.RemoveFavorite)
-		api.POST("/feedback", h.SubmitFeedback)
-		api.POST("/history/sync", h.SyncHistory)
-		api.GET("/movies/suggest", h.MovieSuggest)
-		api.GET("/movies/check/:doubanId", h.CheckMovie)
-		api.GET("/proxy/image", h.ProxyImage)
+		api.POST("/favorites/:id", h.AddFavorite)        // 添加收藏
+		api.DELETE("/favorites/:id", h.RemoveFavorite)   // 移除收藏
+		api.POST("/feedback", h.SubmitFeedback)          // 提交反馈
+		api.POST("/history/sync", h.SyncHistory)         // 同步历史记录
+		api.GET("/movies/suggest", h.MovieSuggest)       // 电影建议
+		api.GET("/movies/check/:doubanId", h.CheckMovie) // 检查电影是否存在
+		api.GET("/proxy/image", h.ProxyImage)            // 图片代理
 
 		// 资源网视频搜索 API
-		api.GET("/vod/search", h.VodSearch)
-		api.GET("/vod/detail", h.VodDetail)
+		api.GET("/vod/search", h.VodSearch) // 视频搜索
+		api.GET("/vod/detail", h.VodDetail) // 视频详情
+
+		// htmx 专属 API
+		api.GET("/htmx/search", h.SearchHTMX) // 搜索结果片段
 	}
 
 	// ==================== 管理后台 ====================
@@ -80,19 +83,19 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	admin.Use(middleware.RequireAuth(h.Config.AppSecret))
 	admin.Use(middleware.RequireAdmin())
 	{
-		admin.GET("", h.AdminDashboard)
-		admin.GET("/users", h.AdminUsers)
-		admin.GET("/crawlers", h.AdminCrawlers)
+		admin.GET("", h.AdminDashboard)         // 管理后台首页
+		admin.GET("/users", h.AdminUsers)       // 用户管理
+		admin.GET("/crawlers", h.AdminCrawlers) // 采集器管理
 
 		// 资源网管理
-		admin.GET("/sites", h.AdminSites)
-		admin.POST("/sites", h.AdminSiteCreate)
-		admin.PUT("/sites/:id", h.AdminSiteUpdate)
-		admin.DELETE("/sites/:id", h.AdminSiteDelete)
+		admin.GET("/sites", h.AdminSites)             // 资源网管理
+		admin.POST("/sites", h.AdminSiteCreate)       // 创建资源网
+		admin.PUT("/sites/:id", h.AdminSiteUpdate)    // 更新资源网
+		admin.DELETE("/sites/:id", h.AdminSiteDelete) // 删除资源网
 
-		// 搜索缓存管理
-		admin.GET("/cache", h.AdminCache)
-		admin.POST("/cache/clean", h.AdminCacheClean)
+		// 搜索数据管理
+		admin.GET("/data", h.AdminData)             // 搜索数据管理
+		admin.POST("/data/clean", h.AdminDataClean) // 清理非活跃数据
 	}
 }
 
@@ -172,6 +175,12 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 	for _, page := range pages {
 		viewPath := templatesDir + "/pages/" + page + ".html"
 		r.AddFromFilesFuncs(page+".html", funcMap, assemble(viewPath)...)
+	}
+
+	// 注册局部模板（用于 htmx）
+	for _, partial := range partials {
+		name := "partials/" + filepath.Base(partial)
+		r.AddFromFilesFuncs(name, funcMap, partial)
 	}
 
 	return r

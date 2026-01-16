@@ -12,17 +12,41 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
+	"github.com/user/moovie/internal/utils"
 )
 
+// DoubanMovieSuggest 豆瓣电影搜索建议
+type DoubanMovieSuggest struct {
+	Episode  string `json:"episode"`
+	Img      string `json:"img"`
+	Title    string `json:"title"`
+	URL      string `json:"url"`
+	Type     string `json:"type"`
+	Year     string `json:"year"`
+	SubTitle string `json:"sub_title"`
+	ID       string `json:"id"`
+}
+
+// MovieSuggestResponse 返回给前端的电影建议
+type MovieSuggestResponse struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	SubTitle string `json:"sub_title"`
+	Type     string `json:"type"`
+	Year     string `json:"year"`
+	Episode  string `json:"episode"`
+	Img      string `json:"img"`
+}
+
 // Crawler 豆瓣爬虫服务
-type Crawler struct {
+type DoubanCrawler struct {
 	movieRepo *repository.MovieRepository
 	client    *http.Client
 }
 
-// NewCrawler 创建爬虫服务
-func NewCrawler(movieRepo *repository.MovieRepository) *Crawler {
-	return &Crawler{
+// NewDoubanCrawler 创建爬虫服务
+func NewDoubanCrawler(movieRepo *repository.MovieRepository) *DoubanCrawler {
+	return &DoubanCrawler{
 		movieRepo: movieRepo,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
@@ -31,7 +55,7 @@ func NewCrawler(movieRepo *repository.MovieRepository) *Crawler {
 }
 
 // CrawlDoubanMovie 爬取豆瓣电影详情页
-func (c *Crawler) CrawlDoubanMovie(doubanID string) error {
+func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
 	url := fmt.Sprintf("https://movie.douban.com/subject/%s/", doubanID)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -74,7 +98,7 @@ func (c *Crawler) CrawlDoubanMovie(doubanID string) error {
 }
 
 // parseMoviePage 解析电影详情页
-func (c *Crawler) parseMoviePage(doc *goquery.Document, doubanID string) *model.Movie {
+func (c *DoubanCrawler) parseMoviePage(doc *goquery.Document, doubanID string) *model.Movie {
 	movie := &model.Movie{
 		DoubanID: doubanID,
 	}
@@ -173,10 +197,54 @@ func (c *Crawler) parseMoviePage(doc *goquery.Document, doubanID string) *model.
 }
 
 // CrawlAsync 异步爬取电影信息
-func (c *Crawler) CrawlAsync(doubanID string) {
+func (c *DoubanCrawler) CrawlAsync(doubanID string) {
 	go func() {
 		if err := c.CrawlDoubanMovie(doubanID); err != nil {
 			log.Printf("[爬虫] 爬取失败 (豆瓣ID: %s): %v", doubanID, err)
 		}
 	}()
+}
+
+// SearchSuggest 电影搜索建议
+func (c *DoubanCrawler) SearchSuggest(keyword string) ([]MovieSuggestResponse, error) {
+	// 检查缓存
+	cacheKey := fmt.Sprintf("douban_suggest:%s", keyword)
+	if cached, found := utils.CacheGet(cacheKey); found {
+		if results, ok := cached.([]MovieSuggestResponse); ok {
+			return results, nil
+		}
+	}
+
+	// 调用豆瓣API
+	url := fmt.Sprintf("https://movie.douban.com/j/subject_suggest?q=%s", keyword)
+
+	// 使用自定义HTTP客户端
+	client := utils.NewHTTPClient()
+	var doubanResults []DoubanMovieSuggest
+
+	if err := client.GetJSON(url, &doubanResults); err != nil {
+		return nil, fmt.Errorf("豆瓣API调用失败: %w", err)
+	}
+
+	// 转换数据格式
+	var results []MovieSuggestResponse
+	for _, item := range doubanResults {
+		// 使用本地图片代理，绕过防盗链
+		proxyImg := fmt.Sprintf("/api/proxy/image?url=%s", item.Img)
+
+		results = append(results, MovieSuggestResponse{
+			ID:       item.ID,
+			Title:    item.Title,
+			SubTitle: item.SubTitle,
+			Type:     item.Type,
+			Year:     item.Year,
+			Episode:  item.Episode,
+			Img:      proxyImg,
+		})
+	}
+
+	// 缓存结果，缓存时间5分钟
+	utils.CacheSet(cacheKey, results, 5*time.Minute)
+
+	return results, nil
 }

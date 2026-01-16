@@ -3,55 +3,51 @@
 <div class="admin-page">
     <!-- 页面标题和导航 -->
     <div class="admin-header">
-        <h1 class="admin-title">搜索缓存管理</h1>
+        <h1 class="admin-title">搜索数据管理</h1>
         <nav class="admin-tabs">
             <a href="/admin" class="admin-tab">概览</a>
             <a href="/admin/users" class="admin-tab">用户</a>
             <a href="/admin/sites" class="admin-tab">资源网</a>
-            <a href="/admin/cache" class="admin-tab active">缓存</a>
+            <a href="/admin/data" class="admin-tab active">数据管理</a>
             <a href="/admin/crawlers" class="admin-tab">爬虫</a>
         </nav>
     </div>
 
-    <!-- 缓存操作 -->
+    <!-- 数据清理 -->
     <div class="admin-card">
         <div class="admin-card-header">
-            <h3>缓存操作</h3>
+            <h3>数据清理</h3>
         </div>
         <div class="admin-card-body">
-            <p class="description">搜索缓存会自动在 24 小时后过期。过期的缓存会在下次搜索时自动刷新。</p>
+            <p class="description">资源网搜索结果会保存到本地数据库中。为了节省空间，可以定期清理长时间未访问的数据。</p>
             <div class="action-row">
-                <button class="btn btn-primary" onclick="cleanExpiredCache()">
+                <button class="btn btn-primary" onclick="cleanInactiveData()">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                    清理过期缓存
+                    清理非活跃数据
                 </button>
                 <div id="cleanResult" class="result-message"></div>
             </div>
         </div>
     </div>
 
-    <!-- 缓存策略说明 -->
+    <!-- 存储策略说明 -->
     <div class="admin-card">
         <div class="admin-card-header">
-            <h3>缓存策略说明</h3>
+            <h3>存储与搜索策略</h3>
         </div>
         <div class="admin-card-body">
             <ul class="info-list">
                 <li>
-                    <span class="info-label">缓存时长</span>
-                    <span class="info-value">24 小时</span>
+                    <span class="info-label">搜索方式</span>
+                    <span class="info-value">优先从本地数据库进行模糊查询（名称、副标题、英文名）</span>
                 </li>
                 <li>
-                    <span class="info-label">缓存命中</span>
-                    <span class="info-value">如果搜索词在缓存中且未过期，直接返回缓存结果</span>
+                    <span class="info-label">异步刷新</span>
+                    <span class="info-value">每次搜索时，后台会异步从所有启用的资源网获取最新数据并更新本地库</span>
                 </li>
                 <li>
-                    <span class="info-label">过期刷新</span>
-                    <span class="info-value">如果缓存已过期，先返回旧数据，后台异步刷新</span>
-                </li>
-                <li>
-                    <span class="info-label">缓存未命中</span>
-                    <span class="info-value">实时查询所有启用的资源网，结果自动缓存</span>
+                    <span class="info-label">数据清理</span>
+                    <span class="info-value">手动清理会删除超过 7 天未被访问过的视频记录</span>
                 </li>
             </ul>
         </div>
@@ -59,18 +55,18 @@
 </div>
 
 <script>
-async function cleanExpiredCache() {
+async function cleanInactiveData() {
     const resultDiv = document.getElementById('cleanResult');
     resultDiv.textContent = '正在清理...';
     resultDiv.className = 'result-message loading';
 
     try {
-        const resp = await fetch('/admin/cache/clean', {
+        const resp = await fetch('/admin/data/clean', {
             method: 'POST'
         });
         const data = await resp.json();
         if (data.success) {
-            resultDiv.textContent = '✓ 清理完成，共删除 ' + data.data.affected + ' 条过期缓存';
+            resultDiv.textContent = '✓ 清理完成，共删除 ' + data.data.affected + ' 条非活跃数据';
             resultDiv.className = 'result-message success';
         } else {
             resultDiv.textContent = '✗ 清理失败: ' + data.message;

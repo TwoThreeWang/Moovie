@@ -1,52 +1,76 @@
 package repository
 
 import (
-	"database/sql"
+	"time"
 
 	"github.com/user/moovie/internal/model"
+	"gorm.io/gorm"
 )
 
 type SearchLogRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
-func NewSearchLogRepository(db *sql.DB) *SearchLogRepository {
+func NewSearchLogRepository(db *gorm.DB) *SearchLogRepository {
 	return &SearchLogRepository{db: db}
 }
 
 // Log 记录搜索日志
 func (r *SearchLogRepository) Log(keyword string, userID *int, ipHash string) error {
-	_, err := r.db.Exec(`
-		INSERT INTO search_logs (keyword, user_id, ip_hash, created_at)
-		VALUES ($1, $2, $3, NOW())
-	`, keyword, userID, ipHash)
-	return err
+	// 1. 记录原始日志
+	log := &model.SearchLog{
+		Keyword:   keyword,
+		UserID:    userID,
+		IPHash:    ipHash,
+		CreatedAt: time.Now(),
+	}
+	if err := r.db.Create(log).Error; err != nil {
+		return err
+	}
+
+	// 2. 更新热搜关键词统计表
+	return r.db.Exec(`
+		INSERT INTO trending_keywords (keyword, count, last_searched_at)
+		VALUES ($1, 1, NOW())
+		ON CONFLICT (keyword) DO UPDATE SET
+			count = trending_keywords.count + 1,
+			last_searched_at = EXCLUDED.last_searched_at
+	`, keyword).Error
 }
 
 // GetTrending 获取热搜关键词
 func (r *SearchLogRepository) GetTrending(hours, limit int) ([]*model.TrendingKeyword, error) {
-	rows, err := r.db.Query(`
-		SELECT keyword, COUNT(*) as count
-		FROM search_logs
-		WHERE created_at > NOW() - INTERVAL '1 hour' * $1
-		GROUP BY keyword
-		ORDER BY count DESC
-		LIMIT $2
-	`, hours, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	var keywords []*model.TrendingKeyword
-	for rows.Next() {
-		k := &model.TrendingKeyword{}
-		err := rows.Scan(&k.Keyword, &k.Count)
-		if err != nil {
-			return nil, err
-		}
-		keywords = append(keywords, k)
+
+	// 如果 hours > 0，仍然从 search_logs 实时计算（为了支持不同时间范围的趋势）
+	// 如果 hours <= 0，从 trending_keywords 表获取（全量统计）
+	if hours > 0 {
+		err := r.db.Raw(`
+			SELECT keyword, COUNT(*) as count, MAX(created_at) as last_searched_at
+			FROM search_logs
+			WHERE created_at > NOW() - INTERVAL '1 hour' * $1
+			GROUP BY keyword
+			ORDER BY count DESC
+			LIMIT $2
+		`, hours, limit).Scan(&keywords).Error
+		return keywords, err
 	}
 
-	return keywords, nil
+	// 从汇总表获取
+	err := r.db.Table("trending_keywords").
+		Select("keyword, count, last_searched_at").
+		Order("count DESC").
+		Limit(limit).
+		Scan(&keywords).Error
+
+	return keywords, err
+}
+
+// DeleteOldKeywords 清理超过指定天数未搜索的关键词
+func (r *SearchLogRepository) DeleteOldKeywords(days int) (int64, error) {
+	result := r.db.Exec(`
+		DELETE FROM trending_keywords
+		WHERE last_searched_at < NOW() - INTERVAL '1 day' * $1
+	`, days)
+	return result.RowsAffected, result.Error
 }

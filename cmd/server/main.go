@@ -21,6 +21,7 @@ import (
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
 	"github.com/user/moovie/internal/router"
+	"github.com/user/moovie/internal/service"
 	"github.com/user/moovie/internal/utils"
 )
 
@@ -41,7 +42,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
-	defer db.Close()
+
+	sqlDB, _ := db.DB()
+	defer sqlDB.Close()
 
 	// 初始化仓库
 	repos := repository.NewRepositories(db)
@@ -74,6 +77,10 @@ func main() {
 
 	// 初始化 Handler
 	h := handler.NewHandler(repos, cfg)
+
+	// 启动定时清理任务
+	cleanupSvc := service.NewCleanupService(repos)
+	cleanupSvc.Start()
 
 	// 注册路由
 	router.RegisterRoutes(r, h)

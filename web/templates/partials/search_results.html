@@ -1,0 +1,33 @@
+{{ if .Results }}
+<div class="search-result-grid">
+    {{ range .Results }}
+    <a href="/play/{{ if .VodDoubanId }}{{ .VodDoubanId }}{{ else }}vod{{ end }}?source_key={{ .SourceKey }}&vod_id={{ .VodId }}" class="search-result-card">
+        <div class="card-poster">
+            <img src="{{ .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+            {{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}
+        </div>
+        <div class="card-content">
+            <h3 class="card-title">{{ .VodName }}</h3>
+            <div class="card-meta-row">
+                {{ if .VodYear }}<span class="card-year">{{ .VodYear }}</span>{{ end }}
+                {{ if .VodArea }}<span class="card-region">{{ .VodArea }}</span>{{ end }}
+                {{ if .TypeName }}<span class="card-type">{{ .TypeName }}</span>{{ end }}
+            </div>
+            {{ if .VodActor }}
+            <p class="card-director">主演: {{ .VodActor }}</p>
+            {{ end }}
+            <div class="card-sources">
+                <span class="source-item active">
+                    {{ .SourceKey }}
+                </span>
+            </div>
+        </div>
+    </a>
+    {{ end }}
+</div>
+{{ else }}
+<div class="empty-state">
+    <p>😕 未找到相关结果</p>
+    <p>试试其他关键词，或<a href="/feedback">告诉我们</a>您想找的影片</p>
+</div>
+{{ end }}

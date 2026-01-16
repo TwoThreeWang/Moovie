@@ -5,7 +5,7 @@
         <div class="search-input-wrapper">
             <input
                 type="text"
-                name="q"
+                name="kw"
                 class="search-input"
                 value="{{ .Keyword }}"
                 placeholder="搜索电影、电视剧..."
@@ -17,40 +17,45 @@
     <p class="search-result-hint">「{{ .Keyword }}」的搜索结果</p>
 </div>
 
-{{ if .Results }}
-<div class="search-result-grid">
-    {{ range .Results }}
-    <a href="/movie/{{ .DoubanID }}" class="search-result-card">
-        <div class="card-poster">
-            <img src="{{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
-        </div>
-        <div class="card-content">
-            <h3 class="card-title">{{ .Title }}</h3>
-            <div class="card-meta-row">
-                {{ if .Year }}<span class="card-year">{{ .Year }}</span>{{ end }}
-                {{ if .Region }}<span class="card-region">{{ .Region }}</span>{{ end }}
-            </div>
-            {{ if .Genres }}
-            <p class="card-genres">{{ .Genres }}</p>
-            {{ end }}
-            {{ if .Director }}
-            <p class="card-director">导演: {{ .Director }}</p>
-            {{ end }}
-            <div class="card-sources">
-                {{ range .Sources }}
-                <span class="source-item {{ .Status }}">
-                    {{ .Name }} {{ if .Speed }}<span class="speed">{{ .Speed }}</span>{{ end }}
-                </span>
-                {{ end }}
-            </div>
-        </div>
-    </a>
-    {{ end }}
+<div id="search-results-container" 
+     hx-get="/api/htmx/search?kw={{ .Keyword }}" 
+     hx-trigger="load" 
+     hx-indicator="#search-loading">
+    <div id="search-loading" class="htmx-indicator search-loading-state">
+        <div class="loading-spinner"></div>
+        <p>正在搜索全网资源，请稍候...</p>
+    </div>
 </div>
-{{ else }}
-<div class="empty-state">
-    <p>😕 未找到相关结果</p>
-    <p>试试其他关键词，或<a href="/feedback">告诉我们</a>您想找的影片</p>
-</div>
-{{ end }}
+
+<style>
+.search-loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    color: var(--text-muted);
+}
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255,255,255,.1);
+    border-radius: 50%;
+    border-top-color: var(--primary-color);
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 1rem;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator {
+    display: flex;
+}
+.htmx-request#search-results-container {
+    opacity: 0.6;
+}
+</style>
 {{ end }}

@@ -48,16 +48,6 @@ type Person struct {
 	Role string `json:"role,omitempty"` // 角色（仅演员）
 }
 
-// SearchCache 搜索缓存
-type SearchCache struct {
-	ID         int       `json:"id" db:"id"`
-	Keyword    string    `json:"keyword" db:"keyword"`
-	Source     string    `json:"source" db:"source"`
-	ResultJSON string    `json:"result_json" db:"result_json"`
-	CreatedAt  time.Time `json:"created_at" db:"created_at"`
-	ExpiresAt  time.Time `json:"expires_at" db:"expires_at"`
-}
-
 // SearchResult 搜索结果（从缓存 JSON 解析）
 type SearchResult struct {
 	Title    string   `json:"title"`
@@ -123,6 +113,7 @@ type Feedback struct {
 
 // TrendingKeyword 热搜关键词
 type TrendingKeyword struct {
-	Keyword string `json:"keyword"`
-	Count   int    `json:"count"`
+	Keyword        string    `json:"keyword" db:"keyword"`
+	Count          int       `json:"count" db:"count"`
+	LastSearchedAt time.Time `json:"last_searched_at" db:"last_searched_at"`
 }

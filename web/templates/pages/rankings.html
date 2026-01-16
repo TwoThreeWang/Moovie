@@ -50,7 +50,7 @@
         <h2 class="section-title">🔥 今日热搜</h2>
         <div class="trending-tags">
             {{ range .Trending }}
-            <a href="/search?q={{ .Keyword }}" class="tag">{{ .Keyword }} <span class="tag-count">({{ .Count }})</span></a>
+            <a href="/search?kw={{ .Keyword }}" class="tag">{{ .Keyword }} <span class="tag-count">({{ .Count }})</span></a>
             {{ end }}
         </div>
     </div>

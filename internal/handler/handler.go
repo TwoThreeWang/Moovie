@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -13,31 +14,32 @@ import (
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
 	"github.com/user/moovie/internal/service"
+	"github.com/user/moovie/internal/utils"
 )
 
 // Handler HTTP 处理器
 type Handler struct {
 	Repos         *repository.Repositories
 	Config        *config.Config
-	Crawler       *service.Crawler
+	DoubanCrawler *service.DoubanCrawler
 	SearchService *service.SearchService
 }
 
 // NewHandler 创建处理器
 func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	// 创建爬虫服务
-	crawler := service.NewCrawler(repos.Movie)
+	doubanCrawler := service.NewDoubanCrawler(repos.Movie)
 
 	// 创建资源网爬虫
 	sourceCrawler := service.NewSourceCrawler(10 * time.Second)
 
 	// 创建搜索服务
-	searchService := service.NewSearchService(repos.Site, repos.SearchCache, sourceCrawler)
+	searchService := service.NewSearchService(repos.Site, repos.VodItem, sourceCrawler)
 
 	return &Handler{
 		Repos:         repos,
 		Config:        cfg,
-		Crawler:       crawler,
+		DoubanCrawler: doubanCrawler,
 		SearchService: searchService,
 	}
 }
@@ -93,96 +95,32 @@ func (h *Handler) getActiveMenu(path string) string {
 
 // Home 首页
 func (h *Handler) Home(c *gin.Context) {
-	// 获取热搜关键词
-	trending, _ := h.Repos.SearchLog.GetTrending(24, 10)
-
 	c.HTML(http.StatusOK, "home.html", h.RenderData(c, gin.H{
-		"Title":    h.Config.SiteName + " - 聚合电影搜索",
-		"Trending": trending,
+		"Title": h.Config.SiteName + " - 聚合电影搜索",
 	}))
 }
 
 // Search 搜索结果页
 func (h *Handler) Search(c *gin.Context) {
-	keyword := c.Query("q")
+	keyword := c.Query("kw")
 	if keyword == "" {
 		c.Redirect(http.StatusFound, "/")
 		return
 	}
-
-	// 示例数据，用于展示样式效果
-	mockResults := []map[string]interface{}{
-		{
-			"DoubanID":      "1291546",
-			"Title":         "霸王别姬",
-			"OriginalTitle": "Erta",
-			"Poster":        "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2561716440.webp",
-			"Rating":        "9.6",
-			"RatingCount":   "2018732",
-			"Year":          "1993",
-			"Region":        "中国大陆 / 中国香港",
-			"Genres":        "剧情 / 爱情 / 同性",
-			"Duration":      "171分钟",
-			"Playable":      true,
-			"Sources": []map[string]interface{}{
-				{"Name": "爱奇艺", "Status": "available", "Speed": "2.3s"},
-				{"Name": "优酷", "Status": "available", "Speed": "1.8s"},
-				{"Name": "腾讯", "Status": "slow", "Speed": "5.2s"},
-			},
-		},
-		{
-			"DoubanID":      "1292052",
-			"Title":         "肖申克的救赎",
-			"OriginalTitle": "The Shawshank Redemption",
-			"Poster":        "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p480747492.webp",
-			"Rating":        "9.7",
-			"RatingCount":   "3125634",
-			"Year":          "1994",
-			"Region":        "美国",
-			"Genres":        "剧情 / 犯罪",
-			"Duration":      "142分钟",
-			"Playable":      true,
-			"Sources": []map[string]interface{}{
-				{"Name": "Netflix", "Status": "available", "Speed": "1.2s"},
-				{"Name": "B站", "Status": "unavailable", "Speed": ""},
-			},
-		},
-		{
-			"DoubanID":      "1291561",
-			"Title":         "千与千寻",
-			"OriginalTitle": "千と千尋の神隠し",
-			"Poster":        "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2557573348.webp",
-			"Rating":        "9.4",
-			"RatingCount":   "2456123",
-			"Year":          "2001",
-			"Region":        "日本",
-			"Genres":        "剧情 / 动画 / 奇幻",
-			"Duration":      "125分钟",
-			"Playable":      true,
-			"Sources": []map[string]interface{}{
-				{"Name": "B站", "Status": "available", "Speed": "0.8s"},
-			},
-		},
-		{
-			"DoubanID":      "1292720",
-			"Title":         "阿甘正传",
-			"OriginalTitle": "Forrest Gump",
-			"Poster":        "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2372307693.webp",
-			"Rating":        "9.5",
-			"RatingCount":   "2234567",
-			"Year":          "1994",
-			"Region":        "美国",
-			"Genres":        "剧情 / 爱情",
-			"Duration":      "142分钟",
-			"Playable":      false,
-			"Sources":       []map[string]interface{}{},
-		},
+	// 如果传了豆瓣ID，先去数据库中检查豆瓣id是否存在
+	doubanID := c.Query("doubanId")
+	if doubanID != "" {
+		// 检查数据库中是否存在该豆瓣ID
+		movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
+		if err == nil && movie != nil {
+			// 如果存在，直接跳转到详情页
+			c.Redirect(http.StatusFound, "/movie/"+doubanID)
+			return
+		}
 	}
-
 	c.HTML(http.StatusOK, "search.html", h.RenderData(c, gin.H{
 		"Title":   keyword + " - 搜索结果 - " + h.Config.SiteName,
 		"Keyword": keyword,
-		"Results": mockResults,
 	}))
 }
 
@@ -215,16 +153,87 @@ func (h *Handler) Movie(c *gin.Context) {
 // Play 播放页
 func (h *Handler) Play(c *gin.Context) {
 	doubanID := c.Param("id")
-	source := c.Query("source")
+	sourceKey := c.Query("source_key")
+	vodId := c.Query("vod_id")
 	episode := c.Query("ep")
 
-	// TODO: 获取播放链接
-	c.HTML(http.StatusOK, "play.html", h.RenderData(c, gin.H{
-		"Title":    "正在播放 - " + h.Config.SiteName,
-		"DoubanID": doubanID,
-		"Source":   source,
-		"Episode":  episode,
-	}))
+	var detail *model.VodItem
+	var err error
+
+	if sourceKey != "" && vodId != "" {
+		detail, err = h.SearchService.GetDetail(c.Request.Context(), sourceKey, vodId)
+	} else if doubanID != "" && doubanID != "vod" {
+		// 如果只有豆瓣 ID，尝试寻找关联的 VodItem
+		items, _ := h.Repos.VodItem.Search(doubanID) // 这里可以用 doubanID 搜，因为 vod_douban_id 索引了
+		if len(items) > 0 {
+			detail = &items[0]
+		}
+	}
+
+	if err != nil || detail == nil {
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title": "视频未找到 - " + h.Config.SiteName,
+		}))
+		return
+	}
+
+	// 解析播放列表
+	sources := utils.ParsePlayUrl(detail.VodPlayUrl)
+	var currentSource *utils.PlaySource
+	if len(sources) > 0 {
+		currentSource = &sources[0]
+		// 如果指定了 source，则切换
+		reqSource := c.Query("source")
+		if reqSource != "" {
+			for _, s := range sources {
+				if s.Name == reqSource {
+					currentSource = &s
+					break
+				}
+			}
+		}
+	}
+
+	// 准备渲染数据
+	renderData := gin.H{
+		"Title":         detail.VodName + " - 正在播放 - " + h.Config.SiteName,
+		"DoubanID":      doubanID,
+		"VodID":         vodId,
+		"SourceKey":     sourceKey,
+		"Detail":        detail,
+		"Sources":       sources,
+		"CurrentSource": currentSource,
+		"Episode":       episode,
+	}
+
+	// 兼容旧模板字段
+	renderData["Title"] = detail.VodName
+	renderData["Poster"] = detail.VodPic
+	renderData["Year"] = detail.VodYear
+	renderData["Country"] = detail.VodArea
+	renderData["Summary"] = detail.VodContent
+	renderData["Genres"] = strings.Split(detail.VodTag, ",")
+	renderData["Directors"] = strings.Split(detail.VodDirector, ",")
+	renderData["Actors"] = strings.Split(detail.VodActor, ",")
+
+	if currentSource != nil {
+		renderData["Episodes"] = currentSource.Episodes
+		renderData["Source"] = currentSource.Name
+		// 如果没传 ep，默认播放第一集
+		if episode == "" && len(currentSource.Episodes) > 0 {
+			renderData["Episode"] = currentSource.Episodes[0].Title
+			renderData["PlayURL"] = currentSource.Episodes[0].URL
+		} else {
+			for _, ep := range currentSource.Episodes {
+				if ep.Title == episode {
+					renderData["PlayURL"] = ep.URL
+					break
+				}
+			}
+		}
+	}
+
+	c.HTML(http.StatusOK, "play.html", h.RenderData(c, renderData))
 }
 
 // Player m3u8 专用播放器
@@ -245,6 +254,12 @@ func (h *Handler) Discover(c *gin.Context) {
 
 // Rankings 排行榜
 func (h *Handler) Rankings(c *gin.Context) {
+	// 获取真实的热搜数据 (最近 24 小时)
+	trending, err := h.Repos.SearchLog.GetTrending(24, 10)
+	if err != nil {
+		log.Printf("获取热搜失败: %v", err)
+	}
+
 	// 假数据：热门电影列表
 	hotMovies := []model.Movie{
 		{
@@ -342,45 +357,46 @@ func (h *Handler) Rankings(c *gin.Context) {
 	c.HTML(http.StatusOK, "rankings.html", h.RenderData(c, gin.H{
 		"Title":     "热门电影 - " + h.Config.SiteName,
 		"HotMovies": hotMovies,
+		"Trending":  trending,
 	}))
 }
 
 // Trends 热搜趋势
 func (h *Handler) Trends(c *gin.Context) {
-	// 假数据：热门搜索关键词
+	// 获取真实的热搜数据 (全量统计)
+	trending, err := h.Repos.SearchLog.GetTrending(0, 50)
+	if err != nil {
+		log.Printf("获取热搜失败: %v", err)
+	}
+
+	// 转换为模板需要的格式
 	type TrendItem struct {
 		Keyword  string
-		Count    string
+		Count    int
 		Tag      string
 		TagClass string
 	}
 
-	trending := []TrendItem{
-		{Keyword: "三体", Count: "2.3万", Tag: "热", TagClass: "hot"},
-		{Keyword: "繁花", Count: "1.8万", Tag: "新", TagClass: "new"},
-		{Keyword: "漫长的季节", Count: "1.5万", Tag: "荐", TagClass: "recommend"},
-		{Keyword: "狂飙", Count: "1.2万", Tag: "剧", TagClass: "tv"},
-		{Keyword: "流浪地球2", Count: "9876", Tag: "影", TagClass: "movie"},
-		{Keyword: "封神第一部", Count: "8234", Tag: "", TagClass: ""},
-		{Keyword: "奥本海默", Count: "7652", Tag: "影", TagClass: "movie"},
-		{Keyword: "年会不能停", Count: "6543", Tag: "新", TagClass: "new"},
-		{Keyword: "芭比", Count: "5432", Tag: "", TagClass: ""},
-		{Keyword: "坠落的审判", Count: "4321", Tag: "", TagClass: ""},
-		{Keyword: "涉过愤怒的海", Count: "3890", Tag: "", TagClass: ""},
-		{Keyword: "周处除三害", Count: "3654", Tag: "热", TagClass: "hot"},
-		{Keyword: "热辣滚烫", Count: "3210", Tag: "", TagClass: ""},
-		{Keyword: "第二十条", Count: "2987", Tag: "", TagClass: ""},
-		{Keyword: "飞驰人生2", Count: "2765", Tag: "", TagClass: ""},
-		{Keyword: "你想活出怎样的人生", Count: "2543", Tag: "", TagClass: ""},
-		{Keyword: "沙丘2", Count: "2321", Tag: "新", TagClass: "new"},
-		{Keyword: "哥斯拉大战金刚2", Count: "2109", Tag: "", TagClass: ""},
-		{Keyword: "功夫熊猫4", Count: "1987", Tag: "", TagClass: ""},
-		{Keyword: "猩球崛起：新世界", Count: "1765", Tag: "", TagClass: ""},
+	var trendItems []TrendItem
+	for _, t := range trending {
+		item := TrendItem{
+			Keyword: t.Keyword,
+			Count:   t.Count,
+		}
+		// 根据热度简单打标签
+		if t.Count > 100 {
+			item.Tag = "热"
+			item.TagClass = "hot"
+		} else if t.LastSearchedAt.After(time.Now().Add(-1 * time.Hour)) {
+			item.Tag = "新"
+			item.TagClass = "new"
+		}
+		trendItems = append(trendItems, item)
 	}
 
 	c.HTML(http.StatusOK, "trends.html", h.RenderData(c, gin.H{
 		"Title":      "热门搜索 - " + h.Config.SiteName,
-		"Trending":   trending,
+		"Trending":   trendItems,
 		"UpdateTime": "刚刚",
 	}))
 }

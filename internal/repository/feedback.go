@@ -1,65 +1,41 @@
 package repository
 
 import (
-	"database/sql"
+	"time"
 
 	"github.com/user/moovie/internal/model"
+	"gorm.io/gorm"
 )
 
 type FeedbackRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
-func NewFeedbackRepository(db *sql.DB) *FeedbackRepository {
+func NewFeedbackRepository(db *gorm.DB) *FeedbackRepository {
 	return &FeedbackRepository{db: db}
 }
 
 // Create 创建反馈
 func (r *FeedbackRepository) Create(f *model.Feedback) error {
-	return r.db.QueryRow(`
-		INSERT INTO feedbacks (user_id, type, content, movie_url, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, NOW())
-		RETURNING id
-	`, f.UserID, f.Type, f.Content, f.MovieURL, "pending").Scan(&f.ID)
+	f.Status = "pending"
+	f.CreatedAt = time.Now()
+	return r.db.Create(f).Error
 }
 
 // List 获取反馈列表（管理后台用）
 func (r *FeedbackRepository) List(status string, limit, offset int) ([]*model.Feedback, error) {
-	query := `
-		SELECT id, user_id, type, content, movie_url, status, created_at
-		FROM feedbacks
-	`
-	args := []interface{}{}
+	var feedbacks []*model.Feedback
+	db := r.db.Model(&model.Feedback{})
 
 	if status != "" {
-		query += " WHERE status = $1"
-		args = append(args, status)
+		db = db.Where("status = ?", status)
 	}
 
-	query += " ORDER BY created_at DESC LIMIT $" + string(rune(len(args)+1+'0')) + " OFFSET $" + string(rune(len(args)+2+'0'))
-	args = append(args, limit, offset)
-
-	rows, err := r.db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var feedbacks []*model.Feedback
-	for rows.Next() {
-		f := &model.Feedback{}
-		err := rows.Scan(&f.ID, &f.UserID, &f.Type, &f.Content, &f.MovieURL, &f.Status, &f.CreatedAt)
-		if err != nil {
-			return nil, err
-		}
-		feedbacks = append(feedbacks, f)
-	}
-
-	return feedbacks, nil
+	err := db.Order("created_at DESC").Limit(limit).Offset(offset).Find(&feedbacks).Error
+	return feedbacks, err
 }
 
 // UpdateStatus 更新反馈状态
 func (r *FeedbackRepository) UpdateStatus(id int, status string) error {
-	_, err := r.db.Exec(`UPDATE feedbacks SET status = $1 WHERE id = $2`, status, id)
-	return err
+	return r.db.Model(&model.Feedback{}).Where("id = ?", id).Update("status", status).Error
 }

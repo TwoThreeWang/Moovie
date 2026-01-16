@@ -249,7 +249,7 @@ function handleSearchInput(value) {
 async function fetchSuggestions(keyword) {
     console.log('[搜索建议] 开始获取:', keyword);
     try {
-        const response = await fetch(`/api/movies/suggest?q=${encodeURIComponent(keyword)}`);
+        const response = await fetch(`/api/movies/suggest?kw=${encodeURIComponent(keyword)}`);
         console.log('[搜索建议] API响应状态:', response.status);
 
         if (!response.ok) {
@@ -357,12 +357,12 @@ async function selectSuggestion(doubanId, title) {
             window.location.href = result.data.redirect_url;
         } else {
             // 备用：跳转到搜索页
-            window.location.href = `/search?q=${encodeURIComponent(title)}`;
+            window.location.href = `/search?kw=${encodeURIComponent(title)}`;
         }
     } catch (error) {
         console.error('[搜索建议] 检查失败:', error);
         // 出错时直接跳转到搜索页
-        window.location.href = `/search?q=${encodeURIComponent(title)}`;
+        window.location.href = `/search?kw=${encodeURIComponent(title)}`;
     }
 }
 
@@ -495,7 +495,7 @@ function renderRecentSearches() {
 
     container.innerHTML = searches.map(keyword => `
         <span class="tag tag-deletable">
-            <a href="/search?q=${encodeURIComponent(keyword)}">${keyword}</a>
+            <a href="/search?kw=${encodeURIComponent(keyword)}">${keyword}</a>
             <button class="tag-delete" onclick="event.preventDefault(); removeRecentSearch('${keyword.replace(/'/g, "\\'")}')">×</button>
         </span>
     `).join('');

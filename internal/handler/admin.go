@@ -114,17 +114,18 @@ func (h *Handler) AdminSiteDelete(c *gin.Context) {
 	utils.Success(c, nil)
 }
 
-// AdminCache 搜索缓存管理页面
-func (h *Handler) AdminCache(c *gin.Context) {
+// AdminData 搜索数据管理页面
+func (h *Handler) AdminData(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin_cache.html", gin.H{
-		"Title":  "搜索缓存管理 - Moovie",
+		"Title":  "搜索数据管理 - Moovie",
 		"UserID": middleware.GetUserID(c),
 	})
 }
 
-// AdminCacheClean 清理过期缓存
-func (h *Handler) AdminCacheClean(c *gin.Context) {
-	affected, err := h.Repos.SearchCache.CleanExpired()
+// AdminDataClean 清理非活跃搜索数据
+func (h *Handler) AdminDataClean(c *gin.Context) {
+	// 清理 7 天内未访问的数据
+	affected, err := h.Repos.VodItem.DeleteInactive(7)
 	if err != nil {
 		utils.InternalServerError(c, "清理失败")
 		return

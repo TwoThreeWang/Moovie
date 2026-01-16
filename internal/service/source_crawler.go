@@ -64,7 +64,7 @@ func (c *DefaultSourceCrawler) Search(ctx context.Context, baseUrl, keyword, sou
 	}
 
 	// 设置请求头
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	// 发送请求
 	resp, err := c.client.Do(req)
@@ -111,7 +111,7 @@ func (c *DefaultSourceCrawler) GetDetail(ctx context.Context, baseUrl, vodId, so
 	}
 
 	// 设置请求头
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	// 发送请求
 	resp, err := c.client.Do(req)

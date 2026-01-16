@@ -9,7 +9,7 @@
     {{ if .Trending }}
     <div class="trends-list">
         {{ range $i, $item := .Trending }}
-        <a href="/search?q={{ $item.Keyword }}" class="trend-item">
+        <a href="/search?kw={{ $item.Keyword }}" class="trend-item">
             <span class="trend-rank {{ if le (add $i 1) 3 }}top{{ end }}">{{ add $i 1 }}</span>
             <div class="trend-content">
                 <span class="trend-keyword">{{ $item.Keyword }}</span>
