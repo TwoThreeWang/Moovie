@@ -162,6 +162,36 @@ func (h *Handler) SyncHistory(c *gin.Context) {
 	})
 }
 
+// RemoveHistory 删除观影历史记录
+func (h *Handler) RemoveHistory(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		utils.Unauthorized(c, "未登录")
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		utils.BadRequest(c, "无效的记录 ID")
+		return
+	}
+
+	if err := h.Repos.History.Delete(userID, id); err != nil {
+		log.Printf("[RemoveHistory] 删除记录失败: %v", err)
+		utils.InternalServerError(c, "删除失败")
+		return
+	}
+
+	// 如果是 HTMX 请求，返回空响应
+	if c.GetHeader("HX-Request") != "" {
+		c.Status(http.StatusOK)
+		return
+	}
+
+	utils.Success(c, nil)
+}
+
 // MovieSuggest 电影搜索建议（JSON API）
 func (h *Handler) MovieSuggest(c *gin.Context) {
 	keyword := strings.TrimSpace(c.Query("kw"))

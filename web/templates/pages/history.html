@@ -5,15 +5,27 @@
 {{ if .History }}
 <div class="movie-grid">
     {{ range .History }}
+<div class="movie-card-wrapper history-card-wrapper" id="history-{{ .ID }}">
     <a href="/search?kw={{ .Title }}" class="movie-card" title="点击搜索资源续播">
         <div class="movie-poster">
-            <img src="/api/proxy/image?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy">
+            <img src="{{ if .Poster }}/api/proxy/image?url={{ .Poster }}{{ else }}/static/img/placeholder.jpg{{ end }}" alt="{{ .Title }}" loading="lazy">
         </div>
         <div class="movie-info">
             <h3 class="movie-title">{{ .Title }}</h3>
             <p class="movie-year">{{ .Episode }}</p>
         </div>
     </a>
+    <button class="watch-delete-btn"
+            hx-delete="/api/history/{{ .ID }}"
+            hx-target="#history-{{ .ID }}"
+            hx-swap="outerHTML"
+            title="删除此记录">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+    </button>
+</div>
     {{ end }}
 </div>
 {{ else }}

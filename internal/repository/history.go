@@ -50,3 +50,8 @@ func (r *HistoryRepository) CountByUser(userID int) (int, error) {
 	err := r.db.Model(&model.WatchHistory{}).Where("user_id = ?", userID).Count(&count).Error
 	return int(count), err
 }
+
+// Delete 删除观影记录
+func (r *HistoryRepository) Delete(userID int, id int) error {
+	return r.db.Where("user_id = ? AND id = ?", userID, id).Delete(&model.WatchHistory{}).Error
+}

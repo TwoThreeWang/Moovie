@@ -66,6 +66,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.POST("/favorites/:id", h.AddFavorite)        // 添加收藏
 		api.DELETE("/favorites/:id", h.RemoveFavorite)   // 移除收藏
 		api.POST("/feedback", h.SubmitFeedback)          // 提交反馈
+		api.DELETE("/history/:id", h.RemoveHistory)      // 删除历史记录
 		api.POST("/history/sync", h.SyncHistory)         // 同步历史记录
 		api.GET("/movies/suggest", h.MovieSuggest)       // 电影建议
 		api.GET("/movies/check/:doubanId", h.CheckMovie) // 检查电影是否存在

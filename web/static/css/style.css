@@ -1798,6 +1798,16 @@ img {
     height: 18px;
 }
 
+/* 观影历史卡片包装 */
+.history-card-wrapper {
+    position: relative;
+}
+
+.history-card-wrapper .watch-delete-btn {
+    top: 10px;
+    right: 10px;
+}
+
 /* Tab 内容 */
 .tab-content {
     margin-top: 24px;

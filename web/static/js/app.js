@@ -218,10 +218,18 @@ function getPlayState() {
 /**
  * 删除单个观看记录
  */
+// 删除单个观看记录
 function removeWatchHistory(itemKey) {
     try {
         const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
-        if (data[itemKey]) {
+        const item = data[itemKey];
+        if (item) {
+            // 如果有服务器记录 ID，且用户已登录，尝试同步删除服务器上的记录
+            if (item.id && isLoggedIn()) {
+                fetch(`/api/history/${item.id}`, { method: 'DELETE' })
+                    .catch(err => console.error('同步删除服务器记录失败:', err));
+            }
+
             delete data[itemKey];
             localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
             renderContinueWatching();
