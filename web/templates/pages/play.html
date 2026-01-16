@@ -5,7 +5,7 @@
     <nav class="watch-breadcrumb">
         <a href="/">首页</a>
         <span class="breadcrumb-sep">/</span>
-        <a href="/movie/{{ .DoubanID }}">{{ .Detail.VodName }}</a>
+        <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}">{{ .Detail.VodName }}</a>
         {{ if .Episode }}
         <span class="breadcrumb-sep">/</span>
         <span class="breadcrumb-current">{{ .Episode }} 在线观看</span>
@@ -117,7 +117,7 @@
 
         <!-- 操作区域 -->
         <div class="video-actions-bar">
-            <a href="/movie/{{ .DoubanID }}" class="action-link">
+            <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" class="action-link">
                 <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="16" x2="12" y2="12"></line>

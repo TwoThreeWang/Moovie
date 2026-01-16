@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -128,7 +129,11 @@ func (h *Handler) Search(c *gin.Context) {
 	// 如果传了豆瓣ID，直接跳转到详情页（详情页会处理抓取逻辑）
 	doubanID := c.Query("doubanId")
 	if doubanID != "" {
-		c.Redirect(http.StatusFound, "/movie/"+doubanID)
+		target := "/movie/" + doubanID
+		if keyword != "" {
+			target += "?title=" + url.QueryEscape(keyword)
+		}
+		c.Redirect(http.StatusFound, target)
 		return
 	}
 	c.HTML(http.StatusOK, "search.html", h.RenderData(c, gin.H{
@@ -164,6 +169,13 @@ func (h *Handler) Movie(c *gin.Context) {
 	}
 
 	if movie == nil {
+		// 如果采集失败，但传了标题，尝试跳回搜索页
+		title := c.Query("title")
+		if title != "" {
+			c.Redirect(http.StatusFound, "/search?kw="+url.QueryEscape(title))
+			return
+		}
+
 		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
 			"Title": "电影未找到 - " + h.Config.SiteName,
 		}))

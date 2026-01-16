@@ -1,4 +1,3 @@
-{{ define "favorite_btn" }}
 {{ if .IsFavorited }}
 <button
     class="btn btn-favorite favorited"
@@ -9,11 +8,10 @@
 </button>
 {{ else }}
 <button
-    class="btn btn-favorite"
+    class="btn btn-primary"
     hx-post="/api/favorites/{{ .MovieID }}"
     hx-swap="outerHTML"
 >
     <span class="icon">🤍</span> 收藏
 </button>
-{{ end }}
 {{ end }}

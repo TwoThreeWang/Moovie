@@ -1283,7 +1283,7 @@ img {
 /* 评分列 */
 .movie-rating-col {
     flex-shrink: 0;
-    width: 120px;
+    width: 140px;
     text-align: center;
 }
 
@@ -1318,13 +1318,65 @@ img {
 .movie-actions {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
 }
 
 .movie-actions .btn {
-    font-size: 0.85rem;
-    padding: 8px 16px;
-    border-radius: 4px;
+    font-size: 0.95rem;
+    padding: 12px 12px;
+    border-radius: 8px;
+    width: 100%;
+    justify-content: center;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+/* 收藏按钮特定样式 */
+.btn-favorite {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-favorite:hover {
+    background: #fff;
+    border-color: var(--primary);
+    color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(246, 12, 62, 0.1);
+}
+
+.btn-favorite.favorited {
+    background: #fff5f7;
+    border-color: var(--primary-light);
+    color: var(--primary);
+}
+
+.btn-favorite.favorited:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.btn-favorite .icon {
+    font-size: 1.1rem;
+    transition: transform 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.btn-favorite:hover .icon {
+    transform: scale(1.2) rotate(5deg);
+}
+
+.btn-favorite.favorited .icon {
+    color: var(--primary);
 }
 
 /* 内容区块 */

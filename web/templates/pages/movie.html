@@ -76,6 +76,13 @@
                     <span class="attr-value">{{ .Movie.IMDbID }}</span>
                 </div>
                 {{ end }}
+
+                {{ if .Movie.DoubanID }}
+                <div class="attr-row">
+                    <span class="attr-label">豆瓣:</span>
+                    <span class="attr-value"><a href="https://movie.douban.com/subject/{{ .Movie.DoubanID }}" target="_blank" rel="noopener nofollow" style="color: #007722; text-decoration: none;">subject/{{ .Movie.DoubanID }}</a></span>
+                </div>
+                {{ end }}
             </div>
         </div>
 
@@ -92,7 +99,6 @@
             {{ end }}
 
             <div class="movie-actions">
-                <a href="/search?kw={{ .Movie.Title }}" class="btn btn-primary">▶ 在线播放</a>
                 {{ template "favorite_btn.html" (dict "MovieID" .Movie.ID "IsFavorited" .IsFavorited) }}
             </div>
         </div>

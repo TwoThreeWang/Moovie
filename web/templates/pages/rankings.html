@@ -14,7 +14,7 @@
     <!-- 热门列表 -->
     <div class="hot-list">
         {{ range $i, $m := .HotMovies }}
-        <a href="/movie/{{ $m.DoubanID }}" class="hot-item">
+        <a href="/movie/{{ $m.DoubanID }}?title={{ $m.Title }}" class="hot-item">
             <div class="hot-poster">
                 <img src="/api/proxy/image?url={{ $m.Poster }}" alt="{{ $m.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
             </div>
