@@ -7,16 +7,16 @@ import (
 // Movie 电影模型（豆瓣信息）
 type Movie struct {
 	ID            int       `json:"id" db:"id"`
-	DoubanID      string    `json:"douban_id" db:"douban_id"`
+	DoubanID      string    `json:"douban_id" db:"douban_id" gorm:"unique"`
 	Title         string    `json:"title" db:"title"`
 	OriginalTitle string    `json:"original_title" db:"original_title"`
 	Year          string    `json:"year" db:"year"`
 	Poster        string    `json:"poster" db:"poster"`
 	Rating        float64   `json:"rating" db:"rating"`
-	Genres        []string  `json:"genres" db:"genres"`
-	Countries     []string  `json:"countries" db:"countries"`
-	Directors     []Person  `json:"directors" db:"directors"`
-	Actors        []Person  `json:"actors" db:"actors"`
+	Genres        string    `json:"genres" db:"genres"`
+	Countries     string    `json:"countries" db:"countries"`
+	Directors     string    `json:"directors" db:"directors"`
+	Actors        string    `json:"actors" db:"actors"`
 	Summary       string    `json:"summary" db:"summary"`
 	Duration      string    `json:"duration" db:"duration"`
 	IMDbID        string    `json:"imdb_id" db:"imdb_id"`

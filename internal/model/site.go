@@ -1,13 +1,16 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Site 爬虫站点配置
 type Site struct {
 	ID        uint   `json:"id" db:"id"`
-	Key       string `json:"key" db:"key"`           // 网站简称
-	BaseUrl   string `json:"base_url" db:"base_url"` // 基础URL
-	Enabled   bool   `json:"enabled" db:"enabled"`   // 是否启用
+	Key       string `json:"key" db:"key" gorm:"unique"` // 网站简称
+	BaseUrl   string `json:"base_url" db:"base_url"`     // 基础URL
+	Enabled   bool   `json:"enabled" db:"enabled"`       // 是否启用
 	CreatedAt int64  `json:"created_at" db:"created_at"`
 	UpdatedAt int64  `json:"updated_at" db:"updated_at"`
 }
@@ -39,4 +42,49 @@ type VodItem struct {
 	VodPlayUrl    string    `json:"vod_play_url" db:"vod_play_url"`       // 播放链接
 	TypeName      string    `json:"type_name" db:"type_name"`             // 类型名称
 	LastVisitedAt time.Time `json:"last_visited_at" db:"last_visited_at"` // 最后访问时间
+}
+
+// GetGenres 获取分类切片
+func (v *VodItem) GetGenres() []string {
+	if v.VodClass == "" {
+		return nil
+	}
+	res := []string{}
+	parts := strings.Split(v.VodClass, ",")
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			res = append(res, s)
+		}
+	}
+	return res
+}
+
+// GetDirectors 获取导演切片
+func (v *VodItem) GetDirectors() []string {
+	if v.VodDirector == "" {
+		return nil
+	}
+	res := []string{}
+	parts := strings.Split(v.VodDirector, ",")
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			res = append(res, s)
+		}
+	}
+	return res
+}
+
+// GetActors 获取演员切片
+func (v *VodItem) GetActors() []string {
+	if v.VodActor == "" {
+		return nil
+	}
+	res := []string{}
+	parts := strings.Split(v.VodActor, ",")
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			res = append(res, s)
+		}
+	}
+	return res
 }

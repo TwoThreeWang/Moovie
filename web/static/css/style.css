@@ -213,6 +213,11 @@ img {
     max-width: 1200px;
 }
 
+.content-wrapper.full-width {
+    max-width: none;
+    padding: 32px 0;
+}
+
 /* ==================== Footer ==================== */
 .main-footer {
     padding: 24px 40px;
@@ -341,27 +346,27 @@ img {
 
 .search-input-wrapper {
     display: flex;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 50px;
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid #e0e0e0;
+    border-radius: 28px;
+    padding: 3px;
     transition: all var(--transition);
-    position: relative;
 }
 
 .search-input-wrapper:focus-within {
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(246, 12, 62, 0.2);
+    box-shadow: 0 0 0 2px rgba(246, 12, 62, 0.1);
 }
 
 .search-input {
     flex: 1;
-    padding: 14px 24px;
+    padding: 10px 18px;
     border: none;
     background: transparent;
     font-size: 1rem;
     color: var(--text);
     outline: none;
-    border-radius: 50px 0 0 50px;
 }
 
 .search-input::placeholder {
@@ -369,14 +374,16 @@ img {
 }
 
 .search-btn {
-    padding: 14px 28px;
+    padding: 10px 24px;
     background: var(--primary);
     color: white;
-    font-weight: 600;
+    font-weight: 500;
+    font-size: 0.95rem;
     border: none;
+    border-radius: 22px;
     cursor: pointer;
     transition: background var(--transition);
-    border-radius: 0 50px 50px 0;
+    flex-shrink: 0;
 }
 
 .search-btn:hover {
@@ -489,23 +496,25 @@ img {
     color: #f0ad4e;
 }
 
-/* ==================== 标签区域 ==================== */
+/* ==================== 最近搜索区域（简洁版） ==================== */
 .tags-section {
     margin: 24px 0;
+    padding: 0;
 }
 
 .tags-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 .tags-title {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 0.95rem;
+    gap: 10px;
+    font-size: 1rem;
+    font-weight: 600;
     color: var(--text);
 }
 
@@ -513,36 +522,42 @@ img {
     font-size: 0.85rem;
     color: var(--text-muted);
     cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 20px;
+    transition: all var(--transition);
+}
+
+.tags-toggle:hover {
+    background: rgba(246, 12, 62, 0.1);
+    color: var(--primary);
 }
 
 .trending-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 8px;
 }
 
 .tag {
     display: inline-block;
-    padding: 8px 16px;
+    padding: 6px 12px;
     background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    font-size: 0.9rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.85rem;
     color: var(--text-secondary);
-    transition: all var(--transition);
+    transition: color var(--transition);
 }
 
 .tag:hover {
-    border-color: var(--primary);
     color: var(--primary);
-    background: white;
 }
 
 .tag-deletable {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding-right: 10px;
+    padding-right: 8px;
 }
 
 .tag-deletable a {
@@ -553,27 +568,27 @@ img {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
-    background: var(--border);
+    background: transparent;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 12px;
     line-height: 1;
     cursor: pointer;
-    transition: all var(--transition);
+    transition: color var(--transition);
     border: none;
     padding: 0;
 }
 
 .tag-delete:hover {
-    background: var(--primary);
-    color: white;
+    color: var(--primary);
 }
 
-/* ==================== 继续观看 ==================== */
+/* ==================== 继续观看区域（简洁版） ==================== */
 .section {
-    margin: 32px 0;
+    margin: 2.5rem 0;
+    padding: 0;
 }
 
 .section-header {
@@ -599,6 +614,11 @@ img {
 .section-more {
     font-size: 0.85rem;
     color: var(--text-muted);
+    transition: color var(--transition);
+}
+
+.section-more:hover {
+    color: var(--primary);
 }
 
 /* ==================== 电影网格 ==================== */
@@ -606,6 +626,22 @@ img {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 16px;
+}
+
+.discover-grid {
+    grid-template-columns: repeat(5, 1fr);
+}
+
+@media (max-width: 1024px) {
+    .discover-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .discover-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    }
 }
 
 .movie-card {
@@ -662,6 +698,64 @@ img {
     font-size: 0.8rem;
     color: var(--text-muted);
     margin-top: 2px;
+}
+
+/* 播放进度条 */
+.progress-bar-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.progress-bar {
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.3s ease;
+}
+
+/* ==================== 继续观看卡片包装器 ==================== */
+.movie-card-wrapper {
+    position: relative;
+}
+
+.watch-delete-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    border: none;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity var(--transition), background var(--transition);
+    z-index: 10;
+}
+
+.movie-card-wrapper:hover .watch-delete-btn {
+    opacity: 1;
+}
+
+.watch-delete-btn:hover {
+    background: var(--primary);
+}
+
+/* 移动端：删除按钮始终显示 */
+@media (max-width: 768px), (hover: none) {
+    .watch-delete-btn {
+        opacity: 1;
+        width: 22px;
+        height: 22px;
+        background: rgba(0, 0, 0, 0.5);
+    }
 }
 
 /* ==================== 空状态 ==================== */
@@ -2384,6 +2478,101 @@ img {
     background: #e53935;
 }
 
+/* ==================== Modal 弹窗 ==================== */
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+    animation: modalIn 0.2s ease-out;
+}
+
+@keyframes modalIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.modal-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    color: var(--text-muted);
+    transition: all var(--transition);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+}
+
+.modal-close:hover {
+    background: var(--bg-secondary);
+    color: var(--text);
+}
+
+.modal-content .admin-form {
+    padding: 20px;
+}
+
+.modal-content .form-group {
+    margin-bottom: 16px;
+}
+
+.modal-content .form-group:last-of-type {
+    margin-bottom: 0;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
 /* Admin 响应式 */
 @media (max-width: 768px) {
     .admin-header {
@@ -2418,7 +2607,8 @@ img {
 .watch-page {
     display: flex;
     flex-direction: column;
-    margin: -32px -40px; /* 抵消 content-wrapper 的 padding */
+    margin-top: -32px;
+    width: 100%;
 }
 
 /* 面包屑导航 */
@@ -2426,7 +2616,7 @@ img {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 40px;
+    padding: 1rem;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
     font-size: 0.85rem;
@@ -2452,14 +2642,8 @@ img {
 /* 视频区域 - 第一屏 */
 .video-section {
     width: 100%;
-    background: #000;
-}
-
-.video-container {
+    padding: 0.5rem;
     position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    background: #0a0a0a;
 }
 
 .video-loading {
@@ -2488,9 +2672,13 @@ img {
 }
 
 /* Artplayer 容器适配 */
-.video-container .artplayer-app {
-    width: 100% !important;
-    height: 100% !important;
+#artplayer-app {
+    position: relative;
+    width: 100%;
+    background: #000;
+    overflow: hidden;
+    max-height: 90dvh;
+    aspect-ratio: 16 / 9;
 }
 
 /* 视频信息区域 */
@@ -2712,11 +2900,10 @@ img {
 /* ==================== 视频播放页面响应式 ==================== */
 @media (max-width: 768px) {
     .watch-page {
-        margin: -20px -16px;
+        margin-top: -20px;
     }
 
     .watch-breadcrumb {
-        padding: 10px 16px;
         font-size: 0.8rem;
     }
 

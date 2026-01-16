@@ -17,9 +17,9 @@
     <p class="search-result-hint">「{{ .Keyword }}」的搜索结果</p>
 </div>
 
-<div id="search-results-container" 
-     hx-get="/api/htmx/search?kw={{ .Keyword }}" 
-     hx-trigger="load" 
+<div id="search-results-container"
+     hx-get="/api/htmx/search?kw={{ .Keyword }}"
+     hx-trigger="load"
      hx-indicator="#search-loading">
     <div id="search-loading" class="htmx-indicator search-loading-state">
         <div class="loading-spinner"></div>
@@ -29,12 +29,16 @@
 
 <style>
 .search-loading-state {
-    display: flex;
+    display: none;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 3rem;
     color: var(--text-muted);
+}
+/* HTMX 给 indicator 元素自身加 htmx-request 类 */
+.search-loading-state.htmx-request {
+    display: flex;
 }
 .loading-spinner {
     width: 40px;
@@ -48,14 +52,16 @@
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
-.htmx-indicator {
-    display: none;
-}
-.htmx-request .htmx-indicator {
-    display: flex;
-}
-.htmx-request#search-results-container {
-    opacity: 0.6;
-}
 </style>
+
+<script>
+// 记录搜索词到最近搜索
+// 使用 DOMContentLoaded 确保 app.js（defer 加载）已执行完毕
+document.addEventListener('DOMContentLoaded', function() {
+    const keyword = {{ .Keyword | js }};
+    if (keyword && typeof addRecentSearch === 'function') {
+        addRecentSearch(keyword);
+    }
+});
+</script>
 {{ end }}

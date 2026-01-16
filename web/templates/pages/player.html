@@ -1,125 +1,183 @@
 {{ define "content" }}
 <div class="m3u8-player-page">
     <div class="player-container">
-        <div class="player-wrapper">
-            <video id="player" controls autoplay></video>
+        <!-- 播放器区域 -->
+        <div class="player-wrapper" id="player-container">
+            <div id="artplayer-app"></div>
         </div>
 
-        <form class="url-form" onsubmit="return playVideo(event)">
+        <!-- URL 输入区域 -->
+        <form class="url-form" onsubmit="return handlePlay(event)">
             <input type="text" id="url-input" class="url-input"
-                   placeholder="输入 M3U8 链接..."
+                   placeholder="输入视频链接 (m3u8, flv, mp4)..."
                    value="{{ .URL }}">
-            <button type="submit" class="play-btn">立即播放</button>
+            <button type="submit" class="play-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>立即播放</span>
+            </button>
         </form>
     </div>
 
     <div class="player-info">
-        <h3>使用说明</h3>
+        <div class="info-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <h3>使用说明</h3>
+        </div>
         <ul>
-            <li>支持 M3U8 (HLS) 格式的视频流。</li>
+            <li>支持 <strong>M3U8 (HLS)</strong>, <strong>FLV</strong> 和 <strong>MP4</strong> 格式。</li>
             <li>直接粘贴链接并点击“立即播放”即可。</li>
-            <li>如果视频无法播放，请检查链接是否有效且支持跨域。</li>
+            <li>通过 URL 参数推送：<code>/player?url=您的链接</code>。</li>
+            <li>如果无法播放，请检查链接有效性及是否支持跨域 (CORS)。</li>
         </ul>
     </div>
 </div>
 
 <style>
     .m3u8-player-page {
-        max-width: 1000px;
-        margin: 0 auto;
-        padding: 20px;
+        margin: 20px auto;
+        padding: 0 20px;
     }
     .player-container {
-        background: #000;
-        border-radius: 12px;
+        background: #0b0b0b;
+        border-radius: 16px;
         overflow: hidden;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.05);
     }
     .player-wrapper {
-        aspect-ratio: 16 / 9;
         background: #000;
+        position: relative;
     }
-    #player {
+    #artplayer-app {
         width: 100%;
         height: 100%;
     }
     .url-form {
-        padding: 20px;
-        background: #1a1a1a;
+        padding: 24px;
+        background: #141414;
         display: flex;
         gap: 12px;
+        border-top: 1px solid rgba(255,255,255,0.05);
     }
     .url-input {
         flex: 1;
-        background: #2a2a2a;
-        border: 1px solid #3a3a3a;
-        border-radius: 6px;
-        padding: 12px 16px;
+        background: #1e1e1e;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 14px 20px;
         color: #fff;
-        font-size: 14px;
+        font-size: 15px;
+        transition: all 0.3s ease;
     }
     .url-input:focus {
-        border-color: var(--primary);
+        border-color: #f60c3e;
+        background: #252525;
         outline: none;
+        box-shadow: 0 0 0 2px rgba(246, 12, 62, 0.2);
     }
     .play-btn {
-        background: var(--primary);
+        background: #f60c3e;
         color: #fff;
         border: none;
-        border-radius: 6px;
-        padding: 0 24px;
+        border-radius: 8px;
+        padding: 0 28px;
         font-weight: 600;
         cursor: pointer;
-        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s ease;
     }
     .play-btn:hover {
-        background: var(--primary-dark);
-        transform: translateY(-1px);
+        background: #ff1a4d;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(246, 12, 62, 0.4);
     }
     .player-info {
-        margin-top: 30px;
-        padding: 24px;
-        background: var(--bg-secondary);
-        border-radius: 12px;
-        border: 1px solid var(--border);
+        margin-top: 32px;
+        padding: 28px;
+        background: rgba(255,255,255,0.03);
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+    .info-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 20px;
+        color: #f60c3e;
     }
     .player-info h3 {
-        margin-bottom: 16px;
+        margin: 0;
         font-size: 18px;
+        font-weight: 600;
     }
     .player-info ul {
-        list-style: disc;
-        padding-left: 20px;
-        color: var(--text-muted);
+        list-style: none;
+        padding: 0;
+        margin: 0;
     }
     .player-info li {
-        margin-bottom: 8px;
+        margin-bottom: 12px;
+        color: #999;
+        font-size: 14px;
+        display: flex;
+        align-items: flex-start;
+    }
+    .player-info li::before {
+        content: "•";
+        color: #f60c3e;
+        font-weight: bold;
+        display: inline-block;
+        width: 1em;
+        margin-left: 5px;
+    }
+    .player-info code {
+        background: rgba(255,255,255,0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
     }
 </style>
 
-<script src="/static/js/hls.min.js"></script>
-<script>
-    const video = document.getElementById('player');
-    const urlInput = document.getElementById('url-input');
+<!-- 播放器依赖 -->
+<script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
+<script src="/static/js/player.js"></script>
 
-    function playVideo(e) {
+<script>
+    let player = null;
+
+    function handlePlay(e) {
         if (e) e.preventDefault();
-        const url = urlInput.value.trim();
+        const url = document.getElementById('url-input').value.trim();
         if (!url) return false;
 
-        if (Hls.isSupported()) {
-            const hls = new Hls();
-            hls.loadSource(url);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                video.play();
-            });
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = url;
-            video.play();
+        // 销毁旧实例
+        if (player) {
+            player.destroy();
         }
 
-        // 更新 URL 参数
+        // 初始化新播放器
+        player = initPlayer('artplayer-app', url, {
+            title: '手动播放',
+            sourceKey: 'manual',
+            vodId: btoa(url).substring(0, 16) // 生成一个相对唯一的 ID
+        });
+
+        // 自动播放
+        if (player) {
+            player.play();
+        }
+
+        // 更新浏览器地址栏 URL 参数
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.set('url', url);
         window.history.replaceState({}, '', newUrl);
@@ -127,9 +185,11 @@
         return false;
     }
 
-    // 如果初始有 URL，自动播放
-    if (urlInput.value) {
-        playVideo();
-    }
+    document.addEventListener('DOMContentLoaded', function() {
+        const initialUrl = document.getElementById('url-input').value.trim();
+        if (initialUrl) {
+            handlePlay();
+        }
+    });
 </script>
 {{ end }}

@@ -19,8 +19,8 @@ func NewHistoryRepository(db *gorm.DB) *HistoryRepository {
 // Upsert 更新或插入观影记录
 func (r *HistoryRepository) Upsert(h *model.WatchHistory) error {
 	return r.db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "user_id"}, {Name: "douban_id"}, {Name: "episode"}},
-		DoUpdates: clause.AssignmentColumns([]string{"progress", "watched_at"}),
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "source"}, {Name: "vod_id"}, {Name: "episode"}},
+		DoUpdates: clause.AssignmentColumns([]string{"progress", "last_time", "duration", "watched_at"}),
 	}).Create(h).Error
 }
 

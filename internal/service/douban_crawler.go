@@ -84,6 +84,7 @@ func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	req.Header.Set("Referer", "https://movie.douban.com/")
+	req.Header.Set("Cookie", `ll="108288"; bid=KbVLyVSe9PI; _pk_id.100001.4cf6=8bbc2ff56b7eadbf.1768570153.; _pk_ses.100001.4cf6=1; ap_v=0,6.0; __yadk_uid=Q9rDtuhs4wWFa5rwTvB6WpPxXFFRnScS; __utma=30149280.1349976959.1768570154.1768570154.1768570154.1; __utmb=30149280.0.10.1768570154; __utmc=30149280; __utmz=30149280.1768570154.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); __utma=223695111.369068564.1768570154.1768570154.1768570154.1; __utmb=223695111.0.10.1768570154; __utmc=223695111; __utmz=223695111.1768570154.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _vwo_uuid_v2=D25CE55BF48CA21000B5BED858D7F40A3|a607d8885a8913b757f280679b32e9b1`)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -101,8 +102,19 @@ func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
 		return fmt.Errorf("解析 HTML 失败: %w", err)
 	}
 
+	// 检测是否被重定向到验证页面
+	pageTitle := doc.Find("title").Text()
+	if pageTitle == "豆瓣" || strings.Contains(pageTitle, "验证") {
+		return fmt.Errorf("触发豆瓣反爬验证 (豆瓣ID: %s)，请稍后重试", doubanID)
+	}
+
 	// 提取电影信息
 	movie := c.parseMoviePage(doc, doubanID)
+
+	// 强制校验：如果没有标题，视为抓取失败
+	if movie.Title == "" {
+		return fmt.Errorf("无法解析出电影标题 (豆瓣ID: %s)，页面可能结构变化或触发反爬", doubanID)
+	}
 
 	// 保存到数据库
 	if err := c.movieRepo.Upsert(movie); err != nil {
@@ -119,8 +131,20 @@ func (c *DoubanCrawler) parseMoviePage(doc *goquery.Document, doubanID string) *
 		DoubanID: doubanID,
 	}
 
-	// 标题
-	movie.Title = strings.TrimSpace(doc.Find("h1 span[property='v:itemreviewed']").Text())
+	// 标题解析增强策略
+	// 策略 1: property='v:itemreviewed'
+	title := doc.Find("h1 span[property='v:itemreviewed']").Text()
+	if title == "" {
+		// 策略 2: h1 直接下的 span
+		title = doc.Find("h1 span:first-child").Text()
+	}
+	if title == "" {
+		// 策略 3: 去掉 .year 后的 h1 文本
+		titleHeader := doc.Find("h1").Clone()
+		titleHeader.Find(".year").Remove()
+		title = titleHeader.Text()
+	}
+	movie.Title = strings.TrimSpace(title)
 
 	// 年份
 	yearText := doc.Find("h1 .year").Text()
@@ -145,47 +169,56 @@ func (c *DoubanCrawler) parseMoviePage(doc *goquery.Document, doubanID string) *
 	}
 
 	// 类型
+	var genres []string
 	doc.Find("span[property='v:genre']").Each(func(i int, s *goquery.Selection) {
-		movie.Genres = append(movie.Genres, strings.TrimSpace(s.Text()))
+		genres = append(genres, strings.TrimSpace(s.Text()))
 	})
+	movie.Genres = strings.Join(genres, ",")
 
 	// 国家/地区
 	if match := regexp.MustCompile(`制片国家/地区:\s*(.+)`).FindStringSubmatch(infoText); len(match) > 1 {
 		countries := strings.Split(match[1], "/")
+		var countryList []string
 		for _, country := range countries {
-			movie.Countries = append(movie.Countries, strings.TrimSpace(country))
+			countryList = append(countryList, strings.TrimSpace(country))
 		}
+		movie.Countries = strings.Join(countryList, ",")
 	}
 
 	// 片长
 	movie.Duration = strings.TrimSpace(doc.Find("span[property='v:runtime']").Text())
 
 	// 导演
+	var directors []model.Person
 	doc.Find("a[rel='v:directedBy']").Each(func(i int, s *goquery.Selection) {
 		href, _ := s.Attr("href")
-		// 从链接提取人物 ID: /celebrity/1234/
 		personID := ""
 		if match := regexp.MustCompile(`/celebrity/(\d+)/`).FindStringSubmatch(href); len(match) > 1 {
 			personID = match[1]
 		}
-		movie.Directors = append(movie.Directors, model.Person{
+		directors = append(directors, model.Person{
 			ID:   personID,
 			Name: strings.TrimSpace(s.Text()),
 		})
 	})
+	directorsJSON, _ := json.Marshal(directors)
+	movie.Directors = string(directorsJSON)
 
 	// 主演
+	var actors []model.Person
 	doc.Find("a[rel='v:starring']").Each(func(i int, s *goquery.Selection) {
 		href, _ := s.Attr("href")
 		personID := ""
 		if match := regexp.MustCompile(`/celebrity/(\d+)/`).FindStringSubmatch(href); len(match) > 1 {
 			personID = match[1]
 		}
-		movie.Actors = append(movie.Actors, model.Person{
+		actors = append(actors, model.Person{
 			ID:   personID,
 			Name: strings.TrimSpace(s.Text()),
 		})
 	})
+	actorsJSON, _ := json.Marshal(actors)
+	movie.Actors = string(actorsJSON)
 
 	// 剧情简介
 	summary := doc.Find("span[property='v:summary']").Text()
@@ -196,15 +229,26 @@ func (c *DoubanCrawler) parseMoviePage(doc *goquery.Document, doubanID string) *
 		movie.IMDbID = match[1]
 	}
 
-	// 尝试从 JSON-LD 获取更多信息
+	// 尝试从 JSON-LD 获取更多信息 (JSON-LD 通常最稳定)
 	doc.Find("script[type='application/ld+json']").Each(func(i int, s *goquery.Selection) {
-		var ldData map[string]interface{}
-		if err := json.Unmarshal([]byte(s.Text()), &ldData); err == nil {
-			// 如果标题为空，从 JSON-LD 获取
-			if movie.Title == "" {
-				if name, ok := ldData["name"].(string); ok {
-					movie.Title = name
-				}
+		var ldString = strings.TrimSpace(s.Text())
+		// 处理由于 HTML 转移导致的非法 JSON
+		ldString = strings.ReplaceAll(ldString, "\n", "")
+
+		var ldMap map[string]interface{}
+		if err := json.Unmarshal([]byte(ldString), &ldMap); err == nil {
+			// 如果有 name，通常是电影名
+			if name, ok := ldMap["name"].(string); ok && name != "" {
+				// 优先使用 JSON-LD 的标题，因为它不受 span 嵌套影响
+				movie.Title = strings.TrimSpace(name)
+			}
+			// 描述
+			if desc, ok := ldMap["description"].(string); ok && movie.Summary == "" {
+				movie.Summary = strings.TrimSpace(desc)
+			}
+			// 海报
+			if image, ok := ldMap["image"].(string); ok && movie.Poster == "" {
+				movie.Poster = image
 			}
 		}
 	})

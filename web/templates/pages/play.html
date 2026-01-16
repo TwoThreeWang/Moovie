@@ -16,7 +16,7 @@
     <section class="video-section">
         <div class="video-container" id="player-container">
             {{ if .PlayURL }}
-            <iframe src="/player?url={{ .PlayURL }}&embed=1" width="100%" height="100%" frameborder="0" allowfullscreen></iframe>
+            <div id="artplayer-app"></div>
             {{ else }}
             <div class="video-loading">
                 <span>暂无可用播放链接</span>
@@ -30,7 +30,7 @@
         <!-- 电影信息卡片：左海报 + 右信息 -->
         <div class="video-detail-card">
             <div class="detail-poster">
-                <img src="{{ .Detail.VodPic }}" alt="{{ .Detail.VodName }}" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+                <img src="{{ .Detail.VodPic }}" alt="{{ .Detail.VodName }}" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
             </div>
             <div class="detail-info">
                 <h1 class="detail-title">
@@ -50,6 +50,12 @@
 
                 <!-- 信息行 -->
                 <div class="detail-meta">
+                    {{ if .SourceKey }}
+                    <div class="meta-row">
+                        <span class="meta-label">来源：</span>
+                        <span class="meta-value">{{ .SourceKey }}</span>
+                    </div>
+                    {{ end }}
                     {{ if .Detail.GetDirectors }}
                     <div class="meta-row">
                         <span class="meta-label">导演：</span>
@@ -90,7 +96,7 @@
                 {{ if .Sources }}
                 <div class="source-selector">
                     {{ range $i, $source := .Sources }}
-                    <a href="/play/{{ $.DoubanID }}?source_key={{ $.SourceKey }}&vod_id={{ $.VodID }}&source={{ $source.Name }}{{ if $.Episode }}&ep={{ $.Episode }}{{ end }}"
+                    <a href="/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $source.Name }}{{ if $.Episode }}&ep={{ $.Episode }}{{ end }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}"
                        class="source-btn {{ if eq $source.Name $.Source }}active{{ end }}">
                         {{ $source.Name }}
                     </a>
@@ -100,7 +106,7 @@
             </div>
             <div class="episodes-list">
                 {{ range .Episodes }}
-                <a href="/play/{{ $.DoubanID }}?source_key={{ $.SourceKey }}&vod_id={{ $.VodID }}&source={{ $.Source }}&ep={{ .Title }}"
+                <a href="/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $.Source }}&ep={{ .Title }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}"
                    class="ep-btn {{ if eq .Title $.Episode }}active{{ end }}">
                     {{ .Title }}
                 </a>
@@ -134,18 +140,24 @@
     </section>
 </div>
 
+<!-- 播放器依赖库 -->
+<script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
+<!-- 播放器初始化 -->
+<script src="/static/js/player.js"></script>
 <script>
-    // 记录观影历史
     document.addEventListener('DOMContentLoaded', function() {
-        if (typeof recordWatch === 'function') {
-            recordWatch({
-                doubanId: '{{ .DoubanID }}',
-                title: '{{ .Detail.VodName }}',
-                poster: '{{ .Detail.VodPic }}',
-                episode: '{{ .Episode }}',
-                source: '{{ .Source }}'
-            });
-        }
+
+        // 初始化播放器
+        initPlayer('artplayer-app', '{{ .PlayURL }}', {
+            title: '{{ .Detail.VodName }}{{ if .Episode }} - {{ .Episode }}{{ end }}',
+            poster: '{{ .Detail.VodPic }}',
+            doubanId: '{{ .DoubanID }}',
+            sourceKey: '{{ .SourceKey }}',
+            vodId: '{{ .VodID }}',
+            episode: '{{ .Episode }}'
+        });
     });
 </script>
 {{ end }}

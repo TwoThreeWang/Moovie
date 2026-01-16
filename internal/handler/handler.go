@@ -142,13 +142,23 @@ func (h *Handler) Movie(c *gin.Context) {
 	doubanID := c.Param("id")
 
 	movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
+
+	// 数据完整性校验：如果标题为空，视为脏数据，需要重新抓取
+	if movie != nil && movie.Title == "" {
+		log.Printf("[Handler] 发现脏数据 (标题为空)，准备删除并重新抓取 ID: %s", doubanID)
+		h.Repos.Movie.DeleteByDoubanID(doubanID)
+		movie = nil // 强制触发后续抓取逻辑
+	}
+
 	if err != nil || movie == nil {
-		// 如果数据库中没有，尝试从豆瓣抓取
+		// 如果数据库中没有或已被认定为脏数据，尝试从豆瓣抓取
 		if h.DoubanCrawler != nil {
-			log.Printf("[Handler] 电影未找到，尝试从豆瓣抓取 ID: %s", doubanID)
+			log.Printf("[Handler] 正在从豆瓣抓取/更新信息 ID: %s", doubanID)
 			if err := h.DoubanCrawler.CrawlDoubanMovie(doubanID); err == nil {
 				// 抓取成功后再次查询
 				movie, _ = h.Repos.Movie.FindByDoubanID(doubanID)
+			} else {
+				log.Printf("[Handler] 豆瓣抓取失败: %v", err)
 			}
 		}
 	}
@@ -176,9 +186,11 @@ func (h *Handler) Movie(c *gin.Context) {
 
 // Play 播放页
 func (h *Handler) Play(c *gin.Context) {
-	doubanID := c.Param("id")
-	sourceKey := c.Query("source_key")
-	vodId := c.Query("vod_id")
+	// 核心参数从路径获取
+	sourceKey := c.Param("source_key")
+	vodId := c.Param("vod_id")
+	// 可选参数从查询字符串获取
+	doubanID := c.Query("douban_id") // 可选，用于展示增强
 	episode := c.Query("ep")
 
 	var detail *model.VodItem
@@ -212,9 +224,33 @@ func (h *Handler) Play(c *gin.Context) {
 		}
 	}
 
+	// 确定当前播放的集数和 URL
+	playURL := ""
+	if currentSource != nil {
+		// 如果没传 ep，默认播放第一集
+		if episode == "" && len(currentSource.Episodes) > 0 {
+			episode = currentSource.Episodes[0].Title
+			playURL = currentSource.Episodes[0].URL
+		} else {
+			for _, ep := range currentSource.Episodes {
+				if ep.Title == episode {
+					playURL = ep.URL
+					break
+				}
+			}
+		}
+	}
+
+	// 动态生成标题
+	pageTitle := detail.VodName
+	if episode != "" {
+		pageTitle += "(" + episode + ")"
+	}
+	pageTitle += " - 在线播放 - " + h.Config.SiteName
+
 	// 准备渲染数据
 	renderData := gin.H{
-		"Title":         detail.VodName + "(" + episode + ") - 在线播放 - " + h.Config.SiteName,
+		"Title":         pageTitle,
 		"DoubanID":      doubanID,
 		"VodID":         vodId,
 		"SourceKey":     sourceKey,
@@ -222,23 +258,13 @@ func (h *Handler) Play(c *gin.Context) {
 		"Sources":       sources,
 		"CurrentSource": currentSource,
 		"Episode":       episode,
+		"PlayURL":       playURL,
+		"ContentClass":  "full-width",
 	}
 
 	if currentSource != nil {
 		renderData["Episodes"] = currentSource.Episodes
 		renderData["Source"] = currentSource.Name
-		// 如果没传 ep，默认播放第一集
-		if episode == "" && len(currentSource.Episodes) > 0 {
-			renderData["Episode"] = currentSource.Episodes[0].Title
-			renderData["PlayURL"] = currentSource.Episodes[0].URL
-		} else {
-			for _, ep := range currentSource.Episodes {
-				if ep.Title == episode {
-					renderData["PlayURL"] = ep.URL
-					break
-				}
-			}
-		}
 	}
 
 	c.HTML(http.StatusOK, "play.html", h.RenderData(c, renderData))
@@ -257,8 +283,9 @@ func (h *Handler) Player(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "player.html", h.RenderData(c, gin.H{
-		"Title": "M3U8 播放器 - Moovie",
-		"URL":   url,
+		"Title":        "M3U8 播放器 - Moovie",
+		"URL":          url,
+		"ContentClass": "full-width",
 	}))
 }
 
@@ -294,8 +321,8 @@ func (h *Handler) Rankings(c *gin.Context) {
 			Year:      "2023",
 			Poster:    "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2898748250.webp",
 			Rating:    7.8,
-			Genres:    []string{"剧情", "动作", "奇幻"},
-			Directors: []model.Person{{Name: "乌尔善"}},
+			Genres:    "剧情,动作,奇幻",
+			Directors: "乌尔善",
 		},
 		{
 			DoubanID:  "26647087",
@@ -303,8 +330,8 @@ func (h *Handler) Rankings(c *gin.Context) {
 			Year:      "2023",
 			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2885955777.webp",
 			Rating:    8.7,
-			Genres:    []string{"剧情", "科幻"},
-			Directors: []model.Person{{Name: "杨磊"}},
+			Genres:    "剧情,科幻",
+			Directors: "杨磊",
 		},
 		{
 			DoubanID:  "35267208",
@@ -312,8 +339,8 @@ func (h *Handler) Rankings(c *gin.Context) {
 			Year:      "2023",
 			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2885842436.webp",
 			Rating:    8.3,
-			Genres:    []string{"科幻", "冒险", "灾难"},
-			Directors: []model.Person{{Name: "郭帆"}},
+			Genres:    "科幻,冒险,灾难",
+			Directors: "郭帆",
 		},
 		{
 			DoubanID:  "35183042",
@@ -321,8 +348,8 @@ func (h *Handler) Rankings(c *gin.Context) {
 			Year:      "2023",
 			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2884063548.webp",
 			Rating:    8.5,
-			Genres:    []string{"剧情", "犯罪"},
-			Directors: []model.Person{{Name: "徐纪周"}},
+			Genres:    "剧情,犯罪",
+			Directors: "徐纪周",
 		},
 		{
 			DoubanID:  "36190039",
@@ -330,53 +357,53 @@ func (h *Handler) Rankings(c *gin.Context) {
 			Year:      "2023",
 			Poster:    "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2904209695.webp",
 			Rating:    8.7,
-			Genres:    []string{"剧情"},
-			Directors: []model.Person{{Name: "王家卫"}},
+			Genres:    "剧情",
+			Directors: "王家卫",
 		},
 		{
 			DoubanID:  "35069Mo4",
 			Title:     "漫长的季节",
 			Year:      "2023",
-			Poster:    "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2894989679.webp",
+			Poster:    "/api/proxy/image?url=https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2894989679.webp",
 			Rating:    9.4,
-			Genres:    []string{"剧情", "悬疑"},
-			Directors: []model.Person{{Name: "辛爽"}},
+			Genres:    "剧情,悬疑",
+			Directors: "辛爽",
 		},
 		{
 			DoubanID:  "26873Mo3",
 			Title:     "奥本海默",
 			Year:      "2023",
-			Poster:    "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2893907974.webp",
+			Poster:    "/api/proxy/image?url=https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2893907974.webp",
 			Rating:    8.9,
-			Genres:    []string{"剧情", "传记", "历史"},
-			Directors: []model.Person{{Name: "克里斯托弗·诺兰"}},
+			Genres:    "剧情,传记,历史",
+			Directors: "克里斯托弗·诺兰",
 		},
 		{
 			DoubanID:  "35551Mo9",
 			Title:     "芭比",
 			Year:      "2023",
-			Poster:    "https://img3.doubanio.com/view/photo/s_ratio_poster/public/p2895879710.webp",
+			Poster:    "/api/proxy/image?url=https://img3.doubanio.com/view/photo/s_ratio_poster/public/p2895879710.webp",
 			Rating:    8.3,
-			Genres:    []string{"喜剧", "冒险", "奇幻"},
-			Directors: []model.Person{{Name: "格蕾塔·葛韦格"}},
+			Genres:    "喜剧,冒险,奇幻",
+			Directors: "格蕾塔·葛韦格",
 		},
 		{
 			DoubanID:  "30475768",
 			Title:     "坠落的审判",
 			Year:      "2023",
-			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2899335708.webp",
+			Poster:    "/api/proxy/image?url=https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2899335708.webp",
 			Rating:    8.8,
-			Genres:    []string{"剧情", "悬疑", "家庭"},
-			Directors: []model.Person{{Name: "茹斯汀·特里耶"}},
+			Genres:    "剧情,悬疑,家庭",
+			Directors: "茹斯汀·特里耶",
 		},
 		{
 			DoubanID:  "35900652",
 			Title:     "年会不能停！",
 			Year:      "2023",
-			Poster:    "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2902429131.webp",
+			Poster:    "/api/proxy/image?url=https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2902429131.webp",
 			Rating:    8.1,
-			Genres:    []string{"喜剧"},
-			Directors: []model.Person{{Name: "董润年"}},
+			Genres:    "喜剧",
+			Directors: "董润年",
 		},
 	}
 

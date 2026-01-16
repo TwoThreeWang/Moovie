@@ -1,13 +1,12 @@
 package repository
 
 import (
-	"encoding/json"
 	"errors"
 	"time"
 
-	"github.com/lib/pq"
 	"github.com/user/moovie/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type MovieRepository struct {
@@ -20,40 +19,24 @@ func NewMovieRepository(db *gorm.DB) *MovieRepository {
 
 // FindByDoubanID 根据豆瓣 ID 查找电影
 func (r *MovieRepository) FindByDoubanID(doubanID string) (*model.Movie, error) {
+	if r.db == nil {
+		return nil, errors.New("database connection is nil")
+	}
 	var movie model.Movie
-	var directorsJSON, actorsJSON []byte
-
-	err := r.db.Model(&model.Movie{}).
-		Select("id", "douban_id", "title", "original_title", "year", "poster", "rating",
-			"genres", "countries", "directors", "actors", "summary", "duration", "imdb_id", "updated_at").
-		Where("douban_id = ?", doubanID).
-		Row().Scan(
-		&movie.ID, &movie.DoubanID, &movie.Title, &movie.OriginalTitle,
-		&movie.Year, &movie.Poster, &movie.Rating,
-		pq.Array(&movie.Genres), pq.Array(&movie.Countries),
-		&directorsJSON, &actorsJSON,
-		&movie.Summary, &movie.Duration, &movie.IMDbID, &movie.UpdatedAt,
-	)
-
+	err := r.db.Where("douban_id = ?", doubanID).Take(&movie).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "sql: no rows in result set" {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
-
-	// 解析 JSON
-	json.Unmarshal(directorsJSON, &movie.Directors)
-	json.Unmarshal(actorsJSON, &movie.Actors)
-
 	return &movie, nil
 }
 
 // GetSitemapMovies 获取用于站点地图的电影列表
 func (r *MovieRepository) GetSitemapMovies(limit int) ([]model.Movie, error) {
 	var movies []model.Movie
-	err := r.db.Model(&model.Movie{}).
-		Select("id", "douban_id", "updated_at").
+	err := r.db.Select("id", "douban_id", "updated_at").
 		Order("updated_at DESC").
 		Limit(limit).
 		Find(&movies).Error
@@ -62,60 +45,32 @@ func (r *MovieRepository) GetSitemapMovies(limit int) ([]model.Movie, error) {
 
 // Upsert 创建或更新电影
 func (r *MovieRepository) Upsert(movie *model.Movie) error {
-	directorsJSON, _ := json.Marshal(movie.Directors)
-	actorsJSON, _ := json.Marshal(movie.Actors)
-
-	return r.db.Exec(`
-		INSERT INTO movies (douban_id, title, original_title, year, poster, rating,
-		                    genres, countries, directors, actors, summary, duration, imdb_id, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (douban_id) DO UPDATE SET
-			title = EXCLUDED.title,
-			original_title = EXCLUDED.original_title,
-			year = EXCLUDED.year,
-			poster = EXCLUDED.poster,
-			rating = EXCLUDED.rating,
-			genres = EXCLUDED.genres,
-			countries = EXCLUDED.countries,
-			directors = EXCLUDED.directors,
-			actors = EXCLUDED.actors,
-			summary = EXCLUDED.summary,
-			duration = EXCLUDED.duration,
-			imdb_id = EXCLUDED.imdb_id,
-			updated_at = EXCLUDED.updated_at
-	`, movie.DoubanID, movie.Title, movie.OriginalTitle, movie.Year, movie.Poster, movie.Rating,
-		pq.Array(movie.Genres), pq.Array(movie.Countries),
-		directorsJSON, actorsJSON,
-		movie.Summary, movie.Duration, movie.IMDbID, time.Now()).Error
+	movie.UpdatedAt = time.Now()
+	// 使用 GORM 的 Clauses 处理冲突并更新
+	return r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "douban_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"title", "original_title", "year", "poster", "rating",
+			"genres", "countries", "directors", "actors",
+			"summary", "duration", "imdb_id", "updated_at",
+		}),
+	}).Create(movie).Error
 }
 
 // FindByID 根据 ID 查找电影
 func (r *MovieRepository) FindByID(id int) (*model.Movie, error) {
 	var movie model.Movie
-	var directorsJSON, actorsJSON []byte
-
-	err := r.db.Model(&model.Movie{}).
-		Select("id", "douban_id", "title", "original_title", "year", "poster", "rating",
-			"genres", "countries", "directors", "actors", "summary", "duration", "imdb_id", "updated_at").
-		Where("id = ?", id).
-		Row().Scan(
-		&movie.ID, &movie.DoubanID, &movie.Title, &movie.OriginalTitle,
-		&movie.Year, &movie.Poster, &movie.Rating,
-		pq.Array(&movie.Genres), pq.Array(&movie.Countries),
-		&directorsJSON, &actorsJSON,
-		&movie.Summary, &movie.Duration, &movie.IMDbID, &movie.UpdatedAt,
-	)
-
+	err := r.db.Where("id = ?", id).Take(&movie).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "sql: no rows in result set" {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
-
-	// 解析 JSON
-	json.Unmarshal(directorsJSON, &movie.Directors)
-	json.Unmarshal(actorsJSON, &movie.Actors)
-
 	return &movie, nil
+}
+
+// DeleteByDoubanID 根据豆瓣 ID 删除记录
+func (r *MovieRepository) DeleteByDoubanID(doubanID string) error {
+	return r.db.Where("douban_id = ?", doubanID).Delete(&model.Movie{}).Error
 }

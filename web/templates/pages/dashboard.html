@@ -86,7 +86,7 @@
             {{ if .History }}
             <div class="movie-grid">
                 {{ range .History }}
-                <a href="/play/{{ .DoubanID }}?source={{ .Source }}&ep={{ .Episode }}" class="movie-card">
+                <a href="/search?kw={{ .Title }}" class="movie-card" title="点击搜索资源续播">
                     <div class="movie-poster">
                         <img src="{{ .Poster }}" alt="{{ .Title }}" loading="lazy">
                     </div>

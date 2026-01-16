@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	_ "github.com/lib/pq"
+	"github.com/user/moovie/internal/model"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,19 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 	// 设置连接池
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(5)
+
+	// 自动迁移
+	err = db.AutoMigrate(
+		&model.User{},
+		&model.Movie{},
+		&model.Favorite{},
+		&model.WatchHistory{},
+		&model.Feedback{},
+		&model.Site{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("数据库迁移失败: %w", err)
+	}
 
 	return db, nil
 }

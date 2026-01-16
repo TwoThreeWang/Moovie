@@ -12,7 +12,7 @@
 </div>
 
 {{ if .Subjects }}
-<div class="movie-grid">
+<div class="movie-grid discover-grid">
     {{ range .Subjects }}
     <div class="movie-card">
         <a href="/search?kw={{ .Title }}&doubanId={{ .ID }}">
@@ -42,23 +42,5 @@
 </div>
 {{ end }}
 
-<section class="section" style="margin-top: 48px;">
-    <h2 class="section-title">快速筛选</h2>
-    <div class="trending-tags">
-        <a href="/search?kw=动作" class="tag">动作</a>
-        <a href="/search?kw=喜剧" class="tag">喜剧</a>
-        <a href="/search?kw=爱情" class="tag">爱情</a>
-        <a href="/search?kw=科幻" class="tag">科幻</a>
-        <a href="/search?kw=恐怖" class="tag">恐怖</a>
-        <a href="/search?kw=悬疑" class="tag">悬疑</a>
-        <a href="/search?kw=动画" class="tag">动画</a>
-        <a href="/search?kw=纪录片" class="tag">纪录片</a>
-        <a href="/search?kw=美剧" class="tag">美剧</a>
-        <a href="/search?kw=韩剧" class="tag">韩剧</a>
-        <a href="/search?kw=日剧" class="tag">日剧</a>
-        <a href="/search?kw=国产剧" class="tag">国产剧</a>
-        <a href="/search?kw=港剧" class="tag">港剧</a>
-        <a href="/search?kw=英剧" class="tag">英剧</a>
-    </div>
-</section>
+
 {{ end }}

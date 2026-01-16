@@ -6,17 +6,19 @@
 
 // ==================== 观影历史管理 ====================
 
-const HISTORY_KEY = 'moovie_watchHistory';
+const HISTORY_KEY = 'moovie_play_state'; // 统一使用该键
 const SYNC_KEY = 'moovie_lastSyncAt';
 const MAX_HISTORY = 100;
-const SYNC_INTERVAL = 5 * 60 * 1000; // 5 分钟
+const SYNC_INTERVAL = 1 * 60 * 1000; // 1 分钟
 
 /**
  * 获取观影历史
  */
 function getWatchHistory() {
     try {
-        return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+        const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+        // 将对象转换为数组并排序，以便兼容旧的调用处
+        return Object.values(data).sort((a, b) => (b.watchedAt || b.updatedAt || 0) - (a.watchedAt || a.updatedAt || 0));
     } catch {
         return [];
     }
@@ -25,57 +27,32 @@ function getWatchHistory() {
 /**
  * 保存观影历史
  */
-function saveWatchHistory(history) {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+// 内部保存辅助
+function _saveWatchHistoryInternal(data) {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
 }
 
 /**
- * 记录观影
- * @param {Object} item - { doubanId, title, poster, episode, progress, source }
+ * 保存观影历史（从数组转换回存储对象）
  */
-function recordWatch(item) {
-    if (!item.doubanId) return;
-
-    const history = getWatchHistory();
-    const now = Date.now();
-
-    // 查找是否已存在同一剧集
-    const idx = history.findIndex(h =>
-        h.doubanId === item.doubanId && h.episode === item.episode
-    );
-
-    const record = {
-        ...item,
-        watchedAt: now
-    };
-
-    if (idx >= 0) {
-        // 更新已有记录
-        history[idx] = { ...history[idx], ...record };
-        // 移到最前面
-        const updated = history.splice(idx, 1)[0];
-        history.unshift(updated);
-    } else {
-        // 添加新记录
-        history.unshift(record);
-    }
-
-    saveWatchHistory(history);
-    scheduleSync();
+function saveWatchHistory(historyArray) {
+    const data = {};
+    historyArray.forEach(h => {
+        // 使用与 player.js 一致的 key 格式: source_key + vod_id
+        const key = (h.source || h.source_key || '') + (h.vod_id || h.vodId || '');
+        if (key) {
+            data[key] = {
+                ...h,
+                source_key: h.source || h.source_key,
+                vod_id: h.vod_id || h.vodId,
+                img: h.poster || h.img // 确保字段兼容
+            };
+        }
+    });
+    _saveWatchHistoryInternal(data);
 }
 
-/**
- * 更新播放进度
- */
-function updateProgress(doubanId, episode, progress) {
-    const history = getWatchHistory();
-    const record = history.find(h => h.doubanId === doubanId && h.episode === episode);
-    if (record) {
-        record.progress = progress;
-        record.watchedAt = Date.now();
-        saveWatchHistory(history);
-    }
-}
+
 
 // ==================== 同步逻辑 ====================
 
@@ -114,12 +91,28 @@ function scheduleSync() {
 async function doSync() {
     if (!isLoggedIn()) return;
 
-    const history = getWatchHistory();
     const lastSyncAt = parseInt(localStorage.getItem(SYNC_KEY) || '0');
+    const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
 
-    // 只同步上次同步后的新记录
-    const newRecords = history.filter(h => h.watchedAt > lastSyncAt);
-    if (newRecords.length === 0) return;
+    // 找出需要同步的新记录 (watchedAt/updatedAt > lastSyncAt)
+    const newRecords = Object.values(data).filter(h =>
+        (h.watchedAt || h.updatedAt || 0) > lastSyncAt
+    ).map(h => ({
+        douban_id: h.doubanId || '',
+        vod_id: h.vod_id || h.vodId || '',
+        title: h.title,
+        poster: h.poster || h.img,
+        episode: h.episode,
+        progress: h.progress || (h.duration > 0 ? Math.floor((h.lastTime / h.duration) * 100) : 0),
+        last_time: h.lastTime || 0,
+        duration: h.duration || 0,
+        source: h.source || h.source_key,
+        watchedAt: h.watchedAt || h.updatedAt || Date.now()
+    }));
+
+    // 即使本地没有新记录 (newRecords.length === 0)，也允许发起请求以拉取服务器端可能的更新
+    // 如果本地有记录但不需要上传，newRecords 将是空数组，服务器会识别并只返回增量数据数据数据数据
+
 
     try {
         const response = await fetch('/api/history/sync', {
@@ -132,7 +125,8 @@ async function doSync() {
         });
 
         if (response.ok) {
-            const data = await response.json();
+            const result = await response.json();
+            const data = result.data || {};
 
             // 合并服务器返回的记录
             if (data.serverRecords && data.serverRecords.length > 0) {
@@ -140,7 +134,8 @@ async function doSync() {
             }
 
             // 更新同步时间
-            localStorage.setItem(SYNC_KEY, Date.now().toString());
+            const syncedAt = data.syncedAt || Date.now();
+            localStorage.setItem(SYNC_KEY, syncedAt.toString());
         }
     } catch (error) {
         console.error('同步观影历史失败:', error);
@@ -160,29 +155,39 @@ function mergeServerRecords(serverRecords) {
 
         if (localIdx >= 0) {
             // 保留较新的记录
-            const localTime = localHistory[localIdx].watchedAt;
+            const localTime = localHistory[localIdx].watchedAt || localHistory[localIdx].updatedAt;
             const serverTime = new Date(serverRecord.watched_at).getTime();
             if (serverTime > localTime) {
                 localHistory[localIdx] = {
+                    ...localHistory[localIdx],
                     doubanId: serverRecord.douban_id,
                     title: serverRecord.title,
                     poster: serverRecord.poster,
+                    img: serverRecord.poster,
                     episode: serverRecord.episode,
                     progress: serverRecord.progress,
-                    source: serverRecord.source,
-                    watchedAt: serverTime
+                    source_key: serverRecord.source,
+                    vod_id: serverRecord.vod_id,
+                    watchedAt: serverTime,
+                    updatedAt: serverTime
                 };
             }
         } else {
             // 添加服务器记录
+            const stime = new Date(serverRecord.watched_at).getTime();
             localHistory.push({
                 doubanId: serverRecord.douban_id,
                 title: serverRecord.title,
                 poster: serverRecord.poster,
+                img: serverRecord.poster,
                 episode: serverRecord.episode,
                 progress: serverRecord.progress,
-                source: serverRecord.source,
-                watchedAt: new Date(serverRecord.watched_at).getTime()
+                source_key: serverRecord.source,
+                vod_id: serverRecord.vod_id,
+                watchedAt: stime,
+                updatedAt: stime,
+                lastTime: (serverRecord.progress / 100) * (serverRecord.duration || 0), // 粗略估算或依赖 duration
+                duration: serverRecord.duration || 0
             });
         }
     });
@@ -190,9 +195,41 @@ function mergeServerRecords(serverRecords) {
     // 按时间排序
     localHistory.sort((a, b) => b.watchedAt - a.watchedAt);
     saveWatchHistory(localHistory);
+
+    // 同步完成后，如果当前在首页，自动重新渲染继续观看列表
+    if (document.getElementById('continue-watching')) {
+        renderContinueWatching();
+    }
 }
 
 // ==================== 首页继续观看 ====================
+
+/**
+ * 获取播放状态记录（来自 player.js 的 Storage）
+ */
+function getPlayState() {
+    try {
+        return JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * 删除单个观看记录
+ */
+function removeWatchHistory(itemKey) {
+    try {
+        const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+        if (data[itemKey]) {
+            delete data[itemKey];
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
+            renderContinueWatching();
+        }
+    } catch (error) {
+        console.error('删除观看记录失败:', error);
+    }
+}
 
 /**
  * 渲染继续观看列表
@@ -201,24 +238,54 @@ function renderContinueWatching() {
     const container = document.getElementById('continue-watching');
     if (!container) return;
 
-    const history = getWatchHistory().slice(0, 6);
+    const playState = getPlayState();
+    // 转换为数组并按更新时间排序
+    const history = Object.values(playState)
+        .filter(item => item.lastTime > 0 && item.duration > 0)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+        .slice(0, 6);
 
     if (history.length === 0) {
         container.innerHTML = '<p class="empty-state">暂无观看记录</p>';
         return;
     }
 
-    container.innerHTML = history.map(item => `
-        <a href="/play/${item.doubanId}?source=${item.source || ''}&ep=${item.episode || ''}" class="movie-card">
-            <div class="movie-poster">
-                <img src="${item.poster || '/static/img/placeholder.jpg'}" alt="${item.title}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
-            </div>
-            <div class="movie-info">
-                <h3 class="movie-title">${item.title}</h3>
-                <p class="movie-year">${item.episode || '继续观看'}</p>
-            </div>
-        </a>
-    `).join('');
+    // 用于删除按钮的唯一标识，与 player.js Storage.upsert 中的 id 字段格式一致
+    const getItemKey = (item) => `${item.source_key || ''}${item.vod_id || ''}`;
+
+    container.innerHTML = history.map(item => {
+        // 计算播放进度百分比
+        const progress = item.duration > 0 ? Math.min((item.lastTime / item.duration) * 100, 100) : 0;
+        // 构建播放链接
+        const playUrl = item.source_key && item.vod_id
+            ? `/play/${item.source_key}/${item.vod_id}${item.episode ? '?ep=' + encodeURIComponent(item.episode) : ''}`
+            : `/search?kw=${encodeURIComponent(item.title || '')}`;
+
+        const itemKey = getItemKey(item);
+
+        return `
+        <div class="movie-card-wrapper">
+            <a href="${playUrl}" class="movie-card" title="继续播放 ${item.title || ''}">
+                <div class="movie-poster">
+                    <img src="${item.img ? `/api/proxy/image?url=${encodeURIComponent(item.img)}` : '/static/img/placeholder.jpg'}" alt="${item.title || ''}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: ${progress.toFixed(1)}%"></div>
+                    </div>
+                </div>
+                <div class="movie-info">
+                    <h3 class="movie-title">${item.title || '未知'}</h3>
+                    <p class="movie-year">${item.episode || '继续观看'}</p>
+                </div>
+            </a>
+            <button class="watch-delete-btn" onclick="event.preventDefault(); event.stopPropagation(); removeWatchHistory('${itemKey}')" title="删除此记录">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+    `;
+    }).join('');
 }
 
 // ==================== 搜索建议 ====================
@@ -291,18 +358,15 @@ function renderSuggestions(suggestions) {
         if (item.type === 'movie') typeText = '电影';
         else if (item.type === 'tv') typeText = '剧集';
 
-        // 安全处理 title 中的引号
-        const safeTitle = (item.title || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        // 构建搜索链接
+        const searchUrl = `/search?kw=${encodeURIComponent(item.title || '')}&doubanId=${encodeURIComponent(item.id)}`;
 
         return `
-            <div class="search-suggestion-item"
-                 data-index="${index}"
-                 data-id="${item.id}"
-                 onclick="selectSuggestion('${item.id}', '${safeTitle}')">
+            <a href="${searchUrl}" class="search-suggestion-item" data-index="${index}">
                 <img src="${item.img || '/static/img/placeholder.jpg'}"
-                     alt="${safeTitle}"
+                     alt="${item.title || ''}"
                      class="suggestion-poster"
-                     onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+                     onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
                 <div class="suggestion-info">
                     <div class="suggestion-title">${item.title || ''}</div>
                     <div class="suggestion-meta">
@@ -311,7 +375,7 @@ function renderSuggestions(suggestions) {
                     </div>
                     ${item.sub_title ? `<div class="suggestion-subtitle">${item.sub_title}</div>` : ''}
                 </div>
-            </div>
+            </a>
         `;
     }).join('');
 
@@ -330,42 +394,6 @@ function hideSuggestions() {
     }
     selectedSuggestionIndex = -1;
 }
-
-/**
- * 选择搜索建议
- * 调用 API 检查电影是否存在，决定跳转到详情页还是搜索页
- */
-async function selectSuggestion(doubanId, title) {
-    const searchInput = document.getElementById('search-input');
-    if (searchInput) {
-        searchInput.value = title;
-    }
-    hideSuggestions();
-
-    try {
-        // 调用检查 API
-        const response = await fetch(`/api/movies/check/${doubanId}?title=${encodeURIComponent(title)}`);
-        if (!response.ok) {
-            throw new Error('API 请求失败');
-        }
-
-        const result = await response.json();
-        console.log('[搜索建议] 检查结果:', result);
-
-        if (result.data && result.data.redirect_url) {
-            // 跳转到 API 返回的地址
-            window.location.href = result.data.redirect_url;
-        } else {
-            // 备用：跳转到搜索页
-            window.location.href = `/search?kw=${encodeURIComponent(title)}`;
-        }
-    } catch (error) {
-        console.error('[搜索建议] 检查失败:', error);
-        // 出错时直接跳转到搜索页
-        window.location.href = `/search?kw=${encodeURIComponent(title)}`;
-    }
-}
-
 
 /**
  * 键盘导航
@@ -510,13 +538,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // 渲染最近搜索
     renderRecentSearches();
 
-    // 如果当前是搜索结果页，记录搜索词
-    const urlParams = new URLSearchParams(window.location.search);
-    const searchQuery = urlParams.get('q');
-    if (searchQuery && window.location.pathname === '/search') {
-        addRecentSearch(searchQuery);
-    }
-
     // 登录后首次进入尝试同步
     if (isLoggedIn()) {
         scheduleSync();
@@ -526,7 +547,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const searchForm = document.querySelector('.search-form');
     if (searchForm) {
         searchForm.addEventListener('submit', function(e) {
-            const input = this.querySelector('input[name="q"]');
+            const input = this.querySelector('input[name="kw"]');
             if (input && input.value) {
                 addRecentSearch(input.value);
             }

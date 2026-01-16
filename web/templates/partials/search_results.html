@@ -1,9 +1,9 @@
 {{ if .Results }}
 <div class="search-result-grid">
     {{ range .Results }}
-    <a href="/play/{{ if .VodDoubanId }}{{ .VodDoubanId }}{{ else }}vod{{ end }}?source_key={{ .SourceKey }}&vod_id={{ .VodId }}" class="search-result-card">
+    <a href="/play/{{ .SourceKey }}/{{ .VodId }}{{ if .VodDoubanId }}?douban_id={{ .VodDoubanId }}{{ end }}" class="search-result-card">
         <div class="card-poster">
-            <img src="{{ .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+            <img src="{{ .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
             {{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}
         </div>
         <div class="card-content">

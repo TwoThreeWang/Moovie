@@ -7,7 +7,7 @@
     {{ range .Favorites }}
     <a href="/movie/{{ .Movie.DoubanID }}" class="movie-card">
         <div class="movie-poster">
-            <img src="{{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy">
+            <img src="/api/proxy/image?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy">
             {{ if .Movie.Rating }}
             <span class="movie-rating">{{ .Movie.Rating }}</span>
             {{ end }}

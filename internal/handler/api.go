@@ -91,6 +91,26 @@ func (h *Handler) SubmitFeedback(c *gin.Context) {
 	c.String(http.StatusOK, `<div class="alert alert-success">感谢您的反馈！我们会尽快处理。</div>`)
 }
 
+// SyncHistoryReq 同步请求结构
+type SyncHistoryReq struct {
+	Records    []HistoryRecordDTO `json:"records"`
+	LastSyncAt int64              `json:"lastSyncAt"`
+}
+
+// HistoryRecordDTO 观影历史 DTO（用于处理前端毫秒时间戳）
+type HistoryRecordDTO struct {
+	DoubanID  string  `json:"douban_id"`
+	VodID     string  `json:"vod_id"`
+	Title     string  `json:"title"`
+	Poster    string  `json:"poster"`
+	Episode   string  `json:"episode"`
+	Progress  int     `json:"progress"`
+	LastTime  float64 `json:"last_time"`
+	Duration  float64 `json:"duration"`
+	Source    string  `json:"source"`
+	WatchedAt int64   `json:"watchedAt"` // 毫秒时间戳
+}
+
 // SyncHistory 同步观影历史（JSON API）
 func (h *Handler) SyncHistory(c *gin.Context) {
 	userID := middleware.GetUserID(c)
@@ -99,33 +119,46 @@ func (h *Handler) SyncHistory(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Records    []*model.WatchHistory `json:"records"`
-		LastSyncAt int64                 `json:"lastSyncAt"`
-	}
-
+	var req SyncHistoryReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "无效的请求数据")
 		return
 	}
 
-	// 保存客户端记录到服务端
-	for _, record := range req.Records {
-		record.UserID = userID
-		h.Repos.History.Upsert(record)
+	// 1. 将客户端记录保存到服务端
+	for _, dto := range req.Records {
+		record := &model.WatchHistory{
+			UserID:    userID,
+			DoubanID:  dto.DoubanID,
+			VodID:     dto.VodID,
+			Title:     dto.Title,
+			Poster:    dto.Poster,
+			Episode:   dto.Episode,
+			Progress:  dto.Progress,
+			LastTime:  dto.LastTime,
+			Duration:  dto.Duration,
+			Source:    dto.Source,
+			WatchedAt: time.UnixMilli(dto.WatchedAt),
+		}
+		// 异步处理以提高响应速度，或者同步处理确保一致性
+		// 这里选择同步处理，因为观影记录不多且需要确保同步成功
+		if err := h.Repos.History.Upsert(record); err != nil {
+			log.Printf("[SyncHistory] 保存记录失败: %v", err)
+		}
 	}
 
-	// 获取服务端最新记录返回给客户端
-	serverRecords, _ := h.Repos.History.ListByUser(userID, 100, 0)
-
-	var serverSyncedAt int64
-	if len(serverRecords) > 0 {
-		serverSyncedAt = serverRecords[0].WatchedAt.Unix()
+	// 2. 获取服务端在 lastSyncAt 之后的所有更新返回给客户端
+	// 将 lastSyncAt (毫秒) 转换为 time.Time
+	lastSyncTime := time.UnixMilli(req.LastSyncAt)
+	serverRecords, err := h.Repos.History.GetAfter(userID, lastSyncTime)
+	if err != nil {
+		log.Printf("[SyncHistory] 获取服务端新记录失败: %v", err)
 	}
 
+	// 3. 返回同步成功的最新状态
 	utils.Success(c, gin.H{
-		"serverRecords":  serverRecords,
-		"serverSyncedAt": serverSyncedAt,
+		"serverRecords": serverRecords,
+		"syncedAt":      time.Now().UnixMilli(),
 	})
 }
 
@@ -152,12 +185,6 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 	targetURL := c.Query("url")
 	if targetURL == "" {
 		c.String(http.StatusBadRequest, "URL 不能为空")
-		return
-	}
-
-	// 只允许代理特定的域名（安全考虑）
-	if !strings.Contains(targetURL, "doubanio.com") {
-		c.String(http.StatusForbidden, "不支持的图片源")
 		return
 	}
 

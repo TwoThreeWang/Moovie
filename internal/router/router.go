@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -20,20 +21,20 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	})
 
 	// ==================== 公开页面 ====================
-	r.GET("/", h.Home)                 // 首页
-	r.GET("/search", h.Search)         // 搜索页面
-	r.GET("/movie/:id", h.Movie)       // 电影详情
-	r.GET("/play/:id", h.Play)         // 播放页面
-	r.GET("/player", h.Player)         // 视频播放页
-	r.GET("/discover", h.Discover)     // 发现页
-	r.GET("/rankings", h.Rankings)     // 排行榜
-	r.GET("/trends", h.Trends)         // 热门
-	r.GET("/feedback", h.FeedbackPage) // 反馈页
-	r.GET("/about", h.About)           // 关于页
-	r.GET("/dmca", h.DMCA)             // DMCA页
-	r.GET("/privacy", h.Privacy)       // 隐私政策
-	r.GET("/terms", h.Terms)           // 使用条款
-	r.GET("/sitemap.xml", h.Sitemap)   // 网站地图
+	r.GET("/", h.Home)                         // 首页
+	r.GET("/search", h.Search)                 // 搜索页面
+	r.GET("/movie/:id", h.Movie)               // 电影详情
+	r.GET("/play/:source_key/:vod_id", h.Play) // 视频播放页
+	r.GET("/player", h.Player)                 // M3U8 播放器
+	r.GET("/discover", h.Discover)             // 发现页
+	r.GET("/rankings", h.Rankings)             // 排行榜
+	r.GET("/trends", h.Trends)                 // 热门
+	r.GET("/feedback", h.FeedbackPage)         // 反馈页
+	r.GET("/about", h.About)                   // 关于页
+	r.GET("/dmca", h.DMCA)                     // DMCA页
+	r.GET("/privacy", h.Privacy)               // 隐私政策
+	r.GET("/terms", h.Terms)                   // 使用条款
+	r.GET("/sitemap.xml", h.Sitemap)           // 网站地图
 
 	// ==================== 认证页面 ====================
 	auth := r.Group("/auth")
@@ -159,6 +160,11 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		},
 		"add": func(a, b int) int {
 			return a + b
+		},
+		"jsonUnmarshal": func(s string) []interface{} {
+			var res []interface{}
+			_ = json.Unmarshal([]byte(s), &res)
+			return res
 		},
 	}
 
