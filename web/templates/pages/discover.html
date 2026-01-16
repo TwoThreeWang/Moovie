@@ -1,10 +1,49 @@
 
 {{ define "content" }}
 <h1 class="page-title">发现</h1>
-<p class="page-subtitle">按分类浏览电影和电视剧</p>
+<p class="page-subtitle">发现全网最热门的影视作品</p>
 
-<section class="section">
-    <h2 class="section-title">类型</h2>
+<!-- 热门分类导航 -->
+<div class="tab-nav" style="margin-bottom: 24px;">
+    <a href="/discover?type=movie" class="tab-btn {{ if eq .CurrentType "movie" }}active{{ end }}">热门电影</a>
+    <a href="/discover?type=tv" class="tab-btn {{ if eq .CurrentType "tv" }}active{{ end }}">热门电视剧</a>
+    <a href="/discover?type=show" class="tab-btn {{ if eq .CurrentType "show" }}active{{ end }}">热门综艺</a>
+    <a href="/discover?type=cartoon" class="tab-btn {{ if eq .CurrentType "cartoon" }}active{{ end }}">日本动画</a>
+</div>
+
+{{ if .Subjects }}
+<div class="movie-grid">
+    {{ range .Subjects }}
+    <div class="movie-card">
+        <a href="/search?kw={{ .Title }}&doubanId={{ .ID }}">
+            <div class="movie-poster">
+                <img src="{{ .Cover }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+                {{ if .Rate }}
+                <span class="movie-rating">{{ .Rate }}</span>
+                {{ end }}
+                {{ if .EpisodesInfo }}
+                <span class="card-badge" style="position: absolute; bottom: 8px; left: 8px; font-size: 0.7rem; background: rgba(0,0,0,0.6); color: white; padding: 2px 6px; border-radius: 4px;">{{ .EpisodesInfo }}</span>
+                {{ end }}
+            </div>
+            <div class="movie-info">
+                <h3 class="movie-title" title="{{ .Title }}">{{ .Title }}</h3>
+                {{ if .IsNew }}
+                <span style="display: inline-block; background: var(--primary); color: white; font-size: 0.65rem; padding: 0 4px; border-radius: 2px; margin-top: 4px;">NEW</span>
+                {{ end }}
+            </div>
+        </a>
+    </div>
+    {{ end }}
+</div>
+{{ else }}
+<div class="empty-state">
+    <p>😕 暂时没有发现热门内容</p>
+    <p>请稍后再试或查看其他分类</p>
+</div>
+{{ end }}
+
+<section class="section" style="margin-top: 48px;">
+    <h2 class="section-title">快速筛选</h2>
     <div class="trending-tags">
         <a href="/search?kw=动作" class="tag">动作</a>
         <a href="/search?kw=喜剧" class="tag">喜剧</a>
@@ -14,12 +53,6 @@
         <a href="/search?kw=悬疑" class="tag">悬疑</a>
         <a href="/search?kw=动画" class="tag">动画</a>
         <a href="/search?kw=纪录片" class="tag">纪录片</a>
-    </div>
-</section>
-
-<section class="section">
-    <h2 class="section-title">地区</h2>
-    <div class="trending-tags">
         <a href="/search?kw=美剧" class="tag">美剧</a>
         <a href="/search?kw=韩剧" class="tag">韩剧</a>
         <a href="/search?kw=日剧" class="tag">日剧</a>

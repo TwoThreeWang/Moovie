@@ -83,11 +83,34 @@ func (s *SearchService) GetDetail(ctx context.Context, sourceKey, vodId string) 
 	// 1. 先尝试从数据库获取
 	item, err := s.vodItemRepo.FindBySourceId(sourceKey, vodId)
 	if err == nil && item != nil {
-		// 如果数据库里有，直接返回（FindBySourceId 内部已经更新了 last_visited_at）
+		// 如果数据库里有，直接返回，但异步触发一次刷新，保证播放链接是最新的
+		go func() {
+			key := "detail:" + sourceKey + ":" + vodId
+			_, _, _ = s.sf.Do(key, func() (interface{}, error) {
+				return s.fetchAndSaveDetail(context.Background(), sourceKey, vodId)
+			})
+		}()
 		return item, nil
 	}
 
-	// 2. 数据库没有，查找站点配置
+	// 2. 数据库没有，使用 singleflight 同步获取并保存
+	key := "detail:" + sourceKey + ":" + vodId
+	val, err, _ := s.sf.Do(key, func() (interface{}, error) {
+		return s.fetchAndSaveDetail(ctx, sourceKey, vodId)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	if val == nil {
+		return nil, nil
+	}
+	return val.(*model.VodItem), nil
+}
+
+// fetchAndSaveDetail 从爬虫获取详情并保存到数据库
+func (s *SearchService) fetchAndSaveDetail(ctx context.Context, sourceKey, vodId string) (*model.VodItem, error) {
+	// 1. 查找站点配置
 	site, err := s.siteRepo.FindByKey(sourceKey)
 	if err != nil {
 		return nil, err
@@ -96,19 +119,17 @@ func (s *SearchService) GetDetail(ctx context.Context, sourceKey, vodId string) 
 		return nil, nil
 	}
 
-	// 3. 从爬虫获取详情
+	// 2. 从爬虫获取详情
 	detail, err := s.crawler.GetDetail(ctx, site.BaseUrl, vodId, sourceKey)
 	if err != nil {
 		return nil, err
 	}
 
 	if detail != nil {
-		// 4. 异步保存到数据库
-		go func(item model.VodItem) {
-			if err := s.vodItemRepo.Upsert(&item); err != nil {
-				log.Printf("[SearchService] 保存视频详情到数据库失败: %v", err)
-			}
-		}(*detail)
+		// 3. 保存到数据库
+		if err := s.vodItemRepo.Upsert(detail); err != nil {
+			log.Printf("[SearchService] 保存视频详情到数据库失败: %v", err)
+		}
 	}
 
 	return detail, nil

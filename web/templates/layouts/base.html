@@ -45,20 +45,20 @@
             </div>
 
             <nav class="sidebar-nav">
-                <a href="/" class="nav-item {{ if eq .Active "home" }}active{{ end }}">
+                <a href="/" class="nav-item {{ if eq .ActiveMenu "home" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                         <polyline points="9 22 9 12 15 12 15 22"></polyline>
                     </svg>
                     <span>首页</span>
                 </a>
-                <a href="/discover" class="nav-item {{ if eq .Active "discover" }}active{{ end }}">
+                <a href="/discover" class="nav-item {{ if eq .ActiveMenu "discover" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                     </svg>
                     <span>为你推荐</span>
                 </a>
-                <a href="/rankings" class="nav-item {{ if eq .Active "movie" }}active{{ end }}">
+                <a href="/rankings" class="nav-item {{ if eq .ActiveMenu "rankings" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
                         <line x1="7" y1="2" x2="7" y2="22"></line>
@@ -71,21 +71,21 @@
                     </svg>
                     <span>热门电影</span>
                 </a>
-                <a href="/search?type=tv" class="nav-item {{ if eq .Active "tv" }}active{{ end }}">
+                <a href="/search?type=tv" class="nav-item {{ if eq .ActiveMenu "tv" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
                         <polyline points="17 2 12 7 7 2"></polyline>
                     </svg>
                     <span>热门剧集</span>
                 </a>
-                <a href="/search?type=variety" class="nav-item {{ if eq .Active "variety" }}active{{ end }}">
+                <a href="/search?type=variety" class="nav-item {{ if eq .ActiveMenu "variety" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                         <circle cx="12" cy="13" r="4"></circle>
                     </svg>
                     <span>热播综艺</span>
                 </a>
-                <a href="/search?type=anime" class="nav-item {{ if eq .Active "anime" }}active{{ end }}">
+                <a href="/search?type=anime" class="nav-item {{ if eq .ActiveMenu "anime" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"></circle>
                         <circle cx="12" cy="12" r="4"></circle>
@@ -96,17 +96,24 @@
                     </svg>
                     <span>日本动漫</span>
                 </a>
+                <a href="/player" class="nav-item {{ if eq .ActiveMenu "player" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                    </svg>
+                    <span>M3U8 播放器</span>
+                </a>
             </nav>
 
             <div class="sidebar-section">
                 <div class="section-label">More</div>
-                <a href="/feedback" class="nav-item">
+                <a href="/feedback" class="nav-item {{ if eq .ActiveMenu "feedback" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                     </svg>
                     <span>建议反馈</span>
                 </a>
-                <a href="/about" class="nav-item">
+                <a href="/about" class="nav-item {{ if eq .ActiveMenu "about" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"></circle>
                         <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -114,7 +121,7 @@
                     </svg>
                     <span>关于本站</span>
                 </a>
-                <a href="/trends" class="nav-item">
+                <a href="/trends" class="nav-item {{ if eq .ActiveMenu "trends" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
                         <polyline points="17 6 23 6 23 12"></polyline>

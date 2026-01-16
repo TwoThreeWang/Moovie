@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M3U8 播放器 - Moovie</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; height: 100vh; display: flex; flex-direction: column; }
+        .player-wrapper { flex: 1; position: relative; }
+        video { width: 100%; height: 100%; object-fit: contain; }
+        .url-form {
+            padding: 1rem;
+            background: #111;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .url-input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #222;
+            color: #fff;
+            font-size: 1rem;
+        }
+        .play-btn {
+            padding: 0.75rem 1.5rem;
+            background: #e50914;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        .play-btn:hover { background: #f40612; }
+    </style>
+</head>
+<body>
+    <div class="player-wrapper">
+        <video id="player" controls autoplay></video>
+    </div>
+
+    <form class="url-form" onsubmit="return playVideo(event)">
+        <input type="text" id="url-input" class="url-input"
+               placeholder="输入 M3U8 链接..."
+               value="{{ .URL }}">
+        <button type="submit" class="play-btn">播放</button>
+    </form>
+
+    <script src="/static/js/hls.min.js"></script>
+    <script>
+        const video = document.getElementById('player');
+        const urlInput = document.getElementById('url-input');
+
+        function playVideo(e) {
+            if (e) e.preventDefault();
+            const url = urlInput.value.trim();
+            if (!url) return false;
+
+            if (Hls.isSupported()) {
+                const hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    video.play();
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+                video.play();
+            }
+
+            // 更新 URL 参数
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.set('url', url);
+            window.history.replaceState({}, '', newUrl);
+
+            return false;
+        }
+
+        // 如果初始有 URL，自动播放
+        if (urlInput.value) {
+            playVideo();
+        }
+    </script>
+</body>
+</html>

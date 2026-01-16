@@ -51,7 +51,7 @@ func (r *VodItemRepository) FindBySourceId(sourceKey, vodId string) (*model.VodI
 // Search 根据关键词搜索视频（匹配名称、副标题、英文名）
 func (r *VodItemRepository) Search(keyword string) ([]model.VodItem, error) {
 	var items []model.VodItem
-	err := r.db.Where("vod_name LIKE ? OR vod_sub LIKE ? OR vod_en LIKE ?", 
+	err := r.db.Where("vod_name LIKE ? OR vod_sub LIKE ? OR vod_en LIKE ?",
 		"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%").
 		Order("last_visited_at DESC").
 		Find(&items).Error
@@ -67,7 +67,7 @@ func (r *VodItemRepository) UpdateLastVisited(sourceKey, vodId string) error {
 
 // DeleteInactive 删除指定天数内未访问的数据
 func (r *VodItemRepository) DeleteInactive(days int) (int64, error) {
-	result := r.db.Where("last_visited_at < NOW() - (? || ' days')::interval", days).
+	result := r.db.Where("last_visited_at < NOW() - INTERVAL '1 day' * ?", days).
 		Delete(&model.VodItem{})
 	return result.RowsAffected, result.Error
 }

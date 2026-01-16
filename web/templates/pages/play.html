@@ -5,7 +5,7 @@
     <nav class="watch-breadcrumb">
         <a href="/">首页</a>
         <span class="breadcrumb-sep">/</span>
-        <a href="/movie/{{ .DoubanID }}">{{ .Title }}</a>
+        <a href="/movie/{{ .DoubanID }}">{{ .Detail.VodName }}</a>
         {{ if .Episode }}
         <span class="breadcrumb-sep">/</span>
         <span class="breadcrumb-current">{{ .Episode }} 在线观看</span>
@@ -16,7 +16,7 @@
     <section class="video-section">
         <div class="video-container" id="player-container">
             {{ if .PlayURL }}
-            <iframe src="/player?url={{ .PlayURL }}" width="100%" height="100%" frameborder="0" allowfullscreen></iframe>
+            <iframe src="/player?url={{ .PlayURL }}&embed=1" width="100%" height="100%" frameborder="0" allowfullscreen></iframe>
             {{ else }}
             <div class="video-loading">
                 <span>暂无可用播放链接</span>
@@ -30,42 +30,42 @@
         <!-- 电影信息卡片：左海报 + 右信息 -->
         <div class="video-detail-card">
             <div class="detail-poster">
-                <img src="{{ .Poster }}" alt="{{ .Title }}" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+                <img src="{{ .Detail.VodPic }}" alt="{{ .Detail.VodName }}" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
             </div>
             <div class="detail-info">
                 <h1 class="detail-title">
-                    {{ .Title }}
+                    {{ .Detail.VodName }}
                     {{ if .Episode }}<span class="current-ep">{{ .Episode }}</span>{{ end }}
                 </h1>
 
                 <!-- 标签行 -->
-                {{ if or .Genres .Year .Country }}
+                {{ if or .Detail.GetGenres .Detail.VodYear .Detail.VodArea }}
                 <div class="detail-tags">
                     {{ if .Type }}<span class="tag-item type">{{ .Type }}</span>{{ end }}
-                    {{ range .Genres }}{{ if . }}<span class="tag-item">{{ . }}</span>{{ end }}{{ end }}
-                    {{ if .Country }}<span class="tag-item">{{ .Country }}</span>{{ end }}
-                    {{ if .Year }}<span class="tag-item">{{ .Year }}</span>{{ end }}
+                    {{ range .Detail.GetGenres }}{{ if . }}<span class="tag-item">{{ . }}</span>{{ end }}{{ end }}
+                    {{ if .Detail.VodArea }}<span class="tag-item">{{ .Detail.VodArea }}</span>{{ end }}
+                    {{ if .Detail.VodYear }}<span class="tag-item">{{ .Detail.VodYear }}</span>{{ end }}
                 </div>
                 {{ end }}
 
                 <!-- 信息行 -->
                 <div class="detail-meta">
-                    {{ if .Directors }}
+                    {{ if .Detail.GetDirectors }}
                     <div class="meta-row">
                         <span class="meta-label">导演：</span>
-                        <span class="meta-value">{{ range $i, $d := .Directors }}{{ if $i }} / {{ end }}{{ $d }}{{ end }}</span>
+                        <span class="meta-value">{{ range $i, $d := .Detail.GetDirectors }}{{ if $i }} / {{ end }}{{ $d }}{{ end }}</span>
                     </div>
                     {{ end }}
-                    {{ if .Actors }}
+                    {{ if .Detail.GetActors }}
                     <div class="meta-row">
                         <span class="meta-label">主演：</span>
-                        <span class="meta-value">{{ range $i, $a := .Actors }}{{ if $i }} / {{ end }}{{ $a }}{{ end }}</span>
+                        <span class="meta-value">{{ range $i, $a := .Detail.GetActors }}{{ if $i }} / {{ end }}{{ $a }}{{ end }}</span>
                     </div>
                     {{ end }}
-                    {{ if .UpdateTime }}
+                    {{ if .Detail.VodTime }}
                     <div class="meta-row">
                         <span class="meta-label">更新：</span>
-                        <span class="meta-value">{{ .UpdateTime }}</span>
+                        <span class="meta-value">{{ .Detail.VodTime }}</span>
                     </div>
                     {{ end }}
                 </div>
@@ -73,9 +73,9 @@
         </div>
 
         <!-- 剧情简介 -->
-        {{ if .Summary }}
+        {{ if .Detail.VodContent }}
         <div class="video-summary">
-            <p>{{ .Summary }}</p>
+            <p>{{ .Detail.VodContent }}</p>
         </div>
         {{ end }}
 
@@ -140,8 +140,8 @@
         if (typeof recordWatch === 'function') {
             recordWatch({
                 doubanId: '{{ .DoubanID }}',
-                title: '{{ .Title }}',
-                poster: '{{ .Poster }}',
+                title: '{{ .Detail.VodName }}',
+                poster: '{{ .Detail.VodPic }}',
                 episode: '{{ .Episode }}',
                 source: '{{ .Source }}'
             });

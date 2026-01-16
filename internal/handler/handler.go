@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -63,7 +64,7 @@ func (h *Handler) RenderData(c *gin.Context, data gin.H) gin.H {
 	}
 
 	// 菜单高亮逻辑
-	res["ActiveMenu"] = h.getActiveMenu(c.Request.URL.Path)
+	res["ActiveMenu"] = h.getActiveMenu(c)
 
 	// 合并传入的数据
 	for k, v := range data {
@@ -74,7 +75,20 @@ func (h *Handler) RenderData(c *gin.Context, data gin.H) gin.H {
 }
 
 // getActiveMenu 根据路径判断当前高亮菜单
-func (h *Handler) getActiveMenu(path string) string {
+func (h *Handler) getActiveMenu(c *gin.Context) string {
+	path := c.Request.URL.Path
+	if strings.HasPrefix(path, "/dashboard") || path == "/favorites" || path == "/history" || path == "/settings" {
+		return "user"
+	}
+
+	if path == "/search" {
+		t := c.Query("type")
+		if t != "" {
+			return t
+		}
+		return "search"
+	}
+
 	switch path {
 	case "/":
 		return "home"
@@ -84,8 +98,12 @@ func (h *Handler) getActiveMenu(path string) string {
 		return "rankings"
 	case "/trends":
 		return "trends"
-	case "/dashboard", "/favorites", "/history", "/settings":
-		return "user"
+	case "/player":
+		return "player"
+	case "/feedback":
+		return "feedback"
+	case "/about":
+		return "about"
 	default:
 		return ""
 	}
@@ -107,16 +125,11 @@ func (h *Handler) Search(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/")
 		return
 	}
-	// 如果传了豆瓣ID，先去数据库中检查豆瓣id是否存在
+	// 如果传了豆瓣ID，直接跳转到详情页（详情页会处理抓取逻辑）
 	doubanID := c.Query("doubanId")
 	if doubanID != "" {
-		// 检查数据库中是否存在该豆瓣ID
-		movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
-		if err == nil && movie != nil {
-			// 如果存在，直接跳转到详情页
-			c.Redirect(http.StatusFound, "/movie/"+doubanID)
-			return
-		}
+		c.Redirect(http.StatusFound, "/movie/"+doubanID)
+		return
 	}
 	c.HTML(http.StatusOK, "search.html", h.RenderData(c, gin.H{
 		"Title":   keyword + " - 搜索结果 - " + h.Config.SiteName,
@@ -130,6 +143,17 @@ func (h *Handler) Movie(c *gin.Context) {
 
 	movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
 	if err != nil || movie == nil {
+		// 如果数据库中没有，尝试从豆瓣抓取
+		if h.DoubanCrawler != nil {
+			log.Printf("[Handler] 电影未找到，尝试从豆瓣抓取 ID: %s", doubanID)
+			if err := h.DoubanCrawler.CrawlDoubanMovie(doubanID); err == nil {
+				// 抓取成功后再次查询
+				movie, _ = h.Repos.Movie.FindByDoubanID(doubanID)
+			}
+		}
+	}
+
+	if movie == nil {
 		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
 			"Title": "电影未找到 - " + h.Config.SiteName,
 		}))
@@ -162,12 +186,6 @@ func (h *Handler) Play(c *gin.Context) {
 
 	if sourceKey != "" && vodId != "" {
 		detail, err = h.SearchService.GetDetail(c.Request.Context(), sourceKey, vodId)
-	} else if doubanID != "" && doubanID != "vod" {
-		// 如果只有豆瓣 ID，尝试寻找关联的 VodItem
-		items, _ := h.Repos.VodItem.Search(doubanID) // 这里可以用 doubanID 搜，因为 vod_douban_id 索引了
-		if len(items) > 0 {
-			detail = &items[0]
-		}
 	}
 
 	if err != nil || detail == nil {
@@ -196,7 +214,7 @@ func (h *Handler) Play(c *gin.Context) {
 
 	// 准备渲染数据
 	renderData := gin.H{
-		"Title":         detail.VodName + " - 正在播放 - " + h.Config.SiteName,
+		"Title":         detail.VodName + "(" + episode + ") - 在线播放 - " + h.Config.SiteName,
 		"DoubanID":      doubanID,
 		"VodID":         vodId,
 		"SourceKey":     sourceKey,
@@ -205,16 +223,6 @@ func (h *Handler) Play(c *gin.Context) {
 		"CurrentSource": currentSource,
 		"Episode":       episode,
 	}
-
-	// 兼容旧模板字段
-	renderData["Title"] = detail.VodName
-	renderData["Poster"] = detail.VodPic
-	renderData["Year"] = detail.VodYear
-	renderData["Country"] = detail.VodArea
-	renderData["Summary"] = detail.VodContent
-	renderData["Genres"] = strings.Split(detail.VodTag, ",")
-	renderData["Directors"] = strings.Split(detail.VodDirector, ",")
-	renderData["Actors"] = strings.Split(detail.VodActor, ",")
 
 	if currentSource != nil {
 		renderData["Episodes"] = currentSource.Episodes
@@ -236,19 +244,37 @@ func (h *Handler) Play(c *gin.Context) {
 	c.HTML(http.StatusOK, "play.html", h.RenderData(c, renderData))
 }
 
-// Player m3u8 专用播放器
+// Player 播放器页面
 func (h *Handler) Player(c *gin.Context) {
 	url := c.Query("url")
-	c.HTML(http.StatusOK, "player.html", gin.H{
+	isEmbed := c.Query("embed") == "1"
+
+	if isEmbed {
+		c.HTML(http.StatusOK, "player_embed.html", gin.H{
+			"URL": url,
+		})
+		return
+	}
+
+	c.HTML(http.StatusOK, "player.html", h.RenderData(c, gin.H{
 		"Title": "M3U8 播放器 - Moovie",
 		"URL":   url,
-	})
+	}))
 }
 
 // Discover 发现/分类页
 func (h *Handler) Discover(c *gin.Context) {
+	movieType := c.DefaultQuery("type", "movie")
+
+	subjects, err := h.DoubanCrawler.GetPopularSubjects(movieType)
+	if err != nil {
+		log.Printf("获取热门电影失败: %v", err)
+	}
+
 	c.HTML(http.StatusOK, "discover.html", h.RenderData(c, gin.H{
-		"Title": "发现 - " + h.Config.SiteName,
+		"Title":       "发现 - " + h.Config.SiteName,
+		"Subjects":    subjects,
+		"CurrentType": movieType,
 	}))
 }
 
@@ -363,13 +389,19 @@ func (h *Handler) Rankings(c *gin.Context) {
 
 // Trends 热搜趋势
 func (h *Handler) Trends(c *gin.Context) {
-	// 获取真实的热搜数据 (全量统计)
-	trending, err := h.Repos.SearchLog.GetTrending(0, 50)
+	// 1. 获取 24 小时热搜
+	trending24h, err := h.Repos.SearchLog.GetTrending(24, 20)
 	if err != nil {
-		log.Printf("获取热搜失败: %v", err)
+		log.Printf("获取 24h 热搜失败: %v", err)
 	}
 
-	// 转换为模板需要的格式
+	// 2. 获取全量热搜
+	trendingAll, err := h.Repos.SearchLog.GetTrending(0, 50)
+	if err != nil {
+		log.Printf("获取全量热搜失败: %v", err)
+	}
+
+	// 辅助结构
 	type TrendItem struct {
 		Keyword  string
 		Count    int
@@ -377,27 +409,42 @@ func (h *Handler) Trends(c *gin.Context) {
 		TagClass string
 	}
 
-	var trendItems []TrendItem
-	for _, t := range trending {
+	// 转换 24h 数据
+	var items24h []TrendItem
+	for _, t := range trending24h {
 		item := TrendItem{
 			Keyword: t.Keyword,
 			Count:   t.Count,
 		}
-		// 根据热度简单打标签
-		if t.Count > 100 {
+		if t.Count > 50 { // 24小时内50次就算热
 			item.Tag = "热"
 			item.TagClass = "hot"
 		} else if t.LastSearchedAt.After(time.Now().Add(-1 * time.Hour)) {
 			item.Tag = "新"
 			item.TagClass = "new"
 		}
-		trendItems = append(trendItems, item)
+		items24h = append(items24h, item)
+	}
+
+	// 转换全量数据
+	var itemsAll []TrendItem
+	for _, t := range trendingAll {
+		item := TrendItem{
+			Keyword: t.Keyword,
+			Count:   t.Count,
+		}
+		if t.Count > 200 {
+			item.Tag = "火爆"
+			item.TagClass = "hot"
+		}
+		itemsAll = append(itemsAll, item)
 	}
 
 	c.HTML(http.StatusOK, "trends.html", h.RenderData(c, gin.H{
-		"Title":      "热门搜索 - " + h.Config.SiteName,
-		"Trending":   trendItems,
-		"UpdateTime": "刚刚",
+		"Title":       "热门搜索 - " + h.Config.SiteName,
+		"Trending24h": items24h,
+		"TrendingAll": itemsAll,
+		"UpdateTime":  time.Now().Format("15:04"),
 	}))
 }
 
@@ -438,12 +485,50 @@ func (h *Handler) Terms(c *gin.Context) {
 
 // Sitemap 站点地图
 func (h *Handler) Sitemap(c *gin.Context) {
-	// TODO: 动态生成站点地图
+	baseUrl := h.Config.SiteUrl
+	if strings.HasSuffix(baseUrl, "/") {
+		baseUrl = strings.TrimSuffix(baseUrl, "/")
+	}
+
+	var sb strings.Builder
+	sb.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
+	sb.WriteString("\n")
+	sb.WriteString(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`)
+	sb.WriteString("\n")
+
+	// 1. 静态页面
+	staticPages := []struct {
+		path     string
+		priority string
+		freq     string
+	}{
+		{"/", "1.0", "daily"},
+		{"/discover", "0.8", "daily"},
+		{"/rankings", "0.8", "daily"},
+		{"/trends", "0.8", "daily"},
+		{"/about", "0.5", "monthly"},
+		{"/dmca", "0.5", "monthly"},
+		{"/privacy", "0.5", "monthly"},
+		{"/terms", "0.5", "monthly"},
+	}
+
+	for _, p := range staticPages {
+		sb.WriteString(fmt.Sprintf("  <url>\n    <loc>%s%s</loc>\n    <changefreq>%s</changefreq>\n    <priority>%s</priority>\n  </url>\n", baseUrl, p.path, p.freq, p.priority))
+	}
+
+	// 2. 电影详情页 (取最近更新的 1000 条)
+	movies, err := h.Repos.Movie.GetSitemapMovies(1000)
+	if err == nil {
+		for _, m := range movies {
+			lastmod := m.UpdatedAt.Format("2006-01-02")
+			sb.WriteString(fmt.Sprintf("  <url>\n    <loc>%s/movie/%s</loc>\n    <lastmod>%s</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>\n", baseUrl, m.DoubanID, lastmod))
+		}
+	}
+
+	sb.WriteString(`</urlset>`)
+
 	c.Header("Content-Type", "application/xml")
-	c.String(http.StatusOK, `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://moovie.example.com/</loc></url>
-</urlset>`)
+	c.String(http.StatusOK, sb.String())
 }
 
 // ==================== 认证页面 ====================

@@ -49,6 +49,17 @@ func (r *MovieRepository) FindByDoubanID(doubanID string) (*model.Movie, error) 
 	return &movie, nil
 }
 
+// GetSitemapMovies 获取用于站点地图的电影列表
+func (r *MovieRepository) GetSitemapMovies(limit int) ([]model.Movie, error) {
+	var movies []model.Movie
+	err := r.db.Model(&model.Movie{}).
+		Select("id", "douban_id", "updated_at").
+		Order("updated_at DESC").
+		Limit(limit).
+		Find(&movies).Error
+	return movies, err
+}
+
 // Upsert 创建或更新电影
 func (r *MovieRepository) Upsert(movie *model.Movie) error {
 	directorsJSON, _ := json.Marshal(movie.Directors)

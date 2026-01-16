@@ -164,7 +164,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 
 	// 注册所有页面模板
 	pages := []string{
-		"home", "search", "movie", "play", "player",
+		"home", "search", "movie", "play", "player", "player_embed",
 		"discover", "rankings", "trends", "feedback",
 		"about", "dmca", "privacy", "terms", "404",
 		"login", "register",
@@ -174,7 +174,11 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 
 	for _, page := range pages {
 		viewPath := templatesDir + "/pages/" + page + ".html"
-		r.AddFromFilesFuncs(page+".html", funcMap, assemble(viewPath)...)
+		if page == "player_embed" {
+			r.AddFromFilesFuncs(page+".html", funcMap, viewPath)
+		} else {
+			r.AddFromFilesFuncs(page+".html", funcMap, assemble(viewPath)...)
+		}
 	}
 
 	// 注册局部模板（用于 htmx）

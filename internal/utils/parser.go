@@ -48,17 +48,22 @@ func ParsePlayUrl(playUrl string) []PlaySource {
 
 			// 3. 分割标题和链接 (通常用 $ 分割)
 			parts := strings.Split(epSeg, "$")
+			var title, url string
 			if len(parts) >= 2 {
 				// 格式: 标题$链接
-				source.Episodes = append(source.Episodes, PlayEpisode{
-					Title: parts[0],
-					URL:   parts[1],
-				})
+				title = parts[0]
+				url = parts[1]
 			} else if len(parts) == 1 {
 				// 格式: 链接 (没有标题)
+				title = "正片"
+				url = parts[0]
+			}
+
+			// 只解析 m3u8 链接
+			if strings.Contains(url, ".m3u8") {
 				source.Episodes = append(source.Episodes, PlayEpisode{
-					Title: "正片",
-					URL:   parts[0],
+					Title: title,
+					URL:   url,
 				})
 			}
 		}

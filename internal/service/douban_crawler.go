@@ -38,6 +38,22 @@ type MovieSuggestResponse struct {
 	Img      string `json:"img"`
 }
 
+// DoubanPopularSubject 豆瓣热门电影/电视剧
+type DoubanPopularSubject struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Rate         string `json:"rate"`
+	Cover        string `json:"cover"`
+	URL          string `json:"url"`
+	IsNew        bool   `json:"is_new"`
+	EpisodesInfo string `json:"episodes_info"`
+}
+
+// DoubanPopularResponse 豆瓣热门响应
+type DoubanPopularResponse struct {
+	Subjects []DoubanPopularSubject `json:"subjects"`
+}
+
 // Crawler 豆瓣爬虫服务
 type DoubanCrawler struct {
 	movieRepo *repository.MovieRepository
@@ -247,4 +263,47 @@ func (c *DoubanCrawler) SearchSuggest(keyword string) ([]MovieSuggestResponse, e
 	utils.CacheSet(cacheKey, results, 5*time.Minute)
 
 	return results, nil
+}
+
+// GetPopularSubjects 获取热门电影/电视剧
+func (c *DoubanCrawler) GetPopularSubjects(movieType string) ([]DoubanPopularSubject, error) {
+	// 检查缓存
+	cacheKey := fmt.Sprintf("douban_popular:%s", movieType)
+	if cached, found := utils.CacheGet(cacheKey); found {
+		if results, ok := cached.([]DoubanPopularSubject); ok {
+			return results, nil
+		}
+	}
+
+	var url string
+	switch movieType {
+	case "movie":
+		url = "https://movie.douban.com/j/search_subjects?type=movie&tag=热门&page_limit=50&page_start=0"
+	case "tv":
+		url = "https://movie.douban.com/j/search_subjects?type=tv&tag=热门&page_limit=50&page_start=0"
+	case "show":
+		url = "https://movie.douban.com/j/search_subjects?type=tv&tag=综艺&page_limit=50&page_start=0"
+	case "cartoon":
+		url = "https://movie.douban.com/j/search_subjects?type=tv&tag=日本动画&page_limit=50&page_start=0"
+	default:
+		return nil, fmt.Errorf("不支持的电影类型: %s", movieType)
+	}
+
+	// 使用自定义HTTP客户端
+	client := utils.NewHTTPClient()
+	var response DoubanPopularResponse
+
+	if err := client.GetJSON(url, &response); err != nil {
+		return nil, fmt.Errorf("豆瓣热门数据抓取失败: %w", err)
+	}
+
+	// 处理图片，使用代理绕过防盗链
+	for i := range response.Subjects {
+		response.Subjects[i].Cover = fmt.Sprintf("/api/proxy/image?url=%s", response.Subjects[i].Cover)
+	}
+
+	// 缓存结果，缓存时间1小时
+	utils.CacheSet(cacheKey, response.Subjects, 1*time.Hour)
+
+	return response.Subjects, nil
 }

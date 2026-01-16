@@ -1,87 +1,135 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>M3U8 播放器 - Moovie</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #000; height: 100vh; display: flex; flex-direction: column; }
-        .player-wrapper { flex: 1; position: relative; }
-        video { width: 100%; height: 100%; object-fit: contain; }
-        .url-form {
-            padding: 1rem;
-            background: #111;
-            display: flex;
-            gap: 0.5rem;
-        }
-        .url-input {
-            flex: 1;
-            padding: 0.75rem;
-            border: 1px solid #333;
-            border-radius: 6px;
-            background: #222;
-            color: #fff;
-            font-size: 1rem;
-        }
-        .play-btn {
-            padding: 0.75rem 1.5rem;
-            background: #e50914;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 1rem;
-        }
-        .play-btn:hover { background: #f40612; }
-    </style>
-</head>
-<body>
-    <div class="player-wrapper">
-        <video id="player" controls autoplay></video>
+{{ define "content" }}
+<div class="m3u8-player-page">
+    <div class="player-container">
+        <div class="player-wrapper">
+            <video id="player" controls autoplay></video>
+        </div>
+
+        <form class="url-form" onsubmit="return playVideo(event)">
+            <input type="text" id="url-input" class="url-input"
+                   placeholder="输入 M3U8 链接..."
+                   value="{{ .URL }}">
+            <button type="submit" class="play-btn">立即播放</button>
+        </form>
     </div>
 
-    <form class="url-form" onsubmit="return playVideo(event)">
-        <input type="text" id="url-input" class="url-input"
-               placeholder="输入 M3U8 链接..."
-               value="{{ .URL }}">
-        <button type="submit" class="play-btn">播放</button>
-    </form>
+    <div class="player-info">
+        <h3>使用说明</h3>
+        <ul>
+            <li>支持 M3U8 (HLS) 格式的视频流。</li>
+            <li>直接粘贴链接并点击“立即播放”即可。</li>
+            <li>如果视频无法播放，请检查链接是否有效且支持跨域。</li>
+        </ul>
+    </div>
+</div>
 
-    <script src="/static/js/hls.min.js"></script>
-    <script>
-        const video = document.getElementById('player');
-        const urlInput = document.getElementById('url-input');
+<style>
+    .m3u8-player-page {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    .player-container {
+        background: #000;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    .player-wrapper {
+        aspect-ratio: 16 / 9;
+        background: #000;
+    }
+    #player {
+        width: 100%;
+        height: 100%;
+    }
+    .url-form {
+        padding: 20px;
+        background: #1a1a1a;
+        display: flex;
+        gap: 12px;
+    }
+    .url-input {
+        flex: 1;
+        background: #2a2a2a;
+        border: 1px solid #3a3a3a;
+        border-radius: 6px;
+        padding: 12px 16px;
+        color: #fff;
+        font-size: 14px;
+    }
+    .url-input:focus {
+        border-color: var(--primary);
+        outline: none;
+    }
+    .play-btn {
+        background: var(--primary);
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 0 24px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .play-btn:hover {
+        background: var(--primary-dark);
+        transform: translateY(-1px);
+    }
+    .player-info {
+        margin-top: 30px;
+        padding: 24px;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+    }
+    .player-info h3 {
+        margin-bottom: 16px;
+        font-size: 18px;
+    }
+    .player-info ul {
+        list-style: disc;
+        padding-left: 20px;
+        color: var(--text-muted);
+    }
+    .player-info li {
+        margin-bottom: 8px;
+    }
+</style>
 
-        function playVideo(e) {
-            if (e) e.preventDefault();
-            const url = urlInput.value.trim();
-            if (!url) return false;
+<script src="/static/js/hls.min.js"></script>
+<script>
+    const video = document.getElementById('player');
+    const urlInput = document.getElementById('url-input');
 
-            if (Hls.isSupported()) {
-                const hls = new Hls();
-                hls.loadSource(url);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                    video.play();
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = url;
+    function playVideo(e) {
+        if (e) e.preventDefault();
+        const url = urlInput.value.trim();
+        if (!url) return false;
+
+        if (Hls.isSupported()) {
+            const hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
                 video.play();
-            }
-
-            // 更新 URL 参数
-            const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('url', url);
-            window.history.replaceState({}, '', newUrl);
-
-            return false;
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = url;
+            video.play();
         }
 
-        // 如果初始有 URL，自动播放
-        if (urlInput.value) {
-            playVideo();
-        }
-    </script>
-</body>
-</html>
+        // 更新 URL 参数
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('url', url);
+        window.history.replaceState({}, '', newUrl);
+
+        return false;
+    }
+
+    // 如果初始有 URL，自动播放
+    if (urlInput.value) {
+        playVideo();
+    }
+</script>
+{{ end }}

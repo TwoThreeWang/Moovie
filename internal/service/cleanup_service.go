@@ -50,4 +50,12 @@ func (s *CleanupService) runCleanup() {
 	} else if cleanedKeywords > 0 {
 		log.Printf("[CleanupService] 已清理 %d 条超过 30 天未搜索的热搜关键词", cleanedKeywords)
 	}
+
+	// 3. 清理超过 30 天的原始搜索日志
+	cleanedLogs, err := s.repos.SearchLog.DeleteOldLogs(30)
+	if err != nil {
+		log.Printf("[CleanupService] 清理旧搜索日志失败: %v", err)
+	} else if cleanedLogs > 0 {
+		log.Printf("[CleanupService] 已清理 %d 条超过 30 天的原始搜索日志", cleanedLogs)
+	}
 }
