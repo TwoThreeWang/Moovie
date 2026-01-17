@@ -17,6 +17,7 @@ type SearchService struct {
 	siteRepo      *repository.SiteRepository
 	vodItemRepo   *repository.VodItemRepository
 	copyrightRepo *repository.CopyrightFilterRepository
+	categoryRepo  *repository.CategoryFilterRepository
 	crawler       SourceCrawler
 	maxTimeout    time.Duration // 单站点最大超时时间
 	sf            singleflight.Group
@@ -27,12 +28,14 @@ func NewSearchService(
 	siteRepo *repository.SiteRepository,
 	vodItemRepo *repository.VodItemRepository,
 	copyrightRepo *repository.CopyrightFilterRepository,
+	categoryRepo *repository.CategoryFilterRepository,
 	crawler SourceCrawler,
 ) *SearchService {
 	return &SearchService{
 		siteRepo:      siteRepo,
 		vodItemRepo:   vodItemRepo,
 		copyrightRepo: copyrightRepo,
+		categoryRepo:  categoryRepo,
 		crawler:       crawler,
 		maxTimeout:    10 * time.Second,
 		sf:            singleflight.Group{},
@@ -179,7 +182,10 @@ func (s *SearchService) fetchFromSources(ctx context.Context, keyword string) ([
 			reqCtx, cancel := context.WithTimeout(ctx, s.maxTimeout)
 			defer cancel()
 
-			items, err := s.crawler.Search(reqCtx, site.BaseUrl, keyword, site.Key)
+			// 获取分类过滤关键词
+			categories, _ := s.categoryRepo.GetAllKeywords()
+
+			items, err := s.crawler.Search(reqCtx, site.BaseUrl, keyword, site.Key, categories)
 			if err != nil {
 				log.Printf("[SearchService] 站点 %s 搜索失败: %v", site.Key, err)
 				return

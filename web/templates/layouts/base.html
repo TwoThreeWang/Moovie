@@ -9,7 +9,15 @@
     <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}Moovie, 影视搜索, 电影搜索, 电视剧搜索, 在线看电影, 聚合搜索, 全网视频, 豆瓣热门{{ end }}">
     <meta name="robots" content="index, follow">
     {{ if .Canonical }}<link rel="canonical" href="{{ .Canonical }}">{{ end }}
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐮</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐮</text></svg>">
+
+    <!-- PWA -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#f60c3e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Moovie">
+    <link rel="apple-touch-icon" href="/static/img/moovie-app.png">
     <!-- Open Graph -->
     <meta property="og:title" content="{{ .Title }}">
     <meta property="og:type" content="website">
@@ -197,6 +205,15 @@
             document.getElementById('sidebar').classList.toggle('open');
             document.getElementById('sidebarOverlay').classList.toggle('open');
             document.body.classList.toggle('sidebar-open');
+        }
+
+        // 注册 Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then(reg => console.log('Service Worker 注册成功:', reg.scope))
+                    .catch(err => console.log('Service Worker 注册失败:', err));
+            });
         }
     </script>
 </body>

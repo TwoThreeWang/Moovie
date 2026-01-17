@@ -689,7 +689,7 @@ img {
     font-size: 0.9rem;
     font-weight: 500;
     color: var(--text);
-    white-space: nowrap;
+    word-break: break-all;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -968,8 +968,17 @@ img {
 .card-meta-row {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     font-size: 0.8rem;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.card-year, .card-region, .card-type, .card-director {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+    min-width: 0;
 }
 
 .card-year {
@@ -977,24 +986,23 @@ img {
     font-weight: 600;
 }
 
-.card-region {
+.card-region, .card-type {
     color: var(--text-muted);
 }
 
-.card-genres {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.card-meta-row span:not(:last-child)::after {
+    content: "/";
+    margin-left: 8px;
+    color: var(--border);
+    opacity: 0.5;
 }
 
 .card-director {
     font-size: 0.75rem;
     color: var(--text-muted);
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    word-break: break-all;
 }
 
 .card-meta {
@@ -1051,8 +1059,8 @@ img {
     }
 
     .card-poster {
-        width: 70px;
-        height: 99px;
+        width: 65px;
+        height: 92px;
     }
 
     .card-title {
@@ -1195,11 +1203,48 @@ img {
     body.sidebar-open {
         overflow: hidden;
     }
+
+    /* 继续观看区域紧凑化 */
+    #continue-watching.movie-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+
+    #continue-watching .movie-info {
+        padding: 6px 8px;
+    }
+
+    #continue-watching .movie-title {
+        font-size: 0.75rem;
+    }
+
+    #continue-watching .movie-year {
+        font-size: 0.65rem;
+        margin-top: 1px;
+    }
+
+    #continue-watching .watch-delete-btn {
+        width: 18px;
+        height: 18px;
+        top: 4px;
+        right: 4px;
+    }
+
+    #continue-watching .watch-delete-btn svg {
+        width: 10px;
+        height: 10px;
+    }
 }
 
 @media (max-width: 480px) {
     .movie-grid {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* 继续观看区域在极小屏幕下改为3列 */
+    #continue-watching.movie-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
     }
 
     .search-btn {
@@ -1734,6 +1779,9 @@ img {
 .user-info {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .user-name {
@@ -1753,7 +1801,12 @@ img {
     color: var(--text-muted);
 }
 
-.settings-link {
+.user-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.action-link {
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -1766,9 +1819,17 @@ img {
     transition: all var(--transition);
 }
 
-.settings-link:hover {
+.action-link:hover {
     border-color: var(--primary);
     color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(246, 12, 62, 0.15);
+}
+
+.logout-link:hover {
+    border-color: #ff4d4f !important;
+    color: #ff4d4f !important;
+    box-shadow: 0 4px 12px rgba(255, 77, 79, 0.15) !important;
 }
 
 /* 用户统计 */
@@ -2046,10 +2107,21 @@ img {
         gap: 12px;
     }
 
-    .settings-link {
+    .user-actions {
         position: absolute;
         top: 16px;
         right: 16px;
+        gap: 8px;
+    }
+
+    .action-link {
+        width: 32px;
+        height: 32px;
+    }
+
+    .action-link svg {
+        width: 16px;
+        height: 16px;
     }
 
     .user-info {
@@ -3126,25 +3198,37 @@ img {
     margin-top: 8px;
 }
 
-.action-link {
+/* 操作栏按钮（专用类名，避免与全局 .action-link 冲突） */
+.video-action-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.9rem;
-    color: var(--text-muted);
-    background: none;
-    border: none;
+    gap: 8px;
+    padding: 8px 16px;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
     cursor: pointer;
-    transition: color var(--transition);
+    transition: all var(--transition);
+    white-space: nowrap;
+    text-decoration: none;
+    width: auto;
+    height: auto;
 }
 
-.action-link:hover {
+.video-action-btn:hover {
+    background: var(--bg);
+    border-color: var(--primary);
     color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
 }
 
-.action-link .action-icon {
+.video-action-btn .action-icon {
     width: 18px;
     height: 18px;
+    flex-shrink: 0;
 }
 
 /* ==================== 视频播放页面响应式 ==================== */
@@ -3202,6 +3286,37 @@ img {
         padding: 6px 12px;
         font-size: 0.8rem;
     }
+
+    /* 播放页内的更多资源区块：防止卡片溢出 */
+    .video-info-section .movie-section {
+        overflow: hidden;
+        max-width: 100%;
+    }
+
+    .video-info-section .search-result-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* 播放页按钮：平板宽度下改为网格布局 */
+    .video-actions-bar {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        padding: 16px;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+    }
+
+    .video-action-btn {
+        justify-content: center;
+        padding: 10px;
+        background: var(--bg);
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        white-space: nowrap;
+        font-size: 0.85rem;
+    }
 }
 
 @media (max-width: 480px) {
@@ -3236,12 +3351,14 @@ img {
         white-space: normal;
     }
 
+    /* 播放页按钮：手机宽度下改为垂直单列排列 */
     .video-actions-bar {
-        flex-wrap: wrap;
+        grid-template-columns: 1fr;
+        gap: 8px;
     }
 
-    .action-link {
-        font-size: 0.85rem;
+    .video-action-btn {
+        width: 100%;
     }
 }
 

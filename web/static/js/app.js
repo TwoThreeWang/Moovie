@@ -38,15 +38,16 @@ function _saveWatchHistoryInternal(data) {
 function saveWatchHistory(historyArray) {
     const data = {};
     historyArray.forEach(h => {
-        // 使用与 player.js 一致的 key 格式: source_key + vod_id
-        const key = (h.source || h.source_key || '') + (h.vod_id || h.vodId || '');
+        const source = h.source || h.source_key || '';
+        const vodId = h.vod_id || h.vodId || '';
+        const key = source + vodId;
         if (key) {
             data[key] = {
                 ...h,
-                source_key: h.source || h.source_key,
-                vod_id: h.vod_id || h.vodId,
-                douban_id: h.douban_id, // 统一字段名
-                img: h.poster || h.img // 确保字段兼容
+                source_key: source,
+                vod_id: vodId,
+                douban_id: h.douban_id || h.doubanId || '', // 确保 douban_id 存在
+                img: h.poster || h.img || ''
             };
         }
     });
@@ -99,7 +100,7 @@ async function doSync() {
     const newRecords = Object.values(data).filter(h =>
         (h.watchedAt || h.updatedAt || 0) > lastSyncAt
     ).map(h => ({
-        douban_id: h.doubanId || h.douban_id || '',
+        douban_id: h.douban_id || h.doubanId || '',
         vod_id: h.vod_id || h.vodId || '',
         title: h.title,
         poster: h.poster || h.img,
@@ -150,18 +151,21 @@ function mergeServerRecords(serverRecords) {
     const localHistory = getWatchHistory();
 
     serverRecords.forEach(serverRecord => {
+        // 匹配逻辑：优先使用 source_key + vod_id
         const localIdx = localHistory.findIndex(h =>
-            h.doubanId === serverRecord.douban_id && h.episode === serverRecord.episode
+            (h.source_key === serverRecord.source && h.vod_id === serverRecord.vod_id) ||
+            (h.douban_id === serverRecord.douban_id && h.episode === serverRecord.episode && serverRecord.douban_id)
         );
 
+        const serverTime = new Date(serverRecord.watched_at).getTime();
+
         if (localIdx >= 0) {
-            // 保留较新的记录
-            const localTime = localHistory[localIdx].watchedAt || localHistory[localIdx].updatedAt;
-            const serverTime = new Date(serverRecord.watched_at).getTime();
+            const localTime = localHistory[localIdx].watchedAt || localHistory[localIdx].updatedAt || 0;
             if (serverTime > localTime) {
                 localHistory[localIdx] = {
                     ...localHistory[localIdx],
-                    doubanId: serverRecord.douban_id,
+                    id: serverRecord.id, // 服务器记录ID
+                    douban_id: serverRecord.douban_id,
                     title: serverRecord.title,
                     poster: serverRecord.poster,
                     img: serverRecord.poster,
@@ -174,10 +178,9 @@ function mergeServerRecords(serverRecords) {
                 };
             }
         } else {
-            // 添加服务器记录
-            const stime = new Date(serverRecord.watched_at).getTime();
             localHistory.push({
-                doubanId: serverRecord.douban_id,
+                id: serverRecord.id,
+                douban_id: serverRecord.douban_id,
                 title: serverRecord.title,
                 poster: serverRecord.poster,
                 img: serverRecord.poster,
@@ -185,16 +188,16 @@ function mergeServerRecords(serverRecords) {
                 progress: serverRecord.progress,
                 source_key: serverRecord.source,
                 vod_id: serverRecord.vod_id,
-                watchedAt: stime,
-                updatedAt: stime,
-                lastTime: (serverRecord.progress / 100) * (serverRecord.duration || 0), // 粗略估算或依赖 duration
+                watchedAt: serverTime,
+                updatedAt: serverTime,
+                lastTime: (serverRecord.progress / 100) * (serverRecord.duration || 0),
                 duration: serverRecord.duration || 0
             });
         }
     });
 
     // 按时间排序
-    localHistory.sort((a, b) => b.watchedAt - a.watchedAt);
+    localHistory.sort((a, b) => (b.watchedAt || 0) - (a.watchedAt || 0));
     saveWatchHistory(localHistory);
 
     // 同步完成后，如果当前在首页，自动重新渲染继续观看列表
@@ -607,16 +610,27 @@ document.addEventListener('DOMContentLoaded', function() {
 // 页面关闭前尝试同步（仅提示，不阻塞）
 window.addEventListener('beforeunload', function() {
     if (isLoggedIn() && getWatchHistory().length > 0) {
-        // 使用 sendBeacon 发送最后的同步请求
         const history = getWatchHistory();
         const lastSyncAt = parseInt(localStorage.getItem(SYNC_KEY) || '0');
-        const newRecords = history.filter(h => h.watchedAt > lastSyncAt);
+        const newRecords = history.filter(h => (h.watchedAt || h.updatedAt || 0) > lastSyncAt);
 
         if (newRecords.length > 0) {
-            navigator.sendBeacon('/api/history/sync', JSON.stringify({
-                records: newRecords,
+            const payload = JSON.stringify({
+                records: newRecords.map(h => ({
+                    douban_id: h.douban_id || h.doubanId || '',
+                    vod_id: h.vod_id || h.vodId || '',
+                    title: h.title,
+                    poster: h.poster || h.img,
+                    episode: h.episode || '',
+                    progress: h.progress || (h.duration > 0 ? Math.floor((h.lastTime / h.duration) * 100) : 0),
+                    last_time: h.lastTime || 0,
+                    duration: h.duration || 0,
+                    source: h.source_key || h.source || '',
+                    watchedAt: h.watchedAt || h.updatedAt || Date.now()
+                })),
                 lastSyncAt: lastSyncAt
-            }));
+            });
+            navigator.sendBeacon('/api/history/sync', payload);
         }
     }
 });

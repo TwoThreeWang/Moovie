@@ -36,7 +36,7 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	sourceCrawler := service.NewSourceCrawler(10 * time.Second)
 
 	// 创建搜索服务
-	searchService := service.NewSearchService(repos.Site, repos.VodItem, repos.CopyrightFilter, sourceCrawler)
+	searchService := service.NewSearchService(repos.Site, repos.VodItem, repos.CopyrightFilter, repos.CategoryFilter, sourceCrawler)
 
 	return &Handler{
 		Repos:         repos,
@@ -282,6 +282,9 @@ func (h *Handler) Play(c *gin.Context) {
 				}
 			}
 		}
+	}
+	if doubanID == "" {
+		doubanID = detail.VodDoubanId
 	}
 
 	// 动态生成标题

@@ -52,7 +52,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		auth.POST("/login", h.Login)          // 登录
 		auth.GET("/register", h.RegisterPage) // 注册页
 		auth.POST("/register", h.Register)    // 注册
-		auth.POST("/logout", h.Logout)        // 退出登陆
+		auth.GET("/logout", h.Logout)         // 退出登陆
 	}
 
 	// ==================== 用户中心（需要登录）====================
@@ -126,6 +126,11 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		admin.POST("/copyright", h.AdminCopyrightCreate)       // 添加版权关键词
 		admin.PUT("/copyright/:id", h.AdminCopyrightUpdate)    // 更新版权关键词
 		admin.DELETE("/copyright/:id", h.AdminCopyrightDelete) // 删除版权关键词
+
+		// 分类过滤管理
+		admin.GET("/category", h.AdminCategory)              // 分类过滤页面
+		admin.POST("/category", h.AdminCategoryCreate)       // 添加分类关键词
+		admin.DELETE("/category/:id", h.AdminCategoryDelete) // 删除分类关键词
 	}
 }
 
@@ -211,7 +216,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		"about", "changelog", "dmca", "privacy", "terms", "404",
 		"login", "register",
 		"dashboard", "favorites", "history", "settings",
-		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright",
+		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright", "admin_category",
 	}
 
 	for _, page := range pages {

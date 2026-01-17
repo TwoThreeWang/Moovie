@@ -205,6 +205,27 @@
         border-radius: 4px;
         font-family: monospace;
     }
+
+    /* 移动端优化 */
+    @media (max-width: 600px) {
+        .player-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .header-badge {
+            align-self: flex-start;
+        }
+        .url-form {
+            flex-direction: column;
+            padding: 16px;
+        }
+        .play-btn {
+            width: 100%;
+            justify-content: center;
+            padding: 12px;
+        }
+    }
 </style>
 
 <!-- 播放器依赖 -->

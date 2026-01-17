@@ -242,7 +242,7 @@ function initPlayer(containerId, url, options) {
             if (Math.floor(art.currentTime) % 3 === 0) {
                 Storage.upsert({
                     id: options.sourceKey + options.vodId,
-                    douban_id: options.doubanId,
+                    douban_id: options.douban_id, // 统一使用下划线
                     title: options.title,
                     source_key: options.sourceKey,
                     vod_id: options.vodId,

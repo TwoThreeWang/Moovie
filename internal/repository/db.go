@@ -39,6 +39,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		&model.Feedback{},
 		&model.Site{},
 		&model.CopyrightFilter{},
+		&model.CategoryFilter{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
@@ -59,6 +60,7 @@ type Repositories struct {
 	Site            *SiteRepository
 	VodItem         *VodItemRepository
 	CopyrightFilter *CopyrightFilterRepository
+	CategoryFilter  *CategoryFilterRepository
 }
 
 // NewRepositories 创建仓库集合
@@ -74,5 +76,6 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		Site:            NewSiteRepository(db),
 		VodItem:         NewVodItemRepository(db),
 		CopyrightFilter: NewCopyrightFilterRepository(db),
+		CategoryFilter:  NewCategoryFilterRepository(db),
 	}
 }

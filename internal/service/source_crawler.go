@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/user/moovie/internal/model"
@@ -16,7 +17,7 @@ import (
 // 不做并发，只负责单站点请求，并发由调用方控制
 type SourceCrawler interface {
 	// Search 搜索视频，支持超时控制
-	Search(ctx context.Context, baseUrl, keyword, sourceKey string) ([]model.VodItem, error)
+	Search(ctx context.Context, baseUrl, keyword, sourceKey string, restrictedCategories []string) ([]model.VodItem, error)
 
 	// GetDetail 获取视频详情
 	GetDetail(ctx context.Context, baseUrl, vodId, sourceKey string) (*model.VodItem, error)
@@ -53,7 +54,7 @@ type vodApiResponse struct {
 }
 
 // Search 搜索视频
-func (c *DefaultSourceCrawler) Search(ctx context.Context, baseUrl, keyword, sourceKey string) ([]model.VodItem, error) {
+func (c *DefaultSourceCrawler) Search(ctx context.Context, baseUrl, keyword, sourceKey string, restrictedCategories []string) ([]model.VodItem, error) {
 	// 构建搜索URL
 	apiUrl := fmt.Sprintf("%s?ac=videolist&pg=1&wd=%s", baseUrl, url.QueryEscape(keyword))
 
@@ -93,6 +94,21 @@ func (c *DefaultSourceCrawler) Search(ctx context.Context, baseUrl, keyword, sou
 	var items []model.VodItem
 	for _, item := range apiResp.List {
 		vodItem := c.mapToVodItem(item, sourceKey)
+
+		// 分类过滤
+		if len(restrictedCategories) > 0 {
+			blocked := false
+			for _, restricted := range restrictedCategories {
+				if strings.Contains(vodItem.TypeName, restricted) {
+					blocked = true
+					break
+				}
+			}
+			if blocked {
+				continue
+			}
+		}
+
 		items = append(items, vodItem)
 	}
 

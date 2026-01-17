@@ -134,7 +134,7 @@ func (h *Handler) AdminSiteTest(c *gin.Context) {
 	keyword := "肖申克的救赎"
 
 	// 调用搜索服务进行测试
-	items, err := h.SearchService.GetSearchCrawler().Search(c.Request.Context(), site.BaseUrl, keyword, site.Key)
+	items, err := h.SearchService.GetSearchCrawler().Search(c.Request.Context(), site.BaseUrl, keyword, site.Key, nil)
 	if err != nil {
 		utils.InternalServerError(c, "测试失败: "+err.Error())
 		return

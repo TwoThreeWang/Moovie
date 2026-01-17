@@ -116,7 +116,7 @@
         <!-- 操作区域 -->
         <div class="video-actions-bar">
             {{ if .DoubanID }}
-            <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" class="action-link">
+            <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" class="video-action-btn">
                 <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -125,7 +125,7 @@
                 <span>影片详情</span>
             </a>
             {{ end }}
-            <button class="action-link"
+            <button class="video-action-btn"
                     hx-post="/api/feedback"
                     hx-vals='{"type":"播放失败反馈","content":"《{{ .Detail.VodName }}》播放失败","movie_url":"{{.FullPath}}"}'
                     hx-swap="outerHTML">
@@ -183,7 +183,7 @@
         initPlayer('artplayer-app', '{{ .PlayURL }}', {
             title: '{{ .Detail.VodName }}{{ if .Episode }} - {{ .Episode }}{{ end }}',
             poster: '{{ .Detail.VodPic }}',
-            doubanId: '{{ .DoubanID }}',
+            douban_id: '{{ .DoubanID }}',
             sourceKey: '{{ .SourceKey }}',
             vodId: '{{ .VodID }}',
             episode: '{{ .Episode }}'
