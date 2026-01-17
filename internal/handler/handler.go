@@ -104,6 +104,8 @@ func (h *Handler) getActiveMenu(c *gin.Context) string {
 		return "rankings"
 	case "/trends":
 		return "trends"
+	case "/foryou":
+		return "foryou"
 	case "/player":
 		return "player"
 	case "/feedback":

@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+    <script>
+        (function() {
+            const theme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+            document.documentElement.classList.add('no-transition');
+        })();
+        window.onload = () => {
+            setTimeout(() => {
+                document.documentElement.classList.remove('no-transition');
+            }, 100);
+        };
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="max-age=7200" />
@@ -106,6 +118,23 @@
                     </svg>
                     <span>关于本站</span>
                 </a>
+                <button class="nav-item theme-toggle" onclick="toggleTheme()" title="切换主题" style="width: 100%; text-align: left;">
+                    <svg class="nav-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg class="nav-icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <span>切换外观</span>
+                </button>
                 {{ if and .UserInfo (eq .UserInfo.Role "admin") }}
                 <a href="/admin" class="nav-item {{ if eq .ActiveMenu "admin" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -119,7 +148,6 @@
                 {{ end }}
             </div>
 
-            <!-- 用户区域 -->
             <div class="sidebar-footer">
                 {{ if .UserInfo }}
                 <a href="/dashboard" class="nav-item {{ if eq .ActiveMenu "user" }}active{{ end }}">
@@ -171,6 +199,10 @@
                     </svg>
                 </a>
                 {{ end }}
+                <button class="mobile-user theme-toggle" onclick="toggleTheme()" style="margin-right: 8px;">
+                    <svg class="sun-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                    <svg class="moon-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                </button>
             </header>
 
             <div class="content-wrapper {{ .ContentClass }}">
@@ -206,6 +238,31 @@
             document.getElementById('sidebarOverlay').classList.toggle('open');
             document.body.classList.toggle('sidebar-open');
         }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcons();
+        }
+
+        function updateThemeIcons() {
+            const theme = document.documentElement.getAttribute('data-theme');
+            const suns = document.querySelectorAll('.sun-icon');
+            const moons = document.querySelectorAll('.moon-icon');
+
+            if (theme === 'dark') {
+                suns.forEach(s => s.style.display = 'none');
+                moons.forEach(m => m.style.display = 'block');
+            } else {
+                suns.forEach(s => s.style.display = 'block');
+                moons.forEach(m => m.style.display = 'none');
+            }
+        }
+
+        // 初始化图标状态
+        updateThemeIcons();
 
         // 注册 Service Worker
         if ('serviceWorker' in navigator) {
