@@ -10,7 +10,7 @@ type SearchLog struct {
 	Keyword   string    `json:"keyword" db:"keyword"`
 	UserID    *int      `json:"user_id" db:"user_id"`
 	IPHash    string    `json:"ip_hash" db:"ip_hash"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"index"`
 }
 
 // Feedback 反馈
@@ -28,7 +28,7 @@ type Feedback struct {
 
 // TrendingKeyword 热搜关键词
 type TrendingKeyword struct {
-	Keyword        string    `json:"keyword" db:"keyword" gorm:"unique"`
+	Keyword        string    `json:"keyword" db:"keyword" gorm:"primaryKey"`
 	Count          int       `json:"count" db:"count"`
 	LastSearchedAt time.Time `json:"last_searched_at" db:"last_searched_at"`
 }

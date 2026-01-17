@@ -30,6 +30,11 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("无法启用 pgvector 扩展: %w", err)
 	}
 
+	// 启用 pg_trgm 扩展 (用于加速 LIKE 模糊搜索)
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm").Error; err != nil {
+		fmt.Printf("警告: 无法启用 pg_trgm 扩展: %v\n", err)
+	}
+
 	// 自动迁移
 	err = db.AutoMigrate(
 		&model.User{},
@@ -51,6 +56,14 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 	// 创建 HNSW 索引 (加速相似度搜索)
 	if err := db.Exec("CREATE INDEX IF NOT EXISTS movies_embedding_idx ON movies USING hnsw (embedding vector_l2_ops);").Error; err != nil {
 		fmt.Printf("警告: 创建向量索引失败: %v\n", err)
+	}
+
+	// 创建 GIN 索引 (加速 LIKE 模糊搜索)
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_movies_title_trgm ON movies USING gin (title gin_trgm_ops);").Error; err != nil {
+		fmt.Printf("警告: 创建电影标题搜索索引失败: %v\n", err)
+	}
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_vod_items_name_trgm ON vod_items USING gin (vod_name gin_trgm_ops);").Error; err != nil {
+		fmt.Printf("警告: 创建视频名称搜索索引失败: %v\n", err)
 	}
 
 	return db, nil

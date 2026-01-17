@@ -41,7 +41,7 @@ type VodItem struct {
 	VodContent    string    `json:"vod_content" db:"vod_content"`                                 // 详细内容
 	VodPlayUrl    string    `json:"vod_play_url" db:"vod_play_url"`                               // 播放链接
 	TypeName      string    `json:"type_name" db:"type_name"`                                     // 类型名称
-	LastVisitedAt time.Time `json:"last_visited_at" db:"last_visited_at"`                         // 最后访问时间
+	LastVisitedAt time.Time `json:"last_visited_at" db:"last_visited_at" gorm:"index"`            // 最后访问时间
 }
 
 // GetGenres 获取分类切片

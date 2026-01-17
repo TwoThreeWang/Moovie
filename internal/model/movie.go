@@ -14,7 +14,7 @@ type Movie struct {
 	OriginalTitle    string           `json:"original_title" db:"original_title"`
 	Year             string           `json:"year" db:"year"`
 	Poster           string           `json:"poster" db:"poster"`
-	Rating           float64          `json:"rating" db:"rating"`
+	Rating           float64          `json:"rating" db:"rating" gorm:"index"`
 	Genres           string           `json:"genres" db:"genres"`
 	Countries        string           `json:"countries" db:"countries"`
 	Directors        string           `json:"directors" db:"directors"`
@@ -24,7 +24,7 @@ type Movie struct {
 	IMDbID           string           `json:"imdb_id" db:"imdb_id"`
 	EmbeddingContent string           `json:"embedding_content" db:"embedding_content"`
 	Embedding        *pgvector.Vector `json:"embedding" db:"embedding" gorm:"type:vector(768)"`
-	UpdatedAt        time.Time        `json:"updated_at" db:"updated_at"`
+	UpdatedAt        time.Time        `json:"updated_at" db:"updated_at" gorm:"index"`
 }
 
 // Person 人物（导演/演员）

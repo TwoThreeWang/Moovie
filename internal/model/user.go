@@ -25,17 +25,17 @@ type SessionUser struct {
 // Favorite 收藏
 type Favorite struct {
 	ID        int       `json:"id" db:"id"`
-	UserID    int       `json:"user_id" db:"user_id"`
-	MovieID   int       `json:"movie_id" db:"movie_id"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UserID    int       `json:"user_id" db:"user_id" gorm:"uniqueIndex:idx_user_movie"`
+	MovieID   int       `json:"movie_id" db:"movie_id" gorm:"uniqueIndex:idx_user_movie"`
+	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"index"`
 	Movie     *Movie    `json:"movie,omitempty"` // 关联查询时填充
 }
 
 // WatchHistory 观影历史
 type WatchHistory struct {
 	ID        int       `json:"id" db:"id"`
-	UserID    int       `json:"user_id" db:"user_id" gorm:"uniqueIndex:idx_user_history_vod"`
-	DoubanID  string    `json:"douban_id" db:"douban_id"`
+	UserID    int       `json:"user_id" db:"user_id" gorm:"uniqueIndex:idx_user_history_vod;index:idx_user_watched"`
+	DoubanID  string    `json:"douban_id" db:"douban_id" gorm:"index"`
 	VodID     string    `json:"vod_id" db:"vod_id" gorm:"uniqueIndex:idx_user_history_vod"`
 	Title     string    `json:"title" db:"title"`
 	Poster    string    `json:"poster" db:"poster"`
@@ -44,7 +44,7 @@ type WatchHistory struct {
 	LastTime  float64   `json:"last_time" db:"last_time"`
 	Duration  float64   `json:"duration" db:"duration"`
 	Source    string    `json:"source" db:"source" gorm:"uniqueIndex:idx_user_history_vod"`
-	WatchedAt time.Time `json:"watched_at" db:"watched_at"`
+	WatchedAt time.Time `json:"watched_at" db:"watched_at" gorm:"index;index:idx_user_watched,sort:desc"`
 }
 
 func (WatchHistory) TableName() string {
