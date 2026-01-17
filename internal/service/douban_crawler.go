@@ -2,7 +2,9 @@ package service
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"regexp"
@@ -417,4 +419,158 @@ func (c *DoubanCrawler) GetPopularSubjects(movieType string) ([]DoubanPopularSub
 	utils.CacheSet(cacheKey, response.Subjects, 1*time.Hour)
 
 	return response.Subjects, nil
+}
+
+// DoubanReview 豆瓣短评
+type DoubanReview struct {
+	Title     string `json:"title"`     // 评论标题
+	Author    string `json:"author"`    // 作者
+	Link      string `json:"link"`      // 链接
+	Published string `json:"published"` // 发布时间
+	Summary   string `json:"summary"`   // 内容摘要
+}
+
+// rssFeed RSS 2.0 feed 结构
+type rssFeed struct {
+	XMLName xml.Name   `xml:"rss"`
+	Channel rssChannel `xml:"channel"`
+}
+
+// rssChannel RSS channel 结构
+type rssChannel struct {
+	Items []rssItem `xml:"item"`
+}
+
+// rssItem RSS item 结构
+type rssItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	Creator     string `xml:"http://purl.org/dc/elements/1.1/ creator"` // dc:creator
+	PubDate     string `xml:"pubDate"`
+}
+
+// GetReviews 获取豆瓣短评
+func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
+	// 检查缓存
+	cacheKey := fmt.Sprintf("douban_reviews:%s", doubanID)
+	if cached, found := utils.CacheGet(cacheKey); found {
+		if reviews, ok := cached.([]DoubanReview); ok {
+			return reviews, nil
+		}
+	}
+
+	url := fmt.Sprintf("https://www.douban.com/feed/subject/%s/reviews", doubanID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("创建请求失败: %w", err)
+	}
+
+	// 设置请求头，模拟浏览器
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "application/xml,text/xml,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	req.Header.Set("Referer", "https://movie.douban.com/")
+	req.Header.Set("Cookie", `ll="108288"; bid=KbVLyVSe9PI`)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("请求返回状态码: %d", resp.StatusCode)
+	}
+
+	// 读取响应体
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	// 调试日志：输出响应体前 500 字符
+	debugBody := string(body)
+	if len(debugBody) > 500 {
+		debugBody = debugBody[:500]
+	}
+	log.Printf("[爬虫] 豆瓣短评 RSS 响应 (豆瓣ID: %s): %s...", doubanID, debugBody)
+
+	// 解析 RSS 2.0 XML
+	var feed rssFeed
+	if err := xml.Unmarshal(body, &feed); err != nil {
+		return nil, fmt.Errorf("解析 XML 失败: %w", err)
+	}
+
+	log.Printf("[爬虫] 解析到 %d 条 item (豆瓣ID: %s)", len(feed.Channel.Items), doubanID)
+
+	// 转换为 DoubanReview
+	var reviews []DoubanReview
+	for _, item := range feed.Channel.Items {
+		// 解析时间，RSS 使用 RFC1123 格式 (例如: Fri, 21 Nov 2025 01:23:16 GMT)
+		published := item.PubDate
+		if t, err := time.Parse(time.RFC1123, item.PubDate); err == nil {
+			published = t.Format("2006-01-02")
+		}
+
+		// 从 description 中提取摘要（去掉 CDATA 包裹的 JSON 部分，取纯文本）
+		summary := extractReviewSummary(item.Description)
+
+		reviews = append(reviews, DoubanReview{
+			Title:     strings.TrimSpace(item.Title),
+			Author:    strings.TrimSpace(item.Creator),
+			Link:      strings.TrimSpace(item.Link),
+			Published: published,
+			Summary:   summary,
+		})
+	}
+
+	// 缓存结果，缓存时间 24 小时
+	utils.CacheSet(cacheKey, reviews, 24*time.Hour)
+
+	log.Printf("[爬虫] 成功获取豆瓣短评 (豆瓣ID: %s), 共 %d 条", doubanID, len(reviews))
+	return reviews, nil
+}
+
+// extractReviewSummary 从 RSS description 中提取评论摘要
+func extractReviewSummary(desc string) string {
+	// description 格式通常是:
+	// "用户名评论: 影片名 (链接)\n评价: XXX\n\n{JSON内容或纯文本...}"
+	// 我们需要提取评价后面的内容
+
+	lines := strings.Split(desc, "\n")
+	var result []string
+	skipPrefix := true
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// 跳过开头的 "用户评论:" 和 "评价:" 行
+		if skipPrefix {
+			if strings.Contains(line, "评论:") || strings.Contains(line, "评价:") {
+				continue
+			}
+			skipPrefix = false
+		}
+
+		// 如果遇到 JSON 格式的内容，跳过
+		if strings.HasPrefix(line, "{") {
+			continue
+		}
+
+		result = append(result, line)
+	}
+
+	summary := strings.Join(result, " ")
+
+	// 限制长度
+	if len([]rune(summary)) > 300 {
+		summary = string([]rune(summary)[:300]) + "..."
+	}
+
+	return summary
 }

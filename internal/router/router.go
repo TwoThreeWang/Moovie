@@ -88,6 +88,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/search", h.SearchHTMX)         // 搜索结果片段
 		api.GET("/htmx/similar", h.SimilarMoviesHTMX) // 相似电影推荐
 		api.GET("/htmx/foryou", h.ForYouHTMX)         // 为你推荐
+		api.GET("/htmx/reviews", h.ReviewsHTMX)       // 豆瓣短评
 	}
 
 	// ==================== 管理后台 ====================

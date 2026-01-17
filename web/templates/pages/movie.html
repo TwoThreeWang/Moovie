@@ -112,6 +112,22 @@
     </div>
     {{ end }}
 
+    <!-- 豆瓣短评 -->
+    {{ if .Movie.DoubanID }}
+    <div class="movie-section">
+        <h2 class="section-title">豆瓣短评</h2>
+        <div id="movie-reviews"
+             hx-get="/api/htmx/reviews?douban_id={{ .Movie.DoubanID }}"
+             hx-trigger="load"
+             hx-indicator="#reviews-loading">
+            <div id="reviews-loading" class="htmx-indicator movie-search-loading-state">
+                <div class="loading-spinner"></div>
+                <p>正在加载短评...</p>
+            </div>
+        </div>
+    </div>
+    {{ end }}
+
     <!-- 在线资源 -->
     <div class="movie-section">
         <h2 class="section-title">在线资源</h2>

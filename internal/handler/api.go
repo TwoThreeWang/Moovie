@@ -516,3 +516,28 @@ func (h *Handler) ForYouHTMX(c *gin.Context) {
 		"Movies": movies,
 	})
 }
+
+// ReviewsHTMX 豆瓣短评（htmx 片段）
+// GET /api/htmx/reviews?douban_id=xxx
+func (h *Handler) ReviewsHTMX(c *gin.Context) {
+	doubanID := strings.TrimSpace(c.Query("douban_id"))
+	if doubanID == "" {
+		c.String(http.StatusBadRequest, "豆瓣 ID 不能为空")
+		return
+	}
+
+	// 获取短评
+	reviews, err := h.DoubanCrawler.GetReviews(doubanID)
+	if err != nil {
+		log.Printf("[ReviewsHTMX] 获取短评失败 (豆瓣ID: %s): %v", doubanID, err)
+		c.HTML(http.StatusOK, "partials/reviews.html", gin.H{
+			"Reviews": nil,
+			"Error":   "暂时无法获取短评",
+		})
+		return
+	}
+
+	c.HTML(http.StatusOK, "partials/reviews.html", gin.H{
+		"Reviews": reviews,
+	})
+}
