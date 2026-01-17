@@ -34,12 +34,12 @@ fi
 
 # 4. 构建并启动容器
 echo -e "${GREEN}步骤 2: 正在构建镜像并启动容器...${NC}"
-docker-compose up -d --build
+docker compose up -d --build
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}部署成功！${NC}"
     echo -e "${YELLOW}当前运行中的容器状态:${NC}"
-    docker-compose ps
+    docker compose ps
 else
     echo -e "${RED}部署失败，请检查 docker-compose 日志。${NC}"
     exit 1
