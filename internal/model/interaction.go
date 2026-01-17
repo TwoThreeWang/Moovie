@@ -28,7 +28,7 @@ type Feedback struct {
 
 // TrendingKeyword 热搜关键词
 type TrendingKeyword struct {
-	Keyword        string    `json:"keyword" db:"keyword"`
+	Keyword        string    `json:"keyword" db:"keyword" gorm:"unique"`
 	Count          int       `json:"count" db:"count"`
 	LastSearchedAt time.Time `json:"last_searched_at" db:"last_searched_at"`
 }

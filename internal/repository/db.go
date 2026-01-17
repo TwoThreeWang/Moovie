@@ -40,6 +40,9 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		&model.Site{},
 		&model.CopyrightFilter{},
 		&model.CategoryFilter{},
+		&model.VodItem{},
+		&model.SearchLog{},
+		&model.TrendingKeyword{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
