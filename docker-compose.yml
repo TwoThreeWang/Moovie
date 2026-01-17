@@ -3,6 +3,7 @@ version: '3.8'
 services:
   app:
     build: .
+    container_name: moovie
     ports:
       - "5005:5005"
     volumes:
