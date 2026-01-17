@@ -94,12 +94,20 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		admin.GET("", h.AdminDashboard)         // 管理后台首页
 		admin.GET("/users", h.AdminUsers)       // 用户管理
 		admin.GET("/crawlers", h.AdminCrawlers) // 采集器管理
+		admin.GET("/feedback", h.AdminFeedback) // 反馈管理
+
+		// 用户管理 API
+		admin.PUT("/users/:id/role", h.AdminUserUpdateRole) // 更新用户角色
+		admin.DELETE("/users/:id", h.AdminUserDelete)       // 删除用户
 
 		// 资源网管理
 		admin.GET("/sites", h.AdminSites)             // 资源网管理
 		admin.POST("/sites", h.AdminSiteCreate)       // 创建资源网
 		admin.PUT("/sites/:id", h.AdminSiteUpdate)    // 更新资源网
 		admin.DELETE("/sites/:id", h.AdminSiteDelete) // 删除资源网
+
+		// 反馈管理 API
+		admin.PUT("/feedback/:id/status", h.AdminFeedbackStatus) // 更新反馈状态
 
 		// 搜索数据管理
 		admin.GET("/data", h.AdminData)             // 搜索数据管理
@@ -182,7 +190,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		"about", "dmca", "privacy", "terms", "404",
 		"login", "register",
 		"dashboard", "favorites", "history", "settings",
-		"admin_dashboard", "admin_users", "admin_crawlers", "admin_sites", "admin_cache",
+		"admin_dashboard", "admin_users", "admin_crawlers", "admin_sites", "admin_cache", "admin_feedback",
 	}
 
 	for _, page := range pages {

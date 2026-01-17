@@ -1,5 +1,22 @@
 {{ define "content" }}
 <div class="m3u8-player-page">
+    <!-- 页面头部 -->
+    <div class="player-header">
+        <div class="header-main">
+            <div class="header-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                </svg>
+            </div>
+            <div class="header-info">
+                <h1>M3U8 万能播放器</h1>
+                <p>支持全网 HLS/M3U8、FLV、MP4 视频流在线播放</p>
+            </div>
+        </div>
+        <div class="header-badge">Pro</div>
+    </div>
+
     <div class="player-container">
         <!-- 播放器区域 -->
         <div class="player-wrapper" id="player-container">
@@ -33,6 +50,7 @@
             <li>支持 <strong>M3U8 (HLS)</strong>, <strong>FLV</strong> 和 <strong>MP4</strong> 格式。</li>
             <li>直接粘贴链接并点击“立即播放”即可。</li>
             <li>通过 URL 参数推送：<code>/player?url=您的链接</code>。</li>
+            <li><strong>嵌入模式 (Embed Mode)</strong>：在 URL 后添加 <code>&embed=1</code> 可进入纯净播放器模式，适用于 iframe 嵌入。</li>
             <li>如果无法播放，请检查链接有效性及是否支持跨域 (CORS)。</li>
         </ul>
     </div>
@@ -42,6 +60,49 @@
     .m3u8-player-page {
         margin: 20px auto;
         padding: 0 20px;
+    }
+    .player-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .header-main {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .header-icon {
+        color: #f60c3e;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .header-icon svg {
+        width: 28px;
+        height: 28px;
+    }
+    .header-info h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+    }
+    .header-info p {
+        margin: 2px 0 0;
+        font-size: 12px;
+        color: #666;
+    }
+    .header-badge {
+        background: rgba(255,255,255,0.05);
+        color: #999;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     .player-container {
         background: #0b0b0b;

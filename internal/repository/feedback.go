@@ -39,3 +39,20 @@ func (r *FeedbackRepository) List(status string, limit, offset int) ([]*model.Fe
 func (r *FeedbackRepository) UpdateStatus(id int, status string) error {
 	return r.db.Model(&model.Feedback{}).Where("id = ?", id).Update("status", status).Error
 }
+
+// CountPending 获取待处理反馈数量
+func (r *FeedbackRepository) CountPending() (int64, error) {
+	var count int64
+	err := r.db.Model(&model.Feedback{}).Where("status = ?", "pending").Count(&count).Error
+	return count, err
+}
+
+// FindByID 根据ID查找反馈
+func (r *FeedbackRepository) FindByID(id int) (*model.Feedback, error) {
+	var feedback model.Feedback
+	err := r.db.First(&feedback, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &feedback, nil
+}

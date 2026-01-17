@@ -2540,6 +2540,152 @@ img {
     background: #e53935;
 }
 
+.btn-success {
+    background: #4caf50;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #43a047;
+}
+
+/* Admin 筛选器 */
+.admin-filter {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.filter-label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.filter-btn {
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    transition: all var(--transition);
+}
+
+.filter-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.filter-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* 反馈类型标签 */
+.type-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.type-bug { background: #ffebee; color: #c62828; }
+.type-request { background: #e3f2fd; color: #1565c0; }
+.type-suggestion { background: #e8f5e9; color: #2e7d32; }
+.type-dmca { background: #fff3e0; color: #ef6c00; }
+
+/* 反馈状态 */
+.status-resolved {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.status-rejected {
+    background: #ffebee;
+    color: #c62828;
+}
+
+/* 反馈内容单元格 */
+.content-cell {
+    max-width: 300px;
+}
+
+.feedback-content {
+    max-height: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.link-btn {
+    font-size: 0.8rem;
+    color: var(--primary);
+}
+
+.link-btn:hover {
+    text-decoration: underline;
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+/* 操作单元格 */
+.action-cell {
+    display: flex;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+/* 角色选择下拉框 */
+.role-select {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.role-select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.role-select:hover {
+    border-color: var(--primary);
+}
+
+/* Toast 提示 */
+.toast-message {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    padding: 12px 24px;
+    background: #333;
+    color: white;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 9999;
+}
+
+.toast-message.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
 /* ==================== Modal 弹窗 ==================== */
 .modal {
     position: fixed;

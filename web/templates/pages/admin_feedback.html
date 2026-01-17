@@ -1,0 +1,127 @@
+
+{{ define "content" }}
+<div class="admin-page">
+    <!-- 页面标题和导航 -->
+    <div class="admin-header">
+        <h1 class="admin-title">反馈管理</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab">用户</a>
+            <a href="/admin/feedback" class="admin-tab active">反馈</a>
+            <a href="/admin/sites" class="admin-tab">资源网</a>
+            <a href="/admin/data" class="admin-tab">数据管理</a>
+            <a href="/admin/crawlers" class="admin-tab">爬虫</a>
+        </nav>
+    </div>
+
+    <!-- 筛选器 -->
+    <div class="admin-filter">
+        <span class="filter-label">状态筛选：</span>
+        <a href="/admin/feedback" class="filter-btn {{ if eq .Status "" }}active{{ end }}">全部</a>
+        <a href="/admin/feedback?status=pending" class="filter-btn {{ if eq .Status "pending" }}active{{ end }}">待处理</a>
+        <a href="/admin/feedback?status=resolved" class="filter-btn {{ if eq .Status "resolved" }}active{{ end }}">已处理</a>
+        <a href="/admin/feedback?status=rejected" class="filter-btn {{ if eq .Status "rejected" }}active{{ end }}">已拒绝</a>
+    </div>
+
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3>反馈列表</h3>
+            <span class="badge">{{ if .Feedbacks }}{{ len .Feedbacks }}{{ else }}0{{ end }} 条反馈</span>
+        </div>
+        <div class="admin-table-wrapper">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>类型</th>
+                        <th>内容</th>
+                        <th>相关链接</th>
+                        <th>状态</th>
+                        <th>时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{ if .Feedbacks }}
+                    {{ range .Feedbacks }}
+                    <tr id="feedback-row-{{ .ID }}">
+                        <td><span class="id-badge">{{ .ID }}</span></td>
+                        <td>
+                            <span class="type-badge type-{{ .Type }}">
+                                {{ if eq .Type "bug" }}Bug报告
+                                {{ else if eq .Type "request" }}求片
+                                {{ else if eq .Type "suggestion" }}功能建议
+                                {{ else if eq .Type "dmca" }}版权投诉
+                                {{ else }}{{ .Type }}{{ end }}
+                            </span>
+                        </td>
+                        <td class="content-cell">
+                            <div class="feedback-content">{{ .Content }}</div>
+                        </td>
+                        <td>
+                            {{ if .MovieURL }}
+                            <a href="{{ .MovieURL }}" target="_blank" class="link-btn">查看链接</a>
+                            {{ else }}
+                            <span class="text-muted">-</span>
+                            {{ end }}
+                        </td>
+                        <td>
+                            <span class="status-badge status-{{ .Status }}">
+                                {{ if eq .Status "pending" }}待处理
+                                {{ else if eq .Status "resolved" }}已处理
+                                {{ else if eq .Status "rejected" }}已拒绝
+                                {{ else }}{{ .Status }}{{ end }}
+                            </span>
+                        </td>
+                        <td>{{ .CreatedAt.Format "2006-01-02 15:04" }}</td>
+                        <td class="action-cell">
+                            {{ if eq .Status "pending" }}
+                            <button class="btn btn-sm btn-success" onclick="updateFeedbackStatus({{ .ID }}, 'resolved')">
+                                标记已处理
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="updateFeedbackStatus({{ .ID }}, 'rejected')">
+                                拒绝
+                            </button>
+                            {{ else }}
+                            <button class="btn btn-sm btn-secondary" onclick="updateFeedbackStatus({{ .ID }}, 'pending')">
+                                重置
+                            </button>
+                            {{ end }}
+                        </td>
+                    </tr>
+                    {{ end }}
+                    {{ else }}
+                    <tr>
+                        <td colspan="7" class="empty-cell">暂无反馈数据</td>
+                    </tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function updateFeedbackStatus(id, status) {
+    try {
+        const formData = new FormData();
+        formData.append('status', status);
+
+        const response = await fetch(`/admin/feedback/${id}/status`, {
+            method: 'PUT',
+            body: formData
+        });
+
+        if (response.ok) {
+            // 刷新页面以更新列表
+            window.location.reload();
+        } else {
+            const data = await response.json();
+            alert(data.error || '操作失败');
+        }
+    } catch (error) {
+        alert('操作失败：' + error.message);
+    }
+}
+</script>
+{{ end }}

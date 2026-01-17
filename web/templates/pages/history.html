@@ -6,9 +6,19 @@
 <div class="movie-grid">
     {{ range .History }}
 <div class="movie-card-wrapper history-card-wrapper" id="history-{{ .ID }}">
-    <a href="/search?kw={{ .Title }}" class="movie-card" title="点击搜索资源续播">
+    {{ $playUrl := "" }}
+    {{ if and .Source .VodID }}
+        {{ if .DoubanID }}
+            {{ $playUrl = printf "/play/%s/%s?ep=%s&douban_id=%s" .Source .VodID .Episode .DoubanID }}
+        {{ else }}
+            {{ $playUrl = printf "/play/%s/%s?ep=%s" .Source .VodID .Episode }}
+        {{ end }}
+    {{ else }}
+        {{ $playUrl = printf "/search?kw=%s" .Title }}
+    {{ end }}
+    <a href="{{ $playUrl }}" class="movie-card" title="点击续播 {{ .Title }}">
         <div class="movie-poster">
-            <img src="{{ if .Poster }}/api/proxy/image?url={{ .Poster }}{{ else }}/static/img/placeholder.jpg{{ end }}" alt="{{ .Title }}" loading="lazy">
+            <img src="{{ if .Poster }}/api/proxy/image?url={{ .Poster }}{{ else }}/static/img/placeholder.jpg{{ end }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer">
         </div>
         <div class="movie-info">
             <h3 class="movie-title">{{ .Title }}</h3>

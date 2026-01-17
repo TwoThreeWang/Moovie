@@ -7,6 +7,7 @@
         <nav class="admin-tabs">
             <a href="/admin" class="admin-tab">概览</a>
             <a href="/admin/users" class="admin-tab active">用户</a>
+            <a href="/admin/feedback" class="admin-tab">反馈</a>
             <a href="/admin/sites" class="admin-tab">资源网</a>
             <a href="/admin/data" class="admin-tab">数据管理</a>
             <a href="/admin/crawlers" class="admin-tab">爬虫</a>
@@ -33,7 +34,7 @@
                 <tbody>
                     {{ if .Users }}
                     {{ range .Users }}
-                    <tr>
+                    <tr id="user-row-{{ .ID }}">
                         <td><span class="id-badge">{{ .ID }}</span></td>
                         <td class="user-cell">
                             <div class="user-avatar-sm">{{ slice .Username 0 1 }}</div>
@@ -41,13 +42,16 @@
                         </td>
                         <td>{{ .Email }}</td>
                         <td>
-                            <span class="role-badge {{ if eq .Role "admin" }}role-admin{{ else }}role-user{{ end }}">
-                                {{ if eq .Role "admin" }}管理员{{ else }}普通用户{{ end }}
-                            </span>
+                            <select class="role-select" onchange="updateUserRole({{ .ID }}, this.value)" data-current="{{ .Role }}">
+                                <option value="user" {{ if eq .Role "user" }}selected{{ end }}>普通用户</option>
+                                <option value="admin" {{ if eq .Role "admin" }}selected{{ end }}>管理员</option>
+                            </select>
                         </td>
                         <td>{{ .CreatedAt.Format "2006-01-02" }}</td>
-                        <td>
-                            <button class="btn btn-secondary btn-sm">编辑</button>
+                        <td class="action-cell">
+                            <button class="btn btn-danger btn-sm" onclick="deleteUser({{ .ID }}, '{{ .Username }}')">
+                                删除
+                            </button>
                         </td>
                     </tr>
                     {{ end }}
@@ -61,4 +65,74 @@
         </div>
     </div>
 </div>
+
+<script>
+async function updateUserRole(userId, newRole) {
+    try {
+        const formData = new FormData();
+        formData.append('role', newRole);
+
+        const response = await fetch(`/admin/users/${userId}/role`, {
+            method: 'PUT',
+            body: formData
+        });
+
+        if (response.ok) {
+            // 显示成功提示
+            showToast('角色已更新');
+        } else {
+            const data = await response.json();
+            alert(data.error || '更新失败');
+            // 恢复原来的值
+            window.location.reload();
+        }
+    } catch (error) {
+        alert('操作失败：' + error.message);
+        window.location.reload();
+    }
+}
+
+async function deleteUser(userId, username) {
+    if (!confirm(`确定要删除用户 "${username}" 吗？此操作不可撤销！`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/admin/users/${userId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            // 移除表格行
+            const row = document.getElementById(`user-row-${userId}`);
+            if (row) {
+                row.remove();
+            }
+            showToast('用户已删除');
+        } else {
+            const data = await response.json();
+            alert(data.error || '删除失败');
+        }
+    } catch (error) {
+        alert('操作失败：' + error.message);
+    }
+}
+
+function showToast(message) {
+    // 简单的 toast 提示
+    const toast = document.createElement('div');
+    toast.className = 'toast-message';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
+</script>
 {{ end }}

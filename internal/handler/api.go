@@ -371,9 +371,15 @@ func (h *Handler) VodDetail(c *gin.Context) {
 }
 
 // SearchHTMX 资源网搜索（htmx 片段）
-// GET /api/htmx/search?kw=xxx
+// GET /api/htmx/search?kw=xxx&year=xxx
 func (h *Handler) SearchHTMX(c *gin.Context) {
 	keyword := strings.TrimSpace(c.Query("kw"))
+	// 对关键词进行清洗，过滤掉垃圾标签、集数等信息，提高匹配率
+	keyword = utils.CleanMovieTitle(keyword)
+
+	year := strings.TrimSpace(c.Query("year"))
+	exclude := strings.TrimSpace(c.Query("exclude"))
+
 	if keyword == "" {
 		c.String(http.StatusBadRequest, "搜索关键词不能为空")
 		return
@@ -390,8 +396,29 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 		return
 	}
 
+	// 结果过滤
+	finalResults := result.Items
+	if (year != "" || exclude != "") && len(finalResults) > 0 {
+		var filtered []model.VodItem
+		for _, item := range finalResults {
+			// 1. 排除指定的资源项 (用于播放页排除当前的播放项)
+			if exclude != "" && (item.SourceKey+":"+item.VodId) == exclude {
+				continue
+			}
+
+			// 2. 年份过滤
+			// 如果结果中包含目标年份，或者结果中完全没有年份信息，则保留
+			if year != "" && item.VodYear != "" && !strings.Contains(item.VodYear, year) {
+				continue
+			}
+
+			filtered = append(filtered, item)
+		}
+		finalResults = filtered
+	}
+
 	// 仅当有结果时记录搜索日志
-	if len(result.Items) > 0 {
+	if len(finalResults) > 0 {
 		go func() {
 			_ = h.Repos.SearchLog.Log(keyword, middleware.GetUserIDPtr(c), utils.HashIP(c.ClientIP()))
 		}()
@@ -399,6 +426,6 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 
 	// 返回结果片段
 	c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
-		"Results": result.Items,
+		"Results": finalResults,
 	})
 }

@@ -53,6 +53,7 @@ func (h *Handler) RenderData(c *gin.Context, data gin.H) gin.H {
 		"SiteName": h.Config.SiteName,
 		"SiteUrl":  h.Config.SiteUrl,
 		"Path":     c.Request.URL.Path,
+		"FullPath": c.Request.RequestURI,
 		"Referer":  c.Request.Referer(),
 	}
 
@@ -80,6 +81,10 @@ func (h *Handler) getActiveMenu(c *gin.Context) string {
 	path := c.Request.URL.Path
 	if strings.HasPrefix(path, "/dashboard") || path == "/favorites" || path == "/history" || path == "/settings" {
 		return "user"
+	}
+
+	if strings.HasPrefix(path, "/admin") {
+		return "admin"
 	}
 
 	if path == "/search" {

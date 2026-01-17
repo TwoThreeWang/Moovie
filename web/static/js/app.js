@@ -45,6 +45,7 @@ function saveWatchHistory(historyArray) {
                 ...h,
                 source_key: h.source || h.source_key,
                 vod_id: h.vod_id || h.vodId,
+                douban_id: h.douban_id, // 统一字段名
                 img: h.poster || h.img // 确保字段兼容
             };
         }
@@ -249,7 +250,7 @@ function renderContinueWatching() {
     const playState = getPlayState();
     // 转换为数组并按更新时间排序
     const history = Object.values(playState)
-        .filter(item => item.lastTime > 0 && item.duration > 0)
+        .filter(item => item.title)
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
         .slice(0, 6);
 
@@ -265,9 +266,16 @@ function renderContinueWatching() {
         // 计算播放进度百分比
         const progress = item.duration > 0 ? Math.min((item.lastTime / item.duration) * 100, 100) : 0;
         // 构建播放链接
-        const playUrl = item.source_key && item.vod_id
-            ? `/play/${item.source_key}/${item.vod_id}${item.episode ? '?ep=' + encodeURIComponent(item.episode) : ''}`
-            : `/search?kw=${encodeURIComponent(item.title || '')}`;
+        let playUrl = '';
+        if (item.source_key && item.vod_id) {
+            const params = new URLSearchParams();
+            if (item.episode) params.set('ep', item.episode);
+            if (item.douban_id) params.set('douban_id', item.douban_id);
+            const qs = params.toString();
+            playUrl = `/play/${item.source_key}/${item.vod_id}${qs ? '?' + qs : ''}`;
+        } else {
+            playUrl = `/search?kw=${encodeURIComponent(item.title || '')}`;
+        }
 
         const itemKey = getItemKey(item);
 

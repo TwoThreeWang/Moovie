@@ -5,7 +5,11 @@
     <nav class="watch-breadcrumb">
         <a href="/">首页</a>
         <span class="breadcrumb-sep">/</span>
-        <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}">{{ .Detail.VodName }}</a>
+        {{ if .DoubanID }}
+        <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" title="{{ .Detail.VodName }}影片详情">{{ .Detail.VodName }}</a>
+        {{ else }}
+        <a href="/search?kw={{ .Detail.VodName }}" title="{{ .Detail.VodName }}搜索结果">{{ .Detail.VodName }}</a>
+        {{ end }}
         {{ if .Episode }}
         <span class="breadcrumb-sep">/</span>
         <span class="breadcrumb-current">{{ .Episode }} 在线观看</span>
@@ -50,12 +54,6 @@
 
                 <!-- 信息行 -->
                 <div class="detail-meta">
-                    {{ if .SourceKey }}
-                    <div class="meta-row">
-                        <span class="meta-label">来源：</span>
-                        <span class="meta-value">{{ .SourceKey }}</span>
-                    </div>
-                    {{ end }}
                     {{ if .Detail.GetDirectors }}
                     <div class="meta-row">
                         <span class="meta-label">导演：</span>
@@ -98,7 +96,7 @@
                     {{ range $i, $source := .Sources }}
                     <a href="/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $source.Name }}{{ if $.Episode }}&ep={{ $.Episode }}{{ end }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}"
                        class="source-btn {{ if eq $source.Name $.Source }}active{{ end }}">
-                        {{ $source.Name }}
+                        {{ $.SourceKey }}
                     </a>
                     {{ end }}
                 </div>
@@ -117,17 +115,19 @@
 
         <!-- 操作区域 -->
         <div class="video-actions-bar">
+            {{ if .DoubanID }}
             <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" class="action-link">
                 <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="16" x2="12" y2="12"></line>
                     <line x1="12" y1="8" x2="12.01" y2="8"></line>
                 </svg>
-                <span>查看详情</span>
+                <span>影片详情</span>
             </a>
+            {{ end }}
             <button class="action-link"
                     hx-post="/api/feedback"
-                    hx-vals='{"type":"error","content":"播放失败","movie_url":"{{.PlayURL}}"}'
+                    hx-vals='{"type":"error","content":"播放失败","movie_url":"{{.FullPath}}"}'
                     hx-swap="outerHTML">
                 <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
@@ -136,6 +136,20 @@
                 </svg>
                 <span>播放失败反馈</span>
             </button>
+        </div>
+
+        <!-- 在线资源 -->
+        <div class="movie-section" style="margin-top: 40px;">
+            <h2 class="section-title">更多资源</h2>
+            <div id="movie-search-results"
+                 hx-get="/api/htmx/search?kw={{ .Detail.VodName }}&year={{ .Detail.VodYear }}&exclude={{ .SourceKey }}:{{ .VodID }}"
+                 hx-trigger="load"
+                 hx-indicator="#movie-search-loading">
+                <div id="movie-search-loading" class="htmx-indicator movie-search-loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>正在搜索全网资源，请稍候...</p>
+                </div>
+            </div>
         </div>
     </section>
 </div>

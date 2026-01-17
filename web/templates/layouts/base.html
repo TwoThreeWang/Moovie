@@ -97,13 +97,17 @@
                     </svg>
                     <span>关于本站</span>
                 </a>
-                <a href="/trends" class="nav-item {{ if eq .ActiveMenu "trends" }}active{{ end }}">
+                {{ if and .UserInfo (eq .UserInfo.Role "admin") }}
+                <a href="/admin" class="nav-item {{ if eq .ActiveMenu "admin" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
-                        <polyline points="17 6 23 6 23 12"></polyline>
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
                     </svg>
-                    <span>更新记录</span>
+                    <span>管理后台</span>
                 </a>
+                {{ end }}
             </div>
 
             <!-- 用户区域 -->

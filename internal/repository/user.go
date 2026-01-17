@@ -92,3 +92,27 @@ func (r *UserRepository) UpdatePassword(userID int, newPassword string) error {
 	}
 	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("password_hash", string(hash)).Error
 }
+
+// ListAll 获取所有用户列表
+func (r *UserRepository) ListAll() ([]*model.User, error) {
+	var users []*model.User
+	err := r.db.Order("id ASC").Find(&users).Error
+	return users, err
+}
+
+// Count 获取用户总数
+func (r *UserRepository) Count() (int64, error) {
+	var count int64
+	err := r.db.Model(&model.User{}).Count(&count).Error
+	return count, err
+}
+
+// UpdateRole 更新用户角色
+func (r *UserRepository) UpdateRole(userID int, role string) error {
+	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("role", role).Error
+}
+
+// Delete 删除用户
+func (r *UserRepository) Delete(userID int) error {
+	return r.db.Delete(&model.User{}, userID).Error
+}

@@ -16,28 +16,35 @@ import (
 func (h *Handler) AdminDashboard(c *gin.Context) {
 	// 获取统计数据
 	sites, _ := h.Repos.Site.ListAll()
+	userCount, _ := h.Repos.User.Count()
+	feedbackCount, _ := h.Repos.Feedback.CountPending()
 
-	c.HTML(http.StatusOK, "admin_dashboard.html", gin.H{
-		"Title":     "管理后台 - Moovie",
-		"UserID":    middleware.GetUserID(c),
-		"SiteCount": len(sites),
-	})
+	c.HTML(http.StatusOK, "admin_dashboard.html", h.RenderData(c, gin.H{
+		"Title":         "管理后台 - Moovie",
+		"SiteCount":     len(sites),
+		"UserCount":     userCount,
+		"FeedbackCount": feedbackCount,
+	}))
 }
 
 // AdminUsers 用户管理
 func (h *Handler) AdminUsers(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin_users.html", gin.H{
-		"Title":  "用户管理 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	users, err := h.Repos.User.ListAll()
+	if err != nil {
+		users = []*model.User{}
+	}
+
+	c.HTML(http.StatusOK, "admin_users.html", h.RenderData(c, gin.H{
+		"Title": "用户管理 - Moovie",
+		"Users": users,
+	}))
 }
 
 // AdminCrawlers 爬虫监控
 func (h *Handler) AdminCrawlers(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin_crawlers.html", gin.H{
-		"Title":  "爬虫监控 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "admin_crawlers.html", h.RenderData(c, gin.H{
+		"Title": "爬虫监控 - Moovie",
+	}))
 }
 
 // AdminSites 资源网管理页面
@@ -47,11 +54,10 @@ func (h *Handler) AdminSites(c *gin.Context) {
 		sites = []*model.Site{}
 	}
 
-	c.HTML(http.StatusOK, "admin_sites.html", gin.H{
-		"Title":  "资源网管理 - Moovie",
-		"UserID": middleware.GetUserID(c),
-		"Sites":  sites,
-	})
+	c.HTML(http.StatusOK, "admin_sites.html", h.RenderData(c, gin.H{
+		"Title": "资源网管理 - Moovie",
+		"Sites": sites,
+	}))
 }
 
 // AdminSiteCreate 创建资源网
@@ -116,10 +122,9 @@ func (h *Handler) AdminSiteDelete(c *gin.Context) {
 
 // AdminData 搜索数据管理页面
 func (h *Handler) AdminData(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin_cache.html", gin.H{
-		"Title":  "搜索数据管理 - Moovie",
-		"UserID": middleware.GetUserID(c),
-	})
+	c.HTML(http.StatusOK, "admin_cache.html", h.RenderData(c, gin.H{
+		"Title": "搜索数据管理 - Moovie",
+	}))
 }
 
 // AdminDataClean 清理非活跃搜索数据
@@ -135,4 +140,93 @@ func (h *Handler) AdminDataClean(c *gin.Context) {
 		"affected": affected,
 		"message":  "清理完成",
 	})
+}
+
+// AdminFeedback 反馈管理页面
+func (h *Handler) AdminFeedback(c *gin.Context) {
+	status := c.DefaultQuery("status", "")
+	feedbacks, err := h.Repos.Feedback.List(status, 100, 0)
+	if err != nil {
+		feedbacks = []*model.Feedback{}
+	}
+
+	c.HTML(http.StatusOK, "admin_feedback.html", h.RenderData(c, gin.H{
+		"Title":     "反馈管理 - Moovie",
+		"Feedbacks": feedbacks,
+		"Status":    status,
+	}))
+}
+
+// AdminUserUpdateRole 更新用户角色
+func (h *Handler) AdminUserUpdateRole(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.BadRequest(c, "无效的用户 ID")
+		return
+	}
+
+	role := c.PostForm("role")
+	if role != "user" && role != "admin" {
+		utils.BadRequest(c, "无效的角色")
+		return
+	}
+
+	// 不能修改自己的角色
+	currentUserID := middleware.GetUserID(c)
+	if currentUserID == id {
+		utils.BadRequest(c, "不能修改自己的角色")
+		return
+	}
+
+	if err := h.Repos.User.UpdateRole(id, role); err != nil {
+		utils.InternalServerError(c, "更新失败")
+		return
+	}
+
+	utils.Success(c, gin.H{"message": "角色已更新"})
+}
+
+// AdminUserDelete 删除用户
+func (h *Handler) AdminUserDelete(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.BadRequest(c, "无效的用户 ID")
+		return
+	}
+
+	// 不能删除自己
+	currentUserID := middleware.GetUserID(c)
+	if currentUserID == id {
+		utils.BadRequest(c, "不能删除自己的账号")
+		return
+	}
+
+	if err := h.Repos.User.Delete(id); err != nil {
+		utils.InternalServerError(c, "删除失败")
+		return
+	}
+
+	utils.Success(c, gin.H{"message": "用户已删除"})
+}
+
+// AdminFeedbackStatus 更新反馈状态
+func (h *Handler) AdminFeedbackStatus(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.BadRequest(c, "无效的反馈 ID")
+		return
+	}
+
+	status := c.PostForm("status")
+	if status != "pending" && status != "resolved" && status != "rejected" {
+		utils.BadRequest(c, "无效的状态")
+		return
+	}
+
+	if err := h.Repos.Feedback.UpdateStatus(id, status); err != nil {
+		utils.InternalServerError(c, "更新失败")
+		return
+	}
+
+	utils.Success(c, gin.H{"message": "状态已更新"})
 }
