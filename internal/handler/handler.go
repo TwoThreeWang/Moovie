@@ -120,7 +120,7 @@ func (h *Handler) getActiveMenu(c *gin.Context) string {
 // Home 首页
 func (h *Handler) Home(c *gin.Context) {
 	c.HTML(http.StatusOK, "home.html", h.RenderData(c, gin.H{
-		"Title": h.Config.SiteName + " - 聚合电影搜索",
+		"Title": h.Config.SiteName + " - 发现你的下一部电影",
 	}))
 }
 
@@ -197,8 +197,31 @@ func (h *Handler) Movie(c *gin.Context) {
 		isFavorited, _ = h.Repos.Favorite.IsFavorited(userID, movie.ID)
 	}
 
+	// 构建 SEO 关键词
+	var keywords []string
+	keywords = append(keywords, movie.Title)
+	if movie.Year != "" {
+		keywords = append(keywords, movie.Year)
+	}
+	if movie.Genres != "" {
+		// 分割流派
+		parts := strings.Split(movie.Genres, ",")
+		keywords = append(keywords, parts...)
+	}
+	keywords = append(keywords, "在线观看", "免费下载", "高清资源", "Moovie")
+
+	// 构建描述 (去除空白字符)
+	desc := strings.TrimSpace(movie.Summary)
+	if len([]rune(desc)) > 150 {
+		desc = string([]rune(desc)[:150]) + "..."
+	}
+
 	c.HTML(http.StatusOK, "movie.html", h.RenderData(c, gin.H{
 		"Title":       movie.Title + " (" + movie.Year + ") - " + h.Config.SiteName,
+		"Description": desc,
+		"Keywords":    strings.Join(keywords, ","),
+		"Cover":       "/api/proxy/image?url=" + movie.Poster,
+		"Canonical":   fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
 		"Movie":       movie,
 		"IsFavorited": isFavorited,
 	}))
@@ -280,6 +303,9 @@ func (h *Handler) Play(c *gin.Context) {
 		"Episode":       episode,
 		"PlayURL":       playURL,
 		"ContentClass":  "full-width",
+		"Description":   fmt.Sprintf("在线观看 %s - %s", detail.VodName, h.Config.SiteName),
+		"Keywords":      fmt.Sprintf("%s,在线播放,高清视频,%s", detail.VodName, h.Config.SiteName),
+		"Cover":         detail.VodPic,
 	}
 
 	if currentSource != nil {
@@ -320,6 +346,8 @@ func (h *Handler) Discover(c *gin.Context) {
 
 	c.HTML(http.StatusOK, "discover.html", h.RenderData(c, gin.H{
 		"Title":       "发现 - " + h.Config.SiteName,
+		"Description": "浏览最新、最热的电影和电视剧，发现你的下一部心头好。",
+		"Keywords":    "热门电影,最新电视剧,高分佳作,Moovie发现",
 		"Subjects":    subjects,
 		"CurrentType": movieType,
 	}))
@@ -428,9 +456,11 @@ func (h *Handler) Rankings(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "rankings.html", h.RenderData(c, gin.H{
-		"Title":     "热门电影 - " + h.Config.SiteName,
-		"HotMovies": hotMovies,
-		"Trending":  trending,
+		"Title":       "热门电影 - " + h.Config.SiteName,
+		"Description": "Moovie 热门电影排行榜，实时更新全网最受欢迎的影视作品。",
+		"Keywords":    "电影排行榜,热门影视,高分榜单,热搜榜",
+		"HotMovies":   hotMovies,
+		"Trending":    trending,
 	}))
 }
 
@@ -489,6 +519,8 @@ func (h *Handler) Trends(c *gin.Context) {
 
 	c.HTML(http.StatusOK, "trends.html", h.RenderData(c, gin.H{
 		"Title":       "热门搜索 - " + h.Config.SiteName,
+		"Description": "查看大家都在搜什么，Moovie 实时搜索风向标。",
+		"Keywords":    "搜索趋势,热门搜索,关键词排行,影视风向",
 		"Trending24h": items24h,
 		"TrendingAll": itemsAll,
 		"UpdateTime":  time.Now().Format("15:04"),

@@ -115,6 +115,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 
 		// 反馈管理 API
 		admin.PUT("/feedback/:id/status", h.AdminFeedbackStatus) // 更新反馈状态
+		admin.PUT("/feedback/:id/reply", h.AdminFeedbackReply)   // 回复反馈
 
 		// 搜索数据管理
 		admin.GET("/data", h.AdminData)             // 搜索数据管理

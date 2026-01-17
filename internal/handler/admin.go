@@ -258,6 +258,28 @@ func (h *Handler) AdminFeedbackStatus(c *gin.Context) {
 	utils.Success(c, gin.H{"message": "状态已更新"})
 }
 
+// AdminFeedbackReply 回复反馈
+func (h *Handler) AdminFeedbackReply(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		utils.BadRequest(c, "无效的反馈 ID")
+		return
+	}
+
+	reply := c.PostForm("reply")
+	if reply == "" {
+		utils.BadRequest(c, "回复内容不能为空")
+		return
+	}
+
+	if err := h.Repos.Feedback.Reply(id, reply); err != nil {
+		utils.InternalServerError(c, "回复失败")
+		return
+	}
+
+	utils.Success(c, gin.H{"message": "回复成功"})
+}
+
 // ==================== 版权限制管理 ====================
 
 // AdminCopyright 版权限制管理页面

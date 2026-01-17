@@ -241,7 +241,7 @@ img {
 
 .footer-links a {
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     transition: color var(--transition);
 }
 
@@ -3281,7 +3281,7 @@ img {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 20px;
+    padding: 16px;
     transition: border-color var(--transition), box-shadow var(--transition);
 }
 
@@ -3294,7 +3294,7 @@ img {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     flex-wrap: wrap;
 }
 
@@ -3353,6 +3353,42 @@ img {
 
 .feedback-link:hover {
     opacity: 0.8;
+}
+
+/* 管理员回复 */
+.feedback-reply {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    border-left: 3px solid var(--primary);
+}
+
+.feedback-reply-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 0.8rem;
+}
+
+.reply-label {
+    font-weight: 600;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.reply-time {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.feedback-reply-content {
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.6;
 }
 
 /* 加载更多 */

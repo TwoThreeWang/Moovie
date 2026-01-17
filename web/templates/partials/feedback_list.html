@@ -32,6 +32,23 @@
                 相关链接
             </a>
             {{ end }}
+
+            {{ if .Reply }}
+            <div class="feedback-reply">
+                <div class="feedback-reply-header">
+                    <span class="reply-label">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        管理员回复
+                    </span>
+                    {{ if .RepliedAt }}
+                    <span class="reply-time">{{ .RepliedAt.Format "2006-01-02 15:04" }}</span>
+                    {{ end }}
+                </div>
+                <div class="feedback-reply-content">{{ .Reply }}</div>
+            </div>
+            {{ end }}
         </div>
     </div>
     {{ end }}

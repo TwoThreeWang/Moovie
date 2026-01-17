@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="max-age=7200" />
     <title>{{ .Title }}</title>
-    <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie - 聚合电影搜索，一站式找片看片{{ end }}">
-    <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}电影,电视剧,在线观看,Moovie,聚合搜索{{ end }}">
+    <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
+    <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}Moovie, 影视搜索, 电影搜索, 电视剧搜索, 在线看电影, 聚合搜索, 全网视频, 豆瓣热门{{ end }}">
     <meta name="robots" content="index, follow">
     {{ if .Canonical }}<link rel="canonical" href="{{ .Canonical }}">{{ end }}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐮</text></svg>">
@@ -14,13 +14,13 @@
     <meta property="og:title" content="{{ .Title }}">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Moovie">
-    <meta property="og:description" content="{{ if .Description }}{{ .Description }}{{ else }}发现好的电影和剧集，Moovie 为您聚合全网资源。{{ end }}">
+    <meta property="og:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
     {{ if .Cover }}<meta property="og:image" content="{{ .Cover }}">{{ end }}
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ .Title }}">
-    <meta name="twitter:description" content="{{ if .Description }}{{ .Description }}{{ else }}发现好的电影和剧集，Moovie 为您聚合全网资源。{{ end }}">
+    <meta name="twitter:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
     {{ if .Cover }}<meta name="twitter:image" content="{{ .Cover }}">{{ end }}
 
     <!-- CSS -->
@@ -179,6 +179,7 @@
                         <a href="/dmca">DMCA</a>
                         <a href="/privacy">隐私政策</a>
                         <a href="/terms">服务协议</a>
+                        <a href="/sitemap.xml">网站地图</a>
                     </div>
                     <p class="footer-copyright">
                         © 2026 Moovie. 本站不存储任何视频文件，仅提供搜索服务。

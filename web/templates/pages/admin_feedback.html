@@ -57,6 +57,12 @@
                         </td>
                         <td class="content-cell">
                             <div class="feedback-content">{{ .Content }}</div>
+                            {{ if .Reply }}
+                            <div class="feedback-reply">
+                                <span class="reply-badge">回复</span>
+                                <div class="reply-content">{{ .Reply }}</div>
+                            </div>
+                            {{ end }}
                         </td>
                         <td>
                             {{ if .MovieURL }}
@@ -79,6 +85,9 @@
                             <button class="btn btn-sm btn-success" onclick="updateFeedbackStatus({{ .ID }}, 'resolved')">
                                 标记已处理
                             </button>
+                            <button class="btn btn-sm btn-primary" onclick="showReplyDialog({{ .ID }})">
+                                回复
+                            </button>
                             <button class="btn btn-sm btn-secondary" onclick="updateFeedbackStatus({{ .ID }}, 'rejected')">
                                 拒绝
                             </button>
@@ -99,7 +108,92 @@
             </table>
         </div>
     </div>
+    </div>
 </div>
+
+<!-- 回复弹窗 -->
+<div id="reply-dialog" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>回复反馈</h3>
+            <span class="close-btn" onclick="closeReplyDialog()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="reply-feedback-id">
+            <textarea id="reply-text" rows="5" class="form-control" placeholder="请输入回复内容..."></textarea>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeReplyDialog()">取消</button>
+            <button class="btn btn-primary" onclick="submitReply()">发送回复</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.feedback-reply {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border-left: 3px solid var(--primary-color);
+}
+.reply-badge {
+    font-size: 0.75rem;
+    color: var(--primary-color);
+    font-weight: bold;
+    display: block;
+    margin-bottom: 0.25rem;
+}
+.reply-content {
+    font-size: 0.9rem;
+    color: var(--text-color);
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+.modal-content {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    width: 500px;
+    max-width: 90%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.close-btn {
+    cursor: pointer;
+    font-size: 1.5rem;
+    color: #999;
+}
+.form-control {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    resize: vertical;
+}
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+}
+</style>
 
 <script>
 async function updateFeedbackStatus(id, status) {
@@ -118,6 +212,46 @@ async function updateFeedbackStatus(id, status) {
         } else {
             const data = await response.json();
             alert(data.error || '操作失败');
+        }
+    } catch (error) {
+        alert('操作失败：' + error.message);
+    }
+}
+
+function showReplyDialog(id) {
+    document.getElementById('reply-feedback-id').value = id;
+    document.getElementById('reply-text').value = '';
+    document.getElementById('reply-dialog').style.display = 'flex';
+}
+
+function closeReplyDialog() {
+    document.getElementById('reply-dialog').style.display = 'none';
+}
+
+async function submitReply() {
+    const id = document.getElementById('reply-feedback-id').value;
+    const content = document.getElementById('reply-text').value;
+
+    if (!content.trim()) {
+        alert('请输入回复内容');
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('reply', content);
+
+        const response = await fetch(`/admin/feedback/${id}/reply`, {
+            method: 'PUT',
+            body: formData
+        });
+
+        if (response.ok) {
+            closeReplyDialog();
+            window.location.reload();
+        } else {
+            const data = await response.json();
+            alert(data.error || '回复失败');
         }
     } catch (error) {
         alert('操作失败：' + error.message);

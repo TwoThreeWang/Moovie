@@ -40,6 +40,16 @@ func (r *FeedbackRepository) UpdateStatus(id int, status string) error {
 	return r.db.Model(&model.Feedback{}).Where("id = ?", id).Update("status", status).Error
 }
 
+// Reply 回复反馈
+func (r *FeedbackRepository) Reply(id int, reply string) error {
+	now := time.Now()
+	return r.db.Model(&model.Feedback{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"status":     "resolved",
+		"reply":      reply,
+		"replied_at": &now,
+	}).Error
+}
+
 // CountPending 获取待处理反馈数量
 func (r *FeedbackRepository) CountPending() (int64, error) {
 	var count int64
