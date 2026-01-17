@@ -509,8 +509,8 @@ func (h *Handler) ForYouHTMX(c *gin.Context) {
 		}
 	}
 
-	// 缓存 30 分钟
-	utils.CacheSet(cacheKey, movies, 30*time.Minute)
+	// 缓存 6 小时
+	utils.CacheSet(cacheKey, movies, 6*time.Hour)
 
 	c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
 		"Movies": movies,

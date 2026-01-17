@@ -290,7 +290,7 @@ function renderContinueWatching() {
                 </div>
                 <div class="movie-info">
                     <h3 class="movie-title">${item.title || '未知'}</h3>
-                    <p class="movie-year">${item.episode || '继续观看'}</p>
+                    <p class="movie-year">${item.source_key ? `[${item.source_key}] ` : ''}${item.episode || '继续观看'}</p>
                 </div>
             </a>
             <button class="watch-delete-btn" onclick="event.preventDefault(); event.stopPropagation(); removeWatchHistory('${itemKey}')" title="删除此记录">
