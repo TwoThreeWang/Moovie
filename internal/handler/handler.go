@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/user/moovie/internal/config"
 	"github.com/user/moovie/internal/middleware"
@@ -18,6 +19,9 @@ import (
 	"github.com/user/moovie/internal/service"
 	"github.com/user/moovie/internal/utils"
 )
+
+// 全局 validator 实例
+var validate = validator.New()
 
 // Handler HTTP 处理器
 type Handler struct {
@@ -650,7 +654,16 @@ func (h *Handler) Register(c *gin.Context) {
 	password := c.PostForm("password")
 	confirmPassword := c.PostForm("confirm_password")
 
-	// 验证
+	// 使用 validator 验证邮箱格式
+	if err := validate.Var(email, "required,email"); err != nil {
+		c.HTML(http.StatusOK, "register.html", gin.H{
+			"Title": "注册 - Moovie",
+			"Error": "请输入有效的邮箱地址",
+		})
+		return
+	}
+
+	// 验证密码一致性
 	if password != confirmPassword {
 		c.HTML(http.StatusOK, "register.html", gin.H{
 			"Title": "注册 - Moovie",
