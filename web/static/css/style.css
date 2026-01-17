@@ -3202,3 +3202,199 @@ img {
         font-size: 0.85rem;
     }
 }
+
+/* ==================== 反馈历史区域 ==================== */
+.feedback-history-section {
+    margin-top: 48px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+}
+
+.feedback-history-section .section-header {
+    margin-bottom: 24px;
+}
+
+.feedback-history-section .section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.feedback-history-section .section-title svg {
+    color: var(--primary);
+}
+
+/* 反馈列表容器 */
+.feedback-history {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* 单个反馈项 */
+.feedback-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.feedback-item:hover {
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(246, 12, 62, 0.08);
+}
+
+.feedback-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.feedback-type {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.feedback-type.type-bug { background: #ffebee; color: #c62828; }
+.feedback-type.type-request { background: #e3f2fd; color: #1565c0; }
+.feedback-type.type-suggestion { background: #e8f5e9; color: #2e7d32; }
+.feedback-type.type-dmca { background: #fff3e0; color: #ef6c00; }
+
+.feedback-status {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.feedback-status.status-pending { background: #fff3e0; color: #ef6c00; }
+.feedback-status.status-resolved { background: #e8f5e9; color: #2e7d32; }
+.feedback-status.status-rejected { background: #ffebee; color: #c62828; }
+
+.feedback-time {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+.feedback-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.feedback-text {
+    font-size: 0.9rem;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+.feedback-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--primary);
+    transition: opacity var(--transition);
+}
+
+.feedback-link:hover {
+    opacity: 0.8;
+}
+
+/* 加载更多 */
+.load-more-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.load-more-btn {
+    padding: 10px 32px;
+    font-size: 0.9rem;
+}
+
+/* 空状态 */
+.feedback-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.feedback-empty svg {
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.feedback-empty p {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.feedback-empty-hint {
+    font-size: 0.85rem;
+}
+
+/* 加载状态 */
+.feedback-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+/* htmx 加载指示器 */
+.feedback-loading.htmx-indicator {
+    display: none;
+}
+
+.htmx-request .feedback-loading.htmx-indicator,
+.htmx-request.feedback-loading.htmx-indicator {
+    display: flex;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+    .feedback-history-section {
+        margin-top: 32px;
+        padding-top: 24px;
+    }
+
+    .feedback-item {
+        padding: 16px;
+    }
+
+    .feedback-header {
+        gap: 8px;
+    }
+
+    .feedback-time {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 4px;
+    }
+}
+

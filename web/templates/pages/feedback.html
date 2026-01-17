@@ -26,4 +26,26 @@
 
     <button type="submit" class="btn btn-primary">提交反馈</button>
 </form>
+
+{{/* 历史反馈区域 */}}
+<section class="feedback-history-section">
+    <div class="section-header">
+        <h2 class="section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            历史反馈
+        </h2>
+    </div>
+    <div id="feedback-list-container"
+         hx-get="/api/htmx/feedback-list?page=1"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <div class="feedback-loading">
+            <div class="loading-spinner"></div>
+            <span>加载中...</span>
+        </div>
+    </div>
+</section>
 {{ end }}
+

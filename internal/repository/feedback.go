@@ -56,3 +56,22 @@ func (r *FeedbackRepository) FindByID(id int) (*model.Feedback, error) {
 	}
 	return &feedback, nil
 }
+
+// ListPublic 获取公开反馈列表（用于前台页面展示）
+// 只返回已处理(resolved)的反馈，按创建时间倒序
+func (r *FeedbackRepository) ListPublic(limit, offset int) ([]*model.Feedback, error) {
+	var feedbacks []*model.Feedback
+	err := r.db.Model(&model.Feedback{}).
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&feedbacks).Error
+	return feedbacks, err
+}
+
+// CountPublic 统计公开反馈总数
+func (r *FeedbackRepository) CountPublic() (int64, error) {
+	var count int64
+	err := r.db.Model(&model.Feedback{}).Count(&count).Error
+	return count, err
+}

@@ -541,3 +541,34 @@ func (h *Handler) ReviewsHTMX(c *gin.Context) {
 		"Reviews": reviews,
 	})
 }
+
+// FeedbackListHTMX 反馈列表（htmx 片段，分页）
+// GET /api/htmx/feedback-list?page=1
+func (h *Handler) FeedbackListHTMX(c *gin.Context) {
+	pageStr := c.DefaultQuery("page", "1")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	const pageSize = 10
+	offset := (page - 1) * pageSize
+
+	// 获取反馈列表
+	feedbacks, err := h.Repos.Feedback.ListPublic(pageSize, offset)
+	if err != nil {
+		log.Printf("[FeedbackListHTMX] 获取反馈列表失败: %v", err)
+		feedbacks = []*model.Feedback{}
+	}
+
+	// 获取总数用于判断是否有更多
+	total, _ := h.Repos.Feedback.CountPublic()
+	hasMore := int64(page*pageSize) < total
+
+	c.HTML(http.StatusOK, "partials/feedback_list.html", gin.H{
+		"Feedbacks":   feedbacks,
+		"HasMore":     hasMore,
+		"NextPage":    page + 1,
+		"IsFirstPage": page == 1,
+	})
+}

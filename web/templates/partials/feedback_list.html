@@ -1,0 +1,63 @@
+{{/* 反馈列表分页组件 */}}
+
+{{ if .Feedbacks }}
+<div class="feedback-history">
+    {{ range .Feedbacks }}
+    <div class="feedback-item">
+        <div class="feedback-header">
+            <span class="feedback-type type-{{ .Type }}">
+                {{ if eq .Type "bug" }}Bug 报告
+                {{ else if eq .Type "request" }}求片
+                {{ else if eq .Type "suggestion" }}功能建议
+                {{ else if eq .Type "dmca" }}版权投诉
+                {{ else }}{{ .Type }}{{ end }}
+            </span>
+            <span class="feedback-status status-{{ .Status }}">
+                {{ if eq .Status "pending" }}待处理
+                {{ else if eq .Status "resolved" }}已处理
+                {{ else if eq .Status "rejected" }}已拒绝
+                {{ else }}{{ .Status }}{{ end }}
+            </span>
+            <span class="feedback-time">{{ .CreatedAt.Format "2006-01-02 15:04" }}</span>
+        </div>
+        <div class="feedback-body">
+            <p class="feedback-text">{{ .Content }}</p>
+            {{ if .MovieURL }}
+            <a href="{{ .MovieURL }}" target="_blank" class="feedback-link">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                    <polyline points="15 3 21 3 21 9"/>
+                    <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+                相关链接
+            </a>
+            {{ end }}
+        </div>
+    </div>
+    {{ end }}
+
+    {{/* 分页：加载更多按钮 */}}
+    {{ if .HasMore }}
+    <div class="load-more-wrapper">
+        <button class="btn btn-secondary load-more-btn"
+                hx-get="/api/htmx/feedback-list?page={{ .NextPage }}"
+                hx-target="closest .feedback-history"
+                hx-swap="outerHTML"
+                hx-indicator=".feedback-loading">
+            加载更多
+        </button>
+        <div class="feedback-loading htmx-indicator">
+            <div class="loading-spinner"></div>
+        </div>
+    </div>
+    {{ end }}
+</div>
+{{ else if .IsFirstPage }}
+<div class="feedback-empty">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+    <p>暂无反馈记录</p>
+    <span class="feedback-empty-hint">成为第一个提交反馈的用户吧！</span>
+</div>
+{{ end }}
