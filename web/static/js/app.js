@@ -286,7 +286,7 @@ function renderContinueWatching() {
         <div class="movie-card-wrapper">
             <a href="${playUrl}" class="movie-card" title="继续播放 ${item.title || ''}">
                 <div class="movie-poster">
-                    <img src="${item.img ? `/api/proxy/image?url=${encodeURIComponent(item.img)}` : '/static/img/placeholder.jpg'}" alt="${item.title || ''}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
+                    <img src="${item.img ? `${item.img}` : '/static/img/placeholder.jpg'}" alt="${item.title || ''}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
                     <div class="progress-bar-container">
                         <div class="progress-bar" style="width: ${progress.toFixed(1)}%"></div>
                     </div>
@@ -634,3 +634,59 @@ window.addEventListener('beforeunload', function() {
         }
     }
 });
+
+// 从老版本的历史记录转为新版本
+function transform(list) {
+  const result = {};
+
+  list.forEach(item => {
+    const key = item.source + item.vid;
+
+    let name = item.title;
+    let episode = '';
+
+    if (item.title.includes('#')) {
+      const parts = item.title.split('#');
+      name = parts[0].trim();
+      episode = parts[1].trim();
+    }
+
+    result[key] = {
+      id: key,
+      douban_id: "",              // 原数据里没有，先留空
+      title: `${name} - ${episode}`,
+      source_key: item.source,
+      vod_id: item.vid,
+      play: item.play,
+      lastTime: item.lastTime,
+      duration: item.duration,
+      img: item.img,
+      episode: episode,
+      updatedAt: item.updatedAt
+    };
+  });
+
+  return result;
+}
+
+(function migrateHistory() {
+  const oldKey = 'moovie_history';
+  const newKey = 'moovie_play_state';
+  // 如果新数据已经存在，就不再迁移
+  if (localStorage.getItem(newKey)) {
+    return;
+  }
+  const oldData = localStorage.getItem(oldKey);
+  if (!oldData) {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(oldData);
+    const newData = transform(parsed);
+    localStorage.setItem(newKey, JSON.stringify(newData));
+    localStorage.removeItem(oldKey);
+    console.log('moovie_history 已成功迁移为 moovie_play_state');
+  } catch (e) {
+    console.error('迁移播放记录失败：', e);
+  }
+})();

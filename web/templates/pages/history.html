@@ -18,7 +18,7 @@
     {{ end }}
     <a href="{{ $playUrl }}" class="movie-card" title="点击续播 {{ .Title }}">
         <div class="movie-poster">
-            <img src="{{ if .Poster }}/api/proxy/image?url={{ .Poster }}{{ else }}/static/img/placeholder.jpg{{ end }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer">
+            <img src="{{ if .Poster }}{{ .Poster }}{{ else }}/static/img/placeholder.jpg{{ end }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer">
         </div>
         <div class="movie-info">
             <h3 class="movie-title">{{ .Title }}</h3>
