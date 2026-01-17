@@ -5,7 +5,7 @@
     <div class="user-profile-card">
         <div class="user-avatar">
             {{ if .User }}
-                {{ $initial := slice .User.Username 0 1 }}
+                {{ $initial := firstChar .User.Username }}
                 {{ $initial }}
             {{ else }}
                 U

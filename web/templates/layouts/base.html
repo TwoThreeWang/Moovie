@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="max-age=7200" />
     <title>{{ .Title }}</title>
     <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie - 聚合电影搜索，一站式找片看片{{ end }}">
     <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}电影,电视剧,在线观看,Moovie,聚合搜索{{ end }}">
     <meta name="robots" content="index, follow">
     {{ if .Canonical }}<link rel="canonical" href="{{ .Canonical }}">{{ end }}
-
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐮</text></svg>">
     <!-- Open Graph -->
     <meta property="og:title" content="{{ .Title }}">
     <meta property="og:type" content="website">

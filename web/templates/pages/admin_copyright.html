@@ -1,0 +1,180 @@
+
+{{ define "content" }}
+<div class="admin-page">
+    <!-- 页面标题和导航 -->
+    <div class="admin-header">
+        <h1 class="admin-title">版权限制管理</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab">用户</a>
+            <a href="/admin/feedback" class="admin-tab">反馈</a>
+            <a href="/admin/sites" class="admin-tab">资源网</a>
+            <a href="/admin/data" class="admin-tab">数据管理</a>
+            <a href="/admin/copyright" class="admin-tab active">版权限制</a>
+        </nav>
+    </div>
+
+    <!-- 添加版权关键词 -->
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3>添加版权限制关键词</h3>
+        </div>
+        <form id="addCopyrightForm" class="admin-form">
+            <div class="form-row">
+                <div class="form-group flex-2">
+                    <label for="keyword">关键词</label>
+                    <input type="text" id="keyword" name="keyword" placeholder="输入需要屏蔽的关键词，如：漫威" required>
+                </div>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </div>
+        </form>
+        <p class="form-help">添加后，搜索结果中标题包含该关键词的内容将被自动屏蔽。</p>
+    </div>
+
+    <!-- 版权关键词列表 -->
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3>版权限制列表</h3>
+            <span class="badge">{{ if .Filters }}{{ len .Filters }}{{ else }}0{{ end }} 个关键词</span>
+        </div>
+        <div class="admin-table-wrapper">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>关键词</th>
+                        <th>添加时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="copyrightTable">
+                    {{ range .Filters }}
+                    <tr data-id="{{ .ID }}">
+                        <td><span class="id-badge">{{ .ID }}</span></td>
+                        <td><code class="key-badge">{{ .Keyword }}</code></td>
+                        <td>{{ .CreatedAt.Format "2006-01-02 15:04" }}</td>
+                        <td class="actions-cell">
+                            <button class="btn btn-primary btn-sm" onclick="editCopyright({{ .ID }}, '{{ .Keyword }}')">编辑</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteCopyright({{ .ID }})">删除</button>
+                        </td>
+                    </tr>
+                    {{ else }}
+                    <tr>
+                        <td colspan="4" class="empty-cell">暂无版权限制关键词</td>
+                    </tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div id="editModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeEditModal()"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>编辑版权关键词</h3>
+            <button class="modal-close" onclick="closeEditModal()">&times;</button>
+        </div>
+        <form id="editCopyrightForm" class="admin-form">
+            <input type="hidden" id="edit_id" name="id">
+            <div class="form-group">
+                <label for="edit_keyword">关键词</label>
+                <input type="text" id="edit_keyword" name="keyword" required>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// 添加版权关键词
+document.getElementById('addCopyrightForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    try {
+        const resp = await fetch('/admin/copyright', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert('添加成功');
+            location.reload();
+        } else {
+            alert('添加失败: ' + data.message);
+        }
+    } catch (err) {
+        alert('请求失败: ' + err.message);
+    }
+});
+
+// 打开编辑弹窗
+function editCopyright(id, keyword) {
+    document.getElementById('edit_id').value = id;
+    document.getElementById('edit_keyword').value = keyword;
+    document.getElementById('editModal').style.display = 'flex';
+}
+
+// 关闭编辑弹窗
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+// 编辑表单提交
+document.getElementById('editCopyrightForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('edit_id').value;
+    const formData = new FormData();
+    formData.append('keyword', document.getElementById('edit_keyword').value);
+
+    try {
+        const resp = await fetch('/admin/copyright/' + id, {
+            method: 'PUT',
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert('更新成功');
+            location.reload();
+        } else {
+            alert('更新失败: ' + data.message);
+        }
+    } catch (err) {
+        alert('请求失败: ' + err.message);
+    }
+});
+
+// 删除版权关键词
+async function deleteCopyright(id) {
+    if (!confirm('确定要删除这个关键词吗？')) return;
+
+    try {
+        const resp = await fetch('/admin/copyright/' + id, {
+            method: 'DELETE'
+        });
+        const data = await resp.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('删除失败: ' + data.message);
+        }
+    } catch (err) {
+        alert('请求失败: ' + err.message);
+    }
+}
+
+// 支持 ESC 关闭弹窗
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeEditModal();
+    }
+});
+</script>
+{{ end }}

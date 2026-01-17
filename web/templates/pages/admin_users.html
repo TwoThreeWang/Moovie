@@ -10,7 +10,7 @@
             <a href="/admin/feedback" class="admin-tab">反馈</a>
             <a href="/admin/sites" class="admin-tab">资源网</a>
             <a href="/admin/data" class="admin-tab">数据管理</a>
-            <a href="/admin/crawlers" class="admin-tab">爬虫</a>
+            <a href="/admin/copyright" class="admin-tab">版权限制</a>
         </nav>
     </div>
 
@@ -37,7 +37,7 @@
                     <tr id="user-row-{{ .ID }}">
                         <td><span class="id-badge">{{ .ID }}</span></td>
                         <td class="user-cell">
-                            <div class="user-avatar-sm">{{ slice .Username 0 1 }}</div>
+                            <div class="user-avatar-sm">{{ firstChar .Username }}</div>
                             <span>{{ .Username }}</span>
                         </td>
                         <td>{{ .Email }}</td>

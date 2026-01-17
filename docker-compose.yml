@@ -21,7 +21,6 @@ services:
       POSTGRES_DB: moovie
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations/001_init.up.sql:/docker-entrypoint-initdb.d/001_init.sql
     restart: unless-stopped
 
 volumes:

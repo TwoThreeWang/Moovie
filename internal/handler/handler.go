@@ -36,7 +36,7 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	sourceCrawler := service.NewSourceCrawler(10 * time.Second)
 
 	// 创建搜索服务
-	searchService := service.NewSearchService(repos.Site, repos.VodItem, sourceCrawler)
+	searchService := service.NewSearchService(repos.Site, repos.VodItem, repos.CopyrightFilter, sourceCrawler)
 
 	return &Handler{
 		Repos:         repos,
@@ -141,9 +141,12 @@ func (h *Handler) Search(c *gin.Context) {
 		c.Redirect(http.StatusFound, target)
 		return
 	}
+	// 隐藏参数：跳过版权过滤
+	bypass := c.Query("bypass") == "1"
 	c.HTML(http.StatusOK, "search.html", h.RenderData(c, gin.H{
 		"Title":   keyword + " - 搜索结果 - " + h.Config.SiteName,
 		"Keyword": keyword,
+		"Bypass":  bypass,
 	}))
 }
 
@@ -561,9 +564,12 @@ func (h *Handler) Sitemap(c *gin.Context) {
 		freq     string
 	}{
 		{"/", "1.0", "daily"},
+		{"/search", "0.8", "daily"},
 		{"/discover", "0.8", "daily"},
 		{"/rankings", "0.8", "daily"},
 		{"/trends", "0.8", "daily"},
+		{"/feedback", "0.5", "monthly"},
+		{"/changelog", "0.5", "weekly"},
 		{"/about", "0.5", "monthly"},
 		{"/dmca", "0.5", "monthly"},
 		{"/privacy", "0.5", "monthly"},
@@ -586,6 +592,27 @@ func (h *Handler) Sitemap(c *gin.Context) {
 	sb.WriteString(`</urlset>`)
 
 	c.Header("Content-Type", "application/xml")
+	c.String(http.StatusOK, sb.String())
+}
+
+// Robots robots.txt
+func (h *Handler) Robots(c *gin.Context) {
+	baseUrl := h.Config.SiteUrl
+	if strings.HasSuffix(baseUrl, "/") {
+		baseUrl = strings.TrimSuffix(baseUrl, "/")
+	}
+
+	var sb strings.Builder
+	sb.WriteString("User-agent: *\n")
+	sb.WriteString("Disallow: /admin/\n")
+	sb.WriteString("Disallow: /auth/\n")
+	sb.WriteString("Disallow: /dashboard/\n")
+	sb.WriteString("Disallow: /api/\n")
+	sb.WriteString("Disallow: /search\n")
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("Sitemap: %s/sitemap.xml\n", baseUrl))
+
+	c.Header("Content-Type", "text/plain")
 	c.String(http.StatusOK, sb.String())
 }
 

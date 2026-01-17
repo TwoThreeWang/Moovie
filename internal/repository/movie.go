@@ -156,3 +156,10 @@ func (r *MovieRepository) GetPopularMovies(limit int) ([]model.Movie, error) {
 		Find(&movies).Error
 	return movies, err
 }
+
+// Count 获取电影总数
+func (r *MovieRepository) Count() (int64, error) {
+	var count int64
+	err := r.db.Model(&model.Movie{}).Count(&count).Error
+	return count, err
+}

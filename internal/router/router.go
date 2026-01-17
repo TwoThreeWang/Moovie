@@ -33,6 +33,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	r.GET("/privacy", h.Privacy)       // 隐私政策
 	r.GET("/terms", h.Terms)           // 使用条款
 	r.GET("/sitemap.xml", h.Sitemap)   // 网站地图
+	r.GET("/robots.txt", h.Robots)     // Robots.txt
 
 	// 需要识别登录状态但又不强制登录的页面
 	optional := r.Group("/")
@@ -99,7 +100,6 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	{
 		admin.GET("", h.AdminDashboard)         // 管理后台首页
 		admin.GET("/users", h.AdminUsers)       // 用户管理
-		admin.GET("/crawlers", h.AdminCrawlers) // 采集器管理
 		admin.GET("/feedback", h.AdminFeedback) // 反馈管理
 
 		// 用户管理 API
@@ -111,6 +111,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		admin.POST("/sites", h.AdminSiteCreate)       // 创建资源网
 		admin.PUT("/sites/:id", h.AdminSiteUpdate)    // 更新资源网
 		admin.DELETE("/sites/:id", h.AdminSiteDelete) // 删除资源网
+		admin.GET("/sites/:id/test", h.AdminSiteTest) // 测试资源网
 
 		// 反馈管理 API
 		admin.PUT("/feedback/:id/status", h.AdminFeedbackStatus) // 更新反馈状态
@@ -118,6 +119,12 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		// 搜索数据管理
 		admin.GET("/data", h.AdminData)             // 搜索数据管理
 		admin.POST("/data/clean", h.AdminDataClean) // 清理非活跃数据
+
+		// 版权限制管理
+		admin.GET("/copyright", h.AdminCopyright)              // 版权限制页面
+		admin.POST("/copyright", h.AdminCopyrightCreate)       // 添加版权关键词
+		admin.PUT("/copyright/:id", h.AdminCopyrightUpdate)    // 更新版权关键词
+		admin.DELETE("/copyright/:id", h.AdminCopyrightDelete) // 删除版权关键词
 	}
 }
 
@@ -187,6 +194,13 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 			_ = json.Unmarshal([]byte(s), &res)
 			return res
 		},
+		"firstChar": func(s string) string {
+			if s == "" {
+				return ""
+			}
+			r := []rune(s)
+			return string(r[0:1])
+		},
 	}
 
 	// 注册所有页面模板
@@ -196,7 +210,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		"about", "changelog", "dmca", "privacy", "terms", "404",
 		"login", "register",
 		"dashboard", "favorites", "history", "settings",
-		"admin_dashboard", "admin_users", "admin_crawlers", "admin_sites", "admin_cache", "admin_feedback",
+		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright",
 	}
 
 	for _, page := range pages {

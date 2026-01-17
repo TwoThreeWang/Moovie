@@ -99,15 +99,15 @@ async function doSync() {
     const newRecords = Object.values(data).filter(h =>
         (h.watchedAt || h.updatedAt || 0) > lastSyncAt
     ).map(h => ({
-        douban_id: h.doubanId || '',
+        douban_id: h.doubanId || h.douban_id || '',
         vod_id: h.vod_id || h.vodId || '',
         title: h.title,
         poster: h.poster || h.img,
-        episode: h.episode,
+        episode: h.episode || '',
         progress: h.progress || (h.duration > 0 ? Math.floor((h.lastTime / h.duration) * 100) : 0),
         last_time: h.lastTime || 0,
         duration: h.duration || 0,
-        source: h.source || h.source_key,
+        source: h.source || h.source_key || '',
         watchedAt: h.watchedAt || h.updatedAt || Date.now()
     }));
 

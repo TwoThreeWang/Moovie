@@ -39,10 +39,14 @@ type WatchHistory struct {
 	VodID     string    `json:"vod_id" db:"vod_id" gorm:"uniqueIndex:idx_user_history_vod"`
 	Title     string    `json:"title" db:"title"`
 	Poster    string    `json:"poster" db:"poster"`
-	Episode   string    `json:"episode" db:"episode" gorm:"uniqueIndex:idx_user_history_vod"`
+	Episode   string    `json:"episode" db:"episode"`
 	Progress  int       `json:"progress" db:"progress"`
 	LastTime  float64   `json:"last_time" db:"last_time"`
 	Duration  float64   `json:"duration" db:"duration"`
 	Source    string    `json:"source" db:"source" gorm:"uniqueIndex:idx_user_history_vod"`
 	WatchedAt time.Time `json:"watched_at" db:"watched_at"`
+}
+
+func (WatchHistory) TableName() string {
+	return "watch_histories"
 }

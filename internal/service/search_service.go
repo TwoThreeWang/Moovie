@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,38 +14,48 @@ import (
 
 // SearchService 搜索服务
 type SearchService struct {
-	siteRepo    *repository.SiteRepository
-	vodItemRepo *repository.VodItemRepository
-	crawler     SourceCrawler
-	maxTimeout  time.Duration // 单站点最大超时时间
-	sf          singleflight.Group
+	siteRepo      *repository.SiteRepository
+	vodItemRepo   *repository.VodItemRepository
+	copyrightRepo *repository.CopyrightFilterRepository
+	crawler       SourceCrawler
+	maxTimeout    time.Duration // 单站点最大超时时间
+	sf            singleflight.Group
 }
 
 // NewSearchService 创建搜索服务
 func NewSearchService(
 	siteRepo *repository.SiteRepository,
 	vodItemRepo *repository.VodItemRepository,
+	copyrightRepo *repository.CopyrightFilterRepository,
 	crawler SourceCrawler,
 ) *SearchService {
 	return &SearchService{
-		siteRepo:    siteRepo,
-		vodItemRepo: vodItemRepo,
-		crawler:     crawler,
-		maxTimeout:  10 * time.Second,
-		sf:          singleflight.Group{},
+		siteRepo:      siteRepo,
+		vodItemRepo:   vodItemRepo,
+		copyrightRepo: copyrightRepo,
+		crawler:       crawler,
+		maxTimeout:    10 * time.Second,
+		sf:            singleflight.Group{},
 	}
+}
+
+// GetSearchCrawler 获取搜素爬虫
+func (s *SearchService) GetSearchCrawler() SourceCrawler {
+	return s.crawler
 }
 
 // SearchResult 搜索结果
 type SearchResult struct {
-	Items []model.VodItem `json:"items"`
+	Items         []model.VodItem `json:"items"`
+	FilteredCount int             `json:"filtered_count"` // 版权过滤数量
 }
 
 // Search 搜索视频
 // 1. 先从本地数据库搜索
 // 2. 如果本地为空，则同步从资源网获取并刷新（带超时）
 // 3. 如果本地不为空，则异步刷新数据
-func (s *SearchService) Search(ctx context.Context, keyword string) (*SearchResult, error) {
+// 4. 过滤版权限制内容
+func (s *SearchService) Search(ctx context.Context, keyword string, bypassFilter bool) (*SearchResult, error) {
 	// 1. 从本地数据库搜索
 	items, err := s.vodItemRepo.Search(keyword)
 	if err != nil {
@@ -73,8 +84,15 @@ func (s *SearchService) Search(ctx context.Context, keyword string) (*SearchResu
 		}()
 	}
 
+	// 4. 版权过滤（可通过参数跳过）
+	var filteredCount int
+	if !bypassFilter {
+		items, filteredCount = s.filterCopyrightContent(items)
+	}
+
 	return &SearchResult{
-		Items: items,
+		Items:         items,
+		FilteredCount: filteredCount,
 	}, nil
 }
 
@@ -200,4 +218,35 @@ func (s *SearchService) fetchAndSave(ctx context.Context, keyword string) ([]mod
 	}
 
 	return items, nil
+}
+
+// filterCopyrightContent 过滤版权限制内容，返回过滤后的列表和被过滤的数量
+func (s *SearchService) filterCopyrightContent(items []model.VodItem) ([]model.VodItem, int) {
+	// 获取版权关键词列表
+	keywords, err := s.copyrightRepo.GetAllKeywords()
+	if err != nil || len(keywords) == 0 {
+		return items, 0
+	}
+
+	// 过滤包含版权关键词的内容
+	filtered := make([]model.VodItem, 0, len(items))
+	for _, item := range items {
+		blocked := false
+		for _, kw := range keywords {
+			if strings.Contains(strings.ToLower(item.VodName), strings.ToLower(kw)) {
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			filtered = append(filtered, item)
+		}
+	}
+
+	filteredCount := len(items) - len(filtered)
+	if filteredCount > 0 {
+		log.Printf("[SearchService] 版权过滤: 原 %d 条，过滤后 %d 条", len(items), len(filtered))
+	}
+
+	return filtered, filteredCount
 }

@@ -10,7 +10,7 @@
             <a href="/admin/feedback" class="admin-tab">反馈</a>
             <a href="/admin/sites" class="admin-tab active">资源网</a>
             <a href="/admin/data" class="admin-tab">数据管理</a>
-            <a href="/admin/crawlers" class="admin-tab">爬虫</a>
+            <a href="/admin/copyright" class="admin-tab">版权限制</a>
         </nav>
     </div>
 
@@ -27,7 +27,7 @@
                 </div>
                 <div class="form-group flex-2">
                     <label for="base_url">API 地址</label>
-                    <input type="text" id="base_url" name="base_url" placeholder="如: https://api.example.com/api.php" required>
+                    <input type="text" id="base_url" name="base_url" placeholder="如: https://api.example.com/api.php/provide/vod/" required>
                 </div>
                 <div class="form-group form-checkbox">
                     <label><input type="checkbox" name="enabled" checked> 启用</label>
@@ -67,6 +67,7 @@
                         </td>
                         <td class="actions-cell">
                             <button class="btn btn-primary btn-sm" onclick="editSite({{ .ID }}, '{{ .Key }}', '{{ .BaseUrl }}', {{ .Enabled }})">编辑</button>
+                            <button class="btn btn-secondary btn-sm" onclick="testSite({{ .ID }}, '{{ .Key }}')">测试</button>
                             <button class="btn btn-secondary btn-sm" onclick="toggleSite({{ .ID }}, {{ not .Enabled }})">
                                 {{ if .Enabled }}禁用{{ else }}启用{{ end }}
                             </button>
@@ -110,6 +111,51 @@
                 <button type="submit" class="btn btn-primary">保存</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- 测试结果弹窗 -->
+<div id="testModal" class="modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeTestModal()"></div>
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-header">
+            <h3>测试结果 - <span id="test_site_name"></span></h3>
+            <button class="modal-close" onclick="closeTestModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="test_status" class="test-status-info">
+                正在测试搜索关键词: <code id="test_keyword">...</code><br>
+                如果失败建议等一段时间多试几次，排除偶尔抽风超时的情况。
+            </div>
+            <div id="test_loader" class="test-loader" style="display: none; padding: 20px; text-align: center;">
+                <div class="spinner"></div>
+                <p>正在请求资源网接口，请稍候...</p>
+            </div>
+            <div id="test_results_area" style="display: none;">
+                <div class="result-summary">
+                    找到 <strong id="test_result_count">0</strong> 条结果
+                </div>
+                <div class="admin-table-wrapper" style="max-height: 400px; overflow-y: auto; margin-top: 15px;">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>备注</th>
+                                <th>类型</th>
+                                <th>时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="testResultsTable">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div id="test_error" class="alert alert-error" style="display: none; margin-top: 15px;">
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeTestModal()">确定</button>
+        </div>
     </div>
 </div>
 
@@ -189,6 +235,58 @@ function editSite(id, key, baseUrl, enabled) {
 // 关闭编辑弹窗
 function closeEditModal() {
     document.getElementById('editModal').style.display = 'none';
+}
+
+// 资源网测试
+async function testSite(id, key) {
+    document.getElementById('test_site_name').innerText = key;
+    document.getElementById('test_keyword').innerText = '...';
+    document.getElementById('test_status').style.display = 'block';
+    document.getElementById('test_loader').style.display = 'block';
+    document.getElementById('test_results_area').style.display = 'none';
+    document.getElementById('test_error').style.display = 'none';
+    document.getElementById('testModal').style.display = 'flex';
+    document.getElementById('testResultsTable').innerHTML = '';
+
+    try {
+        const resp = await fetch(`/admin/sites/${id}/test`);
+        const data = await resp.json();
+
+        document.getElementById('test_loader').style.display = 'none';
+
+        if (data.success) {
+            document.getElementById('test_keyword').innerText = data.data.keyword;
+            document.getElementById('test_result_count').innerText = data.data.count;
+            document.getElementById('test_results_area').style.display = 'block';
+
+            const tbody = document.getElementById('testResultsTable');
+            if (data.data.items && data.data.items.length > 0) {
+                data.data.items.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${item.vod_name}</td>
+                        <td>${item.vod_remarks || '-'}</td>
+                        <td>${item.type_name || '-'}</td>
+                        <td>${item.vod_time || '-'}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">未搜索到结果</td></tr>';
+            }
+        } else {
+            document.getElementById('test_error').innerText = data.message || '测试失败';
+            document.getElementById('test_error').style.display = 'block';
+        }
+    } catch (err) {
+        document.getElementById('test_loader').style.display = 'none';
+        document.getElementById('test_error').innerText = '网络错误: ' + err.message;
+        document.getElementById('test_error').style.display = 'block';
+    }
+}
+
+function closeTestModal() {
+    document.getElementById('testModal').style.display = 'none';
 }
 
 // 编辑表单提交

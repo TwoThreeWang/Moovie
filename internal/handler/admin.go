@@ -18,12 +18,14 @@ func (h *Handler) AdminDashboard(c *gin.Context) {
 	sites, _ := h.Repos.Site.ListAll()
 	userCount, _ := h.Repos.User.Count()
 	feedbackCount, _ := h.Repos.Feedback.CountPending()
+	movieCount, _ := h.Repos.Movie.Count()
 
 	c.HTML(http.StatusOK, "admin_dashboard.html", h.RenderData(c, gin.H{
 		"Title":         "管理后台 - Moovie",
 		"SiteCount":     len(sites),
 		"UserCount":     userCount,
 		"FeedbackCount": feedbackCount,
+		"MovieCount":    movieCount,
 	}))
 }
 
@@ -37,13 +39,6 @@ func (h *Handler) AdminUsers(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin_users.html", h.RenderData(c, gin.H{
 		"Title": "用户管理 - Moovie",
 		"Users": users,
-	}))
-}
-
-// AdminCrawlers 爬虫监控
-func (h *Handler) AdminCrawlers(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin_crawlers.html", h.RenderData(c, gin.H{
-		"Title": "爬虫监控 - Moovie",
 	}))
 }
 
@@ -118,6 +113,38 @@ func (h *Handler) AdminSiteDelete(c *gin.Context) {
 	}
 
 	utils.Success(c, nil)
+}
+
+// AdminSiteTest 测试资源网搜索
+func (h *Handler) AdminSiteTest(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.BadRequest(c, "无效的 ID")
+		return
+	}
+
+	// 查找站点
+	var site model.Site
+	if err := h.Repos.DB.First(&site, id).Error; err != nil {
+		utils.NotFound(c, "资源网不存在")
+		return
+	}
+
+	// 测试关键词
+	keyword := "肖申克的救赎"
+
+	// 调用搜索服务进行测试
+	items, err := h.SearchService.GetSearchCrawler().Search(c.Request.Context(), site.BaseUrl, keyword, site.Key)
+	if err != nil {
+		utils.InternalServerError(c, "测试失败: "+err.Error())
+		return
+	}
+
+	utils.Success(c, gin.H{
+		"count":   len(items),
+		"keyword": keyword,
+		"items":   items,
+	})
 }
 
 // AdminData 搜索数据管理页面
@@ -229,4 +256,82 @@ func (h *Handler) AdminFeedbackStatus(c *gin.Context) {
 	}
 
 	utils.Success(c, gin.H{"message": "状态已更新"})
+}
+
+// ==================== 版权限制管理 ====================
+
+// AdminCopyright 版权限制管理页面
+func (h *Handler) AdminCopyright(c *gin.Context) {
+	filters, err := h.Repos.CopyrightFilter.ListAll()
+	if err != nil {
+		filters = []*model.CopyrightFilter{}
+	}
+
+	c.HTML(http.StatusOK, "admin_copyright.html", h.RenderData(c, gin.H{
+		"Title":   "版權限制管理 - Moovie",
+		"Filters": filters,
+	}))
+}
+
+// AdminCopyrightCreate 添加版权关键词
+func (h *Handler) AdminCopyrightCreate(c *gin.Context) {
+	keyword := c.PostForm("keyword")
+	if keyword == "" {
+		utils.BadRequest(c, "关键词不能为空")
+		return
+	}
+
+	filter := &model.CopyrightFilter{
+		Keyword: keyword,
+	}
+
+	if err := h.Repos.CopyrightFilter.Create(filter); err != nil {
+		utils.InternalServerError(c, "创建失败: "+err.Error())
+		return
+	}
+
+	utils.Success(c, filter)
+}
+
+// AdminCopyrightUpdate 更新版权关键词
+func (h *Handler) AdminCopyrightUpdate(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.BadRequest(c, "无效的 ID")
+		return
+	}
+
+	keyword := c.PostForm("keyword")
+	if keyword == "" {
+		utils.BadRequest(c, "关键词不能为空")
+		return
+	}
+
+	filter := &model.CopyrightFilter{
+		ID:      uint(id),
+		Keyword: keyword,
+	}
+
+	if err := h.Repos.CopyrightFilter.Update(filter); err != nil {
+		utils.InternalServerError(c, "更新失败")
+		return
+	}
+
+	utils.Success(c, filter)
+}
+
+// AdminCopyrightDelete 删除版权关键词
+func (h *Handler) AdminCopyrightDelete(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		utils.BadRequest(c, "无效的 ID")
+		return
+	}
+
+	if err := h.Repos.CopyrightFilter.Delete(uint(id)); err != nil {
+		utils.InternalServerError(c, "删除失败")
+		return
+	}
+
+	utils.Success(c, nil)
 }

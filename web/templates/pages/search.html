@@ -18,7 +18,7 @@
 </div>
 
 <div id="search-results-container"
-     hx-get="/api/htmx/search?kw={{ .Keyword }}"
+     hx-get="/api/htmx/search?kw={{ .Keyword }}{{ if .Bypass }}&bypass=1{{ end }}"
      hx-trigger="load"
      hx-indicator="#search-loading">
     <div id="search-loading" class="htmx-indicator search-loading-state">

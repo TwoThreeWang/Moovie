@@ -1,3 +1,9 @@
+{{ if .FilteredCount }}
+<div class="copyright-notice">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>因版权原因，{{ .FilteredCount }} 条相关内容已被隐藏</span>
+</div>
+{{ end }}
 {{ if .Results }}
 <div class="search-result-grid">
     {{ range .Results }}

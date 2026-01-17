@@ -22,16 +22,16 @@
 
 ```bash
 # 1. 克隆项目
-git clone <repo-url>
+clone <repo-url>
 cd moovie
 
 # 2. 复制环境变量
 cp .env.example .env
 # 编辑 .env 修改数据库连接
 
-# 3. 创建数据库并执行迁移
+# 3. 创建数据库
 createdb moovie
-psql moovie -f migrations/001_init.up.sql
+# 注：数据库表结构会在应用启动时自动迁移
 
 # 4. 安装依赖
 go mod tidy
@@ -67,7 +67,6 @@ moovie/
 ├── web/                # Web前端资源
 │   ├── static/         # 静态文件（CSS、JS、图片）
 │   └── templates/      # Go HTML模板（Layouts、Pages、Partials）
-├── migrations/         # 数据库迁移文件
 ├── Dockerfile          # Docker 镜像构建配置
 ├── docker-compose.yml  # Docker Compose 容器编排配置
 └── Makefile            # 项目自动化命令

@@ -38,6 +38,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		&model.WatchHistory{},
 		&model.Feedback{},
 		&model.Site{},
+		&model.CopyrightFilter{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
@@ -48,28 +49,30 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 
 // Repositories 仓库集合
 type Repositories struct {
-	DB        *gorm.DB
-	User      *UserRepository
-	Movie     *MovieRepository
-	Favorite  *FavoriteRepository
-	History   *HistoryRepository
-	Feedback  *FeedbackRepository
-	SearchLog *SearchLogRepository
-	Site      *SiteRepository
-	VodItem   *VodItemRepository
+	DB              *gorm.DB
+	User            *UserRepository
+	Movie           *MovieRepository
+	Favorite        *FavoriteRepository
+	History         *HistoryRepository
+	Feedback        *FeedbackRepository
+	SearchLog       *SearchLogRepository
+	Site            *SiteRepository
+	VodItem         *VodItemRepository
+	CopyrightFilter *CopyrightFilterRepository
 }
 
 // NewRepositories 创建仓库集合
 func NewRepositories(db *gorm.DB) *Repositories {
 	return &Repositories{
-		DB:        db,
-		User:      NewUserRepository(db),
-		Movie:     NewMovieRepository(db),
-		Favorite:  NewFavoriteRepository(db),
-		History:   NewHistoryRepository(db),
-		Feedback:  NewFeedbackRepository(db),
-		SearchLog: NewSearchLogRepository(db),
-		Site:      NewSiteRepository(db),
-		VodItem:   NewVodItemRepository(db),
+		DB:              db,
+		User:            NewUserRepository(db),
+		Movie:           NewMovieRepository(db),
+		Favorite:        NewFavoriteRepository(db),
+		History:         NewHistoryRepository(db),
+		Feedback:        NewFeedbackRepository(db),
+		SearchLog:       NewSearchLogRepository(db),
+		Site:            NewSiteRepository(db),
+		VodItem:         NewVodItemRepository(db),
+		CopyrightFilter: NewCopyrightFilterRepository(db),
 	}
 }

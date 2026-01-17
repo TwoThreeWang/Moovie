@@ -325,7 +325,7 @@ func (h *Handler) VodSearch(c *gin.Context) {
 	}
 
 	// 使用 SearchService 搜索
-	result, err := h.SearchService.Search(c.Request.Context(), keyword)
+	result, err := h.SearchService.Search(c.Request.Context(), keyword, false)
 	if err != nil {
 		log.Printf("[VodSearch] 搜索失败: %v", err)
 		utils.InternalServerError(c, "搜索服务暂时不可用")
@@ -379,6 +379,7 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 
 	year := strings.TrimSpace(c.Query("year"))
 	exclude := strings.TrimSpace(c.Query("exclude"))
+	bypass := c.Query("bypass") == "1" // 隐藏参数：跳过版权过滤
 
 	if keyword == "" {
 		c.String(http.StatusBadRequest, "搜索关键词不能为空")
@@ -386,7 +387,7 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 	}
 
 	// 使用 SearchService 搜索
-	result, err := h.SearchService.Search(c.Request.Context(), keyword)
+	result, err := h.SearchService.Search(c.Request.Context(), keyword, bypass)
 	if err != nil {
 		log.Printf("[SearchHTMX] 搜索失败: %v", err)
 		c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
@@ -426,7 +427,8 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 
 	// 返回结果片段
 	c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
-		"Results": finalResults,
+		"Results":       finalResults,
+		"FilteredCount": result.FilteredCount,
 	})
 }
 

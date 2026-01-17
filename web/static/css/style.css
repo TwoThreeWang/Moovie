@@ -2393,18 +2393,20 @@ img {
     flex: 2;
 }
 
-.form-row .form-checkbox {
+.form-checkbox {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
 }
 
-.form-row .form-checkbox label {
+.form-checkbox label {
     display: flex;
+    flex-direction: row;
     align-items: center;
     gap: 8px;
     margin-bottom: 0;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 /* 缓存页面 */
@@ -2779,6 +2781,46 @@ img {
     margin-top: 20px;
     padding-top: 16px;
     border-top: 1px solid var(--border);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.test-status-info {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.test-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(246, 12, 62, 0.1);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.result-summary {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text);
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
 }
 
 /* Admin 响应式 */
@@ -3395,6 +3437,33 @@ img {
         width: 100%;
         margin-left: 0;
         margin-top: 4px;
+    }
+}
+
+/* ==================== 版权过滤提醒 ==================== */
+.copyright-notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(255, 152, 0, 0.1) 0%, rgba(255, 193, 7, 0.08) 100%);
+    border: 1px solid rgba(255, 152, 0, 0.3);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    color: #e67e00;
+}
+
+.copyright-notice svg {
+    flex-shrink: 0;
+    color: #ff9800;
+}
+
+@media (prefers-color-scheme: dark) {
+    .copyright-notice {
+        background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(255, 193, 7, 0.1) 100%);
+        border-color: rgba(255, 152, 0, 0.4);
+        color: #ffb74d;
     }
 }
 
