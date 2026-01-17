@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/pgvector/pgvector-go"
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
 	"github.com/user/moovie/internal/utils"
@@ -114,6 +115,12 @@ func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
 	// 强制校验：如果没有标题，视为抓取失败
 	if movie.Title == "" {
 		return fmt.Errorf("无法解析出电影标题 (豆瓣ID: %s)，页面可能结构变化或触发反爬", doubanID)
+	}
+
+	// 生成向量并增强电影信息
+	if err := c.EnrichMovieWithVector(movie); err != nil {
+		log.Printf("[爬虫] 向量生成失败 (豆瓣ID: %s): %v", doubanID, err)
+		// 向量生成失败不影响核心流程，继续保存电影
 	}
 
 	// 保存到数据库
@@ -254,6 +261,66 @@ func (c *DoubanCrawler) parseMoviePage(doc *goquery.Document, doubanID string) *
 	})
 
 	return movie
+}
+
+// EnrichMovieWithVector 为电影生成向量并存储原始内容
+func (c *DoubanCrawler) EnrichMovieWithVector(movie *model.Movie) error {
+	// 按照约定模板拼接原始内容
+	// 标题: {Title} | 类型: {Genres} | 导演: {Directors} | 主演: {Actors} | 剧情简介: {Summary}
+
+	// 解析导演和演员名称
+	var directors []model.Person
+	var actors []model.Person
+	json.Unmarshal([]byte(movie.Directors), &directors)
+	json.Unmarshal([]byte(movie.Actors), &actors)
+
+	var dirNames []string
+	for _, d := range directors {
+		dirNames = append(dirNames, d.Name)
+	}
+	var actNames []string
+	for i, a := range actors {
+		if i >= 5 {
+			break
+		} // 只取前5个演员，避免文本过长
+		actNames = append(actNames, a.Name)
+	}
+
+	rawContent := fmt.Sprintf("标题: %s | 类型: %s | 导演: %s | 主演: %s | 剧情简介: %s",
+		movie.Title,
+		movie.Genres,
+		strings.Join(dirNames, ","),
+		strings.Join(actNames, ","),
+		movie.Summary,
+	)
+
+	// 截断过长文本（保留前1000个字符）
+	if len([]rune(rawContent)) > 1000 {
+		rawContent = string([]rune(rawContent)[:1000])
+	}
+
+	movie.EmbeddingContent = rawContent
+
+	// 调用 Ollama 生成向量
+	vec, err := utils.GenerateEmbedding(rawContent)
+	if err != nil {
+		return err
+	}
+
+	// 验证向量维度 (chentinz/bge-base-zh-v1.5 应该是 768 维)
+	if len(vec) == 0 {
+		return fmt.Errorf("Ollama 返回了空向量")
+	}
+
+	if len(vec) != 768 {
+		return fmt.Errorf("向量维度不匹配: 期望 768, 实际 %d", len(vec))
+	}
+
+	// 存储为 pgvector.Vector 指针
+	v := pgvector.NewVector(vec)
+	movie.Embedding = &v
+
+	return nil
 }
 
 // CrawlAsync 异步爬取电影信息

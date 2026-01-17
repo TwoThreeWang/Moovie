@@ -429,3 +429,90 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 		"Results": finalResults,
 	})
 }
+
+// SimilarMoviesHTMX 相似电影推荐（htmx 片段）
+// GET /api/htmx/similar?douban_id=xxx
+func (h *Handler) SimilarMoviesHTMX(c *gin.Context) {
+	doubanID := strings.TrimSpace(c.Query("douban_id"))
+	if doubanID == "" {
+		c.String(http.StatusBadRequest, "豆瓣 ID 不能为空")
+		return
+	}
+
+	// 检查缓存
+	cacheKey := fmt.Sprintf("similar_movies:%s", doubanID)
+	if cached, found := utils.CacheGet(cacheKey); found {
+		if movies, ok := cached.([]model.Movie); ok {
+			c.HTML(http.StatusOK, "partials/similar_movies.html", gin.H{
+				"Movies": movies,
+			})
+			return
+		}
+	}
+
+	// 查询相似电影
+	movies, err := h.Repos.Movie.FindSimilar(doubanID, 12)
+	if err != nil {
+		log.Printf("[SimilarMoviesHTMX] 查询相似电影失败: %v", err)
+		c.HTML(http.StatusOK, "partials/similar_movies.html", gin.H{
+			"Movies": nil,
+		})
+		return
+	}
+
+	// 缓存结果，过期时间 1 小时
+	utils.CacheSet(cacheKey, movies, 1*time.Hour)
+
+	c.HTML(http.StatusOK, "partials/similar_movies.html", gin.H{
+		"Movies": movies,
+	})
+}
+
+// ForYouHTMX 为你推荐（htmx 片段）
+// GET /api/htmx/foryou
+func (h *Handler) ForYouHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	// 未登录用户
+	if userID == 0 {
+		c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
+			"NeedLogin": true,
+		})
+		return
+	}
+
+	// 检查缓存
+	cacheKey := fmt.Sprintf("foryou:%d", userID)
+	if cached, found := utils.CacheGet(cacheKey); found {
+		if movies, ok := cached.([]model.Movie); ok {
+			c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
+				"Movies": movies,
+			})
+			return
+		}
+	}
+
+	// 获取个性化推荐
+	movies, err := h.Repos.Movie.GetUserRecommendations(userID, 24)
+	if err != nil {
+		log.Printf("[ForYouHTMX] 获取推荐失败: %v", err)
+	}
+
+	// 如果没有推荐结果，尝试获取热门电影作为降级
+	if len(movies) == 0 {
+		movies, _ = h.Repos.Movie.GetPopularMovies(24)
+		if len(movies) == 0 {
+			c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
+				"NoData": true,
+			})
+			return
+		}
+	}
+
+	// 缓存 30 分钟
+	utils.CacheSet(cacheKey, movies, 30*time.Minute)
+
+	c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
+		"Movies": movies,
+	})
+}

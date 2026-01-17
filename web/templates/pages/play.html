@@ -151,6 +151,22 @@
                 </div>
             </div>
         </div>
+
+        {{ if .DoubanID }}
+        <!-- 相似电影推荐 -->
+        <div class="movie-section" style="margin-top: 40px;">
+            <h2 class="section-title">喜欢这部剧集的人也喜欢</h2>
+            <div id="similar-movies"
+                 hx-get="/api/htmx/similar?douban_id={{ .DoubanID }}"
+                 hx-trigger="load"
+                 hx-indicator="#similar-loading">
+                <div id="similar-loading" class="htmx-indicator movie-search-loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>正在加载相似电影...</p>
+                </div>
+            </div>
+        </div>
+        {{ end }}
     </section>
 </div>
 

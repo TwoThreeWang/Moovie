@@ -1,0 +1,64 @@
+{{ define "content" }}
+<div class="foryou-page">
+    <div class="foryou-header">
+        <h1 class="page-title">✨ 为你推荐</h1>
+        <p class="page-desc">基于你的观影历史和收藏，为你精选可能喜欢的影片</p>
+    </div>
+
+    <div id="foryou-content"
+         hx-get="/api/htmx/foryou"
+         hx-trigger="load"
+         hx-indicator="#foryou-loading">
+        <div id="foryou-loading" class="foryou-loading htmx-indicator">
+            <div class="loading-animation">
+                <div class="loading-spinner"></div>
+                <p>正在分析你的口味，请稍候...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.foryou-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px 0;
+}
+
+.foryou-header {
+    margin-bottom: 32px;
+}
+
+.page-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.page-desc {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.foryou-loading {
+    display: none;
+    padding: 80px 20px;
+}
+
+.foryou-loading.htmx-request {
+    display: block;
+}
+
+.loading-animation {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    color: var(--text-muted);
+}
+
+.loading-animation p {
+    font-size: 0.9rem;
+}
+</style>
+{{ end }}

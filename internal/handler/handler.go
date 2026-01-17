@@ -492,6 +492,13 @@ func (h *Handler) Trends(c *gin.Context) {
 	}))
 }
 
+// ForYou 为你推荐页面
+func (h *Handler) ForYou(c *gin.Context) {
+	c.HTML(http.StatusOK, "foryou.html", h.RenderData(c, gin.H{
+		"Title": "为你推荐 - " + h.Config.SiteName,
+	}))
+}
+
 // FeedbackPage 反馈页面
 func (h *Handler) FeedbackPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "feedback.html", h.RenderData(c, gin.H{

@@ -41,6 +41,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		optional.GET("/movie/:id", h.Movie)               // 电影详情
 		optional.GET("/play/:source_key/:vod_id", h.Play) // 视频播放页
 		optional.GET("/discover", h.Discover)             // 发现页
+		optional.GET("/foryou", h.ForYou)                 // 为你推荐
 	}
 
 	// ==================== 认证页面 ====================
@@ -84,7 +85,9 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/vod/detail", h.VodDetail) // 视频详情
 
 		// htmx 专属 API
-		api.GET("/htmx/search", h.SearchHTMX) // 搜索结果片段
+		api.GET("/htmx/search", h.SearchHTMX)         // 搜索结果片段
+		api.GET("/htmx/similar", h.SimilarMoviesHTMX) // 相似电影推荐
+		api.GET("/htmx/foryou", h.ForYouHTMX)         // 为你推荐
 	}
 
 	// ==================== 管理后台 ====================
@@ -187,7 +190,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 	// 注册所有页面模板
 	pages := []string{
 		"home", "search", "movie", "play", "player", "player_embed",
-		"discover", "rankings", "trends", "feedback",
+		"discover", "rankings", "trends", "foryou", "feedback",
 		"about", "changelog", "dmca", "privacy", "terms", "404",
 		"login", "register",
 		"dashboard", "favorites", "history", "settings",

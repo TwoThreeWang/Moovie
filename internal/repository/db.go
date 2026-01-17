@@ -25,6 +25,11 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(5)
 
+	// 启用 pgvector 扩展
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {
+		return nil, fmt.Errorf("无法启用 pgvector 扩展: %w", err)
+	}
+
 	// 自动迁移
 	err = db.AutoMigrate(
 		&model.User{},

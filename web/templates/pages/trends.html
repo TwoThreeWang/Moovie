@@ -2,13 +2,13 @@
 {{ define "content" }}
 <div class="trends-page">
     <div class="trends-header">
-        <h1 class="page-title">🔥 热门搜索</h1>
+        <h1 class="page-title">🔥 搜索趋势</h1>
         <span class="trends-update">更新于 {{ .UpdateTime }}</span>
     </div>
 
     <div class="trends-tabs">
         <button class="tab-btn active" onclick="switchTab(this, '24h')">24小时热搜</button>
-        <button class="tab-btn" onclick="switchTab(this, 'all')">全量热搜</button>
+        <button class="tab-btn" onclick="switchTab(this, 'all')">本月热搜</button>
     </div>
 
     <div id="tab-24h" class="tab-content active">
