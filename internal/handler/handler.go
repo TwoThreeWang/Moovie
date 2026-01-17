@@ -506,6 +506,13 @@ func (h *Handler) About(c *gin.Context) {
 	}))
 }
 
+// Changelog 更新记录页面
+func (h *Handler) Changelog(c *gin.Context) {
+	c.HTML(http.StatusOK, "changelog.html", h.RenderData(c, gin.H{
+		"Title": "更新记录 - " + h.Config.SiteName,
+	}))
+}
+
 // DMCA DMCA 声明
 func (h *Handler) DMCA(c *gin.Context) {
 	c.HTML(http.StatusOK, "dmca.html", h.RenderData(c, gin.H{
