@@ -100,8 +100,6 @@ func (h *Handler) getActiveMenu(c *gin.Context) string {
 		return "home"
 	case "/discover":
 		return "discover"
-	case "/rankings":
-		return "rankings"
 	case "/trends":
 		return "trends"
 	case "/foryou":
@@ -358,131 +356,8 @@ func (h *Handler) Discover(c *gin.Context) {
 	}))
 }
 
-// Rankings 排行榜
-func (h *Handler) Rankings(c *gin.Context) {
-	// 获取真实的热搜数据 (最近 24 小时)
-	trending, err := h.Repos.SearchLog.GetTrending(24, 10)
-	if err != nil {
-		log.Printf("获取热搜失败: %v", err)
-	}
-
-	// 假数据：热门电影列表
-	hotMovies := []model.Movie{
-		{
-			DoubanID:  "35465232",
-			Title:     "封神第一部：朝歌风云",
-			Year:      "2023",
-			Poster:    "https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2898748250.webp",
-			Rating:    7.8,
-			Genres:    "剧情,动作,奇幻",
-			Directors: "乌尔善",
-		},
-		{
-			DoubanID:  "26647087",
-			Title:     "三体",
-			Year:      "2023",
-			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2885955777.webp",
-			Rating:    8.7,
-			Genres:    "剧情,科幻",
-			Directors: "杨磊",
-		},
-		{
-			DoubanID:  "35267208",
-			Title:     "流浪地球2",
-			Year:      "2023",
-			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2885842436.webp",
-			Rating:    8.3,
-			Genres:    "科幻,冒险,灾难",
-			Directors: "郭帆",
-		},
-		{
-			DoubanID:  "35183042",
-			Title:     "狂飙",
-			Year:      "2023",
-			Poster:    "https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2884063548.webp",
-			Rating:    8.5,
-			Genres:    "剧情,犯罪",
-			Directors: "徐纪周",
-		},
-		{
-			DoubanID:  "36190039",
-			Title:     "繁花",
-			Year:      "2023",
-			Poster:    "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2904209695.webp",
-			Rating:    8.7,
-			Genres:    "剧情",
-			Directors: "王家卫",
-		},
-		{
-			DoubanID:  "35069Mo4",
-			Title:     "漫长的季节",
-			Year:      "2023",
-			Poster:    "/api/proxy/image?url=https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2894989679.webp",
-			Rating:    9.4,
-			Genres:    "剧情,悬疑",
-			Directors: "辛爽",
-		},
-		{
-			DoubanID:  "26873Mo3",
-			Title:     "奥本海默",
-			Year:      "2023",
-			Poster:    "/api/proxy/image?url=https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2893907974.webp",
-			Rating:    8.9,
-			Genres:    "剧情,传记,历史",
-			Directors: "克里斯托弗·诺兰",
-		},
-		{
-			DoubanID:  "35551Mo9",
-			Title:     "芭比",
-			Year:      "2023",
-			Poster:    "/api/proxy/image?url=https://img3.doubanio.com/view/photo/s_ratio_poster/public/p2895879710.webp",
-			Rating:    8.3,
-			Genres:    "喜剧,冒险,奇幻",
-			Directors: "格蕾塔·葛韦格",
-		},
-		{
-			DoubanID:  "30475768",
-			Title:     "坠落的审判",
-			Year:      "2023",
-			Poster:    "/api/proxy/image?url=https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2899335708.webp",
-			Rating:    8.8,
-			Genres:    "剧情,悬疑,家庭",
-			Directors: "茹斯汀·特里耶",
-		},
-		{
-			DoubanID:  "35900652",
-			Title:     "年会不能停！",
-			Year:      "2023",
-			Poster:    "/api/proxy/image?url=https://img2.doubanio.com/view/photo/s_ratio_poster/public/p2902429131.webp",
-			Rating:    8.1,
-			Genres:    "喜剧",
-			Directors: "董润年",
-		},
-	}
-
-	c.HTML(http.StatusOK, "rankings.html", h.RenderData(c, gin.H{
-		"Title":       "热门电影 - " + h.Config.SiteName,
-		"Description": "Moovie 热门电影排行榜，实时更新全网最受欢迎的影视作品。",
-		"Keywords":    "电影排行榜,热门影视,高分榜单,热搜榜",
-		"HotMovies":   hotMovies,
-		"Trending":    trending,
-	}))
-}
-
 // Trends 热搜趋势
 func (h *Handler) Trends(c *gin.Context) {
-	// 1. 获取 24 小时热搜
-	trending24h, err := h.Repos.SearchLog.GetTrending(24, 20)
-	if err != nil {
-		log.Printf("获取 24h 热搜失败: %v", err)
-	}
-
-	// 2. 获取全量热搜
-	trendingAll, err := h.Repos.SearchLog.GetTrending(0, 50)
-	if err != nil {
-		log.Printf("获取全量热搜失败: %v", err)
-	}
-
 	// 辅助结构
 	type TrendItem struct {
 		Keyword  string
@@ -491,35 +366,70 @@ func (h *Handler) Trends(c *gin.Context) {
 		TagClass string
 	}
 
-	// 转换 24h 数据
 	var items24h []TrendItem
-	for _, t := range trending24h {
-		item := TrendItem{
-			Keyword: t.Keyword,
-			Count:   t.Count,
+	var itemsAll []TrendItem
+
+	// 1. 尝试从缓存获取 24h 数据
+	cacheKey24h := "trending_24h_items"
+	if val, found := utils.CacheGet(cacheKey24h); found {
+		if cached, ok := val.([]TrendItem); ok {
+			items24h = cached
 		}
-		if t.Count > 50 { // 24小时内50次就算热
-			item.Tag = "热"
-			item.TagClass = "hot"
-		} else if t.LastSearchedAt.After(time.Now().Add(-1 * time.Hour)) {
-			item.Tag = "新"
-			item.TagClass = "new"
-		}
-		items24h = append(items24h, item)
 	}
 
-	// 转换全量数据
-	var itemsAll []TrendItem
-	for _, t := range trendingAll {
-		item := TrendItem{
-			Keyword: t.Keyword,
-			Count:   t.Count,
+	// 2. 尝试从缓存获取全量数据
+	cacheKeyAll := "trending_all_items"
+	if val, found := utils.CacheGet(cacheKeyAll); found {
+		if cached, ok := val.([]TrendItem); ok {
+			itemsAll = cached
 		}
-		if t.Count > 200 {
-			item.Tag = "火爆"
-			item.TagClass = "hot"
+	}
+
+	// 3. 如果 24h 缓存失效，查询并处理
+	if items24h == nil {
+		trending24h, err := h.Repos.SearchLog.GetTrending(24, 20)
+		if err != nil {
+			log.Printf("获取 24h 热搜失败: %v", err)
 		}
-		itemsAll = append(itemsAll, item)
+
+		for _, t := range trending24h {
+			item := TrendItem{
+				Keyword: t.Keyword,
+				Count:   t.Count,
+			}
+			if t.Count > 50 { // 24小时内50次就算热
+				item.Tag = "热"
+				item.TagClass = "hot"
+			} else if t.LastSearchedAt.After(time.Now().Add(-1 * time.Hour)) {
+				item.Tag = "新"
+				item.TagClass = "new"
+			}
+			items24h = append(items24h, item)
+		}
+		// 存入缓存 10 分钟
+		utils.CacheSet(cacheKey24h, items24h, 10*time.Minute)
+	}
+
+	// 4. 如果全量缓存失效，查询并处理
+	if itemsAll == nil {
+		trendingAll, err := h.Repos.SearchLog.GetTrending(0, 50)
+		if err != nil {
+			log.Printf("获取全量热搜失败: %v", err)
+		}
+
+		for _, t := range trendingAll {
+			item := TrendItem{
+				Keyword: t.Keyword,
+				Count:   t.Count,
+			}
+			if t.Count > 200 {
+				item.Tag = "火爆"
+				item.TagClass = "hot"
+			}
+			itemsAll = append(itemsAll, item)
+		}
+		// 存入缓存 10 分钟
+		utils.CacheSet(cacheKeyAll, itemsAll, 10*time.Minute)
 	}
 
 	c.HTML(http.StatusOK, "trends.html", h.RenderData(c, gin.H{
@@ -603,7 +513,6 @@ func (h *Handler) Sitemap(c *gin.Context) {
 		{"/", "1.0", "daily"},
 		{"/search", "0.8", "daily"},
 		{"/discover", "0.8", "daily"},
-		{"/rankings", "0.8", "daily"},
 		{"/trends", "0.8", "daily"},
 		{"/feedback", "0.5", "monthly"},
 		{"/changelog", "0.5", "weekly"},
@@ -674,7 +583,7 @@ func (h *Handler) Login(c *gin.Context) {
 	password := c.PostForm("password")
 	redirect := c.PostForm("redirect")
 
-	if redirect == "" {
+	if redirect == "" || !strings.HasPrefix(redirect, "/") || strings.HasPrefix(redirect, "//") {
 		redirect = "/"
 	}
 

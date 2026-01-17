@@ -45,6 +45,11 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
 	}
 
+	// 创建 HNSW 索引 (加速相似度搜索)
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS movies_embedding_idx ON movies USING hnsw (embedding vector_l2_ops);").Error; err != nil {
+		fmt.Printf("警告: 创建向量索引失败: %v\n", err)
+	}
+
 	return db, nil
 }
 

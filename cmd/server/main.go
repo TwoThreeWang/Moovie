@@ -73,6 +73,7 @@ func main() {
 
 	// 中间件
 	r.Use(middleware.Logger())
+	r.Use(middleware.Security())
 	r.Use(middleware.CORS())
 
 	// 初始化 Handler
@@ -88,7 +89,7 @@ func main() {
 	// 配置 HTTP 服务器
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "5005"
 	}
 
 	srv := &http.Server{

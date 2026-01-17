@@ -5,11 +5,15 @@ WORKDIR /app
 
 # 安装依赖
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # 复制源码并编译
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o moovie ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -o moovie ./cmd/server
+
 
 # 运行阶段
 FROM alpine:latest
@@ -21,7 +25,7 @@ COPY --from=builder /app/moovie .
 COPY --from=builder /app/web ./web
 
 # 暴露端口
-EXPOSE 8080
+EXPOSE 5005
 
 # 启动命令
 CMD ["./moovie"]

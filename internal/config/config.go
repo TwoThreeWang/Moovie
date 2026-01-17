@@ -34,14 +34,18 @@ func Load() *Config {
 
 	appSecret := getEnv("APP_SECRET", getEnv("JWT_SECRET", "your-secret-key-change-in-production"))
 
+	if getEnv("APP_ENV", "development") == "production" && appSecret == "your-secret-key-change-in-production" {
+		fmt.Println("【严重警告】生产环境正在使用默认密钥！请立即设置 APP_SECRET 环境变量。")
+	}
+
 	return &Config{
 		Env:         getEnv("APP_ENV", "development"),
 		AppSecret:   appSecret,
 		DatabaseURL: dbURL,
 		JWTExpiry:   time.Duration(expiryHours) * time.Hour,
-		Port:        getEnv("PORT", "8080"),
+		Port:        getEnv("PORT", "5005"),
 		SiteName:    getEnv("SITE_NAME", "Moovie"),
-		SiteUrl:     getEnv("SITE_URL", "http://localhost:8080"),
+		SiteUrl:     getEnv("SITE_URL", "http://localhost:5005"),
 	}
 }
 

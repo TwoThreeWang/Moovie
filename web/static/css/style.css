@@ -414,8 +414,25 @@ img {
     color: var(--primary);
 }
 
+.mobile-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .mobile-user {
-    font-size: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+.mobile-theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: var(--text-secondary);
 }
 
 /* ==================== 首页样式 ==================== */
@@ -1964,7 +1981,6 @@ img {
 
 .stat-item:hover {
     border-color: var(--primary);
-    background: white;
 }
 
 .stat-icon {
@@ -3707,9 +3723,9 @@ img {
 .copyright-notice {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     padding: 12px 16px;
-    background: linear-gradient(135deg, var(--warning-alpha-10) 0%, var(--warning-alpha-8) 100%);
     border: 1px solid var(--warning-alpha-30);
     border-radius: 8px;
     margin-bottom: 16px;

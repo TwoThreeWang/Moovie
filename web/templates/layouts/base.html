@@ -48,6 +48,18 @@
 
     <!-- htmx -->
     <script src="/static/js/htmx.min.js" defer></script>
+
+    <!-- 统计 -->
+    <script async defer src="https://pingoo.c2v2.com/pingoo.js" site-id="4"></script>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CGYQX86P0P"></script>
+    <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-CGYQX86P0P');
+    </script>
 </head>
 <body>
     <!-- 固定边框层 -->
@@ -183,26 +195,28 @@
                     <span></span>
                 </button>
                 <a href="/" class="mobile-logo">🐮 Moovie</a>
-                {{ if .UserInfo }}
-                <a href="/dashboard" class="mobile-user" title="{{ .UserInfo.Username }}">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="12" cy="7" r="4"></circle>
-                    </svg>
-                </a>
-                {{ else }}
-                <a href="/auth/login" class="mobile-user">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
-                        <polyline points="10 17 15 12 10 7"></polyline>
-                        <line x1="15" y1="12" x2="3" y2="12"></line>
-                    </svg>
-                </a>
-                {{ end }}
-                <button class="mobile-user theme-toggle" onclick="toggleTheme()" style="margin-right: 8px;">
-                    <svg class="sun-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-                    <svg class="moon-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-                </button>
+                <div class="mobile-header-actions">
+                    {{ if .UserInfo }}
+                    <a href="/dashboard" class="mobile-user" title="{{ .UserInfo.Username }}">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </a>
+                    {{ else }}
+                    <a href="/auth/login" class="mobile-user">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                            <polyline points="10 17 15 12 10 7"></polyline>
+                            <line x1="15" y1="12" x2="3" y2="12"></line>
+                        </svg>
+                    </a>
+                    {{ end }}
+                    <button class="mobile-theme-toggle theme-toggle" onclick="toggleTheme()">
+                        <svg class="sun-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                        <svg class="moon-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                    </button>
+                </div>
             </header>
 
             <div class="content-wrapper {{ .ContentClass }}">
@@ -222,7 +236,7 @@
                         <a href="/sitemap.xml">网站地图</a>
                     </div>
                     <p class="footer-copyright">
-                        © 2026 Moovie. 本站不存储任何视频文件，仅提供搜索服务。
+                        © 2026 Moovie(v3.0.0). 本站不存储任何视频文件，仅提供搜索服务。
                     </p>
                     <p class="footer-also">
                         除了这个项目，我还在做一些方向相近的实验：<a href="https://zhulink.vip/" target="_blank" rel="noopener">竹林</a>（去算法社区）· <a href="https://pockoo.app/" target="_blank" rel="noopener">Pockoo</a>（智能导航）

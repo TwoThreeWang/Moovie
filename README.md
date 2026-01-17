@@ -1,111 +1,96 @@
-# Moovie
+# 🎬 Moovie
 
-聚合电影搜索网站 - 基于 **Golang + Gin + htmx + PostgreSQL**
+> **搜全网，只为你想看的那一部。**
 
-## 特性
+Moovie 是一款基于 **Golang** 开发的聚合影视搜索工具。它通过整合多源搜索、智能推荐和极致的响应式设计，为你提供一个干净、高效的观影入口。
 
-- 🔍 多源聚合搜索
-- 📺 在线播放（m3u8）
-- ❤️ 收藏功能（htmx 无刷新）
-- 📝 观影历史（localStorage + 服务端同步）
-- 🎯 SEO 友好（服务端渲染）
-- 🔐 JWT 认证（HttpOnly Cookie）
+---
 
-## 快速开始
+## 🚀 特性亮点
 
-### 环境要求
+- 🔍 **多源聚合搜索**：一键横跨多个影视资源站点，告别碎片化搜索。
+- 🧠 **智能推荐 (AI Powered)**：基于 `pgvector` 矢量相似度算法，根据你的观影历史精准推荐。
+- 📱 **PWA 支持**：原生级别的移动端体验，可添加到主屏幕，支持离线图标。
+- 📺 **流畅播放**：内置 HLS.js 播放器，支持 m3u8 高清流媒体播放。
+- 📝 **观影记忆**：自动同步 LocalStorage 到云端，多端进度无缝覆盖。
+- ⚡ **极致速度**：基于 Gin + htmx，实现无刷新页面更新，响应迅速。
+- 🔐 **安全可靠**：JWT + HttpOnly Cookie 认证，保障隐私安全。
 
-- Go 1.21+
-- PostgreSQL 15+
+---
 
-### 本地开发
+## 🛠️ 技术栈
 
-```bash
-# 1. 克隆项目
-clone <repo-url>
-cd moovie
+| 领域 | 技术方案 |
+| :--- | :--- |
+| **语言** | Go (Golang) 1.21+ |
+| **Web 框架** | [Gin](https://github.com/gin-gonic/gin) |
+| **数据库** | [PostgreSQL](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector) |
+| **前端交互** | [htmx](https://htmx.org/) (High Power Tools for HTML) |
+| **前端样式** | Vanilla CSS (Glassmorphism Design) |
+| **播放器** | [hls.js](https://github.com/video-dev/hls.js/) |
+| **缓存** | gocache (Local Memory Cache) |
 
-# 2. 复制环境变量
-cp .env.example .env
-# 编辑 .env 修改数据库连接
+---
 
-# 3. 创建数据库
-createdb moovie
-# 注：数据库表结构会在应用启动时自动迁移
+## 📦 快速开始
 
-# 4. 安装依赖
-go mod tidy
+### 环境依赖
 
-# 5. 启动开发服务器
-go run ./cmd/server
-# 或使用 air 热重载
-make dev
-```
+- **Go**: v1.21 或更高版本
+- **PostgreSQL**: v15+ (需安装 `pgvector` 扩展)
 
-访问 http://localhost:8080
+### 本地运行
 
-### Docker 部署
+1. **克隆仓储**
+   ```bash
+   git clone https://github.com/TwoThreeWang/Moovie.git
+   cd Moovie
+   ```
+
+2. **环境配置**
+   ```bash
+   cp .env.example .env
+   # 请在 .env 中配置你的数据库连接信息
+   ```
+
+3. **安装依赖并启动**
+   ```bash
+   go mod tidy
+   go run ./cmd/server
+   ```
+   🚀 访问 [http://localhost:5005](http://localhost:5005)
+
+### Docker 快捷部署
 
 ```bash
 docker-compose up -d
 ```
 
-## 项目结构
+---
 
-```
+## 📂 目录结构
+
+```text
 moovie/
-├── cmd/server/         # 应用程序入口点
-├── internal/           # 内部包（不对外暴露）
-│   ├── config/         # 配置管理
-│   ├── handler/        # HTTP 请求处理器（API、Admin、通用）
-│   ├── middleware/     # 中间件（JWT认证、CORS、日志）
-│   ├── model/          # 数据模型定义
-│   ├── repository/     # 数据访问层（数据库操作）
-│   ├── router/         # 路由定义
-│   ├── service/        # 业务逻辑层（爬虫、搜索服务）
-│   └── utils/          # 工具包（缓存、HTTP客户端、响应格式）
-├── web/                # Web前端资源
-│   ├── static/         # 静态文件（CSS、JS、图片）
-│   └── templates/      # Go HTML模板（Layouts、Pages、Partials）
-├── Dockerfile          # Docker 镜像构建配置
-├── docker-compose.yml  # Docker Compose 容器编排配置
-└── Makefile            # 项目自动化命令
+├── cmd/server/         # 🚀 程序入口点
+├── internal/           # 核心业务逻辑
+│   ├── handler/        # 🎮 HTTP 处理器 (API/Admin/View)
+│   ├── model/          # 📦 数据模型与 Schema
+│   ├── repository/     # 🗄️ 数据库操作 (DAL)
+│   ├── service/        # ⚙️ 业务逻辑 (搜索/爬虫/推荐)
+│   └── middleware/     # 🛡️ JWT/CORS/Auth 中间件
+├── web/                # 前端资源
+│   ├── static/         # 🎨 CSS/JS/Assets
+│   └── templates/      # 🧬 Go HTML 模板 (Layouts/Partials)
+└── ...
 ```
 
-## 技术栈
+---
 
-| 组件 | 技术 |
-|------|------|
-| 后端框架 | Gin (Go Web Framework) |
-| 数据库 | PostgreSQL |
-| 前端交互 | htmx (动态Web交互) |
-| 播放器 | hls.js (HLS视频播放) |
-| 认证 | JWT (JSON Web Token) |
-| 内存缓存 | gocache (本地内存缓存) |
-| 反爬虫 | 自定义HTTP客户端，模拟浏览器行为 |
+## 🛡️ 许可证
 
-## 核心功能
+本项目采用 **MIT License**。详情请参阅 [LICENSE](LICENSE) 文件。
 
-### 后端功能
-- **用户系统**: 注册、登录、JWT认证、用户管理
-- **电影搜索**: 豆瓣电影搜索API集成，带缓存机制
-- **收藏管理**: 用户收藏电影功能
-- **观看历史**: 用户观看历史记录和同步
-- **反馈系统**: 用户反馈提交功能
-- **管理后台**: 用户管理、爬虫管理、数据统计
+---
 
-### 前端功能
-- **搜索建议**: 实时搜索下拉联想，支持键盘导航
-- **响应式设计**: 适配移动端和桌面端
-- **SSR渲染**: 服务端渲染，SEO友好
-- **动态交互**: 使用htmx实现无刷新页面更新
-
-### 技术特点
-- **统一API响应**: 所有JSON API使用统一格式返回
-- **反爬虫机制**: HTTP客户端模拟真实浏览器行为
-- **缓存优化**: 5分钟TTL的内存缓存，减少API调用
-- **错误处理**: 完善的错误处理和用户提示
-
-## 许可证
-
-MIT
+**由 [TwoThreeWang](https://github.com/TwoThreeWang) 倾情打造。**

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/user/moovie/internal/middleware"
 	"github.com/user/moovie/internal/model"
+	"github.com/user/moovie/internal/service"
 	"github.com/user/moovie/internal/utils"
 )
 
@@ -251,125 +252,6 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 	io.Copy(c.Writer, resp.Body)
 }
 
-// ==================== 电影检查 API ====================
-
-// CheckMovieResponse 检查电影响应
-type CheckMovieResponse struct {
-	Exists      bool   `json:"exists"`
-	MovieID     int    `json:"movie_id,omitempty"`
-	RedirectURL string `json:"redirect_url"`
-}
-
-// CheckMovie 检查电影是否存在，并决定跳转目标
-// GET /api/movies/check/:doubanId?title=xxx
-func (h *Handler) CheckMovie(c *gin.Context) {
-	doubanID := c.Param("doubanId")
-	title := c.Query("title")
-
-	if doubanID == "" {
-		utils.BadRequest(c, "豆瓣ID不能为空")
-		return
-	}
-
-	// 查询数据库中是否存在该电影
-	movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
-	if err != nil {
-		log.Printf("查询电影失败: %v", err)
-		utils.InternalServerError(c, "查询失败")
-		return
-	}
-
-	if movie != nil {
-		// 电影存在，跳转到详情页（使用豆瓣ID）
-		utils.Success(c, CheckMovieResponse{
-			Exists:      true,
-			MovieID:     movie.ID,
-			RedirectURL: fmt.Sprintf("/movie/%s", movie.DoubanID),
-		})
-		return
-	}
-
-	// 电影不存在，触发异步爬取
-	if h.DoubanCrawler != nil {
-		h.DoubanCrawler.CrawlAsync(doubanID)
-		log.Printf("[API] 触发异步爬取豆瓣电影: %s", doubanID)
-	}
-
-	// 跳转到搜索页
-	redirectURL := "/search"
-	if title != "" {
-		redirectURL = fmt.Sprintf("/search?kw=%s", title)
-	}
-
-	utils.Success(c, CheckMovieResponse{
-		Exists:      false,
-		RedirectURL: redirectURL,
-	})
-}
-
-// ==================== 资源网视频搜索 API ====================
-
-// VodSearchResponse 资源网搜索响应
-type VodSearchResponse struct {
-	Items []model.VodItem `json:"items"`
-	Total int             `json:"total"`
-}
-
-// VodSearch 资源网视频搜索
-// GET /api/vod/search?kw=xxx
-func (h *Handler) VodSearch(c *gin.Context) {
-	keyword := strings.TrimSpace(c.Query("kw"))
-	if keyword == "" {
-		utils.BadRequest(c, "搜索关键词不能为空")
-		return
-	}
-
-	// 使用 SearchService 搜索
-	result, err := h.SearchService.Search(c.Request.Context(), keyword, false)
-	if err != nil {
-		log.Printf("[VodSearch] 搜索失败: %v", err)
-		utils.InternalServerError(c, "搜索服务暂时不可用")
-		return
-	}
-
-	// 记录搜索日志
-	go func() {
-		_ = h.Repos.SearchLog.Log(keyword, middleware.GetUserIDPtr(c), utils.HashIP(c.ClientIP()))
-	}()
-
-	utils.Success(c, VodSearchResponse{
-		Items: result.Items,
-		Total: len(result.Items),
-	})
-}
-
-// VodDetail 资源网视频详情
-// GET /api/vod/detail?source_key=xxx&vod_id=xxx
-func (h *Handler) VodDetail(c *gin.Context) {
-	sourceKey := strings.TrimSpace(c.Query("source_key"))
-	vodId := strings.TrimSpace(c.Query("vod_id"))
-
-	if sourceKey == "" || vodId == "" {
-		utils.BadRequest(c, "source_key 和 vod_id 不能为空")
-		return
-	}
-
-	// 获取详情
-	detail, err := h.SearchService.GetDetail(c.Request.Context(), sourceKey, vodId)
-	if err != nil {
-		log.Printf("[VodDetail] 获取详情失败: %v", err)
-		utils.InternalServerError(c, "获取详情失败")
-		return
-	}
-
-	if detail == nil {
-		utils.NotFound(c, "视频不存在")
-		return
-	}
-
-	utils.Success(c, detail)
-}
-
 // SearchHTMX 资源网搜索（htmx 片段）
 // GET /api/htmx/search?kw=xxx&year=xxx
 func (h *Handler) SearchHTMX(c *gin.Context) {
@@ -386,8 +268,21 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 		return
 	}
 
+	var result *service.SearchResult
+	var err error
+
+	// 检查缓存
+	cacheKey := fmt.Sprintf("search:results:%s:%t", keyword, bypass)
+	if cached, found := utils.CacheGet(cacheKey); found {
+		if res, ok := cached.(*service.SearchResult); ok {
+			log.Printf("[SearchHTMX] 命中缓存: %s", keyword)
+			result = res
+			goto processResults
+		}
+	}
+
 	// 使用 SearchService 搜索
-	result, err := h.SearchService.Search(c.Request.Context(), keyword, bypass)
+	result, err = h.SearchService.Search(c.Request.Context(), keyword, bypass)
 	if err != nil {
 		log.Printf("[SearchHTMX] 搜索失败: %v", err)
 		c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
@@ -396,6 +291,11 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 		})
 		return
 	}
+
+	// 存入缓存，设置过期时间为 10 分钟
+	utils.CacheSet(cacheKey, result, 10*time.Minute)
+
+processResults:
 
 	// 结果过滤
 	finalResults := result.Items

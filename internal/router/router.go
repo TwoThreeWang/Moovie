@@ -24,8 +24,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	r.GET("/", h.Home)                 // 首页
 	r.GET("/search", h.Search)         // 搜索页面
 	r.GET("/player", h.Player)         // M3U8 播放器
-	r.GET("/rankings", h.Rankings)     // 排行榜
-	r.GET("/trends", h.Trends)         // 热门
+	r.GET("/trends", h.Trends)         // 搜索趋势
 	r.GET("/feedback", h.FeedbackPage) // 反馈页
 	r.GET("/about", h.About)           // 关于页
 	r.GET("/changelog", h.Changelog)   // 更新记录页
@@ -72,18 +71,15 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	api := r.Group("/api")
 	api.Use(middleware.OptionalAuth(h.Config.AppSecret))
 	{
-		api.POST("/favorites/:id", h.AddFavorite)        // 添加收藏
-		api.DELETE("/favorites/:id", h.RemoveFavorite)   // 移除收藏
-		api.POST("/feedback", h.SubmitFeedback)          // 提交反馈
-		api.DELETE("/history/:id", h.RemoveHistory)      // 删除历史记录
-		api.POST("/history/sync", h.SyncHistory)         // 同步历史记录
-		api.GET("/movies/suggest", h.MovieSuggest)       // 电影建议
-		api.GET("/movies/check/:doubanId", h.CheckMovie) // 检查电影是否存在
-		api.GET("/proxy/image", h.ProxyImage)            // 图片代理
+		api.POST("/favorites/:id", h.AddFavorite)      // 添加收藏
+		api.DELETE("/favorites/:id", h.RemoveFavorite) // 移除收藏
+		api.POST("/feedback", h.SubmitFeedback)        // 提交反馈
+		api.DELETE("/history/:id", h.RemoveHistory)    // 删除历史记录
+		api.POST("/history/sync", h.SyncHistory)       // 同步历史记录
+		api.GET("/movies/suggest", h.MovieSuggest)     // 电影建议
+		api.GET("/proxy/image", h.ProxyImage)          // 图片代理
 
 		// 资源网视频搜索 API
-		api.GET("/vod/search", h.VodSearch) // 视频搜索
-		api.GET("/vod/detail", h.VodDetail) // 视频详情
 
 		// htmx 专属 API
 		api.GET("/htmx/search", h.SearchHTMX)              // 搜索结果片段
@@ -132,6 +128,15 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		admin.POST("/category", h.AdminCategoryCreate)       // 添加分类关键词
 		admin.DELETE("/category/:id", h.AdminCategoryDelete) // 删除分类关键词
 	}
+
+	// ==================== 404 处理 ====================
+	r.NoRoute(func(c *gin.Context) {
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title":    "页面未找到 - Moovie",
+			"SiteName": h.Config.SiteName,
+			"Path":     c.Request.URL.Path,
+		}))
+	})
 }
 
 // LoadTemplates 使用 multitemplate 加载模板，解决模板继承问题
@@ -212,7 +217,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 	// 注册所有页面模板
 	pages := []string{
 		"home", "search", "movie", "play", "player", "player_embed",
-		"discover", "rankings", "trends", "foryou", "feedback",
+		"discover", "trends", "foryou", "feedback",
 		"about", "changelog", "dmca", "privacy", "terms", "404",
 		"login", "register",
 		"dashboard", "favorites", "history", "settings",
