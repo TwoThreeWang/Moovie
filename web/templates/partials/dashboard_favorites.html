@@ -15,11 +15,7 @@
     </a>
     {{ end }}
 </div>
-{{ if gt .FavoriteCount 20 }}
-<div class="tab-more">
-    <a href="/dashboard/favorites" class="btn btn-secondary">查看全部收藏</a>
-</div>
-{{ end }}
+
 {{ else }}
 <div class="empty-state">
     <p>还没有收藏任何影片</p>

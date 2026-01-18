@@ -34,6 +34,13 @@ func (h *Handler) RemoveFavorite(c *gin.Context) {
 		utils.InternalServerError(c, "移除失败")
 		return
 	}
+
+	// 如果是 htmx 请求，返回空字符串（以便前端删除 DOM）
+	if c.GetHeader("HX-Request") == "true" {
+		c.Status(http.StatusOK)
+		return
+	}
+
 	utils.Success(c, nil)
 }
 
@@ -70,6 +77,13 @@ func (h *Handler) RemoveHistory(c *gin.Context) {
 		utils.InternalServerError(c, "删除失败")
 		return
 	}
+
+	// 如果是 htmx 请求，返回空字符串（以便前端删除 DOM）
+	if c.GetHeader("HX-Request") == "true" {
+		c.Status(http.StatusOK)
+		return
+	}
+
 	utils.Success(c, nil)
 }
 
@@ -311,13 +325,16 @@ func (h *Handler) DashboardFavoritesHTMX(c *gin.Context) {
 	}
 
 	// 使用 ListByUser
-	favorites, err := h.Repos.Favorite.ListByUser(userID, 100, 0)
+	favorites, err := h.Repos.Favorite.ListByUser(userID, 10000, 0)
 	if err != nil {
 		log.Printf("[DashboardFavoritesHTMX] 获取收藏失败: %v", err)
 	}
 
+	count, _ := h.Repos.Favorite.CountByUser(userID)
+
 	c.HTML(http.StatusOK, "partials/dashboard_favorites.html", gin.H{
-		"Favorites": favorites,
+		"Favorites":     favorites,
+		"FavoriteCount": count,
 	})
 }
 
@@ -330,12 +347,12 @@ func (h *Handler) DashboardHistoryHTMX(c *gin.Context) {
 	}
 
 	// 使用 ListByUser
-	histories, err := h.Repos.History.ListByUser(userID, 20, 0)
+	histories, err := h.Repos.History.ListByUser(userID, 10000, 0)
 	if err != nil {
 		log.Printf("[DashboardHistoryHTMX] 获取历史失败: %v", err)
 	}
 
 	c.HTML(http.StatusOK, "partials/dashboard_history.html", gin.H{
-		"Histories": histories,
+		"History": histories,
 	})
 }
