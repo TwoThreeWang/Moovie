@@ -52,6 +52,7 @@ func (r *MovieRepository) Upsert(movie *model.Movie) error {
 		"title", "original_title", "year", "poster", "rating",
 		"genres", "countries", "directors", "actors",
 		"summary", "duration", "imdb_id", "updated_at",
+		"reviews_json", "reviews_updated_at",
 	}
 
 	// 仅当 embedding 不为 nil 时才更新向量字段
@@ -162,4 +163,12 @@ func (r *MovieRepository) Count() (int64, error) {
 	var count int64
 	err := r.db.Model(&model.Movie{}).Count(&count).Error
 	return count, err
+}
+
+// UpdateReviews 更新电影评论数据
+func (r *MovieRepository) UpdateReviews(doubanID string, reviewsJSON string) error {
+	return r.db.Model(&model.Movie{}).Where("douban_id = ?", doubanID).Updates(map[string]interface{}{
+		"reviews_json":       reviewsJSON,
+		"reviews_updated_at": time.Now(),
+	}).Error
 }

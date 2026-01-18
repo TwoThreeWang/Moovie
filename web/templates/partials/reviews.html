@@ -16,7 +16,9 @@
     {{ end }}
 </div>
 {{ else }}
-<div class="reviews-empty">暂无短评</div>
+<div class="reviews-empty">
+    {{ if .Message }}{{ .Message }}{{ else }}暂无短评{{ end }}
+</div>
 {{ end }}
 
 <style>

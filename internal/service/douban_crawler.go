@@ -552,7 +552,14 @@ func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
 	// 缓存结果，缓存时间 24 小时
 	utils.CacheSet(cacheKey, reviews, 24*time.Hour)
 
-	log.Printf("[爬虫] 成功获取豆瓣短评 (豆瓣ID: %s), 共 %d 条", doubanID, len(reviews))
+	// 持久化到数据库
+	if reviewsJSON, err := json.Marshal(reviews); err == nil {
+		if err := c.movieRepo.UpdateReviews(doubanID, string(reviewsJSON)); err != nil {
+			log.Printf("[爬虫] 持久化短评失败 (豆瓣ID: %s): %v", doubanID, err)
+		}
+	}
+
+	log.Printf("[爬虫] 成功获取并在库中更新豆瓣短评 (豆瓣ID: %s), 共 %d 条", doubanID, len(reviews))
 	return reviews, nil
 }
 

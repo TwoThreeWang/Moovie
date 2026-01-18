@@ -24,6 +24,8 @@ type Movie struct {
 	IMDbID           string           `json:"imdb_id" db:"imdb_id" gorm:"column:imdb_id"`
 	EmbeddingContent string           `json:"embedding_content" db:"embedding_content"`
 	Embedding        *pgvector.Vector `json:"embedding" db:"embedding" gorm:"type:vector(768)"`
+	ReviewsJSON      string           `json:"reviews_json" db:"reviews_json"`
+	ReviewsUpdatedAt time.Time        `json:"reviews_updated_at" db:"reviews_updated_at"`
 	UpdatedAt        time.Time        `json:"updated_at" db:"updated_at" gorm:"index"`
 }
 

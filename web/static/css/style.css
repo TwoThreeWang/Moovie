@@ -1091,6 +1091,14 @@ img {
     margin-bottom: 2px;
 }
 
+.card-remarks {
+    font-size: 0.75rem;
+    color: var(--primary);
+    font-weight: 500;
+    margin: 0;
+    padding: 2px 0;
+}
+
 /* 元信息行 */
 .card-meta-row {
     display: flex;
