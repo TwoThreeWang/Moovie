@@ -31,6 +31,7 @@ func Load() *Config {
 
 	dbTZ := getEnv("DB_TIMEZONE", "Asia/Shanghai")
 
+	// PostgreSQL DSN 支持 TimeZone 参数
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&TimeZone=%s",
 		dbUser, dbPass, dbHost, dbPort, dbName, dbSSL, dbTZ)
 

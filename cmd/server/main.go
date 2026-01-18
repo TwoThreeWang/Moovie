@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // 确保在精简镜像中也能识别时区
 
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/sessions"
