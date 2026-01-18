@@ -79,11 +79,7 @@ func (r *SearchLogRepository) GetTrending(hours, limit int) ([]*model.TrendingKe
 	}
 
 	// 3. 设置缓存
-	// 24小时热搜缓存2小时，全量热搜缓存12小时
-	duration := 12 * time.Hour
-	if hours > 0 {
-		duration = 2 * time.Hour
-	}
+	duration := 30 * time.Minute
 	utils.CacheSet(cacheKey, keywords, duration)
 
 	return keywords, nil
