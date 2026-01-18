@@ -16,6 +16,7 @@ type Config struct {
 	Port        string
 	SiteName    string
 	SiteUrl     string
+	TimeZone    string
 }
 
 // Load 加载配置
@@ -49,6 +50,7 @@ func Load() *Config {
 		Port:        getEnv("PORT", "5007"),
 		SiteName:    getEnv("SITE_NAME", "Moovie"),
 		SiteUrl:     getEnv("SITE_URL", "http://localhost:5007"),
+		TimeZone:    dbTZ,
 	}
 }
 

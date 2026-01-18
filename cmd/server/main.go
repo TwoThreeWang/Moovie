@@ -38,6 +38,13 @@ func main() {
 	// 加载配置
 	cfg := config.Load()
 
+	// 设置全局时区
+	if loc, err := time.LoadLocation(cfg.TimeZone); err == nil {
+		time.Local = loc
+	} else {
+		log.Printf("加载时区 %s 失败，使用系统默认时区: %v", cfg.TimeZone, err)
+	}
+
 	// 初始化数据库
 	db, err := repository.InitDB(cfg.DatabaseURL)
 	if err != nil {
