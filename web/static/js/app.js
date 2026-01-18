@@ -282,10 +282,10 @@ function renderSuggestions(suggestions) {
 
         return `
             <a href="${searchUrl}" class="search-suggestion-item" data-index="${index}">
-                <img src="${item.img || '/static/img/placeholder.jpg'}"
+                <img src="${item.img || '/static/img/placeholder.svg'}"
                      alt="${item.title || ''}"
                      class="suggestion-poster"
-                     onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
+                     onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
                 <div class="suggestion-info">
                     <div class="suggestion-title">${item.title || ''}</div>
                     <div class="suggestion-meta">

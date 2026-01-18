@@ -17,7 +17,7 @@
     <div class="movie-card">
         <a href="/search?kw={{ .Title }}&doubanId={{ .ID }}">
             <div class="movie-poster">
-                <img src="{{ .Cover }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+                <img src="{{ .Cover }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                 {{ if .Rate }}
                 <span class="movie-rating">{{ .Rate }}</span>
                 {{ end }}

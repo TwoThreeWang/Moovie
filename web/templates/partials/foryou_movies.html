@@ -4,7 +4,7 @@
     {{ range .Movies }}
     <a href="/movie/{{ .DoubanID }}" class="foryou-card">
         <div class="foryou-poster">
-            <img src="/api/proxy/image?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'">
+            <img src="/api/proxy/image?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
             {{ if .Rating }}
             <span class="foryou-rating">{{ .Rating }}</span>
             {{ end }}

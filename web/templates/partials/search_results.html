@@ -9,7 +9,7 @@
     {{ range .Results }}
     <a href="/play/{{ .SourceKey }}/{{ .VodId }}{{ if .VodDoubanId }}?douban_id={{ .VodDoubanId }}{{ end }}" class="search-result-card">
         <div class="card-poster">
-            <img src="{{ .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
+            <img src="{{ .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
             {{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}
         </div>
         <div class="card-content">
