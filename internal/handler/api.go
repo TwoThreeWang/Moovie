@@ -87,21 +87,74 @@ func (h *Handler) RemoveHistory(c *gin.Context) {
 	utils.Success(c, nil)
 }
 
-// SyncHistory 同步历史记录
+// SyncHistoryReq 同步请求结构
+type SyncHistoryReq struct {
+	Records    []HistoryRecordDTO `json:"records"`
+	LastSyncAt int64              `json:"lastSyncAt"`
+}
+
+// HistoryRecordDTO 观影历史 DTO（用于处理前端毫秒时间戳）
+type HistoryRecordDTO struct {
+	DoubanID  string  `json:"douban_id"`
+	VodID     string  `json:"vod_id"`
+	Title     string  `json:"title"`
+	Poster    string  `json:"poster"`
+	Episode   string  `json:"episode"`
+	Progress  int     `json:"progress"`
+	LastTime  float64 `json:"last_time"`
+	Duration  float64 `json:"duration"`
+	Source    string  `json:"source"`
+	WatchedAt int64   `json:"watchedAt"` // 毫秒时间戳
+}
+
+// SyncHistory 同步观影历史（JSON API）
 func (h *Handler) SyncHistory(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	var history model.WatchHistory
-	if err := c.ShouldBindJSON(&history); err != nil {
-		utils.BadRequest(c, "参数错误")
+	if userID == 0 {
+		utils.Unauthorized(c, "未登录")
 		return
 	}
-	history.UserID = userID
-	history.WatchedAt = time.Now()
-	if err := h.Repos.History.Upsert(&history); err != nil {
-		utils.InternalServerError(c, "同步失败")
+
+	var req SyncHistoryReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "无效的请求数据")
 		return
 	}
-	utils.Success(c, nil)
+
+	// 1. 将客户端记录保存到服务端
+	for _, dto := range req.Records {
+		record := &model.WatchHistory{
+			UserID:    userID,
+			DoubanID:  dto.DoubanID,
+			VodID:     dto.VodID,
+			Title:     dto.Title,
+			Poster:    dto.Poster,
+			Episode:   dto.Episode,
+			Progress:  dto.Progress,
+			LastTime:  dto.LastTime,
+			Duration:  dto.Duration,
+			Source:    dto.Source,
+			WatchedAt: time.UnixMilli(dto.WatchedAt),
+		}
+		// 同步处理，确保观影记录成功保存
+		if err := h.Repos.History.Upsert(record); err != nil {
+			log.Printf("[SyncHistory] 保存记录失败: %v", err)
+		}
+	}
+
+	// 2. 获取服务端在 lastSyncAt 之后的所有更新返回给客户端
+	// 将 lastSyncAt (毫秒) 转换为 time.Time
+	lastSyncTime := time.UnixMilli(req.LastSyncAt)
+	serverRecords, err := h.Repos.History.GetAfter(userID, lastSyncTime)
+	if err != nil {
+		log.Printf("[SyncHistory] 获取服务端新记录失败: %v", err)
+	}
+
+	// 3. 返回同步成功的最新状态
+	utils.Success(c, gin.H{
+		"serverRecords": serverRecords,
+		"syncedAt":      time.Now().UnixMilli(),
+	})
 }
 
 // SearchHTMX 搜索结果片段
