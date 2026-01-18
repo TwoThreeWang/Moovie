@@ -495,7 +495,7 @@ func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
 	if len(debugBody) > 500 {
 		debugBody = debugBody[:500]
 	}
-	log.Printf("[爬虫] 豆瓣短评 RSS 响应 (豆瓣ID: %s): %s...", doubanID, debugBody)
+	// log.Printf("[爬虫] 豆瓣短评 RSS 响应 (豆瓣ID: %s): %s...", doubanID, debugBody)
 
 	// 解析 RSS 2.0 XML
 	var feed rssFeed
