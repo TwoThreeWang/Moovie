@@ -223,7 +223,7 @@ func (h *Handler) Movie(c *gin.Context) {
 		"Title":       movie.Title + " (" + movie.Year + ") - " + h.Config.SiteName,
 		"Description": desc,
 		"Keywords":    strings.Join(keywords, ","),
-		"Cover":       "/api/proxy/image?url=" + movie.Poster,
+		"Cover":       "https://image.baidu.com/search/down?url=" + movie.Poster,
 		"Canonical":   fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
 		"Movie":       movie,
 		"IsFavorited": isFavorited,

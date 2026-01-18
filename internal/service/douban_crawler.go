@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"regexp"
 	"strings"
@@ -73,6 +74,16 @@ func NewDoubanCrawler(movieRepo *repository.MovieRepository) *DoubanCrawler {
 	}
 }
 
+// generateBid 随机生成 11 位 bid (模拟豆瓣用户ID Cookie)
+func (c *DoubanCrawler) generateBid() string {
+	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	bid := make([]byte, 11)
+	for i := range bid {
+		bid[i] = chars[rand.Intn(len(chars))]
+	}
+	return string(bid)
+}
+
 // CrawlDoubanMovie 爬取豆瓣电影详情页
 func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
 	url := fmt.Sprintf("https://movie.douban.com/subject/%s/", doubanID)
@@ -87,7 +98,7 @@ func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	req.Header.Set("Referer", "https://movie.douban.com/")
-	req.Header.Set("Cookie", `ll="108288"; bid=KbVLyVSe9PI; _pk_id.100001.4cf6=8bbc2ff56b7eadbf.1768570153.; _pk_ses.100001.4cf6=1; ap_v=0,6.0; __yadk_uid=Q9rDtuhs4wWFa5rwTvB6WpPxXFFRnScS; __utma=30149280.1349976959.1768570154.1768570154.1768570154.1; __utmb=30149280.0.10.1768570154; __utmc=30149280; __utmz=30149280.1768570154.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); __utma=223695111.369068564.1768570154.1768570154.1768570154.1; __utmb=223695111.0.10.1768570154; __utmc=223695111; __utmz=223695111.1768570154.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _vwo_uuid_v2=D25CE55BF48CA21000B5BED858D7F40A3|a607d8885a8913b757f280679b32e9b1`)
+	req.Header.Set("Cookie", fmt.Sprintf(`ll="108288"; bid=%s; _pk_id.100001.4cf6=8bbc2ff56b7eadbf.1768570153.; _pk_ses.100001.4cf6=1; ap_v=0,6.0; __yadk_uid=Q9rDtuhs4wWFa5rwTvB6WpPxXFFRnScS; __utma=30149280.1349976959.1768570154.1768570154.1768570154.1; __utmb=30149280.0.10.1768570154; __utmc=30149280; __utmz=30149280.1768570154.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); __utma=223695111.369068564.1768570154.1768570154.1768570154.1; __utmb=223695111.0.10.1768570154; __utmc=223695111; __utmz=223695111.1768570154.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _vwo_uuid_v2=D25CE55BF48CA21000B5BED858D7F40A3|a607d8885a8913b757f280679b32e9b1`, c.generateBid()))
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -359,7 +370,7 @@ func (c *DoubanCrawler) SearchSuggest(keyword string) ([]MovieSuggestResponse, e
 	var results []MovieSuggestResponse
 	for _, item := range doubanResults {
 		// 使用本地图片代理，绕过防盗链
-		proxyImg := fmt.Sprintf("/api/proxy/image?url=%s", item.Img)
+		proxyImg := fmt.Sprintf("https://image.baidu.com/search/down?url=%s", item.Img)
 
 		results = append(results, MovieSuggestResponse{
 			ID:       item.ID,
@@ -406,17 +417,29 @@ func (c *DoubanCrawler) GetPopularSubjects(movieType string) ([]DoubanPopularSub
 	client := utils.NewHTTPClient()
 	var response DoubanPopularResponse
 
+	// 正常抓取逻辑
 	if err := client.GetJSON(url, &response); err != nil {
-		return nil, fmt.Errorf("豆瓣热门数据抓取失败: %w", err)
+		log.Printf("[爬虫] 豆瓣热门数据抓取失败: %v, 尝试读取备选缓存", err)
+		// 抓取失败，尝试从备选缓存读取
+		fallbackKey := fmt.Sprintf("fallback:%s", cacheKey)
+		if cached, found := utils.CacheGet(fallbackKey); found {
+			if results, ok := cached.([]DoubanPopularSubject); ok {
+				log.Printf("[爬虫] 成功降级使用备选缓存数据 (%s)", movieType)
+				return results, nil
+			}
+		}
+		return nil, fmt.Errorf("豆瓣热门数据抓取失败且无备选缓存: %w", err)
 	}
 
 	// 处理图片，使用代理绕过防盗链
 	for i := range response.Subjects {
-		response.Subjects[i].Cover = fmt.Sprintf("/api/proxy/image?url=%s", response.Subjects[i].Cover)
+		response.Subjects[i].Cover = fmt.Sprintf("https://image.baidu.com/search/down?url=%s", response.Subjects[i].Cover)
 	}
 
-	// 缓存结果，缓存时间1小时
-	utils.CacheSet(cacheKey, response.Subjects, 1*time.Hour)
+	// 缓存结果，缓存时间12小时
+	utils.CacheSet(cacheKey, response.Subjects, 12*time.Hour)
+	// 同时更新备选缓存（永不过期），用于抓取失败时降级
+	utils.CacheSet(fmt.Sprintf("fallback:%s", cacheKey), response.Subjects, 0)
 
 	return response.Subjects, nil
 }
@@ -472,7 +495,7 @@ func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
 	req.Header.Set("Accept", "application/xml,text/xml,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	req.Header.Set("Referer", "https://movie.douban.com/")
-	req.Header.Set("Cookie", `ll="108288"; bid=KbVLyVSe9PI`)
+	req.Header.Set("Cookie", fmt.Sprintf(`ll="108288"; bid=%s`, c.generateBid()))
 
 	resp, err := c.client.Do(req)
 	if err != nil {
