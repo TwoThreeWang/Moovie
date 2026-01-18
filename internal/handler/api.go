@@ -18,44 +18,78 @@ import (
 // AddFavorite 添加收藏
 func (h *Handler) AddFavorite(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	movieID, _ := strconv.Atoi(c.Param("id"))
-	if err := h.Repos.Favorite.Add(userID, movieID); err != nil {
-		utils.InternalServerError(c, "收藏失败")
+	if userID == 0 {
+		c.String(http.StatusUnauthorized, `<button class="btn btn-primary" disabled>请先登录</button>`)
 		return
 	}
-	utils.Success(c, nil)
+
+	movieID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.String(http.StatusBadRequest, "无效的电影 ID")
+		return
+	}
+
+	if err := h.Repos.Favorite.Add(userID, movieID); err != nil {
+		c.String(http.StatusInternalServerError, "收藏失败")
+		return
+	}
+
+	// 返回已收藏状态的按钮
+	c.HTML(http.StatusOK, "partials/favorite_btn.html", gin.H{
+		"MovieID":     movieID,
+		"IsFavorited": true,
+	})
 }
 
 // RemoveFavorite 移除收藏
 func (h *Handler) RemoveFavorite(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	movieID, _ := strconv.Atoi(c.Param("id"))
-	if err := h.Repos.Favorite.Remove(userID, movieID); err != nil {
-		utils.InternalServerError(c, "移除失败")
+	if userID == 0 {
+		c.String(http.StatusUnauthorized, `<button class="btn btn-primary" disabled>请先登录</button>`)
 		return
 	}
 
-	// 如果是 htmx 请求，返回空字符串（以便前端删除 DOM）
-	if c.GetHeader("HX-Request") == "true" {
+	movieID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.String(http.StatusBadRequest, "无效的电影 ID")
+		return
+	}
+
+	if err := h.Repos.Favorite.Remove(userID, movieID); err != nil {
+		c.String(http.StatusInternalServerError, "取消收藏失败")
+		return
+	}
+
+	// 如果带有 hx-target 参数，说明是仪表盘删除操作，返回空（删除 DOM）
+	if c.GetHeader("HX-Target") != "" {
 		c.Status(http.StatusOK)
 		return
 	}
 
-	utils.Success(c, nil)
+	// 返回未收藏状态的按钮
+	c.HTML(http.StatusOK, "partials/favorite_btn.html", gin.H{
+		"MovieID":     movieID,
+		"IsFavorited": false,
+	})
 }
 
 // SubmitFeedback 提交反馈
 func (h *Handler) SubmitFeedback(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	content := c.PostForm("content")
+	feedbackType := c.PostForm("type")
+	movieURL := c.PostForm("movie_url")
+
 	if content == "" {
-		utils.BadRequest(c, "反馈内容不能为空")
+		c.String(http.StatusBadRequest, `<div class="alert alert-error">请填写反馈内容</div>`)
 		return
 	}
 
 	feedback := &model.Feedback{
-		Content: content,
-		Status:  "pending",
+		Content:  content,
+		Type:     feedbackType,
+		MovieURL: movieURL,
+		Status:   "pending",
 	}
 	if userID > 0 {
 		tmpID := userID
@@ -63,10 +97,11 @@ func (h *Handler) SubmitFeedback(c *gin.Context) {
 	}
 
 	if err := h.Repos.Feedback.Create(feedback); err != nil {
-		utils.InternalServerError(c, "提交失败")
+		c.String(http.StatusInternalServerError, `<div class="alert alert-error">提交失败，请重试</div>`)
 		return
 	}
-	utils.Success(c, nil)
+
+	c.String(http.StatusOK, `<div class="alert alert-success">感谢您的反馈！我们会尽快处理。</div>`)
 }
 
 // RemoveHistory 删除历史记录
