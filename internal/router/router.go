@@ -212,6 +212,13 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 			r := []rune(s)
 			return string(r[0:1])
 		},
+		"seq": func(start, end int) []int {
+			res := make([]int, 0, end-start+1)
+			for i := start; i <= end; i++ {
+				res = append(res, i)
+			}
+			return res
+		},
 	}
 
 	// 注册所有页面模板

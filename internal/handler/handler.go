@@ -345,16 +345,25 @@ func (h *Handler) Player(c *gin.Context) {
 func (h *Handler) Discover(c *gin.Context) {
 	movieType := c.DefaultQuery("type", "movie")
 
-	subjects, err := h.DoubanCrawler.GetPopularSubjects(movieType)
-	if err != nil {
-		log.Printf("获取热门电影失败: %v", err)
+	// 检查是否是 HTMX 请求
+	isHTMX := c.GetHeader("HX-Request") != ""
+
+	if isHTMX {
+		subjects, err := h.DoubanCrawler.GetPopularSubjects(movieType)
+		if err != nil {
+			log.Printf("获取热门电影失败: %v", err)
+		}
+		c.HTML(http.StatusOK, "partials/discover_grid.html", gin.H{
+			"Subjects":    subjects,
+			"CurrentType": movieType,
+		})
+		return
 	}
 
 	c.HTML(http.StatusOK, "discover.html", h.RenderData(c, gin.H{
 		"Title":       "发现 - " + h.Config.SiteName,
 		"Description": "浏览最新、最热的电影和电视剧，发现你的下一部心头好。",
 		"Keywords":    "热门电影,最新电视剧,高分佳作,Moovie发现",
-		"Subjects":    subjects,
 		"CurrentType": movieType,
 	}))
 }

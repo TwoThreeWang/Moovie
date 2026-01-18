@@ -5,42 +5,85 @@
 
 <!-- 热门分类导航 -->
 <div class="tab-nav" style="margin-bottom: 24px;">
-    <a href="/discover?type=movie" class="tab-btn {{ if eq .CurrentType "movie" }}active{{ end }}">热门电影</a>
-    <a href="/discover?type=tv" class="tab-btn {{ if eq .CurrentType "tv" }}active{{ end }}">热门电视剧</a>
-    <a href="/discover?type=show" class="tab-btn {{ if eq .CurrentType "show" }}active{{ end }}">热门综艺</a>
-    <a href="/discover?type=cartoon" class="tab-btn {{ if eq .CurrentType "cartoon" }}active{{ end }}">日本动画</a>
+    <a href="javascript:void(0)"
+       hx-get="/discover?type=movie"
+       hx-target="#discover-content"
+       hx-push-url="true"
+       hx-indicator="#loading-indicator"
+       class="tab-btn {{ if eq .CurrentType "movie" }}active{{ end }}"
+       onclick="updateActiveTab(this)">热门电影</a>
+    <a href="javascript:void(0)"
+       hx-get="/discover?type=tv"
+       hx-target="#discover-content"
+       hx-push-url="true"
+       hx-indicator="#loading-indicator"
+       class="tab-btn {{ if eq .CurrentType "tv" }}active{{ end }}"
+       onclick="updateActiveTab(this)">热门电视剧</a>
+    <a href="javascript:void(0)"
+       hx-get="/discover?type=show"
+       hx-target="#discover-content"
+       hx-push-url="true"
+       hx-indicator="#loading-indicator"
+       class="tab-btn {{ if eq .CurrentType "show" }}active{{ end }}"
+       onclick="updateActiveTab(this)">热门综艺</a>
+    <a href="javascript:void(0)"
+       hx-get="/discover?type=cartoon"
+       hx-target="#discover-content"
+       hx-push-url="true"
+       hx-indicator="#loading-indicator"
+       class="tab-btn {{ if eq .CurrentType "cartoon" }}active{{ end }}"
+       onclick="updateActiveTab(this)">日本动画</a>
 </div>
 
-{{ if .Subjects }}
-<div class="movie-grid discover-grid">
-    {{ range .Subjects }}
-    <div class="movie-card">
-        <a href="/search?kw={{ .Title }}&doubanId={{ .ID }}">
-            <div class="movie-poster">
-                <img src="{{ .Cover }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
-                {{ if .Rate }}
-                <span class="movie-rating">{{ .Rate }}</span>
-                {{ end }}
-                {{ if .EpisodesInfo }}
-                <span class="card-badge" style="position: absolute; bottom: 8px; left: 8px; font-size: 0.7rem; background: rgba(0,0,0,0.6); color: white; padding: 2px 6px; border-radius: 4px;">{{ .EpisodesInfo }}</span>
-                {{ end }}
+<div id="discover-content-wrapper" style="position: relative; min-height: 400px;">
+    <!-- Loading 动画 (Skeleton) -->
+    <div id="loading-indicator" class="htmx-indicator" style="position: absolute; top: 0; left: 0; width: 100%; z-index: 10;">
+        <div class="movie-grid discover-grid">
+            {{ range (seq 1 12) }}
+            <div class="movie-card skeleton-card">
+                <div class="movie-poster skeleton" style="aspect-ratio: 2/3; background: #e0e0e0; border-radius: 8px;"></div>
+                <div class="movie-info">
+                    <div class="skeleton" style="height: 1rem; width: 80%; background: #e0e0e0; margin-top: 8px; border-radius: 4px;"></div>
+                </div>
             </div>
-            <div class="movie-info">
-                <h3 class="movie-title" title="{{ .Title }}">{{ .Title }}</h3>
-                {{ if .IsNew }}
-                <span style="display: inline-block; background: var(--primary); color: white; font-size: 0.65rem; padding: 0 4px; border-radius: 2px; margin-top: 4px;">NEW</span>
-                {{ end }}
-            </div>
-        </a>
+            {{ end }}
+        </div>
     </div>
-    {{ end }}
-</div>
-{{ else }}
-<div class="empty-state">
-    <p>😕 暂时没有发现热门内容</p>
-    <p>请稍后再试或查看其他分类</p>
-</div>
-{{ end }}
 
+    <!-- 内容区域 -->
+    <div id="discover-content"
+         hx-get="/discover?type={{ .CurrentType }}"
+         hx-trigger="load"
+         hx-indicator="#loading-indicator">
+        <!-- 初始加载通过 htmx 触发 -->
+    </div>
+</div>
+
+<style>
+    .htmx-indicator {
+        display: none;
+    }
+    .htmx-request .htmx-indicator {
+        display: block;
+    }
+    .htmx-request#discover-content {
+        opacity: 0.5;
+    }
+    .skeleton {
+        animation: skeleton-loading 1.5s infinite linear;
+    }
+    @keyframes skeleton-loading {
+        0% { background-color: rgba(200, 200, 200, 0.1); }
+        50% { background-color: rgba(200, 200, 200, 0.3); }
+        100% { background-color: rgba(200, 200, 200, 0.1); }
+    }
+</style>
+
+<script>
+    function updateActiveTab(el) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        el.classList.add('active');
+    }
+</script>
 
 {{ end }}
