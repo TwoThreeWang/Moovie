@@ -59,8 +59,6 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	dashboard.Use(middleware.RequireAuth(h.Config.AppSecret))
 	{
 		dashboard.GET("", h.Dashboard)                         // 用户中心首页
-		dashboard.GET("/favorites", h.Favorites)               // 收藏
-		dashboard.GET("/history", h.History)                   // 历史记录
 		dashboard.GET("/settings", h.Settings)                 // 设置
 		dashboard.POST("/settings/email", h.UpdateEmail)       // 更新邮箱
 		dashboard.POST("/settings/username", h.UpdateUsername) // 更新用户名
@@ -82,11 +80,13 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		// 资源网视频搜索 API
 
 		// htmx 专属 API
-		api.GET("/htmx/search", h.SearchHTMX)              // 搜索结果片段
-		api.GET("/htmx/similar", h.SimilarMoviesHTMX)      // 相似电影推荐
-		api.GET("/htmx/foryou", h.ForYouHTMX)              // 为你推荐
-		api.GET("/htmx/reviews", h.ReviewsHTMX)            // 豆瓣短评
-		api.GET("/htmx/feedback-list", h.FeedbackListHTMX) // 反馈列表
+		api.GET("/htmx/search", h.SearchHTMX)                          // 搜索结果片段
+		api.GET("/htmx/similar", h.SimilarMoviesHTMX)                  // 相似电影推荐
+		api.GET("/htmx/foryou", h.ForYouHTMX)                          // 为你推荐
+		api.GET("/htmx/reviews", h.ReviewsHTMX)                        // 豆瓣短评
+		api.GET("/htmx/feedback-list", h.FeedbackListHTMX)             // 反馈列表
+		api.GET("/htmx/dashboard/favorites", h.DashboardFavoritesHTMX) // 仪表盘收藏
+		api.GET("/htmx/dashboard/history", h.DashboardHistoryHTMX)     // 仪表盘历史
 	}
 
 	// ==================== 管理后台 ====================
@@ -220,7 +220,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		"discover", "trends", "foryou", "feedback",
 		"about", "changelog", "dmca", "privacy", "terms", "404",
 		"login", "register",
-		"dashboard", "favorites", "history", "settings",
+		"dashboard", "settings",
 		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright", "admin_category",
 	}
 

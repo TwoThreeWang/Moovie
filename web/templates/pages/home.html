@@ -53,7 +53,115 @@
     </div>
     <div id="continue-watching" class="movie-grid">
         <!-- 由 JavaScript 从 localStorage 填充 -->
-        <p class="empty-state">暂无观看记录</p>
+        <div class="loading-state" style="text-align: center; padding: 2rem; width: 100%;">
+            <span class="loading-spinner"></span> 正在渲染...
+        </div>
     </div>
 </section>
+
+<script>
+(function() {
+    /**
+     * 获取播放状态记录
+     */
+    function getPlayState() {
+        try {
+            return JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+        } catch {
+            return {};
+        }
+    }
+
+    /**
+     * 删除单个观看记录
+     */
+    async function removeWatchHistory(itemKey) {
+        try {
+            const data = getPlayState();
+            const item = data[itemKey];
+            if (item) {
+                // 如果有服务器记录 ID，且用户已登录，尝试同步删除服务器上的记录
+                if (item.id && typeof isLoggedIn === 'function' && isLoggedIn()) {
+                    fetch(`/api/history/${item.id}`, { method: 'DELETE' })
+                        .catch(err => console.error('同步删除服务器记录失败:', err));
+                }
+
+                delete data[itemKey];
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
+                renderContinueWatching();
+            }
+        } catch (error) {
+            console.error('删除观看记录失败:', error);
+        }
+    }
+
+    /**
+     * 渲染继续观看列表
+     */
+    function renderContinueWatching() {
+        const container = document.getElementById('continue-watching');
+        if (!container) return;
+
+        const playState = getPlayState();
+        const history = Object.values(playState)
+            .filter(item => item.title)
+            .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+        if (history.length === 0) {
+            container.innerHTML = '<p class="empty-state">暂无观看记录</p>';
+            return;
+        }
+
+        const getItemKey = (item) => `${item.source_key || ''}${item.vod_id || ''}`;
+
+        container.innerHTML = history.map(item => {
+            const progress = item.duration > 0 ? Math.min((item.lastTime / item.duration) * 100, 100) : 0;
+            let playUrl = '';
+            if (item.source_key && item.vod_id) {
+                const params = new URLSearchParams();
+                if (item.episode) params.set('ep', item.episode);
+                if (item.douban_id) params.set('douban_id', item.douban_id);
+                const qs = params.toString();
+                playUrl = `/play/${item.source_key}/${item.vod_id}${qs ? '?' + qs : ''}`;
+            } else {
+                playUrl = `/search?kw=${encodeURIComponent(item.title || '')}`;
+            }
+
+            const itemKey = getItemKey(item);
+
+            return `
+            <div class="movie-card-wrapper">
+                <a href="${playUrl}" class="movie-card" title="继续播放 ${item.title || ''}">
+                    <div class="movie-poster">
+                        <img src="${item.img ? `${item.img}` : '/static/img/placeholder.jpg'}" alt="${item.title || ''}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${progress.toFixed(1)}%"></div>
+                        </div>
+                    </div>
+                    <div class="movie-info">
+                        <h3 class="movie-title">${item.title || '未知'}</h3>
+                        <p class="movie-year">${item.source_key ? `[${item.source_key}] ` : ''}${item.episode || '继续观看'}</p>
+                    </div>
+                </a>
+                <button class="watch-delete-btn" onclick="event.preventDefault(); event.stopPropagation(); window._removeWatchHistory('${itemKey}')" title="删除此记录">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            `;
+        }).join('');
+    }
+
+    // 暴露删除方法给内联 onclick 使用
+    window._removeWatchHistory = removeWatchHistory;
+
+    // 初始渲染
+    document.addEventListener('DOMContentLoaded', renderContinueWatching);
+
+    // 监听全局同步完成事件，自动刷新列表
+    document.addEventListener('moovie:history-updated', renderContinueWatching);
+})();
+</script>
 {{ end }}

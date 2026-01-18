@@ -474,3 +474,27 @@ func (h *Handler) FeedbackListHTMX(c *gin.Context) {
 		"IsFirstPage": page == 1,
 	})
 }
+
+// DashboardFavoritesHTMX 仪表盘收藏列表（htmx 片段）
+func (h *Handler) DashboardFavoritesHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	favorites, _ := h.Repos.Favorite.ListByUser(userID, 50, 0)
+	favoriteCount, _ := h.Repos.Favorite.CountByUser(userID)
+
+	c.HTML(http.StatusOK, "partials/dashboard_favorites.html", gin.H{
+		"Favorites":     favorites,
+		"FavoriteCount": favoriteCount,
+	})
+}
+
+// DashboardHistoryHTMX 仪表盘观影历史（htmx 片段）
+func (h *Handler) DashboardHistoryHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	histories, _ := h.Repos.History.ListByUser(userID, 50, 0)
+	historyCount, _ := h.Repos.History.CountByUser(userID)
+
+	c.HTML(http.StatusOK, "partials/dashboard_history.html", gin.H{
+		"History":      histories,
+		"HistoryCount": historyCount,
+	})
+}

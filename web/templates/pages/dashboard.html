@@ -42,130 +42,45 @@
 
     <!-- Tab 切换 -->
     <div class="tab-nav">
-        <button class="tab-btn active" data-tab="favorites">
+        <button class="tab-btn active"
+                hx-get="/api/htmx/dashboard/favorites"
+                hx-target="#tab-content"
+                hx-trigger="click, load"
+                data-tab="favorites">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
             我的收藏
         </button>
-        <button class="tab-btn" data-tab="history">
+        <button class="tab-btn"
+                hx-get="/api/htmx/dashboard/history"
+                hx-target="#tab-content"
+                hx-trigger="click"
+                data-tab="history">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             观影历史
         </button>
     </div>
 
     <!-- Tab 内容区域 -->
-    <div class="tab-content">
-        <!-- 收藏 Tab -->
-        <div class="tab-pane active" id="tab-favorites">
-            {{ if .Favorites }}
-            <div class="movie-grid">
-                {{ range .Favorites }}
-                <a href="/movie/{{ .Movie.DoubanID }}?title={{ .Movie.Title }}" class="movie-card">
-                    <div class="movie-poster">
-                        <img src="/api/proxy/image?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy" referrerpolicy="no-referrer">
-                        {{ if .Movie.Rating }}
-                        <span class="movie-rating">{{ .Movie.Rating }}</span>
-                        {{ end }}
-                    </div>
-                    <div class="movie-info">
-                        <h3 class="movie-title">{{ .Movie.Title }}</h3>
-                        <p class="movie-year">{{ .Movie.Year }}</p>
-                    </div>
-                </a>
-                {{ end }}
-            </div>
-            {{ if gt .FavoriteCount 20 }}
-            <div class="tab-more">
-                <a href="/dashboard/favorites" class="btn btn-secondary">查看全部收藏</a>
-            </div>
-            {{ end }}
-            {{ else }}
-            <div class="empty-state">
-                <p>还没有收藏任何影片</p>
-                <a href="/" class="btn btn-primary">去发现好片</a>
-            </div>
-            {{ end }}
-        </div>
-
-        <!-- 历史 Tab -->
-        <div class="tab-pane" id="tab-history">
-            <div class="tab-pane-header" style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
-                <button class="btn btn-secondary btn-sm sync-btn" onclick="manualSync(this)" title="立即同步云端历史">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                    立即同步
-                </button>
-            </div>
-            {{ if .History }}
-            <div class="movie-grid">
-                {{ range .History }}
-                <div class="movie-card-wrapper history-card-wrapper" id="history-{{ .ID }}">
-                    {{ $playUrl := "" }}
-                    {{ if and .Source .VodID }}
-                        {{ if .DoubanID }}
-                            {{ $playUrl = printf "/play/%s/%s?ep=%s&douban_id=%s" .Source .VodID .Episode .DoubanID }}
-                        {{ else }}
-                            {{ $playUrl = printf "/play/%s/%s?ep=%s" .Source .VodID .Episode }}
-                        {{ end }}
-                    {{ else }}
-                        {{ $playUrl = printf "/search?kw=%s" .Title }}
-                    {{ end }}
-                    <a href="{{ $playUrl }}" class="movie-card" title="点击续播 {{ .Title }}">
-                        <div class="movie-poster">
-                            <img src="{{ if .Poster }}{{ .Poster }}{{ else }}/static/img/placeholder.jpg{{ end }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer">
-                        </div>
-                        <div class="movie-info">
-                            <h3 class="movie-title">{{ .Title }}</h3>
-                            <p class="movie-year">{{ if .Source }}[{{ .Source }}] {{ end }}{{ .Episode }}</p>
-                        </div>
-                    </a>
-                    <button class="watch-delete-btn"
-                            hx-delete="/api/history/{{ .ID }}"
-                            hx-target="#history-{{ .ID }}"
-                            hx-swap="outerHTML"
-                            title="删除此记录">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
-                </div>
-                {{ end }}
-            </div>
-            {{ if gt .HistoryCount 20 }}
-            <div class="tab-more">
-                <a href="/dashboard/history" class="btn btn-secondary">查看全部历史</a>
-            </div>
-            {{ end }}
-            {{ else }}
-            <div class="empty-state">
-                <p>还没有观影记录</p>
-                <a href="/" class="btn btn-primary">去看片</a>
-            </div>
-            {{ end }}
+    <div class="tab-content" id="tab-content">
+        <!-- 由 HTMX 动态加载 -->
+        <div class="loading-state" style="text-align: center; padding: 2rem;">
+            <span class="loading-spinner"></span> 正在加载...
         </div>
     </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Tab 切换逻辑
+    // Tab 样式切换（不处理内容加载，加载由 HTMX 负责）
     const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabPanes = document.querySelectorAll('.tab-pane');
-
     tabBtns.forEach(btn => {
         btn.addEventListener('click', function() {
-            const tabId = this.dataset.tab;
-
-            // 移除所有 active 类
             tabBtns.forEach(b => b.classList.remove('active'));
-            tabPanes.forEach(p => p.classList.remove('active'));
-
-            // 添加 active 类
             this.classList.add('active');
-            document.getElementById('tab-' + tabId).classList.add('active');
         });
     });
 
-    // 统计卡片点击跳转到对应 Tab
+    // 处理统计卡片点击跳转并触发加载
     const statItems = document.querySelectorAll('.stat-item');
     statItems.forEach(item => {
         item.addEventListener('click', function() {

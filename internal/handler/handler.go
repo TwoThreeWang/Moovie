@@ -751,39 +751,11 @@ func (h *Handler) Dashboard(c *gin.Context) {
 	favoriteCount, _ := h.Repos.Favorite.CountByUser(userID)
 	historyCount, _ := h.Repos.History.CountByUser(userID)
 
-	// 获取收藏和历史列表（用于 Tab 默认显示）
-	favorites, _ := h.Repos.Favorite.ListByUser(userID, 20, 0)
-	histories, _ := h.Repos.History.ListByUser(userID, 20, 0)
-
 	c.HTML(http.StatusOK, "dashboard.html", h.RenderData(c, gin.H{
 		"Title":         "用户中心 - " + h.Config.SiteName,
 		"User":          user,
 		"FavoriteCount": favoriteCount,
 		"HistoryCount":  historyCount,
-		"Favorites":     favorites,
-		"History":       histories,
-	}))
-}
-
-// Favorites 收藏夹
-func (h *Handler) Favorites(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	favorites, _ := h.Repos.Favorite.ListByUser(userID, 50, 0)
-
-	c.HTML(http.StatusOK, "favorites.html", h.RenderData(c, gin.H{
-		"Title":     "我的收藏 - " + h.Config.SiteName,
-		"Favorites": favorites,
-	}))
-}
-
-// History 观影历史
-func (h *Handler) History(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	histories, _ := h.Repos.History.ListByUser(userID, 50, 0)
-
-	c.HTML(http.StatusOK, "history.html", h.RenderData(c, gin.H{
-		"Title":   "观影历史 - " + h.Config.SiteName,
-		"History": histories,
 	}))
 }
 

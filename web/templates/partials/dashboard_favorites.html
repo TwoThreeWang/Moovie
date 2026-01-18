@@ -1,7 +1,3 @@
-
-{{ define "content" }}
-<h1 class="page-title">我的收藏</h1>
-
 {{ if .Favorites }}
 <div class="movie-grid">
     {{ range .Favorites }}
@@ -19,10 +15,14 @@
     </a>
     {{ end }}
 </div>
+{{ if gt .FavoriteCount 20 }}
+<div class="tab-more">
+    <a href="/dashboard/favorites" class="btn btn-secondary">查看全部收藏</a>
+</div>
+{{ end }}
 {{ else }}
 <div class="empty-state">
     <p>还没有收藏任何影片</p>
     <a href="/" class="btn btn-primary">去发现好片</a>
 </div>
-{{ end }}
 {{ end }}

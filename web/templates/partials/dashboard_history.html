@@ -1,0 +1,105 @@
+<div class="tab-pane-header" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 1rem; gap: 12px;">
+    <span id="last-sync-time" class="text-muted" style="font-size: 0.85rem;"></span>
+    <button class="btn btn-secondary btn-sm sync-btn" onclick="manualSync(this)" title="立即同步云端历史">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        立即同步
+    </button>
+</div>
+<script>
+    function updateSyncTimeDisplay() {
+        if (typeof SYNC_KEY === 'undefined') return;
+        const lastSync = parseInt(localStorage.getItem(SYNC_KEY) || '0');
+        if (lastSync > 0) {
+            const date = new Date(lastSync);
+            const el = document.getElementById('last-sync-time');
+            if (el) el.textContent = '上次同步: ' + date.toLocaleString();
+        }
+    }
+
+    // 初始化显示
+    updateSyncTimeDisplay();
+
+    async function manualSync(btn) {
+        if (typeof isLoggedIn !== 'function' || !isLoggedIn()) {
+            alert('请先登录后进行同步');
+            return;
+        }
+
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading-spinner"></span> 同步中...';
+
+        const success = await doSync();
+
+        if (success) {
+            btn.innerHTML = '✅ 同步成功';
+            // 成功后立即更新时间显示
+            updateSyncTimeDisplay();
+
+            setTimeout(() => {
+                const activeBtn = document.querySelector('.tab-btn.active');
+                if (activeBtn) {
+                    // 触发当前 Tab 按钮的 click 事件来刷新内容
+                    htmx.trigger(activeBtn, 'click');
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                } else {
+                    window.location.reload();
+                }
+            }, 1000);
+        } else {
+            btn.innerHTML = '❌ 同步失败';
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }, 2000);
+        }
+    }
+</script>
+{{ if .History }}
+<div class="movie-grid">
+    {{ range .History }}
+    <div class="movie-card-wrapper history-card-wrapper" id="history-{{ .ID }}">
+        {{ $playUrl := "" }}
+        {{ if and .Source .VodID }}
+            {{ if .DoubanID }}
+                {{ $playUrl = printf "/play/%s/%s?ep=%s&douban_id=%s" .Source .VodID .Episode .DoubanID }}
+            {{ else }}
+                {{ $playUrl = printf "/play/%s/%s?ep=%s" .Source .VodID .Episode }}
+            {{ end }}
+        {{ else }}
+            {{ $playUrl = printf "/search?kw=%s" .Title }}
+        {{ end }}
+        <a href="{{ $playUrl }}" class="movie-card" title="点击续播 {{ .Title }}">
+            <div class="movie-poster">
+                <img src="{{ if .Poster }}{{ .Poster }}{{ else }}/static/img/placeholder.jpg{{ end }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer">
+            </div>
+            <div class="movie-info">
+                <h3 class="movie-title">{{ .Title }}</h3>
+                <p class="movie-year">{{ if .Source }}[{{ .Source }}] {{ end }}{{ .Episode }}</p>
+            </div>
+        </a>
+        <button class="watch-delete-btn"
+                hx-delete="/api/history/{{ .ID }}"
+                hx-target="#history-{{ .ID }}"
+                hx-swap="outerHTML"
+                title="删除此记录">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
+    </div>
+    {{ end }}
+</div>
+{{ if gt .HistoryCount 20 }}
+<div class="tab-more">
+    <a href="/dashboard/history" class="btn btn-secondary">查看全部历史</a>
+</div>
+{{ end }}
+{{ else }}
+<div class="empty-state">
+    <p>还没有观影记录</p>
+    <a href="/" class="btn btn-primary">去看片</a>
+</div>
+{{ end }}

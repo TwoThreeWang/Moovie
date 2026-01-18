@@ -146,37 +146,6 @@ async function doSync() {
     return false;
 }
 
-/**
- * 手动触发同步接口（供按钮调用）
- */
-async function manualSync(btn) {
-    if (!isLoggedIn()) {
-        alert('请先登录后进行同步');
-        return;
-    }
-
-    const originalHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="loading-spinner"></span> 同步中...';
-
-    const success = await doSync();
-
-    if (success) {
-        btn.innerHTML = '✅ 同步成功';
-        // 如果在历史页面，尝试刷新页面内容（如果使用了 HTMX）或提示用户刷新
-        if (window.location.pathname.includes('/history') || window.location.pathname.includes('/dashboard')) {
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-        }
-    } else {
-        btn.innerHTML = '❌ 同步失败';
-        setTimeout(() => {
-            btn.disabled = false;
-            btn.innerHTML = originalHtml;
-        }, 2000);
-    }
-}
 
 /**
  * 合并服务器记录到本地
@@ -234,111 +203,8 @@ function mergeServerRecords(serverRecords) {
     localHistory.sort((a, b) => (b.watchedAt || 0) - (a.watchedAt || 0));
     saveWatchHistory(localHistory);
 
-    // 同步完成后，如果当前在首页，自动重新渲染继续观看列表
-    if (document.getElementById('continue-watching')) {
-        renderContinueWatching();
-    }
-}
-
-// ==================== 首页继续观看 ====================
-
-/**
- * 获取播放状态记录（来自 player.js 的 Storage）
- */
-function getPlayState() {
-    try {
-        return JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
-    } catch {
-        return {};
-    }
-}
-
-/**
- * 删除单个观看记录
- */
-// 删除单个观看记录
-function removeWatchHistory(itemKey) {
-    try {
-        const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
-        const item = data[itemKey];
-        if (item) {
-            // 如果有服务器记录 ID，且用户已登录，尝试同步删除服务器上的记录
-            if (item.id && isLoggedIn()) {
-                fetch(`/api/history/${item.id}`, { method: 'DELETE' })
-                    .catch(err => console.error('同步删除服务器记录失败:', err));
-            }
-
-            delete data[itemKey];
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(data));
-            renderContinueWatching();
-        }
-    } catch (error) {
-        console.error('删除观看记录失败:', error);
-    }
-}
-
-/**
- * 渲染继续观看列表
- */
-function renderContinueWatching() {
-    const container = document.getElementById('continue-watching');
-    if (!container) return;
-
-    const playState = getPlayState();
-    // 转换为数组并按更新时间排序
-    const history = Object.values(playState)
-        .filter(item => item.title)
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-        .slice(0, 6);
-
-    if (history.length === 0) {
-        container.innerHTML = '<p class="empty-state">暂无观看记录</p>';
-        return;
-    }
-
-    // 用于删除按钮的唯一标识，与 player.js Storage.upsert 中的 id 字段格式一致
-    const getItemKey = (item) => `${item.source_key || ''}${item.vod_id || ''}`;
-
-    container.innerHTML = history.map(item => {
-        // 计算播放进度百分比
-        const progress = item.duration > 0 ? Math.min((item.lastTime / item.duration) * 100, 100) : 0;
-        // 构建播放链接
-        let playUrl = '';
-        if (item.source_key && item.vod_id) {
-            const params = new URLSearchParams();
-            if (item.episode) params.set('ep', item.episode);
-            if (item.douban_id) params.set('douban_id', item.douban_id);
-            const qs = params.toString();
-            playUrl = `/play/${item.source_key}/${item.vod_id}${qs ? '?' + qs : ''}`;
-        } else {
-            playUrl = `/search?kw=${encodeURIComponent(item.title || '')}`;
-        }
-
-        const itemKey = getItemKey(item);
-
-        return `
-        <div class="movie-card-wrapper">
-            <a href="${playUrl}" class="movie-card" title="继续播放 ${item.title || ''}">
-                <div class="movie-poster">
-                    <img src="${item.img ? `${item.img}` : '/static/img/placeholder.jpg'}" alt="${item.title || ''}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.jpg'" referrerpolicy="no-referrer">
-                    <div class="progress-bar-container">
-                        <div class="progress-bar" style="width: ${progress.toFixed(1)}%"></div>
-                    </div>
-                </div>
-                <div class="movie-info">
-                    <h3 class="movie-title">${item.title || '未知'}</h3>
-                    <p class="movie-year">${item.source_key ? `[${item.source_key}] ` : ''}${item.episode || '继续观看'}</p>
-                </div>
-            </a>
-            <button class="watch-delete-btn" onclick="event.preventDefault(); event.stopPropagation(); removeWatchHistory('${itemKey}')" title="删除此记录">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-            </button>
-        </div>
-    `;
-    }).join('');
+    // 同步完成后，触发一个自定义事件，方便页面感知更新（如首页刷新列表）
+    document.dispatchEvent(new CustomEvent('moovie:history-updated'));
 }
 
 // ==================== 搜索建议 ====================
