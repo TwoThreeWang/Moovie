@@ -1096,7 +1096,7 @@ img {
     color: var(--primary);
     font-weight: 500;
     margin: 0;
-    padding: 2px 0;
+    padding: 3px;
 }
 
 /* 元信息行 */
@@ -1136,7 +1136,9 @@ img {
     font-size: 0.75rem;
     color: var(--text-muted);
     overflow: hidden;
-    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     word-break: break-all;
 }
 

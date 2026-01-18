@@ -14,7 +14,6 @@
         </div>
         <div class="card-content">
             <h3 class="card-title">{{ .VodName }}</h3>
-            {{ if .VodRemarks }}<p class="card-remarks">{{ .VodRemarks }}</p>{{ end }}
             <div class="card-meta-row">
                 {{ if .VodYear }}<span class="card-year">{{ .VodYear }}</span>{{ end }}
                 {{ if .VodArea }}<span class="card-region">{{ .VodArea }}</span>{{ end }}
@@ -27,6 +26,7 @@
                 <span class="source-item active">
                     {{ .SourceKey }}
                 </span>
+                {{ if .VodRemarks }}<span class="card-remarks">{{ .VodRemarks }}</span>{{ end }}
             </div>
         </div>
     </a>

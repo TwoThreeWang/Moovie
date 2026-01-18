@@ -122,7 +122,7 @@ func (h *Handler) SimilarMoviesHTMX(c *gin.Context) {
 	if err != nil {
 		log.Printf("获取相似电影失败: %v", err)
 	}
-	c.HTML(http.StatusOK, "partials/discover_grid.html", gin.H{
+	c.HTML(http.StatusOK, "partials/similar_movies.html", gin.H{
 		"Movies": movies,
 	})
 }
