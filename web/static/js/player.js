@@ -217,11 +217,13 @@ function initPlayer(containerId, url, options) {
 
             // 获取上次播放进度并自动跳转
             var playState = Storage.find(options.sourceKey + options.vodId);
-            var lastTime = playState ? playState.lastTime : 0;
-            if (lastTime > 5) {
-                // 延迟一小会儿执行跳转，确保播放器状态稳定
-                art.currentTime = lastTime;
-                art.notice.show = `已为您定位到上次播放位置: ${formatTime(lastTime)}`;
+            if(options.episode && options.episode == playState.episode){
+                var lastTime = playState ? playState.lastTime : 0;
+                if (lastTime > 5) {
+                    // 延迟一小会儿执行跳转，确保播放器状态稳定
+                    art.currentTime = lastTime;
+                    art.notice.show = `已为您定位到上次播放位置: ${formatTime(lastTime)}`;
+                }
             }
         });
 
