@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -37,6 +38,16 @@ func RequireAuth(jwtSecret string) gin.HandlerFunc {
 		c.Set("user_id", claims.UserID)
 		c.Set("email", claims.Email)
 		c.Set("role", claims.Role)
+
+		// 滑动续期逻辑：如果 Token 过期时间消耗超过一半，则刷新
+		if shouldRefresh(claims) {
+			newToken, err := GenerateToken(claims.UserID, claims.Email, claims.Role, jwtSecret, claims.RegisteredClaims.ExpiresAt.Sub(claims.RegisteredClaims.IssuedAt.Time))
+			if err == nil {
+				// 设置新的 Cookie，保持与 main.go 中一致的安全属性
+				c.SetCookie("token", newToken, int(claims.RegisteredClaims.ExpiresAt.Sub(claims.RegisteredClaims.IssuedAt.Time).Seconds()), "/", "", false, true)
+			}
+		}
+
 		c.Next()
 	}
 }
@@ -49,6 +60,14 @@ func OptionalAuth(jwtSecret string) gin.HandlerFunc {
 			c.Set("user_id", claims.UserID)
 			c.Set("email", claims.Email)
 			c.Set("role", claims.Role)
+
+			// 滑动续期逻辑
+			if shouldRefresh(claims) {
+				newToken, err := GenerateToken(claims.UserID, claims.Email, claims.Role, jwtSecret, claims.RegisteredClaims.ExpiresAt.Sub(claims.RegisteredClaims.IssuedAt.Time))
+				if err == nil {
+					c.SetCookie("token", newToken, int(claims.RegisteredClaims.ExpiresAt.Sub(claims.RegisteredClaims.IssuedAt.Time).Seconds()), "/", "", false, true)
+				}
+			}
 		}
 		c.Next()
 	}
@@ -117,4 +136,34 @@ func GetUserIDPtr(c *gin.Context) *int {
 		return &id
 	}
 	return nil
+}
+
+// GenerateToken 生成 JWT Token
+func GenerateToken(userID int, email, role, jwtSecret string, expiry time.Duration) (string, error) {
+	claims := &Claims{
+		UserID: userID,
+		Email:  email,
+		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtSecret))
+}
+
+// shouldRefresh 判断是否需要刷新 Token
+// 逻辑：如果已经消耗了总有效期的 50% 以上，则建议刷新
+func shouldRefresh(claims *Claims) bool {
+	if claims.ExpiresAt == nil || claims.IssuedAt == nil {
+		return false
+	}
+
+	totalDuration := claims.ExpiresAt.Sub(claims.IssuedAt.Time)
+	elapsedDuration := time.Since(claims.IssuedAt.Time)
+
+	// 如果消耗超过 50%
+	return elapsedDuration > totalDuration/2
 }

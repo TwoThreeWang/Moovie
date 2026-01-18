@@ -63,6 +63,13 @@ func main() {
 
 	// 设置 Session 中间件
 	store := cookie.NewStore([]byte(cfg.AppSecret))
+	store.Options(sessions.Options{
+		Path:     "/",
+		MaxAge:   86400 * 7, // 7 天
+		HttpOnly: true,
+		Secure:   false, // 关键：非 HTTPS 环境必须为 false
+		SameSite: http.SameSiteLaxMode,
+	})
 	r.Use(sessions.Sessions("mysession", store))
 
 	// 加载模板（使用 multitemplate 解决继承问题）

@@ -11,7 +11,6 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/user/moovie/internal/config"
 	"github.com/user/moovie/internal/middleware"
 	"github.com/user/moovie/internal/model"
@@ -611,7 +610,7 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// 生成 JWT
-	token, err := h.generateToken(user)
+	token, err := middleware.GenerateToken(user.ID, user.Email, user.Role, h.Config.AppSecret, h.Config.JWTExpiry)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "login.html", gin.H{
 			"Title": "登录 - Moovie",
@@ -707,7 +706,7 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	// 生成 JWT 并登录
-	token, _ := h.generateToken(user)
+	token, _ := middleware.GenerateToken(user.ID, user.Email, user.Role, h.Config.AppSecret, h.Config.JWTExpiry)
 	c.SetCookie("token", token, int(h.Config.JWTExpiry.Seconds()), "/", "", false, true)
 
 	// 保存 UserInfo 到 Session
@@ -733,22 +732,6 @@ func (h *Handler) Logout(c *gin.Context) {
 	session.Save()
 
 	c.Redirect(http.StatusFound, "/")
-}
-
-// generateToken 生成 JWT
-func (h *Handler) generateToken(user *model.User) (string, error) {
-	claims := &middleware.Claims{
-		UserID: user.ID,
-		Email:  user.Email,
-		Role:   user.Role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(h.Config.JWTExpiry)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.Config.AppSecret))
 }
 
 // ==================== 用户中心 ====================
