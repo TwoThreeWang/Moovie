@@ -400,6 +400,11 @@ function addRecentSearch(keyword) {
     // 添加到最前面
     searches.unshift(keyword);
     saveRecentSearches(searches);
+
+    // 如果在首页，立即更新 UI
+    if (typeof renderRecentSearches === 'function') {
+        renderRecentSearches();
+    }
 }
 
 /**
@@ -452,7 +457,9 @@ function renderRecentSearches() {
 
 document.addEventListener('DOMContentLoaded', function() {
     // 渲染首页继续观看
-    renderContinueWatching();
+    if (typeof renderContinueWatching === 'function') {
+        renderContinueWatching();
+    }
 
     // 渲染最近搜索
     renderRecentSearches();

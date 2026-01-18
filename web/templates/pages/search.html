@@ -56,12 +56,21 @@
 
 <script>
 // 记录搜索词到最近搜索
-// 使用 DOMContentLoaded 确保 app.js（defer 加载）已执行完毕
 document.addEventListener('DOMContentLoaded', function() {
-    const keyword = {{ .Keyword | js }};
-    if (keyword && typeof addRecentSearch === 'function') {
-        addRecentSearch(keyword);
+    const keyword = "{{ .Keyword }}";
+    if (!keyword) return;
+
+    function trySave() {
+        if (typeof addRecentSearch === 'function') {
+            addRecentSearch(keyword);
+            console.log('[搜索页] 已成功记录搜索词:', keyword);
+        } else {
+            console.warn('[搜索页] addRecentSearch 尚未就绪，100ms 后重试...');
+            setTimeout(trySave, 100);
+        }
     }
+
+    trySave();
 });
 </script>
 {{ end }}
