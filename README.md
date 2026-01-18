@@ -4,6 +4,8 @@
 
 Moovie 是一款基于 **Golang** 开发的聚合影视搜索工具。它通过整合多源搜索、智能推荐和极致的响应式设计，为你提供一个干净、高效的观影入口。
 
+示例链接：[Moovie - 发现你的下一部电影](https://moovie.c2v2.com/)
+
 ---
 
 ## 🚀 特性亮点
@@ -61,6 +63,9 @@ Moovie 是一款基于 **Golang** 开发的聚合影视搜索工具。它通过�
    🚀 访问 [http://localhost:5007](http://localhost:5007)
 
 ### Docker 快捷部署
+
+> [!IMPORTANT]
+> 本项目的 `docker-compose.yml` 配置为使用名为 `postgres_default` 的**外部网络**。在启动之前，请确保你已经有一个正在运行的 PostgreSQL 容器，并且它连接到了该网络。
 
 ```bash
 docker-compose up -d
