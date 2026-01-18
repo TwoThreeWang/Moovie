@@ -88,6 +88,12 @@
 
         <!-- 历史 Tab -->
         <div class="tab-pane" id="tab-history">
+            <div class="tab-pane-header" style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
+                <button class="btn btn-secondary btn-sm sync-btn" onclick="manualSync(this)" title="立即同步云端历史">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                    立即同步
+                </button>
+            </div>
             {{ if .History }}
             <div class="movie-grid">
                 {{ range .History }}

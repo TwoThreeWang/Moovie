@@ -138,9 +138,43 @@ async function doSync() {
             // 更新同步时间
             const syncedAt = data.syncedAt || Date.now();
             localStorage.setItem(SYNC_KEY, syncedAt.toString());
+            return true;
         }
     } catch (error) {
         console.error('同步观影历史失败:', error);
+    }
+    return false;
+}
+
+/**
+ * 手动触发同步接口（供按钮调用）
+ */
+async function manualSync(btn) {
+    if (!isLoggedIn()) {
+        alert('请先登录后进行同步');
+        return;
+    }
+
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> 同步中...';
+
+    const success = await doSync();
+
+    if (success) {
+        btn.innerHTML = '✅ 同步成功';
+        // 如果在历史页面，尝试刷新页面内容（如果使用了 HTMX）或提示用户刷新
+        if (window.location.pathname.includes('/history') || window.location.pathname.includes('/dashboard')) {
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        }
+    } else {
+        btn.innerHTML = '❌ 同步失败';
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }, 2000);
     }
 }
 

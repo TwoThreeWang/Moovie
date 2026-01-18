@@ -21,7 +21,7 @@ type Movie struct {
 	Actors           string           `json:"actors" db:"actors"`
 	Summary          string           `json:"summary" db:"summary"`
 	Duration         string           `json:"duration" db:"duration"`
-	IMDbID           string           `json:"imdb_id" db:"imdb_id"`
+	IMDbID           string           `json:"imdb_id" db:"imdb_id" gorm:"column:imdb_id"`
 	EmbeddingContent string           `json:"embedding_content" db:"embedding_content"`
 	Embedding        *pgvector.Vector `json:"embedding" db:"embedding" gorm:"type:vector(768)"`
 	UpdatedAt        time.Time        `json:"updated_at" db:"updated_at" gorm:"index"`
