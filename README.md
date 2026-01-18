@@ -58,7 +58,7 @@ Moovie 是一款基于 **Golang** 开发的聚合影视搜索工具。它通过�
    go mod tidy
    go run ./cmd/server
    ```
-   🚀 访问 [http://localhost:5005](http://localhost:5005)
+   🚀 访问 [http://localhost:5007](http://localhost:5007)
 
 ### Docker 快捷部署
 

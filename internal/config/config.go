@@ -43,9 +43,9 @@ func Load() *Config {
 		AppSecret:   appSecret,
 		DatabaseURL: dbURL,
 		JWTExpiry:   time.Duration(expiryHours) * time.Hour,
-		Port:        getEnv("PORT", "5005"),
+		Port:        getEnv("PORT", "5007"),
 		SiteName:    getEnv("SITE_NAME", "Moovie"),
-		SiteUrl:     getEnv("SITE_URL", "http://localhost:5005"),
+		SiteUrl:     getEnv("SITE_URL", "http://localhost:5007"),
 	}
 }
 

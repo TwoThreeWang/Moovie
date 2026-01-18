@@ -89,7 +89,7 @@ func main() {
 	// 配置 HTTP 服务器
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "5005"
+		port = "5007"
 	}
 
 	srv := &http.Server{

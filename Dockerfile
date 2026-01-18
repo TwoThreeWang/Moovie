@@ -25,7 +25,7 @@ COPY --from=builder /app/moovie .
 COPY --from=builder /app/web ./web
 
 # 暴露端口
-EXPOSE 5005
+EXPOSE 5007
 
 # 启动命令
 CMD ["./moovie"]

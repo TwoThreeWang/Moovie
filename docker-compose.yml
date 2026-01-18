@@ -5,7 +5,7 @@ services:
     build: .
     container_name: moovie
     ports:
-      - "5005:5005"
+      - "5007:5007"
     volumes:
       - ./.env:/app/.env
     environment:
