@@ -29,8 +29,10 @@ func Load() *Config {
 	dbName := getEnv("DB_NAME", "moovie")
 	dbSSL := getEnv("DB_SSLMODE", "disable")
 
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		dbUser, dbPass, dbHost, dbPort, dbName, dbSSL)
+	dbTZ := getEnv("DB_TIMEZONE", "Asia/Shanghai")
+
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s&TimeZone=%s",
+		dbUser, dbPass, dbHost, dbPort, dbName, dbSSL, dbTZ)
 
 	appSecret := getEnv("APP_SECRET", getEnv("JWT_SECRET", "your-secret-key-change-in-production"))
 
