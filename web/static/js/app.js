@@ -282,7 +282,7 @@ function renderSuggestions(suggestions) {
 
         return `
             <a href="${searchUrl}" class="search-suggestion-item" data-index="${index}">
-                <img src="${item.img || '/static/img/placeholder.svg'}"
+                <img src="${item.img ? 'https://image.baidu.com/search/down?url=' + item.img : '/static/img/placeholder.svg'}"
                      alt="${item.title || ''}"
                      class="suggestion-poster"
                      onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">

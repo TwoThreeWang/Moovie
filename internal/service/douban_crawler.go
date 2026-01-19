@@ -345,17 +345,37 @@ func (c *DoubanCrawler) CrawlAsync(doubanID string) {
 	}()
 }
 
-// SearchSuggest 电影搜索建议
+// SearchSuggest 电影搜索建议（优先从数据库搜索，无结果时调用豆瓣API）
 func (c *DoubanCrawler) SearchSuggest(keyword string) ([]MovieSuggestResponse, error) {
+	// 如果关键词为空，直接返回
+	if strings.TrimSpace(keyword) == "" {
+		return []MovieSuggestResponse{}, nil
+	}
+
 	// 检查缓存
-	cacheKey := fmt.Sprintf("douban_suggest:%s", keyword)
+	cacheKey := fmt.Sprintf("movie_suggest:%s", keyword)
 	if cached, found := utils.CacheGet(cacheKey); found {
 		if results, ok := cached.([]MovieSuggestResponse); ok {
 			return results, nil
 		}
 	}
 
-	// 调用豆瓣API
+	// 1. 先从数据库模糊搜索
+	dbResults, err := c.searchFromDB(keyword)
+	if err != nil {
+		log.Printf("[搜索建议] 数据库搜索失败: %v，降级到豆瓣API", err)
+	}
+
+	// 如果数据库有结果，直接返回
+	if len(dbResults) > 0 {
+		log.Printf("[搜索建议] 从数据库返回 %d 条结果 (关键词: %s)", len(dbResults), keyword)
+		// 缓存结果，缓存时间10分钟
+		utils.CacheSet(cacheKey, dbResults, 10*time.Minute)
+		return dbResults, nil
+	}
+
+	// 2. 数据库无结果，调用豆瓣API
+	log.Printf("[搜索建议] 数据库无结果，调用豆瓣API (关键词: %s)", keyword)
 	url := fmt.Sprintf("https://movie.douban.com/j/subject_suggest?q=%s", keyword)
 
 	// 使用自定义HTTP客户端
@@ -387,6 +407,58 @@ func (c *DoubanCrawler) SearchSuggest(keyword string) ([]MovieSuggestResponse, e
 	utils.CacheSet(cacheKey, results, 5*time.Minute)
 
 	return results, nil
+}
+
+// searchFromDB 从数据库模糊搜索电影
+func (c *DoubanCrawler) searchFromDB(keyword string) ([]MovieSuggestResponse, error) {
+	var movies []model.Movie
+
+	// 模糊搜索：title 或 original_title 包含关键词
+	// 按评分和更新时间排序，限制返回10条
+	err := c.movieRepo.DB.Where("title LIKE ? OR original_title LIKE ?",
+		"%"+keyword+"%", "%"+keyword+"%").
+		Order("rating DESC, updated_at DESC").
+		Limit(10).
+		Find(&movies).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("数据库查询失败: %w", err)
+	}
+
+	// 转换为 MovieSuggestResponse
+	var results []MovieSuggestResponse
+	for _, movie := range movies {
+		// 推断类型
+		movieType := c.inferMovieType(movie.Genres)
+
+		results = append(results, MovieSuggestResponse{
+			ID:       movie.DoubanID,
+			Title:    movie.Title,
+			SubTitle: movie.OriginalTitle,
+			Type:     movieType,
+			Year:     movie.Year,
+			Episode:  "", // 数据库没有集数信息
+			Img:      movie.Poster,
+		})
+	}
+
+	return results, nil
+}
+
+// inferMovieType 根据类型推断电影类别
+func (c *DoubanCrawler) inferMovieType(genres string) string {
+	genresLower := strings.ToLower(genres)
+
+	if strings.Contains(genresLower, "电视剧") {
+		return "tv"
+	}
+	if strings.Contains(genresLower, "综艺") {
+		return "show"
+	}
+	if strings.Contains(genresLower, "动画") || strings.Contains(genresLower, "动漫") {
+		return "cartoon"
+	}
+	return "movie"
 }
 
 // GetPopularSubjects 获取热门电影/电视剧

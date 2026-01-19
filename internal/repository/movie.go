@@ -10,20 +10,20 @@ import (
 )
 
 type MovieRepository struct {
-	db *gorm.DB
+	DB *gorm.DB
 }
 
 func NewMovieRepository(db *gorm.DB) *MovieRepository {
-	return &MovieRepository{db: db}
+	return &MovieRepository{DB: db}
 }
 
 // FindByDoubanID 根据豆瓣 ID 查找电影
 func (r *MovieRepository) FindByDoubanID(doubanID string) (*model.Movie, error) {
-	if r.db == nil {
+	if r.DB == nil {
 		return nil, errors.New("database connection is nil")
 	}
 	var movie model.Movie
-	err := r.db.Where("douban_id = ?", doubanID).Take(&movie).Error
+	err := r.DB.Where("douban_id = ?", doubanID).Take(&movie).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -36,7 +36,7 @@ func (r *MovieRepository) FindByDoubanID(doubanID string) (*model.Movie, error) 
 // GetSitemapMovies 获取用于站点地图的电影列表
 func (r *MovieRepository) GetSitemapMovies(limit int) ([]model.Movie, error) {
 	var movies []model.Movie
-	err := r.db.Select("id", "douban_id", "updated_at").
+	err := r.DB.Select("id", "douban_id", "updated_at").
 		Order("updated_at DESC").
 		Limit(limit).
 		Find(&movies).Error
@@ -60,7 +60,7 @@ func (r *MovieRepository) Upsert(movie *model.Movie) error {
 		updateCols = append(updateCols, "embedding_content", "embedding")
 	}
 
-	return r.db.Clauses(clause.OnConflict{
+	return r.DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "douban_id"}},
 		DoUpdates: clause.AssignmentColumns(updateCols),
 	}).Create(movie).Error
@@ -70,7 +70,7 @@ func (r *MovieRepository) Upsert(movie *model.Movie) error {
 func (r *MovieRepository) FindSimilar(doubanID string, limit int) ([]model.Movie, error) {
 	var movies []model.Movie
 	// 使用 pgvector 的 <-> 操作符计算 L2 距离，距离越小越相似
-	err := r.db.Raw(`
+	err := r.DB.Raw(`
 		SELECT m2.* FROM movies m1
 		JOIN movies m2 ON m1.id != m2.id
 		WHERE m1.douban_id = ?
@@ -85,7 +85,7 @@ func (r *MovieRepository) FindSimilar(doubanID string, limit int) ([]model.Movie
 // FindByID 根据 ID 查找电影
 func (r *MovieRepository) FindByID(id int) (*model.Movie, error) {
 	var movie model.Movie
-	err := r.db.Where("id = ?", id).Take(&movie).Error
+	err := r.DB.Where("id = ?", id).Take(&movie).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -97,7 +97,7 @@ func (r *MovieRepository) FindByID(id int) (*model.Movie, error) {
 
 // DeleteByDoubanID 根据豆瓣 ID 删除记录
 func (r *MovieRepository) DeleteByDoubanID(doubanID string) error {
-	return r.db.Where("douban_id = ?", doubanID).Delete(&model.Movie{}).Error
+	return r.DB.Where("douban_id = ?", doubanID).Delete(&model.Movie{}).Error
 }
 
 // GetUserRecommendations 根据用户兴趣向量获取个性化推荐
@@ -109,7 +109,7 @@ func (r *MovieRepository) GetUserRecommendations(userID int, limit int) ([]model
 	// 1. 先汇聚用户观看和收藏的电影 ID
 	// 2. 计算这些电影向量的平均值（用户兴趣向量）
 	// 3. 用这个兴趣向量查找最相似的电影，排除已看/已收藏的
-	err := r.db.Raw(`
+	err := r.DB.Raw(`
 		WITH user_movies AS (
 			-- 获取用户观看过的电影 ID (条记录权重为 1)
 			SELECT DISTINCT m.id, m.embedding, 1.0 as weight
@@ -151,7 +151,7 @@ func (r *MovieRepository) GetUserRecommendations(userID int, limit int) ([]model
 // GetPopularMovies 获取热门电影（用于新用户或无数据时的降级推荐）
 func (r *MovieRepository) GetPopularMovies(limit int) ([]model.Movie, error) {
 	var movies []model.Movie
-	err := r.db.Where("rating > 0 AND embedding IS NOT NULL").
+	err := r.DB.Where("rating > 0 AND embedding IS NOT NULL").
 		Order("rating DESC, updated_at DESC").
 		Limit(limit).
 		Find(&movies).Error
@@ -161,13 +161,13 @@ func (r *MovieRepository) GetPopularMovies(limit int) ([]model.Movie, error) {
 // Count 获取电影总数
 func (r *MovieRepository) Count() (int64, error) {
 	var count int64
-	err := r.db.Model(&model.Movie{}).Count(&count).Error
+	err := r.DB.Model(&model.Movie{}).Count(&count).Error
 	return count, err
 }
 
 // UpdateReviews 更新电影评论数据
 func (r *MovieRepository) UpdateReviews(doubanID string, reviewsJSON string) error {
-	return r.db.Model(&model.Movie{}).Where("douban_id = ?", doubanID).Updates(map[string]interface{}{
+	return r.DB.Model(&model.Movie{}).Where("douban_id = ?", doubanID).Updates(map[string]interface{}{
 		"reviews_json":       reviewsJSON,
 		"reviews_updated_at": time.Now(),
 	}).Error
