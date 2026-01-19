@@ -4,13 +4,25 @@
   "@context": "https://schema.org",
   "@type": "Movie",
   "name": "{{ .Movie.Title }}",
-  "image": "https://image.baidu.com/search/down?url={{ .Movie.Poster }}",
+  "image": "{{ .Movie.Poster }}",
   "datePublished": "{{ .Movie.Year }}",
+  {{ if .DirectorList }}
+  "director": [
+    {{ range $index, $d := .DirectorList }}
+      {{ if $index }},{{ end }}
+      {
+        "@type": "Person",
+        "name": "{{ $d.Name | js }}"
+      }
+    {{ end }}
+  ],
+  {{ end }}
   {{ if .Movie.Rating }}
   "aggregateRating": {
     "@type": "AggregateRating",
     "ratingValue": "{{ .Movie.Rating }}",
-    "bestRating": "10"
+    "bestRating": "10",
+    "ratingCount": "100"
   },
   {{ end }}
   "description": "{{ .Movie.Summary | js }}"

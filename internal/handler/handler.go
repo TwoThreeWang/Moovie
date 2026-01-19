@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -219,14 +220,29 @@ func (h *Handler) Movie(c *gin.Context) {
 		desc = string([]rune(desc)[:150]) + "..."
 	}
 
+	// 将 "导演" 转为 []string{"导演A", "导演B"}
+	// 定义导演结构体
+	type Director struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	// 1. 解析 JSON 字符串到切片中
+	var directorList []Director
+	err = json.Unmarshal([]byte(movie.Directors), &directorList)
+	if err != nil {
+		// 如果解析失败，处理错误或设为空
+		directorList = []Director{}
+	}
+
 	c.HTML(http.StatusOK, "movie.html", h.RenderData(c, gin.H{
-		"Title":       movie.Title + " (" + movie.Year + ") - " + h.Config.SiteName,
-		"Description": desc,
-		"Keywords":    strings.Join(keywords, ","),
-		"Cover":       "https://image.baidu.com/search/down?url=" + movie.Poster,
-		"Canonical":   fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
-		"Movie":       movie,
-		"IsFavorited": isFavorited,
+		"Title":        movie.Title + " (" + movie.Year + ") - " + h.Config.SiteName,
+		"Description":  desc,
+		"Keywords":     strings.Join(keywords, ","),
+		"Cover":        "https://image.baidu.com/search/down?url=" + movie.Poster,
+		"Canonical":    fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
+		"Movie":        movie,
+		"IsFavorited":  isFavorited,
+		"DirectorList": directorList,
 	}))
 }
 
