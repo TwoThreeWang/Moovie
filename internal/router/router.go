@@ -40,7 +40,8 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	{
 		optional.GET("/movie/:id", h.Movie)               // 电影详情
 		optional.GET("/play/:source_key/:vod_id", h.Play) // 视频播放页
-		optional.GET("/discover", h.Discover)             // 发现页
+		optional.GET("/discover", h.Discover)             // 默认发现页
+		optional.GET("/discover/:type", h.Discover)       // 发现页
 		optional.GET("/foryou", h.ForYou)                 // 为你推荐
 	}
 
@@ -199,6 +200,9 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		},
 		"add": func(a, b int) int {
 			return a + b
+		},
+		"sub": func(a, b int) int {
+			return a - b
 		},
 		"jsonUnmarshal": func(s string) []interface{} {
 			var res []interface{}

@@ -75,7 +75,7 @@ func (h *Handler) RemoveFavorite(c *gin.Context) {
 
 // SubmitFeedback 提交反馈
 func (h *Handler) SubmitFeedback(c *gin.Context) {
-	userID := middleware.GetUserID(c)
+	userID := middleware.GetUserIDPtr(c)
 	content := c.PostForm("content")
 	feedbackType := c.PostForm("type")
 	movieURL := c.PostForm("movie_url")
@@ -91,9 +91,8 @@ func (h *Handler) SubmitFeedback(c *gin.Context) {
 		MovieURL: movieURL,
 		Status:   "pending",
 	}
-	if userID > 0 {
-		tmpID := userID
-		feedback.UserID = &tmpID
+	if userID != nil {
+		feedback.UserID = userID
 	}
 
 	if err := h.Repos.Feedback.Create(feedback); err != nil {
@@ -283,7 +282,9 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 func (h *Handler) ForYouHTMX(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == 0 {
-		c.String(http.StatusOK, "")
+		c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
+			"NeedLogin": true,
+		})
 		return
 	}
 

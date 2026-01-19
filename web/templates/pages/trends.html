@@ -1,5 +1,48 @@
 
 {{ define "content" }}
+<!-- 24小时热搜榜单 JSON-LD -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "24小时电影热搜榜 - 今日最火",
+  "description": "实时更新的过去24小时内搜索热度最高的电影和电视剧",
+  "itemListOrder": "https://schema.org/ItemListOrderDescending",
+  "numberOfItems": {{ len .Trending24h }},
+  "itemListElement": [
+    {{ range $index, $item := .Trending24h }}
+    {
+      "@type": "ListItem",
+      "position": {{ add $index 1 }},
+      "name": "{{ $item.Keyword | js }}",
+      "url": "{{ $.SiteUrl }}/search?kw={{ $item.Keyword }}"
+    }{{ if lt $index (sub (len $.Trending24h) 1) }},{{ end }}
+    {{ end }}
+  ]
+}
+</script>
+
+<!-- 本月热搜总榜 JSON-LD -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "本月电影搜索总榜 - 热门推荐",
+  "description": "根据本月全网搜索数据汇总的影视热度排行榜",
+  "itemListOrder": "https://schema.org/ItemListOrderDescending",
+  "numberOfItems": {{ len .TrendingAll }},
+  "itemListElement": [
+    {{ range $index, $item := .TrendingAll }}
+    {
+      "@type": "ListItem",
+      "position": {{ add $index 1 }},
+      "name": "{{ $item.Keyword | js }}",
+      "url": "{{ $.SiteUrl }}/search?kw={{ $item.Keyword }}"
+    }{{ if lt $index (sub (len $.TrendingAll) 1) }},{{ end }}
+    {{ end }}
+  ]
+}
+</script>
 <div class="trends-page">
     <div class="trends-header">
         <h1 class="page-title">🔥 搜索趋势</h1>

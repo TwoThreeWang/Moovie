@@ -148,9 +148,11 @@ func (h *Handler) Search(c *gin.Context) {
 	// 隐藏参数：跳过版权过滤
 	bypass := c.Query("bypass") == "1"
 	c.HTML(http.StatusOK, "search.html", h.RenderData(c, gin.H{
-		"Title":   keyword + " - 搜索结果 - " + h.Config.SiteName,
-		"Keyword": keyword,
-		"Bypass":  bypass,
+		"Title":       keyword + "在线观看 - " + keyword + "免费高清资源搜索 - " + h.Config.SiteName,
+		"Keyword":     keyword,
+		"Description": "Moovie 为您找到关于“" + keyword + "”的相关资源。包含最新电影、电视剧在线观看线路，支持4K/高清多源码切换。",
+		"Canonical":   fmt.Sprintf("%s/search?kw=%s", h.Config.SiteUrl, keyword),
+		"Bypass":      bypass,
 	}))
 }
 
@@ -235,7 +237,7 @@ func (h *Handler) Movie(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "movie.html", h.RenderData(c, gin.H{
-		"Title":        movie.Title + " (" + movie.Year + ") - " + h.Config.SiteName,
+		"Title":        "《" + movie.Title + "》 (" + movie.Year + ") - 剧情介绍/演职员表 - " + h.Config.SiteName,
 		"Description":  desc,
 		"Keywords":     strings.Join(keywords, ","),
 		"Cover":        "https://image.baidu.com/search/down?url=" + movie.Poster,
@@ -307,11 +309,11 @@ func (h *Handler) Play(c *gin.Context) {
 	}
 
 	// 动态生成标题
-	pageTitle := detail.VodName
+	pageTitle := "《" + detail.VodName + "》"
 	if episode != "" {
 		pageTitle += "(" + episode + ")"
 	}
-	pageTitle += " - 在线播放 - " + h.Config.SiteName
+	pageTitle += " - 在线播放免费高清线路 - " + h.Config.SiteName
 
 	// 准备渲染数据
 	renderData := gin.H{
@@ -351,15 +353,21 @@ func (h *Handler) Player(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "player.html", h.RenderData(c, gin.H{
-		"Title":        "M3U8 播放器 - Moovie",
+		"Title":        fmt.Sprintf("M3U8在线播放器 - HLS直播流测试工具 - 极简无广告 - %s", h.Config.SiteName),
+		"Description":  fmt.Sprintf("%s 提供的免费 M3U8 在线播放工具。支持 HLS (.m3u8) 视频流测试，跨平台兼容，无需插件，高清流畅。适用于开发者测试和日常观影。", h.Config.SiteName),
+		"Keywords":     fmt.Sprintf("M3U8,在线播放,直播流测试,无广告,%s", h.Config.SiteName),
 		"URL":          url,
 		"ContentClass": "full-width",
+		"Canonical":    fmt.Sprintf("%s/player", h.Config.SiteUrl),
 	}))
 }
 
 // Discover 发现/分类页
 func (h *Handler) Discover(c *gin.Context) {
-	movieType := c.DefaultQuery("type", "movie")
+	movieType := c.Param("type")
+	if movieType == "" {
+		movieType = "movie"
+	}
 
 	// 检查是否是 HTMX 请求
 	isHTMX := c.GetHeader("HX-Request") != ""
@@ -375,11 +383,29 @@ func (h *Handler) Discover(c *gin.Context) {
 		})
 		return
 	}
+	Title := "2026豆瓣高分电影推荐 - 热门在线电影发现"
+	Description := "发现最新上映及豆瓣高分电影，涵盖动作、科幻、悬疑等多种题材，实时同步全网热度。"
+	Keywords := "热门电影,最新电视剧,高分佳作,Moovie发现"
+	switch movieType {
+	case "tv":
+		Title = "2026近期热门电视剧排行榜 - 好剧推荐在线看"
+		Description = "为您整理近期最火的电视剧、国产剧、美剧及韩剧，支持全网资源搜索与在线播放。"
+		Keywords = "热门电视剧,最新电视剧,高分佳作,Moovie发现"
+	case "show":
+		Title = "2026豆瓣高分综艺推荐 - 热门在线综艺发现"
+		Description = "发现最新、最热的综艺，满足你的综艺需求。"
+		Keywords = "热门综艺,最新综艺,高分佳作,Moovie发现"
+	case "cartoon":
+		Title = "2026热门动漫新番推荐 - 豆瓣高分动画榜单"
+		Description = "发现本季最强新番及经典高分动漫，支持多线路高清搜索。"
+		Keywords = "热门动漫,最新动漫,高分佳作,Moovie发现"
+	}
 
 	c.HTML(http.StatusOK, "discover.html", h.RenderData(c, gin.H{
-		"Title":       "发现 - " + h.Config.SiteName,
-		"Description": "浏览最新、最热的电影和电视剧，发现你的下一部心头好。",
-		"Keywords":    "热门电影,最新电视剧,高分佳作,Moovie发现",
+		"Title":       Title + " - " + h.Config.SiteName,
+		"Description": Description,
+		"Keywords":    Keywords,
+		"Canonical":   fmt.Sprintf("%s/discover/%s", h.Config.SiteUrl, movieType),
 		"CurrentType": movieType,
 	}))
 }
@@ -461,11 +487,13 @@ func (h *Handler) Trends(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "trends.html", h.RenderData(c, gin.H{
-		"Title":       "热门搜索 - " + h.Config.SiteName,
-		"Description": "查看大家都在搜什么，Moovie 实时搜索风向标。",
-		"Keywords":    "搜索趋势,热门搜索,关键词排行,影视风向",
+		"Title":       "今日影视热搜榜 - 热门电影电视剧排行榜 - 实时更新 - " + h.Config.SiteName,
+		"Description": "想知道大家都在看什么？Moovie 实时汇总全网搜索热度，为您呈现今日最火电影、电视剧及综艺排行榜。发现好片，一键在线观看。",
+		"Keywords":    "电影排行榜, 热搜榜, 热门电影, 电视剧排名, 在线电影搜索, 实时影视热度, 搜索趋势,热门搜索,关键词排行,影视风向",
 		"Trending24h": items24h,
 		"TrendingAll": itemsAll,
+		"Canonical":   fmt.Sprintf("%s/trends", h.Config.SiteUrl),
+		"SiteUrl":     h.Config.SiteUrl,
 		"UpdateTime":  time.Now().Format("15:04"),
 	}))
 }
@@ -540,7 +568,10 @@ func (h *Handler) Sitemap(c *gin.Context) {
 	}{
 		{"/", "1.0", "daily"},
 		{"/search", "0.8", "daily"},
-		{"/discover", "0.8", "daily"},
+		{"/discover/movie", "0.8", "daily"},
+		{"/discover/tv", "0.8", "daily"},
+		{"/discover/show", "0.8", "daily"},
+		{"/discover/cartoon", "0.8", "daily"},
 		{"/trends", "0.8", "daily"},
 		{"/feedback", "0.5", "monthly"},
 		{"/changelog", "0.5", "weekly"},

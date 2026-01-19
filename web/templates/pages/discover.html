@@ -6,28 +6,28 @@
 <!-- 热门分类导航 -->
 <div class="tab-nav" style="margin-bottom: 24px;">
     <a href="javascript:void(0)"
-       hx-get="/discover?type=movie"
+       hx-get="/discover/movie"
        hx-target="#discover-content"
        hx-push-url="true"
        hx-indicator="#loading-indicator"
        class="tab-btn {{ if eq .CurrentType "movie" }}active{{ end }}"
        onclick="updateActiveTab(this)">热门电影</a>
     <a href="javascript:void(0)"
-       hx-get="/discover?type=tv"
+       hx-get="/discover/tv"
        hx-target="#discover-content"
        hx-push-url="true"
        hx-indicator="#loading-indicator"
        class="tab-btn {{ if eq .CurrentType "tv" }}active{{ end }}"
        onclick="updateActiveTab(this)">热门电视剧</a>
     <a href="javascript:void(0)"
-       hx-get="/discover?type=show"
+       hx-get="/discover/show"
        hx-target="#discover-content"
        hx-push-url="true"
        hx-indicator="#loading-indicator"
        class="tab-btn {{ if eq .CurrentType "show" }}active{{ end }}"
        onclick="updateActiveTab(this)">热门综艺</a>
     <a href="javascript:void(0)"
-       hx-get="/discover?type=cartoon"
+       hx-get="/discover/cartoon"
        hx-target="#discover-content"
        hx-push-url="true"
        hx-indicator="#loading-indicator"
