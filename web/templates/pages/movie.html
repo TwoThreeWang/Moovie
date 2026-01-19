@@ -144,7 +144,7 @@
     <div class="movie-section">
         <h2 class="section-title">在线资源</h2>
         <div id="movie-search-results"
-             hx-get="/api/htmx/search?kw={{ .Movie.Title }}&year={{ .Movie.Year }}"
+             hx-get="/api/htmx/search?kw={{if .SearchTitle }}{{ .SearchTitle }}{{else}}{{ .Movie.Title }}{{end}}&year={{ .Movie.Year }}"
              hx-trigger="load"
              hx-indicator="#movie-search-loading">
             <div id="movie-search-loading" class="htmx-indicator movie-search-loading-state">

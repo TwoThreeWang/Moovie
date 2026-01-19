@@ -159,6 +159,7 @@ func (h *Handler) Search(c *gin.Context) {
 // Movie 电影详情页
 func (h *Handler) Movie(c *gin.Context) {
 	doubanID := c.Param("id")
+	title := c.Query("title")
 
 	movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
 
@@ -184,7 +185,6 @@ func (h *Handler) Movie(c *gin.Context) {
 
 	if movie == nil {
 		// 如果采集失败，但传了标题，尝试跳回搜索页
-		title := c.Query("title")
 		if title != "" {
 			c.Redirect(http.StatusFound, "/search?kw="+url.QueryEscape(title))
 			return
@@ -245,6 +245,7 @@ func (h *Handler) Movie(c *gin.Context) {
 		"Movie":        movie,
 		"IsFavorited":  isFavorited,
 		"DirectorList": directorList,
+		"SearchTitle":  title,
 	}))
 }
 
