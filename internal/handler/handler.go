@@ -309,6 +309,12 @@ func (h *Handler) Play(c *gin.Context) {
 		doubanID = detail.VodDoubanId
 	}
 
+	// 如果有豆瓣ID，异步安全抓取豆瓣电影信息
+	// 使用 singleflight 机制防止同一电影被并发重复抓取
+	if doubanID != "" && h.DoubanCrawler != nil {
+		h.DoubanCrawler.CrawlMovieSafeAsync(doubanID)
+	}
+
 	// 动态生成标题
 	pageTitle := "《" + detail.VodName + "》"
 	if episode != "" {

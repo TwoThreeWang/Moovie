@@ -17,6 +17,7 @@ import (
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
 	"github.com/user/moovie/internal/utils"
+	"golang.org/x/sync/singleflight"
 )
 
 // DoubanMovieSuggest 豆瓣电影搜索建议
@@ -62,6 +63,7 @@ type DoubanPopularResponse struct {
 type DoubanCrawler struct {
 	movieRepo *repository.MovieRepository
 	client    *http.Client
+	sf        singleflight.Group // 防止并发重复抓取同一电影
 }
 
 // NewDoubanCrawler 创建爬虫服务
@@ -71,6 +73,7 @@ func NewDoubanCrawler(movieRepo *repository.MovieRepository) *DoubanCrawler {
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
+		sf: singleflight.Group{},
 	}
 }
 
@@ -341,6 +344,43 @@ func (c *DoubanCrawler) CrawlAsync(doubanID string) {
 	go func() {
 		if err := c.CrawlDoubanMovie(doubanID); err != nil {
 			log.Printf("[爬虫] 爬取失败 (豆瓣ID: %s): %v", doubanID, err)
+		}
+	}()
+}
+
+// CrawlMovieSafe 安全抓取电影信息(防止并发重复抓取)
+// 使用 singleflight 确保同一 doubanID 在同一时间只会被抓取一次
+func (c *DoubanCrawler) CrawlMovieSafe(doubanID string) error {
+	// 先快速检查数据库，避免不必要的 singleflight 等待
+	movie, _ := c.movieRepo.FindByDoubanID(doubanID)
+	if movie != nil {
+		log.Printf("[爬虫] 电影已存在数据库，跳过抓取: %s", doubanID)
+		return nil
+	}
+
+	// 使用 singleflight 防止并发抓取同一个 doubanID
+	// 相同的 doubanID 只会执行一次抓取，其他并发请求会等待并共享结果
+	_, err, _ := c.sf.Do(doubanID, func() (interface{}, error) {
+		// 在 singleflight 内部再次检查，防止等待期间已被其他 goroutine 完成
+		if m, _ := c.movieRepo.FindByDoubanID(doubanID); m != nil {
+			log.Printf("[爬虫] 电影在等待期间已被抓取: %s", doubanID)
+			return m, nil
+		}
+
+		// 执行实际抓取
+		log.Printf("[爬虫] 开始安全抓取电影: %s", doubanID)
+		return nil, c.CrawlDoubanMovie(doubanID)
+	})
+
+	return err
+}
+
+// CrawlMovieSafeAsync 异步安全抓取电影信息
+// 适用于播放页等场景，不需要等待抓取结果
+func (c *DoubanCrawler) CrawlMovieSafeAsync(doubanID string) {
+	go func() {
+		if err := c.CrawlMovieSafe(doubanID); err != nil {
+			log.Printf("[爬虫] 异步安全抓取失败 (豆瓣ID: %s): %v", doubanID, err)
 		}
 	}()
 }
