@@ -43,6 +43,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		optional.GET("/discover", h.Discover)             // 默认发现页
 		optional.GET("/discover/:type", h.Discover)       // 发现页
 		optional.GET("/foryou", h.ForYou)                 // 为你推荐
+		optional.GET("/recommend", h.ForYou)              // 为你推荐
 	}
 
 	// ==================== 认证页面 ====================

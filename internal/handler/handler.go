@@ -574,7 +574,6 @@ func (h *Handler) Sitemap(c *gin.Context) {
 		freq     string
 	}{
 		{"/", "1.0", "daily"},
-		{"/search", "0.8", "daily"},
 		{"/discover/movie", "0.8", "daily"},
 		{"/discover/tv", "0.8", "daily"},
 		{"/discover/show", "0.8", "daily"},
@@ -620,7 +619,6 @@ func (h *Handler) Robots(c *gin.Context) {
 	sb.WriteString("Disallow: /auth/\n")
 	sb.WriteString("Disallow: /dashboard/\n")
 	sb.WriteString("Disallow: /api/\n")
-	sb.WriteString("Disallow: /search\n")
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Sitemap: %s/sitemap.xml\n", baseUrl))
 
