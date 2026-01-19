@@ -3310,9 +3310,9 @@ img {
 .video-actions-bar {
     display: flex;
     gap: 16px;
-    padding-top: 20px;
-    border-top: 1px solid var(--border);
-    margin-top: 8px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
 }
 
 /* 操作栏按钮（专用类名，避免与全局 .action-link 冲突） */

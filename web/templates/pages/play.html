@@ -83,6 +83,32 @@
         </div>
         {{ end }}
 
+
+        <!-- 操作区域 -->
+        <div class="video-actions-bar">
+            {{ if .DoubanID }}
+            <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" class="video-action-btn">
+                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <span>影片详情</span>
+            </a>
+            {{ end }}
+            <button class="video-action-btn"
+                    hx-post="/api/feedback"
+                    hx-vals='{"type":"播放失败反馈","content":"《{{ .Detail.VodName }}》播放失败","movie_url":"{{.FullPath}}"}'
+                    hx-swap="outerHTML">
+                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <span>播放失败反馈</span>
+            </button>
+        </div>
+
         <!-- 选集播放 -->
         {{ if .Episodes }}
         <div class="video-episodes-section">
@@ -113,30 +139,27 @@
         </div>
         {{ end }}
 
-        <!-- 操作区域 -->
-        <div class="video-actions-bar">
-            {{ if .DoubanID }}
-            <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" class="video-action-btn">
-                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="16" x2="12" y2="12"></line>
-                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        <!-- 选集下载 -->
+        {{ if .Episodes }}
+        <div class="video-episodes-section">
+            <div class="episodes-header">
+                <svg class="episodes-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
-                <span>影片详情</span>
-            </a>
-            {{ end }}
-            <button class="video-action-btn"
-                    hx-post="/api/feedback"
-                    hx-vals='{"type":"播放失败反馈","content":"《{{ .Detail.VodName }}》播放失败","movie_url":"{{.FullPath}}"}'
-                    hx-swap="outerHTML">
-                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="15" y1="9" x2="9" y2="15"></line>
-                    <line x1="9" y1="9" x2="15" y2="15"></line>
-                </svg>
-                <span>播放失败反馈</span>
-            </button>
+                <span>选集下载</span>
+            </div>
+            <div class="episodes-list">
+                {{ range .Episodes }}
+                <a href="https://www.zngg.net/tool/detail/M3U8V2Pro?url={{ .URL }}" target="_blank" rel="noopener nofollow"
+                   class="ep-btn">
+                    {{ .Title }}
+                </a>
+                {{ end }}
+            </div>
         </div>
+        {{ end }}
 
         <!-- 在线资源 -->
         <div class="movie-section" style="margin-top: 40px;">
