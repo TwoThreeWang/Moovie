@@ -203,6 +203,18 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 	if err != nil {
 		log.Printf("搜索失败: %v", err)
 	}
+
+	// 异步记录搜索日志 (仅当结果不为空时)
+	if len(results.Items) > 0 {
+		userID := middleware.GetUserIDPtr(c)
+		ipHash := utils.HashIP(c.ClientIP())
+		go func(kw string, uid *int, ip string) {
+			if err := h.Repos.SearchLog.Log(kw, uid, ip); err != nil {
+				log.Printf("[SearchHTMX] 记录搜索日志失败: %v", err)
+			}
+		}(keyword, userID, ipHash)
+	}
+
 	c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
 		"Results":       results.Items,
 		"FilteredCount": results.FilteredCount,
