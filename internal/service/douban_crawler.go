@@ -89,6 +89,9 @@ func (c *DoubanCrawler) generateBid() string {
 
 // CrawlDoubanMovie 爬取豆瓣电影详情页
 func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
+	if doubanID == "0" || doubanID == "" {
+		return fmt.Errorf("无效的豆瓣ID:%s", doubanID)
+	}
 	url := fmt.Sprintf("https://movie.douban.com/subject/%s/", doubanID)
 
 	req, err := http.NewRequest("GET", url, nil)
