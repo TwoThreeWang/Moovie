@@ -86,10 +86,23 @@ func (c *DoubanCrawler) generateBid() string {
 	}
 	return string(bid)
 }
+func isValidDoubanID(id string) bool {
+	// 长度校验：6～9 位
+	if len(id) < 6 || len(id) > 9 {
+		return false
+	}
+	// 纯数字校验
+	for _, c := range id {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
 
 // CrawlDoubanMovie 爬取豆瓣电影详情页
 func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
-	if doubanID == "0" || doubanID == "" {
+	if !isValidDoubanID(doubanID) {
 		return fmt.Errorf("无效的豆瓣ID:%s", doubanID)
 	}
 	url := fmt.Sprintf("https://movie.douban.com/subject/%s/", doubanID)
@@ -590,6 +603,9 @@ type rssItem struct {
 
 // GetReviews 获取豆瓣短评
 func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
+	if !isValidDoubanID(doubanID) {
+		return nil, fmt.Errorf("无效的豆瓣ID:%s", doubanID)
+	}
 	// 检查缓存
 	cacheKey := fmt.Sprintf("douban_reviews:%s", doubanID)
 	if cached, found := utils.CacheGet(cacheKey); found {
