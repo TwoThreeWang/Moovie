@@ -199,12 +199,36 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 		c.String(http.StatusOK, "")
 		return
 	}
-	results, err := h.SearchService.Search(c.Request.Context(), keyword, bypass)
-	if err != nil {
-		log.Printf("搜索失败: %v", err)
+
+	// 获取分页参数
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "12"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 12
 	}
 
-	// 异步记录搜索日志 (仅当结果不为空时)
+	// 生成缓存key
+	cacheKey := h.generateSearchCacheKey(keyword, bypass)
+
+	// 获取搜索结果（优先缓存）
+	var results *service.SearchResult
+	if cached, found := h.SearchCache.Get(cacheKey); found {
+		results = &cached
+	} else {
+		// 缓存未命中，走原有搜索逻辑
+		searchResults, err := h.SearchService.Search(c.Request.Context(), keyword, bypass)
+		if err != nil {
+			log.Printf("搜索失败: %v", err)
+		}
+		results = searchResults
+		// 存入缓存
+		h.SearchCache.Set(cacheKey, *searchResults)
+	}
+
+	// 只要有查询结果就记录搜索日志
 	if len(results.Items) > 0 {
 		userID := middleware.GetUserIDPtr(c)
 		ipHash := utils.HashIP(c.ClientIP())
@@ -215,9 +239,43 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 		}(keyword, userID, ipHash)
 	}
 
+	// 分页返回
+	h.renderSearchResults(c, results, page, pageSize)
+}
+
+// renderSearchResults 渲染搜索结果（带分页）
+func (h *Handler) renderSearchResults(c *gin.Context, results *service.SearchResult, page, pageSize int) {
+	totalCount := len(results.Items)
+	start := (page - 1) * pageSize
+
+	if start >= totalCount {
+		c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
+			"Results":       []model.VodItem{},
+			"FilteredCount": results.FilteredCount,
+			"CurrentPage":   page,
+			"HasNextPage":   false,
+		})
+		return
+	}
+
+	end := start + pageSize
+	if end > totalCount {
+		end = totalCount
+	}
+
+	// 获取查询参数用于模板
+	keyword := c.Query("kw")
+	bypass := c.Query("bypass") == "1"
+
 	c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
-		"Results":       results.Items,
+		"Results":       results.Items[start:end],
 		"FilteredCount": results.FilteredCount,
+		"Keyword":       keyword,
+		"CurrentPage":   page,
+		"PrevPage":      page - 1,
+		"NextPage":      page + 1,
+		"HasNextPage":   end < totalCount,
+		"Bypass":        bypass,
 	})
 }
 

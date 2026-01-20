@@ -29,6 +29,7 @@ type Handler struct {
 	Config        *config.Config
 	DoubanCrawler *service.DoubanCrawler
 	SearchService *service.SearchService
+	SearchCache   *utils.SearchCache[service.SearchResult]
 }
 
 // NewHandler 创建处理器
@@ -42,12 +43,27 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	// 创建搜索服务
 	searchService := service.NewSearchService(repos.Site, repos.VodItem, repos.CopyrightFilter, repos.CategoryFilter, sourceCrawler)
 
+	// 创建搜索缓存（容量1000条，TTL 3小时）
+	searchCache := utils.NewSearchCache[service.SearchResult](1000, 3*time.Hour)
+
 	return &Handler{
 		Repos:         repos,
 		Config:        cfg,
 		DoubanCrawler: doubanCrawler,
 		SearchService: searchService,
+		SearchCache:   searchCache,
 	}
+}
+
+// generateSearchCacheKey 生成搜索缓存key
+func (h *Handler) generateSearchCacheKey(keyword string, bypass bool) string {
+	bypassStr := "0"
+	if bypass {
+		bypassStr = "1"
+	}
+	// 统一小写，避免大小写敏感重复缓存
+	keyword = strings.ToLower(strings.TrimSpace(keyword))
+	return fmt.Sprintf("search:%s:%s", keyword, bypassStr)
 }
 
 // RenderData 统一封装公共渲染数据

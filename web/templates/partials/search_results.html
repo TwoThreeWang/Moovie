@@ -1,40 +1,71 @@
-{{ if .FilteredCount }}
-<div class="copyright-notice">
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-    <span>因版权原因，{{ .FilteredCount }} 条相关内容已被隐藏</span>
-</div>
-{{ end }}
-{{ if .Results }}
-<div class="search-result-grid">
-    {{ range .Results }}
-    <a href="/play/{{ .SourceKey }}/{{ .VodId }}{{ if .VodDoubanId }}?douban_id={{ .VodDoubanId }}{{ end }}" class="search-result-card">
-        <div class="card-poster">
-            <img src="{{ .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
-            {{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}
-        </div>
-        <div class="card-content">
-            <h3 class="card-title">{{ .VodName }}</h3>
-            <div class="card-meta-row">
-                {{ if .VodYear }}<span class="card-year">{{ .VodYear }}</span>{{ end }}
-                {{ if .VodArea }}<span class="card-region">{{ .VodArea }}</span>{{ end }}
-                {{ if .TypeName }}<span class="card-type">{{ .TypeName }}</span>{{ end }}
+<div id="search-container">
+    {{ if .FilteredCount }}
+    <div class="copyright-notice">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>因版权原因，{{ .FilteredCount }} 条相关内容已被隐藏</span>
+    </div>
+    {{ end }}
+    {{ if .Results }}
+    <div class="search-result-grid">
+        {{ range .Results }}
+        <a href="/play/{{ .SourceKey }}/{{ .VodId }}{{ if .VodDoubanId }}?douban_id={{ .VodDoubanId }}{{ end }}" class="search-result-card">
+            <div class="card-poster">
+                <img src="{{ .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
+                {{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}
             </div>
-            {{ if .VodActor }}
-            <p class="card-director">主演: {{ .VodActor }}</p>
-            {{ end }}
-            <div class="card-sources">
-                <span class="source-item active">
-                    {{ .SourceKey }}
-                </span>
-                {{ if .VodRemarks }}<span class="card-remarks">{{ .VodRemarks }}</span>{{ end }}
+            <div class="card-content">
+                <h3 class="card-title">{{ .VodName }}</h3>
+                <div class="card-meta-row">
+                    {{ if .VodYear }}<span class="card-year">{{ .VodYear }}</span>{{ end }}
+                    {{ if .VodArea }}<span class="card-region">{{ .VodArea }}</span>{{ end }}
+                    {{ if .TypeName }}<span class="card-type">{{ .TypeName }}</span>{{ end }}
+                </div>
+                {{ if .VodActor }}
+                <p class="card-director">主演: {{ .VodActor }}</p>
+                {{ end }}
+                <div class="card-sources">
+                    <span class="source-item active">
+                        {{ .SourceKey }}
+                    </span>
+                    {{ if .VodRemarks }}<span class="card-remarks">{{ .VodRemarks }}</span>{{ end }}
+                </div>
             </div>
-        </div>
-    </a>
+        </a>
+        {{ end }}
+    </div>
+
+    <!-- 分页导航 -->
+    <div class="pagination-container" id="pagination">
+        {{ if gt .CurrentPage 1 }}
+        <button class="pagination-btn" 
+                hx-get="/api/htmx/search?kw={{ .Keyword }}&page={{ .PrevPage }}{{ if .Bypass }}&bypass=1{{ end }}"
+                hx-target="#search-container"
+                hx-swap="innerHTML show:window:top"
+                hx-indicator="#pagination-loading">
+            上一页
+        </button>
+        {{ end }}
+        
+        <span class="pagination-info">第 {{ .CurrentPage }} 页</span>
+        
+        {{ if .HasNextPage }}
+        <button class="pagination-btn" 
+                hx-get="/api/htmx/search?kw={{ .Keyword }}&page={{ .NextPage }}{{ if .Bypass }}&bypass=1{{ end }}"
+                hx-target="#search-container"
+                hx-swap="innerHTML show:window:top"
+                hx-indicator="#pagination-loading">
+            下一页
+        </button>
+        {{ end }}
+    </div>
+
+    <div id="pagination-loading" class="htmx-indicator pagination-loading">
+        <div class="loading-spinner-small"></div>
+    </div>
+    {{ else }}
+    <div class="empty-state">
+        <p>😕 未找到相关结果</p>
+        <p>试试其他关键词，或 <b><a href="/feedback">告诉我们</a></b> 您想找的影片</p>
+    </div>
     {{ end }}
 </div>
-{{ else }}
-<div class="empty-state">
-    <p>😕 未找到相关结果</p>
-    <p>试试其他关键词，或 <b><a href="/feedback">告诉我们</a></b> 您想找的影片</p>
-</div>
-{{ end }}

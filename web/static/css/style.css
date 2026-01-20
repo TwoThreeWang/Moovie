@@ -3737,3 +3737,75 @@ img {
     }
 }
 
+/* ==================== 分页导航 ==================== */
+.pagination-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding: 1rem;
+}
+
+.pagination-btn {
+    padding: 0.5rem 1rem;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity var(--transition), transform var(--transition);
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.pagination-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.pagination-info {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.pagination-loading {
+    display: none;
+    text-align: center;
+    padding: 1rem;
+}
+
+.pagination-loading.htmx-request {
+    display: block;
+}
+
+.loading-spinner-small {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255,255,255,.1);
+    border-radius: 50%;
+    border-top-color: var(--primary);
+    animation: spin 1s ease-in-out infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* 夜间模式下的分页样式 */
+[data-theme='dark'] .pagination-btn {
+    background: var(--primary-dark);
+}
+
+[data-theme='dark'] .pagination-btn:hover {
+    background: var(--primary);
+}
+
