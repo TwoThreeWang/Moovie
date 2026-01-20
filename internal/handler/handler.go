@@ -190,7 +190,7 @@ func (h *Handler) Movie(c *gin.Context) {
 		// 如果数据库中没有或已被认定为脏数据，尝试从豆瓣抓取
 		if h.DoubanCrawler != nil {
 			log.Printf("[Handler] 正在从豆瓣抓取/更新信息 ID: %s", doubanID)
-			if err := h.DoubanCrawler.CrawlDoubanMovie(doubanID); err == nil {
+			if err := h.DoubanCrawler.CrawlDoubanMovieApi(doubanID); err == nil {
 				// 抓取成功后再次查询
 				movie, _ = h.Repos.Movie.FindByDoubanID(doubanID)
 			} else {

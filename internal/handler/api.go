@@ -421,7 +421,7 @@ func (h *Handler) ReviewsHTMX(c *gin.Context) {
 			// 如果过期，异步静默更新
 			go func() {
 				log.Printf("[ReviewsHTMX] 数据过期，静默更新 (豆瓣ID: %s)", doubanID)
-				h.DoubanCrawler.GetReviews(doubanID)
+				h.DoubanCrawler.GetReviewsApi(doubanID)
 			}()
 
 			// 返回旧数据
@@ -435,7 +435,7 @@ func (h *Handler) ReviewsHTMX(c *gin.Context) {
 	// 2. 如果库中没有或数据损坏，异步抓取
 	go func() {
 		log.Printf("[ReviewsHTMX] 库中无数据，启动采集 (豆瓣ID: %s)", doubanID)
-		h.DoubanCrawler.GetReviews(doubanID)
+		h.DoubanCrawler.GetReviewsApi(doubanID)
 	}()
 
 	// 返回加载中状态

@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -59,21 +60,72 @@ type DoubanPopularResponse struct {
 	Subjects []DoubanPopularSubject `json:"subjects"`
 }
 
+// DoubanRexxarResponse 豆瓣 Rexxar API 响应
+type DoubanRexxarResponse struct {
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	OriginalTitle string `json:"original_title"`
+	Year          string `json:"year"`
+	Intro         string `json:"intro"`
+	CoverUrl      string `json:"cover_url"`
+	Rating        struct {
+		Value float64 `json:"value"`
+	} `json:"rating"`
+	Genres    []string `json:"genres"`
+	Countries []string `json:"countries"`
+	Durations []string `json:"durations"`
+	Directors []struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	} `json:"directors"`
+	Actors []struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	} `json:"actors"`
+	Pic struct {
+		Large  string `json:"large"`
+		Normal string `json:"normal"`
+	} `json:"pic"`
+	URI string `json:"uri"`
+}
+
+// DoubanRexxarReviewResponse 豆瓣 Rexxar API 短评响应
+type DoubanRexxarReviewResponse struct {
+	Total     int `json:"total"`
+	Interests []struct {
+		Comment    string `json:"comment"`
+		CreateTime string `json:"create_time"`
+		ID         string `json:"id"`
+		SharingUrl string `json:"sharing_url"`
+		User       struct {
+			Name   string `json:"name"`
+			Avatar string `json:"avatar"`
+		} `json:"user"`
+	} `json:"interests"`
+}
+
 // Crawler 豆瓣爬虫服务
 type DoubanCrawler struct {
 	movieRepo *repository.MovieRepository
 	client    *http.Client
 	sf        singleflight.Group // 防止并发重复抓取同一电影
+	proxy     string             // 豆瓣透明代理地址
 }
 
 // NewDoubanCrawler 创建爬虫服务
 func NewDoubanCrawler(movieRepo *repository.MovieRepository) *DoubanCrawler {
+	proxy := os.Getenv("DOUBAN_PROXY")
+	if proxy == "None" {
+		proxy = ""
+	}
+
 	return &DoubanCrawler{
 		movieRepo: movieRepo,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
-		sf: singleflight.Group{},
+		sf:    singleflight.Group{},
+		proxy: proxy,
 	}
 }
 
@@ -162,6 +214,130 @@ func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
 
 	log.Printf("[爬虫] 成功爬取电影: %s (豆瓣ID: %s)", movie.Title, doubanID)
 	return nil
+}
+
+// CrawlDoubanMovieApi 备用爬取方案：使用豆瓣 Rexxar API (移动端接口)
+func (c *DoubanCrawler) CrawlDoubanMovieApi(doubanID string) error {
+	if !isValidDoubanID(doubanID) {
+		return fmt.Errorf("无效的豆瓣ID:%s", doubanID)
+	}
+
+	// Rexxar API 需要区分 movie 和 tv，这里尝试两种路径
+	types := []string{"tv", "movie", "show"}
+	var lastErr error
+	var rexxarResp DoubanRexxarResponse
+
+	success := false
+	for _, t := range types {
+		baseURL := fmt.Sprintf("https://m.douban.com/rexxar/api/v2/%s/%s?ck=&for_mobile=1", t, doubanID)
+		finalURL := baseURL
+		if c.proxy != "" {
+			finalURL = c.proxy + baseURL
+		}
+
+		req, err := http.NewRequest("GET", finalURL, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		// Rexxar API 必须的 Header
+		req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
+		req.Header.Set("Referer", "https://m.douban.com/")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Cookie", fmt.Sprintf(`ll="108288"; bid=%s; _pk_id.100001.4cf6=8bbc2ff56b7eadbf.1768570153.; _pk_ses.100001.4cf6=1; ap_v=0,6.0; __yadk_uid=Q9rDtuhs4wWFa5rwTvB6WpPxXFFRnScS; __utma=30149280.1349976959.1768570154.1768570154.1768570154.1; __utmb=30149280.0.10.1768570154; __utmc=30149280; __utmz=30149280.1768570154.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); __utma=223695111.369068564.1768570154.1768570154.1768570154.1; __utmb=223695111.0.10.1768570154; __utmc=223695111; __utmz=223695111.1768570154.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _vwo_uuid_v2=D25CE55BF48CA21000B5BED858D7F40A3|a607d8885a8913b757f280679b32e9b1`, c.generateBid()))
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			if err := json.NewDecoder(resp.Body).Decode(&rexxarResp); err == nil {
+				// 校验返回的 ID 是否匹配，防止某些异常情况
+				if rexxarResp.ID != "" {
+					success = true
+					break
+				}
+			} else {
+				lastErr = fmt.Errorf("解析 JSON 失败 (%s): %w", t, err)
+			}
+		} else {
+			lastErr = fmt.Errorf("接口返回状态码 (%s): %d", t, resp.StatusCode)
+		}
+	}
+
+	if !success {
+		return fmt.Errorf("Rexxar API 爬取失败 (豆瓣ID: %s): %v", doubanID, lastErr)
+	}
+
+	// 将 Rexxar 响应转换为模型
+	movie := c.mapRexxarToMovie(&rexxarResp)
+
+	// 生成向量并增强电影信息
+	if err := c.EnrichMovieWithVector(movie); err != nil {
+		log.Printf("[爬虫-API] 向量生成失败 (豆瓣ID: %s): %v", doubanID, err)
+	}
+
+	// 保存到数据库
+	if err := c.movieRepo.Upsert(movie); err != nil {
+		return fmt.Errorf("保存电影失败: %w", err)
+	}
+
+	log.Printf("[爬虫-API] 成功爬取电影: %s (豆瓣ID: %s)", movie.Title, doubanID)
+	return nil
+}
+
+// mapRexxarToMovie 将 Rexxar API 的响应映射到本地 Movie 模型
+func (c *DoubanCrawler) mapRexxarToMovie(resp *DoubanRexxarResponse) *model.Movie {
+	movie := &model.Movie{
+		DoubanID:      resp.ID,
+		Title:         resp.Title,
+		OriginalTitle: resp.OriginalTitle,
+		Year:          resp.Year,
+		Summary:       resp.Intro,
+		Rating:        resp.Rating.Value,
+		Genres:        strings.Join(resp.Genres, ","),
+		Countries:     strings.Join(resp.Countries, ","),
+	}
+
+	// 海报优先使用 pic.large，没有则用 cover_url
+	if resp.Pic.Large != "" {
+		movie.Poster = resp.Pic.Large
+	} else {
+		movie.Poster = resp.CoverUrl
+	}
+
+	// 片长处理
+	if len(resp.Durations) > 0 {
+		movie.Duration = resp.Durations[0]
+	}
+
+	// 转换导演
+	var directors []model.Person
+	for _, d := range resp.Directors {
+		directors = append(directors, model.Person{
+			ID:   d.ID,
+			Name: d.Name,
+		})
+	}
+	dirJSON, _ := json.Marshal(directors)
+	movie.Directors = string(dirJSON)
+
+	// 转换演员
+	var actors []model.Person
+	for _, a := range resp.Actors {
+		actors = append(actors, model.Person{
+			ID:   a.ID,
+			Name: a.Name,
+		})
+	}
+	actJSON, _ := json.Marshal(actors)
+	movie.Actors = string(actJSON)
+
+	return movie
 }
 
 // parseMoviePage 解析电影详情页
@@ -358,7 +534,7 @@ func (c *DoubanCrawler) EnrichMovieWithVector(movie *model.Movie) error {
 // CrawlAsync 异步爬取电影信息
 func (c *DoubanCrawler) CrawlAsync(doubanID string) {
 	go func() {
-		if err := c.CrawlDoubanMovie(doubanID); err != nil {
+		if err := c.CrawlDoubanMovieApi(doubanID); err != nil {
 			log.Printf("[爬虫] 爬取失败 (豆瓣ID: %s): %v", doubanID, err)
 		}
 	}()
@@ -385,7 +561,7 @@ func (c *DoubanCrawler) CrawlMovieSafe(doubanID string) error {
 
 		// 执行实际抓取
 		log.Printf("[爬虫] 开始安全抓取电影: %s", doubanID)
-		return nil, c.CrawlDoubanMovie(doubanID)
+		return nil, c.CrawlDoubanMovieApi(doubanID)
 	})
 
 	return err
@@ -691,6 +867,95 @@ func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
 	}
 
 	log.Printf("[爬虫] 成功获取并在库中更新豆瓣短评 (豆瓣ID: %s), 共 %d 条", doubanID, len(reviews))
+	return reviews, nil
+}
+
+// GetReviewsApi 备用短评方案：使用豆瓣 Rexxar API (移动端接口)
+func (c *DoubanCrawler) GetReviewsApi(doubanID string) ([]DoubanReview, error) {
+	if !isValidDoubanID(doubanID) {
+		return nil, fmt.Errorf("无效的豆瓣ID:%s", doubanID)
+	}
+
+	// 检查缓存
+	cacheKey := fmt.Sprintf("douban_reviews_rexxar:%s", doubanID)
+	if cached, found := utils.CacheGet(cacheKey); found {
+		if reviews, ok := cached.([]DoubanReview); ok {
+			return reviews, nil
+		}
+	}
+
+	// Rexxar API 同样需要区分 movie 和 tv
+	types := []string{"tv", "movie", "show"}
+	var lastErr error
+	var rexxarResp DoubanRexxarReviewResponse
+	success := false
+
+	for _, t := range types {
+		// Rexxar 短评接口：interests 节点
+		baseURL := fmt.Sprintf("https://m.douban.com/rexxar/api/v2/%s/%s/interests?count=10&order_by=hot&anony=0&start=0&ck=&for_mobile=1", t, doubanID)
+		finalURL := baseURL
+		if c.proxy != "" {
+			finalURL = c.proxy + baseURL
+		}
+
+		req, err := http.NewRequest("GET", finalURL, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		// Header 模拟
+		req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
+		req.Header.Set("Referer", fmt.Sprintf("https://m.douban.com/movie/subject/%s/", doubanID))
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Cookie", fmt.Sprintf(`ll="108288"; bid=%s`, c.generateBid()))
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			if err := json.NewDecoder(resp.Body).Decode(&rexxarResp); err == nil {
+				success = true
+				break
+			} else {
+				lastErr = fmt.Errorf("解析 JSON 失败 (%s): %w", t, err)
+			}
+		} else {
+			lastErr = fmt.Errorf("接口返回状态码 (%s): %d", t, resp.StatusCode)
+		}
+	}
+
+	if !success {
+		return nil, fmt.Errorf("Rexxar API 获取短评失败 (豆瓣ID: %s): %v", doubanID, lastErr)
+	}
+
+	// 映射到 DoubanReview 结构
+	var reviews []DoubanReview
+	for _, item := range rexxarResp.Interests {
+		reviews = append(reviews, DoubanReview{
+			Title:     item.Comment, // Rexxar 短评没有独立标题
+			Author:    item.User.Name,
+			Link:      item.SharingUrl,
+			Published: item.CreateTime,
+			Summary:   "",
+		})
+	}
+
+	// 缓存结果，缓存时间 2 小时
+	utils.CacheSet(cacheKey, reviews, 2*time.Hour)
+
+	// 持久化到数据库
+	if reviewsJSON, err := json.Marshal(reviews); err == nil {
+		if err := c.movieRepo.UpdateReviews(doubanID, string(reviewsJSON)); err != nil {
+			log.Printf("[爬虫] 持久化短评失败 (豆瓣ID: %s): %v", doubanID, err)
+		}
+	}
+
+	log.Printf("[评论-API] 成功获取 %d 条短评 (豆瓣ID: %s)", len(reviews), doubanID)
 	return reviews, nil
 }
 
