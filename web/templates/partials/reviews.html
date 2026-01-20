@@ -7,7 +7,7 @@
 <div class="reviews-list">
     {{ range .Reviews }}
     <div class="review-item">
-        <a href="{{ .Link }}" target="_blank" rel="noopener nofollow" class="review-title">{{ .Title }}</a>
+        <a href="{{ .Link }}" target="_blank" rel="noopener nofollow" class="review-title" title="{{ .Title }}">{{ .Title }}</a>
         <span class="review-meta">
             <span class="review-author">{{ .Author }}</span>
             <span class="review-date">{{ .Published }}</span>
