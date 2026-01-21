@@ -41,6 +41,7 @@
                 hx-get="/api/htmx/search?kw={{ .Keyword }}&page={{ .PrevPage }}{{ if .Bypass }}&bypass=1{{ end }}"
                 hx-target="#search-container"
                 hx-swap="innerHTML show:window:top"
+                hx-trigger="mouseenter delay:300ms"
                 hx-indicator="#pagination-loading">
             上一页
         </button>
@@ -53,6 +54,7 @@
                 hx-get="/api/htmx/search?kw={{ .Keyword }}&page={{ .NextPage }}{{ if .Bypass }}&bypass=1{{ end }}"
                 hx-target="#search-container"
                 hx-swap="innerHTML show:window:top"
+                hx-trigger="mouseenter delay:300ms"
                 hx-indicator="#pagination-loading">
             下一页
         </button>
