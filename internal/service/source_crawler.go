@@ -158,10 +158,14 @@ func (c *DefaultSourceCrawler) GetDetail(ctx context.Context, baseUrl, vodId, so
 	}
 
 	if len(apiResp.List) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("没有找到视频")
 	}
 
 	vodItem := c.mapToVodItem(apiResp.List[0], sourceKey)
+	// 没有播放链接不返回
+	if vodItem.VodPlayUrl == "" {
+		return nil, fmt.Errorf("没有播放链接")
+	}
 	return &vodItem, nil
 }
 
