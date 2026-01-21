@@ -41,8 +41,10 @@
                 hx-get="/api/htmx/search?kw={{ .Keyword }}&page={{ .PrevPage }}{{ if .Bypass }}&bypass=1{{ end }}"
                 hx-target="#search-container"
                 hx-swap="innerHTML show:window:top"
-                hx-trigger="mouseenter delay:300ms"
-                hx-indicator="#pagination-loading">
+                preload="mouseover" 
+                preload-delay="300ms"
+                hx-indicator="#pagination-loading"
+                hx-on:htmx:afterSwap="window.scrollTo({top:0, behavior:'smooth'})">
             上一页
         </button>
         {{ end }}
@@ -54,8 +56,10 @@
                 hx-get="/api/htmx/search?kw={{ .Keyword }}&page={{ .NextPage }}{{ if .Bypass }}&bypass=1{{ end }}"
                 hx-target="#search-container"
                 hx-swap="innerHTML show:window:top"
-                hx-trigger="mouseenter delay:300ms"
-                hx-indicator="#pagination-loading">
+                preload="mouseover" 
+                preload-delay="300ms"
+                hx-indicator="#pagination-loading"
+                hx-on:htmx:afterSwap="window.scrollTo({top:0, behavior:'smooth'})">
             下一页
         </button>
         {{ end }}

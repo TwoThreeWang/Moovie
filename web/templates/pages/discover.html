@@ -7,7 +7,8 @@
 <div class="tab-nav" style="margin-bottom: 24px;">
     <a href="javascript:void(0)"
        hx-get="/discover/movie"
-       hx-trigger="mouseenter delay:300ms"
+       preload="mouseover" 
+        preload-delay="300ms"
        hx-target="#discover-content"
        hx-push-url="true"
        hx-indicator="#loading-indicator"
@@ -15,7 +16,8 @@
        onclick="updateActiveTab(this)">热门电影</a>
     <a href="javascript:void(0)"
        hx-get="/discover/tv"
-       hx-trigger="mouseenter delay:300ms"
+       preload="mouseover" 
+        preload-delay="300ms"
        hx-target="#discover-content"
        hx-push-url="true"
        hx-indicator="#loading-indicator"
@@ -23,7 +25,8 @@
        onclick="updateActiveTab(this)">热门电视剧</a>
     <a href="javascript:void(0)"
        hx-get="/discover/show"
-       hx-trigger="mouseenter delay:300ms"
+       preload="mouseover" 
+        preload-delay="300ms"
        hx-target="#discover-content"
        hx-push-url="true"
        hx-indicator="#loading-indicator"
@@ -31,7 +34,8 @@
        onclick="updateActiveTab(this)">热门综艺</a>
     <a href="javascript:void(0)"
        hx-get="/discover/cartoon"
-       hx-trigger="mouseenter delay:300ms"
+       preload="mouseover" 
+        preload-delay="300ms"
        hx-target="#discover-content"
        hx-push-url="true"
        hx-indicator="#loading-indicator"
