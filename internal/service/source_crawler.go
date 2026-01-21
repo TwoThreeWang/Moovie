@@ -95,6 +95,11 @@ func (c *DefaultSourceCrawler) Search(ctx context.Context, baseUrl, keyword, sou
 	for _, item := range apiResp.List {
 		vodItem := c.mapToVodItem(item, sourceKey)
 
+		// 没有播放链接的不采集
+		if vodItem.VodPlayUrl == "" {
+			continue
+		}
+
 		// 分类过滤
 		if len(restrictedCategories) > 0 {
 			blocked := false
