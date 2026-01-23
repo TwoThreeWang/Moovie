@@ -34,7 +34,7 @@ fi
 
 # 4. 构建并启动容器
 echo -e "${GREEN}步骤 2: 正在构建镜像并启动容器...${NC}"
-docker compose up -d --build
+docker compose up -d --build --force-recreate
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}部署成功！${NC}"

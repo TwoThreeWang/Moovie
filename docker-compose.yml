@@ -6,8 +6,8 @@ services:
     container_name: moovie-app
     ports:
       - "5007:5007"
-    volumes:
-      - ./.env:/app/.env
+    env_file:
+      - .env
     environment:
       - APP_ENV=production
     restart: unless-stopped
