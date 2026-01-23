@@ -338,6 +338,9 @@ func (h *Handler) Play(c *gin.Context) {
 	}
 	pageTitle += " - 在线播放免费高清线路 - " + h.Config.SiteName
 
+	// 获取视频加载统计信息
+	loadStats, _ := h.Repos.Movie.GetLoadStatsBySource(sourceKey, vodId)
+
 	// 准备渲染数据
 	renderData := gin.H{
 		"Title":         pageTitle,
@@ -353,6 +356,7 @@ func (h *Handler) Play(c *gin.Context) {
 		"Description":   fmt.Sprintf("在线观看 %s - %s", detail.VodName, h.Config.SiteName),
 		"Keywords":      fmt.Sprintf("%s,在线播放,高清视频,%s", detail.VodName, h.Config.SiteName),
 		"Cover":         detail.VodPic,
+		"LoadStats":     loadStats,
 	}
 
 	if currentSource != nil {

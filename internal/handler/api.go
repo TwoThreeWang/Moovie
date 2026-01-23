@@ -515,3 +515,24 @@ func (h *Handler) DashboardHistoryHTMX(c *gin.Context) {
 		"History": histories,
 	})
 }
+
+// GetLoadStats 获取视频加载统计信息
+// GET /api/stats/load-speed?source_key=xxx&vod_id=xxx
+func (h *Handler) GetLoadStats(c *gin.Context) {
+	sourceKey := c.Query("source_key")
+	vodID := c.Query("vod_id")
+	
+	if sourceKey == "" || vodID == "" {
+		utils.BadRequest(c, "source_key 和 vod_id 不能为空")
+		return
+	}
+	
+	stats, err := h.Repos.Movie.GetLoadStatsBySource(sourceKey, vodID)
+	if err != nil {
+		log.Printf("[GetLoadStats] 获取加载统计失败: %v", err)
+		utils.InternalServerError(c, "获取统计信息失败")
+		return
+	}
+	
+	utils.Success(c, stats)
+}

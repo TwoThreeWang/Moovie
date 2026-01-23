@@ -90,6 +90,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/dashboard/favorites", h.DashboardFavoritesHTMX) // 仪表盘收藏
 		api.GET("/htmx/dashboard/history", h.DashboardHistoryHTMX)     // 仪表盘历史
 		api.POST("/report/load-speed", h.ReportLoadSpeed)              // 上报加载速度
+		api.GET("/stats/load-speed", h.GetLoadStats)                   // 获取加载统计
 	}
 
 	// ==================== 管理后台 ====================
@@ -224,6 +225,29 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 				res = append(res, i)
 			}
 			return res
+		},
+		"divf": func(a, b interface{}) float64 {
+			var aFloat, bFloat float64
+			switch v := a.(type) {
+			case int:
+				aFloat = float64(v)
+			case float64:
+				aFloat = v
+			default:
+				aFloat = 0
+			}
+			switch v := b.(type) {
+			case int:
+				bFloat = float64(v)
+			case float64:
+				bFloat = v
+			default:
+				bFloat = 1
+			}
+			if bFloat == 0 {
+				return 0
+			}
+			return aFloat / bFloat
 		},
 	}
 

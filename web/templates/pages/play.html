@@ -66,6 +66,22 @@
                         <span class="meta-value">{{ range $i, $a := .Detail.GetActors }}{{ if $i }} / {{ end }}{{ $a }}{{ end }}</span>
                     </div>
                     {{ end }}
+                    {{ if .LoadStats }}
+                    <div class="meta-row">
+                        <span class="meta-label">统计：</span>
+                        <span class="meta-value">
+                            {{ if gt .LoadStats.SampleCount 0 }}
+                                {{ $loadTime := divf .LoadStats.AvgSpeedMs 1000 }}
+                                <span class="speed-indicator {{ if lt $loadTime 1.0 }}fast{{ else if lt $loadTime 3.0 }}normal{{ else }}slow{{ end }}"></span>
+                                {{ if lt $loadTime 1.0 }}极速{{ else if lt $loadTime 3.0 }}正常{{ else }}较慢{{ end }}
+                                {{ printf "%.1f" $loadTime }}秒 
+                                ({{ printf "%.0f" .LoadStats.SuccessRate }}%成功率{{ if gt .LoadStats.SampleCount 0 }} · {{ .LoadStats.SampleCount }}次播放{{ end }})
+                            {{ else }}
+                                暂无统计数据
+                            {{ end }}
+                        </span>
+                    </div>
+                    {{ end }}
                     {{ if .Detail.VodTime }}
                     <div class="meta-row">
                         <span class="meta-label">更新：</span>

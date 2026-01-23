@@ -4,6 +4,28 @@
     <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
     <div class="changelog-container">
+        <!-- v3.0.1 -->
+        <section class="changelog-item">
+            <div class="version-badge">v3.0.1 <small>2026-01-23</small></div>
+            <div class="changelog-details">
+                <h3>✨ 新增 (Added)</h3>
+                <ul>
+                    <li>添加视频加载速度显示功能，使用增量平均算法基于其他用户的实际播放反馈来计算平均速度，优化用户体验</li>
+                    <li>为视频搜索结果为空和缺少播放链接的情况添加具体错误信息</li>
+                    <li>实现HTMX预加载功能，优化页面切换体验</li>
+                    <li>为按钮和标签添加鼠标悬停延迟触发功能</li>
+                    <li>添加豆瓣Rexxar API作为主要爬取方案，增加爬取成功率</li>
+                    <li>实现搜索结果缓存和分页功能</li>
+                </ul>
+                <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+                <ul>
+                    <li>跳过采集没有播放链接的视频项，提高数据质量</li>
+                    <li>为评论标题链接添加title属性，提升可访问性</li>
+                    <li>添加豆瓣ID有效性校验函数，增强数据准确性</li>
+                </ul>
+            </div>
+        </section>
+
         <!-- v3.0.0 -->
         <section class="changelog-item">
             <div class="version-badge">v3.0.0 <small>2026-01-17</small></div>

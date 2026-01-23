@@ -27,6 +27,14 @@
                     <span class="source-item active">
                         {{ .SourceKey }}
                     </span>
+                    {{ if and .AvgSpeedMs (gt .SampleCount 0) }}
+                        {{ $loadTime := divf .AvgSpeedMs 1000 }}
+                        <span class="source-item">
+                            <span class="speed-indicator {{ if lt $loadTime 1.0 }}fast{{ else if lt $loadTime 3.0 }}normal{{ else }}slow{{ end }}"></span>
+                            {{ if lt $loadTime 1.0 }}极速{{ else if lt $loadTime 3.0 }}正常{{ else }}较慢{{ end }}
+                            {{ printf "%.1f" $loadTime }}秒
+                        </span>
+                    {{ end }}
                     {{ if .VodRemarks }}<span class="card-remarks">{{ .VodRemarks }}</span>{{ end }}
                 </div>
             </div>

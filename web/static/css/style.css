@@ -3211,6 +3211,19 @@ img {
     white-space: nowrap;
 }
 
+/* 加载统计特殊样式，彩色圆点标识样式 */
+.speed-indicator {
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
+.speed-indicator.fast { background-color: #4caf50; }
+.speed-indicator.normal { background-color: #ff9800; }
+.speed-indicator.slow { background-color: #f44336; }
+
 /* 剧情简介 */
 .video-summary {
     padding: 16px 0;
