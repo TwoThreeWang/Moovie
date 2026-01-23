@@ -58,6 +58,18 @@ function detectVideoType(url) {
     // 默认尝试 m3u8
     return 'm3u8';
 }
+let hasReported = false;
+// 加载速度上报函数
+function reportLoad(status, loadTime, reason, sourceKey, vodId) {
+    if (hasReported) return;
+    hasReported = true;
+    console.log('视频加载', status, '，耗时:', loadTime, '毫秒');
+    fetch('/api/report/load-speed', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({source_key: sourceKey, vod_id: vodId, load_time: loadTime, status: status, reason: reason})
+    }).catch(() => {}); // 静默处理错误
+}
 
 // 初始化播放器
 function initPlayer(containerId, url, options) {
@@ -90,7 +102,11 @@ function initPlayer(containerId, url, options) {
 
     var videoType = detectVideoType(url);
     console.log('[Player] 视频类型:', videoType);
-
+    
+    // 加载速度统计
+    const startTime = Date.now();
+    // 30秒超时
+    const timeoutTimer = setTimeout(() => reportLoad('failed', 30000, 'timeout', options.sourceKey, options.vodId), 30000);
     // Artplayer 配置
     var config = {
         container: container,
@@ -171,10 +187,20 @@ function initPlayer(containerId, url, options) {
                         }
                     });
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        console.log('[Player] HLS manifest 解析完成');
                         setTimeout(() => {
                             hls.config.maxBufferLength = 40;
                             hls.config.maxMaxBufferLength = 90;
                         }, 8000);
+                    });
+                    
+                    // 监听HLS的LEVEL_LOADED事件，表示数据加载完成
+                    hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
+                        console.log('[Player] HLS level loaded, 可以开始播放');
+                        clearTimeout(timeoutTimer);
+                        const loadTime = Date.now() - startTime;
+                        console.log('视频加载成功，耗时:', loadTime, '毫秒');
+                        reportLoad('success', loadTime, null, options.sourceKey, options.vodId);
                     });
                 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                     video.src = url;
@@ -195,6 +221,15 @@ function initPlayer(containerId, url, options) {
                     art.flv = flvPlayer;
                     art.on('destroy', function() {
                         flvPlayer.destroy();
+                    });
+                    
+                    // 监听FLV加载完成事件
+                    flvPlayer.on(flvjs.Events.LOADING_COMPLETE, () => {
+                        console.log('[Player] FLV 加载完成');
+                        clearTimeout(timeoutTimer);
+                        const loadTime = Date.now() - startTime;
+                        console.log('视频加载成功，耗时:', loadTime, '毫秒');
+                        reportLoad('success', loadTime, null, options.sourceKey, options.vodId);
                     });
                 } else {
                     console.error('[Player] 不支持 FLV 播放');
@@ -226,6 +261,12 @@ function initPlayer(containerId, url, options) {
                 }
             }
         });
+        art.once('video:canplay', () => {
+            clearTimeout(timeoutTimer);
+            const loadTime = Date.now() - startTime;
+            console.log('视频加载成功，耗时:', loadTime, '毫秒');
+            reportLoad('success', loadTime, null, options.sourceKey, options.vodId);
+        });
 
         art.on('play', () => {
             art.notice.show = '不要相信视频中出现的任何广告！！！';
@@ -234,6 +275,8 @@ function initPlayer(containerId, url, options) {
 
         art.on('error', function(error, reconnectTime) {
             console.error('[Player] 播放错误:', error);
+            clearTimeout(timeoutTimer);
+            reportLoad('failed', Date.now() - startTime, 'error', options.sourceKey, options.vodId);
         });
 
         art.on('video:timeupdate', () => {

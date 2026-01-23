@@ -42,6 +42,9 @@ type VodItem struct {
 	VodPlayUrl    string    `json:"vod_play_url" db:"vod_play_url"`                               // 播放链接
 	TypeName      string    `json:"type_name" db:"type_name"`                                     // 类型名称
 	LastVisitedAt time.Time `json:"last_visited_at" db:"last_visited_at" gorm:"index"`            // 最后访问时间
+	AvgSpeedMs    int       `json:"avg_speed_ms" db:"avg_speed_ms"`                               // 平均加载耗时(毫秒)
+	SampleCount   int       `json:"sample_count" db:"sample_count"`                               // 样本数量
+	FailedCount   int       `json:"failed_count" db:"failed_count"`                               // 失败次数
 }
 
 // GetGenres 获取分类切片

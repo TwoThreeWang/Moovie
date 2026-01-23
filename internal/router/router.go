@@ -89,6 +89,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/feedback-list", h.FeedbackListHTMX)             // 反馈列表
 		api.GET("/htmx/dashboard/favorites", h.DashboardFavoritesHTMX) // 仪表盘收藏
 		api.GET("/htmx/dashboard/history", h.DashboardHistoryHTMX)     // 仪表盘历史
+		api.POST("/report/load-speed", h.ReportLoadSpeed)              // 上报加载速度
 	}
 
 	// ==================== 管理后台 ====================
