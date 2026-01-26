@@ -251,17 +251,23 @@ func (h *Handler) Movie(c *gin.Context) {
 		// 如果解析失败，处理错误或设为空
 		directorList = []Director{}
 	}
+	// 相似电影推荐
+	movies, err := h.Repos.Movie.FindSimilar(doubanID, 12)
+	if err != nil {
+		log.Printf("获取相似电影失败: %v", err)
+	}
 
 	c.HTML(http.StatusOK, "movie.html", h.RenderData(c, gin.H{
-		"Title":        "《" + movie.Title + "》 (" + movie.Year + ") - 剧情介绍/演职员表 - " + h.Config.SiteName,
-		"Description":  desc,
-		"Keywords":     strings.Join(keywords, ","),
-		"Cover":        "https://image.baidu.com/search/down?url=" + movie.Poster,
-		"Canonical":    fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
-		"Movie":        movie,
-		"IsFavorited":  isFavorited,
-		"DirectorList": directorList,
-		"SearchTitle":  title,
+		"Title":         "《" + movie.Title + "》 (" + movie.Year + ") - 剧情介绍/演职员表 - " + h.Config.SiteName,
+		"Description":   desc,
+		"Keywords":      strings.Join(keywords, ","),
+		"Cover":         "https://image.baidu.com/search/down?url=" + movie.Poster,
+		"Canonical":     fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
+		"Movie":         movie,
+		"IsFavorited":   isFavorited,
+		"DirectorList":  directorList,
+		"SearchTitle":   title,
+		"SimilarMovies": movies,
 	}))
 }
 
