@@ -21,8 +21,18 @@
       "position": {{ add $i 1 }},
       "item": {
         "@type": "Movie",
+        "image": "{{ $item.Movie.Poster }}",
         "name": "{{ $item.Movie.Title | js }}",
-        "url": "{{ $.SiteUrl }}/movie/{{ $item.Movie.DoubanID }}"
+        "url": "{{ $.SiteUrl }}/movie/{{ $item.Movie.DoubanID }}"{{ $directors := jsonUnmarshal $item.Movie.Directors }}{{ if $directors }},
+        "director": [
+          {{ range $idx, $d := $directors }}
+          {{ if $idx }},{{ end }}
+          {
+            "@type": "Person",
+            "name": "{{ $d.name | js }}"
+          }
+          {{ end }}
+        ]{{ end }}
       }
     }{{ if lt $i (sub (len $.SimilarMovies) 1) }},{{ end }}
     {{ end }}
@@ -53,24 +63,29 @@
         <p class="page-subtitle">基于相似度算法为您推荐相关电影</p>
     </div>
 
-    <!-- 源电影极简信息 -->
-    <div class="source-movie-minimal">
-        <div class="source-movie-poster-mini">
+    <!-- 源电影卡片 -->
+    <article class="source-movie-card">
+        <a href="/movie/{{ .SourceMovie.DoubanID }}" class="source-movie-poster">
             <img src="https://image.baidu.com/search/down?url={{ .SourceMovie.Poster }}" alt="{{ .SourceMovie.Title }}" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
-        </div>
-        <div class="source-movie-info-mini">
-            <h2 class="source-movie-title-mini">{{ .SourceMovie.Title }}</h2>
-            {{ if .SourceMovie.Year }}
-            <span class="source-movie-year">{{ .SourceMovie.Year }}</span>
-            {{ end }}
             {{ if .SourceMovie.Rating }}
-            <span class="source-movie-rating-mini">⭐ {{ .SourceMovie.Rating }}</span>
+            <span class="source-movie-rating-badge">⭐ {{ .SourceMovie.Rating }}</span>
             {{ end }}
+        </a>
+        <div class="source-movie-content">
+            <h2 class="source-movie-title">
+                <a href="/movie/{{ .SourceMovie.DoubanID }}">{{ .SourceMovie.Title }}</a>
+            </h2>
+            <div class="source-movie-meta">
+                {{ if .SourceMovie.Year }}<span class="meta-year">{{ .SourceMovie.Year }}</span>{{ end }}
+                {{ if .SourceMovie.Genres }}<span class="meta-genres">{{ .SourceMovie.Genres }}</span>{{ end }}
+                {{ if .SourceMovie.Countries }}<span class="meta-country">{{ .SourceMovie.Countries }}</span>{{ end }}
+            </div>
             {{ if .SourceMovie.Summary }}
-            <p class="source-movie-summary-mini">{{ .SourceMovie.Summary }}</p>
+            <p class="source-movie-summary">{{ .SourceMovie.Summary }}</p>
             {{ end }}
+            <a href="/movie/{{ .SourceMovie.DoubanID }}" class="source-movie-link">查看详情 →</a>
         </div>
-    </div>
+    </article>
 
     <!-- 推荐理由说明 -->
     <div class="recommendation-explanation">
@@ -83,55 +98,33 @@
         {{ if .SimilarMovies }}
         <div class="recommendations-list" id="recommendations-list">
             {{ range .SimilarMovies }}
-            <div class="recommendation-item">
-                <div class="recommendation-left">
-                    <a href="/movie/{{ .Movie.DoubanID }}" class="recommendation-poster-link">
-                        <img src="https://image.baidu.com/search/down?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
-                    </a>
-                </div>
-                <div class="recommendation-right">
-                    <!-- 第一行：标题 + 年份 + 评分 -->
-                    <div class="movie-header-line">
-                        <h3 class="movie-title">
-                            <a href="/movie/{{ .Movie.DoubanID }}">{{ .Movie.Title }}</a>
-                        </h3>
-                        {{ if .Movie.Year }}
-                        <span class="movie-year">({{ .Movie.Year }})</span>
-                        {{ end }}
-                        {{ if .Movie.Rating }}
-                        <span class="movie-rating">⭐ {{ .Movie.Rating }}</span>
-                        {{ end }}
+            <article class="recommendation-card">
+                <a href="/movie/{{ .Movie.DoubanID }}" class="recommendation-poster">
+                    <img src="https://image.baidu.com/search/down?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    {{ if .Movie.Rating }}
+                    <span class="recommendation-rating-badge">⭐ {{ .Movie.Rating }}</span>
+                    {{ end }}
+                </a>
+                <div class="recommendation-content">
+                    <h3 class="recommendation-title">
+                        <a href="/movie/{{ .Movie.DoubanID }}">{{ .Movie.Title }}</a>
+                    </h3>
+                    <div class="recommendation-meta">
+                        {{ if .Movie.Year }}<span class="meta-year">{{ .Movie.Year }}</span>{{ end }}
+                        {{ if .Movie.Genres }}<span class="meta-genres">{{ .Movie.Genres }}</span>{{ end }}
+                        {{ if .Movie.Countries }}<span class="meta-country">{{ .Movie.Countries }}</span>{{ end }}
                     </div>
-
-                    <!-- 第二行：类型 / 国家 -->
-                    <div class="movie-meta-line">
-                        {{ if .Movie.Genres }}
-                        <span class="movie-genres">{{ .Movie.Genres }}</span>
-                        {{ end }}
-                        {{ if .Movie.Countries }}
-                        <span class="movie-country">{{ .Movie.Countries }}</span>
-                        {{ end }}
-                    </div>
-
-                    <!-- 第三行：推荐理由（高亮背景色） -->
                     {{ if .Reason }}
-                    <div class="recommendation-reason-highlight">
-                        <p class="recommendation-reason-text reason-tag-{{ .ReasonType }}">{{ .Reason }}</p>
+                    <div class="recommendation-reason {{ .ReasonType }}">
+                        <span class="reason-icon">💡</span>
+                        <span class="reason-text">{{ .Reason }}</span>
                     </div>
                     {{ end }}
-
-                    <!-- 第四行：简短剧情摘要 -->
                     {{ if .Movie.Summary }}
-                    <div class="movie-summary">
-                        <p class="summary-text">{{ .Movie.Summary }}</p>
-                    </div>
+                    <p class="recommendation-summary">{{ .Movie.Summary }}</p>
                     {{ end }}
-
-                    <div class="recommendation-actions">
-                        <a href="/movie/{{ .Movie.DoubanID }}" class="btn btn-primary">查看《{{ .Movie.Title }}》详情</a>
-                    </div>
                 </div>
-            </div>
+            </article>
             {{ end }}
         </div>
 
@@ -190,84 +183,155 @@
     margin-bottom: 0;
 }
 
-/* 源电影极简信息 */
-.source-movie-minimal {
+/* ================== 源电影卡片 ================== */
+.source-movie-card {
     display: flex;
-    gap: 1.5rem;
-    align-items: center;
-    margin-bottom: 2rem;
-    padding: 1rem;
+    gap: 20px;
+    padding: 20px;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow);
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
 }
 
-.source-movie-poster-mini {
+.source-movie-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    transform: translateY(-3px);
+}
+
+.source-movie-poster {
+    position: relative;
     flex-shrink: 0;
-    width: 60px;
-    height: 90px;
-    border-radius: 4px;
+    width: 100px;
+    height: 150px;
+    border-radius: 8px;
     overflow: hidden;
     background: var(--bg-secondary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.source-movie-poster-mini img {
+.source-movie-poster img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transition: transform 0.3s ease;
 }
 
-.source-movie-info-mini {
+.source-movie-card:hover .source-movie-poster img {
+    transform: scale(1.05);
+}
+
+.source-movie-rating-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 8px;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.7) 100%);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+    color: var(--rating);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.source-movie-content {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.source-movie-title-mini {
-    font-size: 1.125rem;
+.source-movie-title {
+    margin: 0;
+    font-size: 1.25rem;
     font-weight: 600;
-    margin-bottom: 0.25rem;
+    line-height: 1.3;
 }
 
-.source-movie-year {
+.source-movie-title a {
+    color: var(--text);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.source-movie-title a:hover {
+    color: var(--primary);
+}
+
+.source-movie-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    flex-wrap: wrap;
+}
+
+.source-movie-meta .meta-year {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.source-movie-meta .meta-genres,
+.source-movie-meta .meta-country {
+    color: var(--text-muted);
+}
+
+.source-movie-meta span:not(:last-child)::after {
+    content: "/";
+    margin-left: 8px;
+    color: var(--border);
+    opacity: 0.5;
+}
+
+.source-movie-summary {
+    margin: 0;
     color: var(--text-secondary);
     font-size: 0.875rem;
-    margin-right: 1rem;
-}
-
-.source-movie-rating-mini {
-    color: var(--rating-star);
-    font-weight: 600;
-    font-size: 0.875rem;
-}
-
-.source-movie-summary-mini {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    line-height: 1.5;
+    line-height: 1.6;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    margin-top: 0.5rem;
 }
 
-/* 推荐理由说明 */
+.source-movie-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: auto;
+    color: var(--primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.source-movie-link:hover {
+    color: var(--primary-dark);
+}
+
+/* ================== 推荐理由说明 ================== */
 .recommendation-explanation {
     background: linear-gradient(135deg, var(--primary-alpha) 0%, rgba(0, 0, 0, 0) 100%);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 12px;
     padding: 1.5rem;
-    margin-bottom: 3rem;
+    margin-bottom: 2rem;
 }
 
 .recommendation-explanation p {
     color: var(--text-secondary);
     line-height: 1.6;
-    margin-bottom: 0;
+    margin: 0;
 }
 
-/* 推荐电影列表 - 纵向列表布局 */
+/* ================== 推荐电影列表 ================== */
 .recommendations-section {
     margin-bottom: 3rem;
 }
@@ -281,159 +345,168 @@
 .recommendations-list {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    margin-bottom: 2rem;
+    gap: 16px;
 }
 
-.recommendation-item {
+/* ================== 推荐卡片 ================== */
+.recommendation-card {
     display: flex;
-    gap: 1.5rem;
+    gap: 16px;
+    padding: 16px;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 1.25rem;
-    transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    border-radius: 12px;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
 }
 
-.recommendation-item:hover {
-    transform: translateY(-1px);
-    border-color: var(--border-strong);
-    box-shadow: var(--shadow-lg);
+.recommendation-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    transform: translateY(-3px);
 }
 
-.recommendation-left {
+.recommendation-poster {
+    position: relative;
     flex-shrink: 0;
-}
-
-.recommendation-poster-link {
-    display: block;
-    width: 80px;
-    height: 120px;
-    border-radius: 6px;
+    width: 90px;
+    height: 127px;
+    border-radius: 8px;
     overflow: hidden;
     background: var(--bg-secondary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.recommendation-poster-link img {
+.recommendation-poster img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform var(--transition);
+    transition: transform 0.3s ease;
 }
 
-.recommendation-item:hover .recommendation-poster-link img {
+.recommendation-card:hover .recommendation-poster img {
     transform: scale(1.05);
 }
 
-.recommendation-right {
-    flex: 1;
-    min-width: 0;
-}
-
-.movie-header-line {
+.recommendation-rating-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
-    flex-wrap: wrap;
+    gap: 3px;
+    padding: 3px 8px;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.7) 100%);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+    color: var(--rating);
+    font-size: 0.7rem;
+    font-weight: 700;
 }
 
-.movie-title {
+.recommendation-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.recommendation-title {
     margin: 0;
-    font-size: 1.125rem;
+    font-size: 1rem;
     font-weight: 600;
+    line-height: 1.3;
 }
 
-.movie-title a {
-    text-decoration: none;
+.recommendation-title a {
     color: var(--text);
+    text-decoration: none;
     transition: color 0.2s;
 }
 
-.movie-title a:hover {
+.recommendation-title a:hover {
     color: var(--primary);
 }
 
-.movie-year {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-}
-
-.movie-rating {
-    position: static;
-    background: none;
-    color: var(--rating-star);
-    font-weight: 600;
-    font-size: 0.875rem;
-    padding: 0;
-    border-radius: 0;
-    opacity: 1;
-    margin-left: auto;
-    white-space: nowrap;
-}
-
-.movie-meta-line {
+.recommendation-meta {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
+    gap: 8px;
+    font-size: 0.8rem;
+    flex-wrap: wrap;
 }
 
-.movie-genres::after {
-    content: "·";
-    margin-left: 0.5rem;
+.recommendation-meta .meta-year {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.recommendation-meta .meta-genres,
+.recommendation-meta .meta-country {
     color: var(--text-muted);
 }
 
-.movie-country {
-    color: var(--text-secondary);
+.recommendation-meta span:not(:last-child)::after {
+    content: "/";
+    margin-left: 8px;
+    color: var(--border);
+    opacity: 0.5;
 }
 
-.recommendation-reason-highlight {
-    margin-bottom: 0.75rem;
-    padding: 0.75rem;
+/* 推荐理由 */
+.recommendation-reason {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
     background: var(--bg-secondary);
-    border-radius: var(--radius-sm);
-    border-left: 4px solid var(--primary);
+    border-left: 3px solid var(--primary);
 }
 
-.recommendation-reason-text {
-    margin: 0;
-    font-size: 0.875rem;
+.recommendation-reason .reason-icon {
+    flex-shrink: 0;
+    font-size: 0.9rem;
+}
+
+.recommendation-reason .reason-text {
+    font-size: 0.8rem;
     line-height: 1.5;
+    color: var(--text-secondary);
     font-weight: 500;
 }
 
-.reason-tag-genre {
+.recommendation-reason.genre {
+    border-left-color: var(--primary);
+}
+.recommendation-reason.genre .reason-text {
     color: var(--primary);
 }
 
-.reason-tag-person {
+.recommendation-reason.person {
+    border-left-color: var(--success);
+}
+.recommendation-reason.person .reason-text {
     color: var(--success);
 }
 
-.reason-tag-rating {
+.recommendation-reason.rating {
+    border-left-color: var(--warning);
+}
+.recommendation-reason.rating .reason-text {
     color: var(--warning);
 }
 
-.reason-tag-era {
+.recommendation-reason.era {
+    border-left-color: var(--info);
+}
+.recommendation-reason.era .reason-text {
     color: var(--info);
 }
 
-.reason-tag-vector {
-    color: var(--text-muted);
-}
-
-.movie-summary {
-    margin-bottom: 1rem;
-}
-
-.summary-text {
+.recommendation-summary {
     margin: 0;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     line-height: 1.5;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -441,23 +514,13 @@
     overflow: hidden;
 }
 
-.recommendation-actions {
-    margin-top: 0.75rem;
-}
-
-.recommendation-actions {
-    display: flex;
-    gap: 0.5rem;
-}
-
-
-
+/* ================== 空状态 ================== */
 .recommendations-empty {
     text-align: center;
     padding: 3rem;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 12px;
 }
 
 .recommendations-empty p {
@@ -465,12 +528,16 @@
     margin-bottom: 1rem;
 }
 
+/* ================== 返回链接 ================== */
 .back-section {
     text-align: center;
     margin-top: 2rem;
 }
 
 .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     color: var(--primary);
     text-decoration: none;
     font-size: 1rem;
@@ -482,72 +549,74 @@
     color: var(--primary-dark);
 }
 
-/* 响应式设计 */
+/* ================== 响应式设计 ================== */
 @media (max-width: 768px) {
-    .source-movie-minimal {
+    .source-movie-card {
         flex-direction: column;
+        align-items: center;
         text-align: center;
-        gap: 1rem;
+        gap: 16px;
+        padding: 16px;
     }
 
-    .source-movie-poster-mini {
-        margin: 0 auto;
+    .source-movie-poster {
+        width: 80px;
+        height: 120px;
     }
 
-    .recommendation-item {
-        flex-direction: column;
-        gap: 1rem;
+    .source-movie-meta {
+        justify-content: center;
     }
 
-    .recommendation-left {
-        text-align: center;
+    .source-movie-link {
+        justify-content: center;
     }
 
-    .recommendation-poster-link {
-        margin: 0 auto;
+    .recommendation-card {
+        padding: 12px;
+        gap: 12px;
     }
 
-    .movie-header-line {
+    .recommendation-poster {
+        width: 70px;
+        height: 99px;
+    }
+
+    .recommendation-meta {
         flex-direction: column;
         align-items: flex-start;
-        gap: 0.5rem;
+        gap: 2px;
     }
 
-    .movie-rating {
-        margin-left: 0;
-    }
-
-    .movie-meta-line {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.25rem;
-    }
-
-    .movie-genres::after {
+    .recommendation-meta span:not(:last-child)::after {
         display: none;
     }
 }
 
 @media (max-width: 480px) {
-    .recommendation-poster-link {
+    .source-movie-card {
+        padding: 12px;
+    }
+
+    .source-movie-title {
+        font-size: 1.1rem;
+    }
+
+    .recommendation-poster {
         width: 60px;
-        height: 90px;
+        height: 85px;
     }
 
-    .recommendation-item {
-        padding: 1rem;
+    .recommendation-title {
+        font-size: 0.9rem;
     }
 
-    .movie-title {
-        font-size: 1rem;
+    .recommendation-reason {
+        padding: 8px 10px;
     }
 
-    .recommendation-reason-highlight {
-        padding: 0.5rem;
-    }
-
-    .recommendation-reason-text {
-        font-size: 0.8125rem;
+    .recommendation-reason .reason-text {
+        font-size: 0.75rem;
     }
 }
 </style>
