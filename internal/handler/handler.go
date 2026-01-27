@@ -251,10 +251,26 @@ func (h *Handler) Movie(c *gin.Context) {
 		// 如果解析失败，处理错误或设为空
 		directorList = []Director{}
 	}
-	// 相似电影推荐
-	movies, err := h.Repos.Movie.FindSimilar(doubanID, 12)
-	if err != nil {
-		log.Printf("获取相似电影失败: %v", err)
+	// 相似电影推荐 - 添加缓存机制
+	cacheKey := fmt.Sprintf("similar_movies_%s", doubanID)
+	var movies []model.Movie
+
+	// 尝试从缓存获取
+	if val, found := utils.CacheGet(cacheKey); found {
+		if cached, ok := val.([]model.Movie); ok {
+			movies = cached
+		}
+	}
+
+	// 如果缓存中没有，查询数据库
+	if movies == nil {
+		movies, err = h.Repos.Movie.FindSimilar(doubanID, 12)
+		if err != nil {
+			log.Printf("获取相似电影失败: %v", err)
+		} else {
+			// 存入缓存，设置1小时过期时间
+			utils.CacheSet(cacheKey, movies, 1*time.Hour)
+		}
 	}
 
 	c.HTML(http.StatusOK, "movie.html", h.RenderData(c, gin.H{
