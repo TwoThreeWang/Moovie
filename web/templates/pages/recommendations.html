@@ -1,0 +1,583 @@
+{{/* 相似电影推荐页面 */}}
+{{ template "base" . }}
+
+{{ define "title" }}
+类似《{{ .SourceMovie.Title }}》的电影推荐
+{{ end }}
+
+{{ define "content" }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": "类似《{{ .SourceMovie.Title }}》的电影推荐",
+  "description": "基于剧情、导演、题材与向量相似度的相似电影推荐列表",
+  "itemListOrder": "https://schema.org/ItemListOrderDescending",
+  "numberOfItems": {{ len .SimilarMovies }},
+  "itemListElement": [
+    {{ range $i, $item := .SimilarMovies }}
+    {
+      "@type": "ListItem",
+      "position": {{ add $i 1 }},
+      "item": {
+        "@type": "Movie",
+        "name": "{{ $item.Movie.Title | js }}",
+        "url": "{{ $.SiteUrl }}/movie/{{ $item.Movie.DoubanID }}"
+      }
+    }{{ if lt $i (sub (len $.SimilarMovies) 1) }},{{ end }}
+    {{ end }}
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "首页", "item": "{{ $.SiteUrl }}/" },
+    { "@type": "ListItem", "position": 2, "name": "《{{ .SourceMovie.Title }}》", "item": "{{ $.SiteUrl }}/movie/{{ .SourceMovie.DoubanID }}" },
+    { "@type": "ListItem", "position": 3, "name": "相似推荐", "item": "{{ $.SiteUrl }}/similar/{{ .SourceMovie.DoubanID }}" }
+  ]
+}
+</script>
+<div class="recommendations-container">
+    <nav class="breadcrumbs">
+        <a href="/">首页</a>
+        <span class="breadcrumbs-sep">›</span>
+        <a href="/movie/{{ .SourceMovie.DoubanID }}">《{{ .SourceMovie.Title }}》</a>
+        <span class="breadcrumbs-sep">›</span>
+        <span>相似推荐</span>
+    </nav>
+    <div class="page-header">
+        <h1 class="page-title">类似《{{ .SourceMovie.Title }}》的电影推荐</h1>
+        <p class="page-subtitle">基于相似度算法为您推荐相关电影</p>
+    </div>
+
+    <!-- 源电影极简信息 -->
+    <div class="source-movie-minimal">
+        <div class="source-movie-poster-mini">
+            <img src="https://image.baidu.com/search/down?url={{ .SourceMovie.Poster }}" alt="{{ .SourceMovie.Title }}" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+        </div>
+        <div class="source-movie-info-mini">
+            <h2 class="source-movie-title-mini">{{ .SourceMovie.Title }}</h2>
+            {{ if .SourceMovie.Year }}
+            <span class="source-movie-year">{{ .SourceMovie.Year }}</span>
+            {{ end }}
+            {{ if .SourceMovie.Rating }}
+            <span class="source-movie-rating-mini">⭐ {{ .SourceMovie.Rating }}</span>
+            {{ end }}
+            {{ if .SourceMovie.Summary }}
+            <p class="source-movie-summary-mini">{{ .SourceMovie.Summary }}</p>
+            {{ end }}
+        </div>
+    </div>
+
+    <!-- 推荐理由说明 -->
+    <div class="recommendation-explanation">
+        <p>我们通过分析电影的类型、导演、演员、评分和年代等多个维度，为您推荐以下相似电影。每部电影都附有具体的推荐理由，帮助您更好地了解为什么这部电影可能符合您的口味。</p>
+    </div>
+
+    <!-- 相似电影列表 - 纵向列表布局 -->
+    <div class="recommendations-section">
+        <h2 class="section-title">相似电影推荐</h2>
+        {{ if .SimilarMovies }}
+        <div class="recommendations-list" id="recommendations-list">
+            {{ range .SimilarMovies }}
+            <div class="recommendation-item">
+                <div class="recommendation-left">
+                    <a href="/movie/{{ .Movie.DoubanID }}" class="recommendation-poster-link">
+                        <img src="https://image.baidu.com/search/down?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    </a>
+                </div>
+                <div class="recommendation-right">
+                    <!-- 第一行：标题 + 年份 + 评分 -->
+                    <div class="movie-header-line">
+                        <h3 class="movie-title">
+                            <a href="/movie/{{ .Movie.DoubanID }}">{{ .Movie.Title }}</a>
+                        </h3>
+                        {{ if .Movie.Year }}
+                        <span class="movie-year">({{ .Movie.Year }})</span>
+                        {{ end }}
+                        {{ if .Movie.Rating }}
+                        <span class="movie-rating">⭐ {{ .Movie.Rating }}</span>
+                        {{ end }}
+                    </div>
+                    
+                    <!-- 第二行：类型 / 国家 -->
+                    <div class="movie-meta-line">
+                        {{ if .Movie.Genres }}
+                        <span class="movie-genres">{{ .Movie.Genres }}</span>
+                        {{ end }}
+                        {{ if .Movie.Countries }}
+                        <span class="movie-country">{{ .Movie.Countries }}</span>
+                        {{ end }}
+                    </div>
+                    
+                    <!-- 第三行：推荐理由（高亮背景色） -->
+                    {{ if .Reason }}
+                    <div class="recommendation-reason-highlight">
+                        <p class="recommendation-reason-text reason-tag-{{ .ReasonType }}">{{ .Reason }}</p>
+                    </div>
+                    {{ end }}
+                    
+                    <!-- 第四行：简短剧情摘要 -->
+                    {{ if .Movie.Summary }}
+                    <div class="movie-summary">
+                        <p class="summary-text">{{ .Movie.Summary }}</p>
+                    </div>
+                    {{ end }}
+                    
+                    <div class="recommendation-actions">
+                        <a href="/movie/{{ .Movie.DoubanID }}" class="btn btn-primary">查看《{{ .Movie.Title }}》详情</a>
+                    </div>
+                </div>
+            </div>
+            {{ end }}
+        </div>
+        
+        <!-- 加载更多按钮 -->
+        <div class="load-more-section">
+            <button class="btn btn-secondary load-more-btn" 
+                    hx-get="/api/recommendations/{{ .SourceMovie.DoubanID }}?page=2&size=10"
+                    hx-target="#recommendations-list"
+                    hx-swap="beforeend"
+                    hx-indicator=".htmx-indicator">
+                加载更多
+            </button>
+            <span class="htmx-indicator">加载中...</span>
+        </div>
+        {{ else }}
+        <div class="recommendations-empty">
+            <p>😔 暂时没有找到相似的电影推荐</p>
+            <p>您可以尝试浏览其他电影，或者去发现页面看看热门电影。</p>
+            <a href="/discover" class="btn btn-secondary">去发现页面</a>
+        </div>
+        {{ end }}
+    </div>
+
+    <!-- 返回按钮 -->
+    <div class="back-section">
+        <a href="/movie/{{ .SourceMovie.DoubanID }}" class="back-link">
+            <span>← 返回《{{ .SourceMovie.Title }}》</span>
+        </a>
+    </div>
+</div>
+
+<style>
+.recommendations-container {
+    width: 100%;
+}
+
+.breadcrumbs {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+.breadcrumbs a {
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+.breadcrumbs a:hover {
+    color: var(--primary);
+}
+.breadcrumbs-sep {
+    margin: 0 0.25rem;
+    color: var(--text-muted);
+}
+
+.page-header {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+.page-title {
+    font-weight: 700;
+}
+
+.page-subtitle {
+    font-size: 1.125rem;
+    color: var(--text-secondary);
+    margin-bottom: 0;
+}
+
+/* 源电影极简信息 */
+.source-movie-minimal {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding: 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+}
+
+.source-movie-poster-mini {
+    flex-shrink: 0;
+    width: 60px;
+    height: 90px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+}
+
+.source-movie-poster-mini img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.source-movie-info-mini {
+    flex: 1;
+    min-width: 0;
+}
+
+.source-movie-title-mini {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.source-movie-year {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-right: 1rem;
+}
+
+.source-movie-rating-mini {
+    color: var(--rating-star);
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.source-movie-summary-mini {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-top: 0.5rem;
+}
+
+/* 推荐理由说明 */
+.recommendation-explanation {
+    background: linear-gradient(135deg, var(--primary-alpha) 0%, rgba(0, 0, 0, 0) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1.5rem;
+    margin-bottom: 3rem;
+}
+
+.recommendation-explanation p {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 0;
+}
+
+/* 推荐电影列表 - 纵向列表布局 */
+.recommendations-section {
+    margin-bottom: 3rem;
+}
+
+.section-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+}
+
+.recommendations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.recommendation-item {
+    display: flex;
+    gap: 1.5rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1.25rem;
+    transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+
+.recommendation-item:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-lg);
+}
+
+.recommendation-left {
+    flex-shrink: 0;
+}
+
+.recommendation-poster-link {
+    display: block;
+    width: 80px;
+    height: 120px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+}
+
+.recommendation-poster-link img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform var(--transition);
+}
+
+.recommendation-item:hover .recommendation-poster-link img {
+    transform: scale(1.05);
+}
+
+.recommendation-right {
+    flex: 1;
+    min-width: 0;
+}
+
+.movie-header-line {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.movie-title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.movie-title a {
+    text-decoration: none;
+    color: var(--text);
+    transition: color 0.2s;
+}
+
+.movie-title a:hover {
+    color: var(--primary);
+}
+
+.movie-year {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.movie-rating {
+    position: static;
+    background: none;
+    color: var(--rating-star);
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: 0;
+    border-radius: 0;
+    opacity: 1;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.movie-meta-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.movie-genres::after {
+    content: "·";
+    margin-left: 0.5rem;
+    color: var(--text-muted);
+}
+
+.movie-country {
+    color: var(--text-secondary);
+}
+
+.recommendation-reason-highlight {
+    margin-bottom: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    border-left: 4px solid var(--primary);
+}
+
+.recommendation-reason-text {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    font-weight: 500;
+}
+
+.reason-tag-genre {
+    color: var(--primary);
+}
+
+.reason-tag-person {
+    color: var(--success);
+}
+
+.reason-tag-rating {
+    color: var(--warning);
+}
+
+.reason-tag-era {
+    color: var(--info);
+}
+
+.reason-tag-vector {
+    color: var(--text-muted);
+}
+
+.movie-summary {
+    margin-bottom: 1rem;
+}
+
+.summary-text {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.recommendation-actions {
+    margin-top: 0.75rem;
+}
+
+.recommendation-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* 加载更多按钮 */
+.load-more-section {
+    text-align: center;
+    margin-top: 2rem;
+}
+
+.load-more-btn {
+    min-width: 120px;
+}
+
+.htmx-indicator {
+    display: none;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin-left: 0.5rem;
+}
+
+.htmx-request .htmx-indicator {
+    display: inline-block;
+}
+
+.recommendations-empty {
+    text-align: center;
+    padding: 3rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.recommendations-empty p {
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.back-section {
+    text-align: center;
+    margin-top: 2rem;
+}
+
+.back-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
+.back-link:hover {
+    color: var(--primary-dark);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .source-movie-minimal {
+        flex-direction: column;
+        text-align: center;
+        gap: 1rem;
+    }
+    
+    .source-movie-poster-mini {
+        margin: 0 auto;
+    }
+    
+    .recommendation-item {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .recommendation-left {
+        text-align: center;
+    }
+    
+    .recommendation-poster-link {
+        margin: 0 auto;
+    }
+    
+    .movie-header-line {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .movie-rating {
+        margin-left: 0;
+    }
+    
+    .movie-meta-line {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+    
+    .movie-genres::after {
+        display: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .recommendation-poster-link {
+        width: 60px;
+        height: 90px;
+    }
+    
+    .recommendation-item {
+        padding: 1rem;
+    }
+    
+    .movie-title {
+        font-size: 1rem;
+    }
+    
+    .recommendation-reason-highlight {
+        padding: 0.5rem;
+    }
+    
+    .recommendation-reason-text {
+        font-size: 0.8125rem;
+    }
+}
+</style>
+{{ end }}

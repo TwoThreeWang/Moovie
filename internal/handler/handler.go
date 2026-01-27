@@ -25,11 +25,12 @@ var validate = validator.New()
 
 // Handler HTTP 处理器
 type Handler struct {
-	Repos         *repository.Repositories
-	Config        *config.Config
-	DoubanCrawler *service.DoubanCrawler
-	SearchService *service.SearchService
-	SearchCache   *utils.SearchCache[service.SearchResult]
+	Repos                 *repository.Repositories
+	Config                *config.Config
+	DoubanCrawler         *service.DoubanCrawler
+	SearchService         *service.SearchService
+	RecommendationService *service.RecommendationService
+	SearchCache           *utils.SearchCache[service.SearchResult]
 }
 
 // NewHandler 创建处理器
@@ -43,15 +44,19 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	// 创建搜索服务
 	searchService := service.NewSearchService(repos.Site, repos.VodItem, repos.CopyrightFilter, repos.CategoryFilter, sourceCrawler)
 
+	// 创建推荐服务
+	recommendationService := service.NewRecommendationService(repos.Movie)
+
 	// 创建搜索缓存（容量1000条，TTL 3小时）
 	searchCache := utils.NewSearchCache[service.SearchResult](1000, 3*time.Hour)
 
 	return &Handler{
-		Repos:         repos,
-		Config:        cfg,
-		DoubanCrawler: doubanCrawler,
-		SearchService: searchService,
-		SearchCache:   searchCache,
+		Repos:                 repos,
+		Config:                cfg,
+		DoubanCrawler:         doubanCrawler,
+		SearchService:         searchService,
+		RecommendationService: recommendationService,
+		SearchCache:           searchCache,
 	}
 }
 

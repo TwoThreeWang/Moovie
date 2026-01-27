@@ -38,12 +38,13 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	optional := r.Group("/")
 	optional.Use(middleware.OptionalAuth(h.Config.AppSecret))
 	{
-		optional.GET("/movie/:id", h.Movie)               // 电影详情
-		optional.GET("/play/:source_key/:vod_id", h.Play) // 视频播放页
-		optional.GET("/discover", h.Discover)             // 默认发现页
-		optional.GET("/discover/:type", h.Discover)       // 发现页
-		optional.GET("/foryou", h.ForYou)                 // 为你推荐
-		optional.GET("/recommend", h.ForYou)              // 为你推荐
+		optional.GET("/movie/:id", h.Movie)                        // 电影详情
+		optional.GET("/play/:source_key/:vod_id", h.Play)          // 视频播放页
+		optional.GET("/discover", h.Discover)                      // 默认发现页
+		optional.GET("/discover/:type", h.Discover)                // 发现页
+		optional.GET("/foryou", h.ForYou)                          // 为你推荐
+		optional.GET("/recommend", h.ForYou)                       // 为你推荐
+		optional.GET("/similar/:douban_id", h.RecommendationsPage) // 相似电影推荐
 	}
 
 	// ==================== 认证页面 ====================
@@ -71,15 +72,14 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	api := r.Group("/api")
 	api.Use(middleware.OptionalAuth(h.Config.AppSecret))
 	{
-		api.POST("/favorites/:id", h.AddFavorite)      // 添加收藏
-		api.DELETE("/favorites/:id", h.RemoveFavorite) // 移除收藏
-		api.POST("/feedback", h.SubmitFeedback)        // 提交反馈
-		api.DELETE("/history/:id", h.RemoveHistory)    // 删除历史记录
-		api.POST("/history/sync", h.SyncHistory)       // 同步历史记录
-		api.GET("/movies/suggest", h.MovieSuggest)     // 电影建议
-		api.GET("/proxy/image", h.ProxyImage)          // 图片代理
-
-		// 资源网视频搜索 API
+		api.POST("/favorites/:id", h.AddFavorite)                                       // 添加收藏
+		api.DELETE("/favorites/:id", h.RemoveFavorite)                                  // 移除收藏
+		api.POST("/feedback", h.SubmitFeedback)                                         // 提交反馈
+		api.DELETE("/history/:id", h.RemoveHistory)                                     // 删除历史记录
+		api.POST("/history/sync", h.SyncHistory)                                        // 同步历史记录
+		api.GET("/movies/suggest", h.MovieSuggest)                                      // 电影建议
+		api.GET("/proxy/image", h.ProxyImage)                                           // 图片代理
+		api.GET("/htmx/similar-with-reason/:douban_id", h.SimilarMoviesWithReasonsHTMX) // 相似电影推荐（带原因）
 
 		// htmx 专属 API
 		api.GET("/htmx/search", h.SearchHTMX)                          // 搜索结果片段
@@ -256,7 +256,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		"home", "search", "movie", "play", "player", "player_embed",
 		"discover", "trends", "foryou", "feedback",
 		"about", "changelog", "dmca", "privacy", "terms", "404",
-		"login", "register",
+		"login", "register", "recommendations",
 		"dashboard", "settings",
 		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright", "admin_category",
 	}
