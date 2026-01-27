@@ -30,6 +30,39 @@ func NewRecommendationService(movieRepo *repository.MovieRepository) *Recommenda
 	}
 }
 
+// MovieFeatures 提取出的电影特征，用于高性能匹配
+type MovieFeatures struct {
+	Genres    map[string]struct{}
+	Directors map[string]struct{}
+	Actors    map[string]struct{}
+	Year      int
+	Rating    float64
+	Title     string
+}
+
+// extractMovieFeatures 将电影模型转换为特征结构，用于快速匹配
+func extractMovieFeatures(m model.Movie) MovieFeatures {
+	f := MovieFeatures{
+		Genres:    make(map[string]struct{}),
+		Directors: make(map[string]struct{}),
+		Actors:    make(map[string]struct{}),
+		Rating:    m.Rating,
+		Title:     m.Title,
+	}
+
+	for _, g := range parseGenres(m.Genres) {
+		f.Genres[g] = struct{}{}
+	}
+	for _, d := range parsePersonNames(m.Directors) {
+		f.Directors[d] = struct{}{}
+	}
+	for _, a := range parsePersonNames(m.Actors) {
+		f.Actors[a] = struct{}{}
+	}
+	fmt.Sscanf(m.Year, "%d", &f.Year)
+	return f
+}
+
 // FindSimilarWithReasons 根据向量相似度查找相似电影并生成推荐理由
 func (s *RecommendationService) FindSimilarWithReasons(doubanID string, limit int) ([]SimilarMovieWithReason, *model.Movie, error) {
 	// 1. 先获取源电影信息
@@ -38,16 +71,20 @@ func (s *RecommendationService) FindSimilarWithReasons(doubanID string, limit in
 		return nil, nil, err
 	}
 
-	// 2. 获取相似电影 (获取多一些，方便筛选)
+	// 预解析源电影特征（加速循环）
+	sourceFeatures := extractMovieFeatures(*sourceMovie)
+
+	// 2. 获取相似电影
 	similarMovies, err := s.movieRepo.FindSimilar(doubanID, limit)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// 3. 为每部电影生成推荐理由
-	result := make([]SimilarMovieWithReason, 0, limit)
+	result := make([]SimilarMovieWithReason, 0, len(similarMovies))
 	for _, movie := range similarMovies {
-		reason, reasonType, score := GenerateRecommendationReason(*sourceMovie, movie)
+		targetFeatures := extractMovieFeatures(movie)
+		reason, reasonType, score := GenerateRecommendationReasonV2(sourceFeatures, targetFeatures, *sourceMovie, movie)
 
 		result = append(result, SimilarMovieWithReason{
 			Movie:      movie,
@@ -76,50 +113,34 @@ func parseGenres(genresStr string) []string {
 	return result
 }
 
-// calculateGenreSimilarity 计算类型重合度
-func calculateGenreSimilarity(sourceGenres, targetGenres string) (float64, []string) {
-	sourceList := parseGenres(sourceGenres)
-	targetList := parseGenres(targetGenres)
-
-	commonGenres := []string{}
-	for _, source := range sourceList {
-		for _, target := range targetList {
-			if source == target && source != "" {
-				commonGenres = append(commonGenres, source)
-			}
-		}
-	}
-
-	maxLen := math.Max(float64(len(sourceList)), float64(len(targetList)))
-	if maxLen == 0 {
-		return 0, commonGenres
-	}
-
-	similarity := float64(len(commonGenres)) / maxLen
-	return similarity, commonGenres
-}
-
-// parsePersonNames 从人员JSON字符串中提取人名列表
-func parsePersonNames(personsJSON string) []string {
-	// 首先尝试解析为JSON数组
-	var persons []model.Person
-	if err := json.Unmarshal([]byte(personsJSON), &persons); err == nil {
-		// 成功解析为JSON，提取人名
-		names := make([]string, 0, len(persons))
-		for _, person := range persons {
-			if person.Name != "" {
-				names = append(names, strings.TrimSpace(person.Name))
-			}
-		}
-		return names
-	}
-
-	// 如果不是JSON格式，按原来的逗号分割方式处理
-	if personsJSON == "" {
+// parsePersonNames 解析人名字符串（导演、主演等）
+func parsePersonNames(namesStr string) []string {
+	if namesStr == "" {
 		return []string{}
 	}
 
-	names := strings.Split(personsJSON, ",")
+	// 尝试解析是否为 JSON 格式: [{"id":"","name":"邓超"}, ...]
+	if strings.HasPrefix(namesStr, "[") {
+		var persons []struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal([]byte(namesStr), &persons); err == nil {
+			result := make([]string, 0, len(persons))
+			for _, p := range persons {
+				if trimmed := strings.TrimSpace(p.Name); trimmed != "" {
+					result = append(result, trimmed)
+				}
+			}
+			return result
+		}
+	}
+
+	// 回退到原有的普通字符串处理逻辑
+	// 统一处理中文逗号和英文逗号，或者斜线 (常见的电影信息分隔符)
+	namesStr = strings.ReplaceAll(namesStr, "，", ",")
+	namesStr = strings.ReplaceAll(namesStr, "/", ",")
+
+	names := strings.Split(namesStr, ",")
 	result := make([]string, 0, len(names))
 	for _, name := range names {
 		if trimmed := strings.TrimSpace(name); trimmed != "" {
@@ -129,194 +150,183 @@ func parsePersonNames(personsJSON string) []string {
 	return result
 }
 
-// calculatePersonSimilarity 计算人员重合度（导演、演员）
-func calculatePersonSimilarity(sourcePersons, targetPersons string) (float64, []string) {
-	sourceList := parsePersonNames(sourcePersons)
-	targetList := parsePersonNames(targetPersons)
-
-	commonPersons := []string{}
-	for _, source := range sourceList {
-		for _, target := range targetList {
-			if source == target && source != "" {
-				commonPersons = append(commonPersons, source)
-			}
-		}
-	}
-
-	maxLen := math.Max(float64(len(sourceList)), float64(len(targetList)))
-	if maxLen == 0 {
-		return 0, commonPersons
-	}
-
-	similarity := float64(len(commonPersons)) / maxLen
-	return similarity, commonPersons
-}
-
-// calculateRatingSimilarity 计算评分相似度
+// calculateRatingSimilarity 计算评分相似度得分
 func calculateRatingSimilarity(sourceRating, targetRating float64) float64 {
-	ratingDiff := math.Abs(sourceRating - targetRating)
-	// 将评分差异转换为相似度（差异越小，相似度越高）
-	similarity := 1 - (ratingDiff / 10.0)
-	return math.Max(0, similarity)
+	if sourceRating <= 0 || targetRating <= 0 {
+		return 0.5
+	}
+	diff := math.Abs(sourceRating - targetRating)
+	// 评分差距在 1 分以内视为高度相似，给予 1.0 的加权得分
+	if diff <= 1.0 {
+		return 1.0
+	}
+	// 差距在 2.5 分以上相似度较低
+	if diff > 2.5 {
+		return 0.3
+	}
+	// 线性衰减
+	return 1.0 - (diff-1.0)/1.5*0.7
 }
 
-// calculateEraSimilarity 计算年代相似度
-func calculateEraSimilarity(sourceYear, targetYear string) float64 {
-	// 将年份字符串转换为整数
-	sourceYearInt := 0
-	targetYearInt := 0
-
-	if sourceYear != "" {
-		fmt.Sscanf(sourceYear, "%d", &sourceYearInt)
+// calculateGenreSimilarityFast 高性能计算类型重合
+func calculateGenreSimilarityFast(source, target MovieFeatures) (float64, []string) {
+	common := []string{}
+	for g := range target.Genres {
+		if _, ok := source.Genres[g]; ok {
+			common = append(common, g)
+		}
 	}
-	if targetYear != "" {
-		fmt.Sscanf(targetYear, "%d", &targetYearInt)
+	maxLen := math.Max(float64(len(source.Genres)), float64(len(target.Genres)))
+	if maxLen == 0 {
+		return 0, common
 	}
+	return float64(len(common)) / maxLen, common
+}
 
-	if sourceYearInt == 0 || targetYearInt == 0 {
-		return 0.5 // 如果年份无效，返回中等相似度
+// calculatePersonSimilarityFast 高性能计算人员重合
+func calculatePersonSimilarityFast(source, target map[string]struct{}) (float64, []string) {
+	common := []string{}
+	for p := range target {
+		if _, ok := source[p]; ok {
+			common = append(common, p)
+		}
 	}
+	maxLen := math.Max(float64(len(source)), float64(len(target)))
+	if maxLen == 0 {
+		return 0, common
+	}
+	return float64(len(common)) / maxLen, common
+}
 
-	yearDiff := math.Abs(float64(sourceYearInt - targetYearInt))
-
-	// 根据年份差异计算相似度
-	if yearDiff <= 1 {
-		return 1.0 // 同一年或相邻年份
-	} else if yearDiff <= 3 {
-		return 0.8 // 3年内
-	} else if yearDiff <= 5 {
-		return 0.6 // 5年内
-	} else if yearDiff <= 10 {
-		return 0.4 // 10年内
-	} else {
-		return 0.2 // 超过10年
+// calculateEraSimilarityFast 高性能年代相似度
+func calculateEraSimilarityFast(sourceYear, targetYear int) float64 {
+	if sourceYear == 0 || targetYear == 0 {
+		return 0.5
+	}
+	diff := math.Abs(float64(sourceYear - targetYear))
+	switch {
+	case diff <= 1:
+		return 1.0
+	case diff <= 3:
+		return 0.8
+	case diff <= 5:
+		return 0.6
+	case diff <= 10:
+		return 0.4
+	default:
+		return 0.2
 	}
 }
 
-// GenerateRecommendationReason 生成推荐理由（基于优先级算法）
-func GenerateRecommendationReason(sourceMovie, targetMovie model.Movie) (string, string, float64) {
-	// 计算各个维度的相似度和重合信息
-	genreSimilarity, commonGenres := calculateGenreSimilarity(sourceMovie.Genres, targetMovie.Genres)
-	directorSimilarity, commonDirectors := calculatePersonSimilarity(sourceMovie.Directors, targetMovie.Directors)
-	actorSimilarity, commonActors := calculatePersonSimilarity(sourceMovie.Actors, targetMovie.Actors)
-	ratingSimilarity := calculateRatingSimilarity(sourceMovie.Rating, targetMovie.Rating)
-	eraSimilarity := calculateEraSimilarity(sourceMovie.Year, targetMovie.Year)
+type reasonCandidate struct {
+	reason     string
+	reasonType string
+	score      float64
+}
 
-	// 定义权重（用于综合相似度计算）
-	weights := map[string]float64{
-		"genre":    0.4,
-		"director": 0.25,
-		"actor":    0.2,
-		"rating":   0.1,
-		"era":      0.05,
+// GenerateRecommendationReasonV2 优化后的推荐理由生成算法（基于评分和高性能匹配）
+func GenerateRecommendationReasonV2(src, tgt MovieFeatures, sourceMovie, targetMovie model.Movie) (string, string, float64) {
+	genreSim, commonGenres := calculateGenreSimilarityFast(src, tgt)
+	dirSim, commonDirs := calculatePersonSimilarityFast(src.Directors, tgt.Directors)
+	actSim, commonActors := calculatePersonSimilarityFast(src.Actors, tgt.Actors)
+	rateSim := calculateRatingSimilarity(src.Rating, tgt.Rating)
+	eraSim := calculateEraSimilarityFast(src.Year, tgt.Year)
+
+	totalSimilarity := genreSim*0.4 + dirSim*0.25 + actSim*0.2 + rateSim*0.1 + eraSim*0.05
+
+	candidates := make([]reasonCandidate, 0, 8)
+
+	// 1. 系列/续集探测 (极高分)
+	if strings.HasPrefix(tgt.Title, src.Title) || strings.HasPrefix(src.Title, tgt.Title) {
+		candidates = append(candidates, reasonCandidate{
+			reason:     "该系列作品的延续，带你深入了解其光影宇宙",
+			reasonType: "series",
+			score:      1.5,
+		})
 	}
 
-	// 计算综合相似度
-	totalSimilarity := genreSimilarity*weights["genre"] +
-		directorSimilarity*weights["director"] +
-		actorSimilarity*weights["actor"] +
-		ratingSimilarity*weights["rating"] +
-		eraSimilarity*weights["era"]
-
-	// 优先级算法：按优先级顺序检查各个维度
-	var reason string
-	var reasonType string
-
-	// 1. 最高优先级：同导演
-	if directorSimilarity > 0.5 && len(commonDirectors) > 0 {
-		directorName := commonDirectors[0]
-		if len(commonDirectors) > 1 {
-			directorName = strings.Join(commonDirectors, "、")
-		}
-		reason = fmt.Sprintf("由同位导演 %s 执导，叙事风格一脉相承", directorName)
-		reasonType = "director"
-		return reason, reasonType, totalSimilarity
+	// 2. 导演匹配 (高分)
+	if dirSim > 0.4 && len(commonDirs) > 0 {
+		score := 0.9 + dirSim
+		candidates = append(candidates, reasonCandidate{
+			reason:     fmt.Sprintf("由同位导演 %s 执导，叙事风格与艺术造诣一脉相承", commonDirs[0]),
+			reasonType: "director",
+			score:      score,
+		})
 	}
 
-	// 2. 第二优先级：同主演
-	if actorSimilarity > 0.3 && len(commonActors) > 0 {
-		actorName := commonActors[0]
-		if len(commonActors) > 1 {
-			actorName = strings.Join(commonActors[:1], "、")
-		}
-		reason = fmt.Sprintf("同样由 %s 领衔主演，演技表现同样出色", actorName)
-		reasonType = "actor"
-		return reason, reasonType, totalSimilarity
+	// 3. 核心主演匹配
+	if actSim > 0.2 && len(commonActors) > 0 {
+		candidates = append(candidates, reasonCandidate{
+			reason:     fmt.Sprintf("同样由 %s 主演，演技表现与角色气质依然出众", commonActors[0]),
+			reasonType: "actor",
+			score:      0.8 + actSim,
+		})
 	}
 
-	// 3. 第三优先级：核心类型重合（科幻、悬疑等核心类型）
+	// 4. 类型匹配及复合逻辑
 	coreGenres := []string{"科幻", "悬疑", "惊悚", "动作", "喜剧", "爱情", "剧情", "战争", "历史"}
-	coreCommonGenres := []string{}
-	for _, genre := range commonGenres {
-		for _, coreGenre := range coreGenres {
-			if genre == coreGenre {
-				coreCommonGenres = append(coreCommonGenres, genre)
-			}
+	coreMatch := []string{}
+	for _, g := range commonGenres {
+		if contains(coreGenres, g) {
+			coreMatch = append(coreMatch, g)
 		}
 	}
 
-	if len(coreCommonGenres) > 0 {
-		genreDesc := ""
-		if len(coreCommonGenres) == 1 {
-			genreDesc = coreCommonGenres[0]
-		} else {
-			genreDesc = strings.Join(coreCommonGenres, "、")
+	if len(coreMatch) > 0 {
+		genreDesc := strings.Join(coreMatch, "、")
+		baseScore := 0.7 + genreSim
+		reason := fmt.Sprintf("同属优质%s片，风格与本作高度契合", genreDesc)
+
+		if contains(coreMatch, "科幻") || contains(coreMatch, "悬疑") {
+			reason = fmt.Sprintf("同属高口碑%s片，带给你类似的脑力激荡与震撼感", genreDesc)
+			baseScore += 0.1
 		}
 
-		// 根据类型选择不同的描述
-		if contains(coreCommonGenres, "科幻") || contains(coreCommonGenres, "悬疑") || contains(coreCommonGenres, "惊悚") {
-			reason = fmt.Sprintf("同属优质%s片，带给你类似的烧脑/震撼体验", genreDesc)
-		} else if contains(coreCommonGenres, "动作") || contains(coreCommonGenres, "战争") {
-			reason = fmt.Sprintf("同属优质%s片，带给你类似的刺激体验", genreDesc)
-		} else if contains(coreCommonGenres, "喜剧") || contains(coreCommonGenres, "爱情") {
-			reason = fmt.Sprintf("同属优质%s片，带给你类似的情感体验", genreDesc)
-		} else {
-			reason = fmt.Sprintf("同属优质%s片，风格相似", genreDesc)
-		}
-		reasonType = "genre"
-		return reason, reasonType, totalSimilarity
+		candidates = append(candidates, reasonCandidate{
+			reason:     reason,
+			reasonType: "genre",
+			score:      baseScore,
+		})
 	}
 
-	// 4. 第四优先级：年代/评分接近
-	if eraSimilarity > 0.6 && ratingSimilarity > 0.7 {
-		yearRange := fmt.Sprintf("%s年左右", sourceMovie.Year)
-		if sourceMovie.Year != targetMovie.Year {
-			yearRange = fmt.Sprintf("%s-%s年", sourceMovie.Year, targetMovie.Year)
-		}
-		reason = fmt.Sprintf("同为 %s 的经典高分佳作（评分：%.1f vs %.1f）", yearRange, sourceMovie.Rating, targetMovie.Rating)
-		reasonType = "era_rating"
-		return reason, reasonType, totalSimilarity
+	// 5. 高分神作维度
+	if src.Rating > 8.5 && tgt.Rating > 8.5 && genreSim > 0.3 {
+		candidates = append(candidates, reasonCandidate{
+			reason:     fmt.Sprintf("两部作品均为 %.1f+ 的顶级神作，艺术水准极高", 8.5),
+			reasonType: "masterpiece",
+			score:      1.2,
+		})
 	}
 
-	// 5. 第五优先级：仅年代接近
-	if eraSimilarity > 0.6 {
-		reason = fmt.Sprintf("同为 %s 年左右的经典佳作", sourceMovie.Year)
-		reasonType = "era"
-		return reason, reasonType, totalSimilarity
-	}
-
-	// 6. 第六优先级：仅评分接近
-	if ratingSimilarity > 0.8 {
-		reason = fmt.Sprintf("同为高分佳作（评分：%.1f vs %.1f）", sourceMovie.Rating, targetMovie.Rating)
-		reasonType = "rating"
-		return reason, reasonType, totalSimilarity
-	}
-
-	// 7. 兜底：语义相似（基于EmbeddingContent）
+	// 6. 语义内核 (深度挖掘)
 	if targetMovie.EmbeddingContent != "" {
-		// 提取语义关键词（这里简化处理，实际可以从embedding内容中提取关键词）
 		keywords := extractSemanticKeywords(targetMovie.EmbeddingContent)
 		if len(keywords) > 0 {
-			reason = fmt.Sprintf("剧情内核与本作高度相关，探讨了类似的%s主题", strings.Join(keywords, "、"))
-			reasonType = "semantic"
-			return reason, reasonType, totalSimilarity
+			candidates = append(candidates, reasonCandidate{
+				reason:     fmt.Sprintf("剧情内核高度相关，共同探讨了关于 %s 的深刻主题", strings.Join(keywords, "、")),
+				reasonType: "semantic",
+				score:      0.6 + (totalSimilarity * 0.5),
+			})
 		}
 	}
 
-	// 最终兜底
-	reason = "基于内容相似度推荐"
-	reasonType = "general"
-	return reason, reasonType, totalSimilarity
+	// 最终选择最高分理由
+	best := reasonCandidate{reason: "基于内容相似度深度推荐", reasonType: "general", score: 0}
+	for _, c := range candidates {
+		if c.score > best.score {
+			best = c
+		}
+	}
+
+	return best.reason, best.reasonType, totalSimilarity
+}
+
+// GenerateRecommendationReason 保持兼容性的旧接口
+func GenerateRecommendationReason(sourceMovie, targetMovie model.Movie) (string, string, float64) {
+	src := extractMovieFeatures(sourceMovie)
+	tgt := extractMovieFeatures(targetMovie)
+	return GenerateRecommendationReasonV2(src, tgt, sourceMovie, targetMovie)
 }
 
 // contains 检查字符串是否在切片中
