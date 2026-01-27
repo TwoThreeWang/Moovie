@@ -172,3 +172,40 @@ func (r *MovieRepository) UpdateReviews(doubanID string, reviewsJSON string) err
 		"reviews_updated_at": time.Now(),
 	}).Error
 }
+
+// GetReliveClassics 获取“重温经典”：用户看过的且评分较高的电影
+func (r *MovieRepository) GetReliveClassics(userID int, limit int) ([]model.Movie, error) {
+	var movies []model.Movie
+	err := r.DB.Raw(`
+		SELECT m.* FROM movies m
+		JOIN watch_histories wh ON wh.douban_id = m.douban_id
+		WHERE wh.user_id = ? AND m.rating >= 6.5 AND wh.progress >= 80
+		ORDER BY wh.watched_at DESC
+		LIMIT ?
+	`, userID, limit).Scan(&movies).Error
+	return movies, err
+}
+
+// GetRecentSimilarMovies 获取“关联推荐”：基于用户最近观看的一部电影推荐相似影片
+func (r *MovieRepository) GetRecentSimilarMovies(userID int, limit int) ([]model.Movie, string, error) {
+	var lastMovie model.Movie
+	// 1. 查找用户最近观看的一部且有 embedding 的电影
+	err := r.DB.Raw(`
+		SELECT m.* FROM movies m
+		JOIN watch_histories wh ON wh.douban_id = m.douban_id
+		WHERE wh.user_id = ? AND m.embedding IS NOT NULL
+		ORDER BY wh.watched_at DESC
+		LIMIT 1
+	`, userID).Scan(&lastMovie).Error
+
+	if err != nil {
+		return nil, "", err
+	}
+	if lastMovie.ID == 0 {
+		return nil, "", nil
+	}
+
+	// 2. 查找与其相似的项目
+	similarMovies, err := r.FindSimilar(lastMovie.DoubanID, limit)
+	return similarMovies, lastMovie.Title, err
+}

@@ -2,17 +2,26 @@
 <div class="foryou-page">
     <div class="foryou-header">
         <h1 class="page-title">✨ 为你推荐</h1>
-        <p class="page-desc">基于你的观影历史和收藏，为你精选可能喜欢的影片</p>
+        <p class="page-desc">基于你的观影历史和收藏，为你精选精准的内容</p>
     </div>
 
     <div id="foryou-content"
          hx-get="/api/htmx/foryou"
          hx-trigger="load"
          hx-indicator="#foryou-loading">
+
         <div id="foryou-loading" class="foryou-loading htmx-indicator">
-            <div class="loading-animation">
-                <div class="loading-spinner"></div>
-                <p>正在分析你的口味，请稍候...</p>
+            <div class="skeleton-hero"></div>
+            <div class="skeleton-section">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-grid">
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -22,7 +31,6 @@
 .foryou-page {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 20px 0;
 }
 
 .foryou-header {
@@ -30,35 +38,87 @@
 }
 
 .page-title {
-    font-size: 1.75rem;
-    font-weight: 700;
+    font-size: 2rem;
+    font-weight: 800;
     margin-bottom: 8px;
+    background: linear-gradient(90deg, var(--primary), #a855f7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .page-desc {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     color: var(--text-muted);
 }
 
+/* Skeleton Loading */
 .foryou-loading {
     display: none;
-    padding: 80px 20px;
 }
 
 .foryou-loading.htmx-request {
     display: block;
 }
 
-.loading-animation {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    color: var(--text-muted);
+.skeleton-hero {
+    width: 100%;
+    height: 400px;
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    margin-bottom: 48px;
+    animation: pulse 1.5s infinite ease-in-out;
 }
 
-.loading-animation p {
-    font-size: 0.9rem;
+.skeleton-section {
+    margin-bottom: 48px;
+}
+
+.skeleton-title {
+    width: 150px;
+    height: 24px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    margin-bottom: 20px;
+    animation: pulse 1.5s infinite ease-in-out;
+}
+
+.skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 20px;
+    overflow: hidden;
+}
+
+.skeleton-card {
+    width: 100%;
+    height: 240px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    animation: pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+    100% { opacity: 0.5; }
+}
+
+@media (max-width: 768px) {
+    .foryou-page {
+        padding: 10px 16px;
+    }
+    .skeleton-hero {
+        height: 250px;
+    }
+
+    .skeleton-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .skeleton-card {
+        height: 160px;
+    }
 }
 </style>
 {{ end }}

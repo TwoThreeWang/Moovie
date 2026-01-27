@@ -360,38 +360,61 @@ func (h *Handler) ForYouHTMX(c *gin.Context) {
 	}
 
 	// 尝试从缓存获取
-	cacheKey := "foryou:" + strconv.Itoa(userID)
+	cacheKey := "foryou_v2:" + strconv.Itoa(userID)
 	if cached, found := utils.CacheGet(cacheKey); found {
-		if movies, ok := cached.([]model.Movie); ok {
-			c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
-				"Movies": movies,
-			})
+		if data, ok := cached.(gin.H); ok {
+			c.HTML(http.StatusOK, "partials/foryou_movies.html", data)
 			return
 		}
 	}
 
-	movies, err := h.Repos.Movie.GetUserRecommendations(userID, 24)
-	if err != nil {
-		log.Printf("[ForYouHTMX] 获取推荐失败: %v", err)
+	// 聚合推荐数据
+	data := gin.H{
+		"UserID": userID,
 	}
 
-	// 如果没有推荐结果，尝试获取热门电影作为降级
-	if len(movies) == 0 {
-		movies, _ = h.Repos.Movie.GetPopularMovies(24)
-		if len(movies) == 0 {
-			c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
-				"NoData": true,
-			})
+	// 1. 获取个性化推荐 (猜你喜欢)
+	personalized, _ := h.Repos.Movie.GetUserRecommendations(userID, 12)
+	data["Personalized"] = personalized
+
+	// 2. 获取“重温经典”
+	reliveClassics, _ := h.Repos.Movie.GetReliveClassics(userID, 12)
+	data["ReliveClassics"] = reliveClassics
+
+	// 3. 获取“关联推荐”
+	similarToLast, lastTitle, _ := h.Repos.Movie.GetRecentSimilarMovies(userID, 12)
+	data["SimilarToLast"] = similarToLast
+	data["LastMovieTitle"] = lastTitle
+
+	// 4. 确定 Hero Movie (如果有的话，选个性化推荐的第一部，或者评分最高的一部)
+	var heroMovie *model.Movie
+	if len(personalized) > 0 {
+		heroMovie = &personalized[0]
+	} else if len(reliveClassics) > 0 {
+		heroMovie = &reliveClassics[0]
+	}
+
+	if heroMovie == nil {
+		// 降级到热门
+		popular, _ := h.Repos.Movie.GetPopularMovies(24)
+		if len(popular) == 0 {
+			c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{"NoData": true})
 			return
 		}
+		data["Personalized"] = popular
+		heroMovie = &popular[0]
+	}
+	data["HeroMovie"] = heroMovie
+
+	// 检查是否真的没有任何数据（除了降级的）
+	if len(personalized) == 0 && len(reliveClassics) == 0 && len(similarToLast) == 0 {
+		data["NoPersonalData"] = true // 提示用户多看电影
 	}
 
-	// 缓存 6 小时
-	utils.CacheSet(cacheKey, movies, 6*time.Hour)
+	// 缓存 1 小时 (内容更多了，缓存时间缩短一点以便反映近期观看)
+	utils.CacheSet(cacheKey, data, 1*time.Hour)
 
-	c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{
-		"Movies": movies,
-	})
+	c.HTML(http.StatusOK, "partials/foryou_movies.html", data)
 }
 
 // ReviewsHTMX 豆瓣短评（htmx 片段）

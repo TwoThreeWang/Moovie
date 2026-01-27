@@ -638,12 +638,15 @@ func (h *Handler) Sitemap(c *gin.Context) {
 		sb.WriteString(fmt.Sprintf("  <url>\n    <loc>%s%s</loc>\n    <changefreq>%s</changefreq>\n    <priority>%s</priority>\n  </url>\n", baseUrl, p.path, p.freq, p.priority))
 	}
 
-	// 2. 电影详情页 (取最近更新的 1000 条)
+	// 2. 电影详情页和相似电影页 (取最近更新的 1000 条)
 	movies, err := h.Repos.Movie.GetSitemapMovies(1000)
 	if err == nil {
 		for _, m := range movies {
 			lastmod := m.UpdatedAt.Format("2006-01-02")
+			// 电影详情页
 			sb.WriteString(fmt.Sprintf("  <url>\n    <loc>%s/movie/%s</loc>\n    <lastmod>%s</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>\n", baseUrl, m.DoubanID, lastmod))
+			// 相似电影页 (新增加)
+			sb.WriteString(fmt.Sprintf("  <url>\n    <loc>%s/similar/%s</loc>\n    <lastmod>%s</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>\n", baseUrl, m.DoubanID, lastmod))
 		}
 	}
 
