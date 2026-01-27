@@ -13,6 +13,9 @@
     </a>
     {{ end }}
 </div>
+<div class="similar-movies-more">
+    <a href="/similar/{{ .doubanID }}">查看更多类似电影 ></a>
+</div>
 {{ else }}
 <div class="similar-movies-empty">
     <p>暂无相似电影推荐</p>
@@ -86,7 +89,26 @@
     color: var(--text-muted, #888);
     padding: 3rem;
 }
+.similar-movies-more {
+    margin-top: 1.5rem;
+    text-align: center;
+}
 
+.similar-movies-more a {
+    display: inline-block;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: color 0.2s;
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+.similar-movies-more a:hover {
+    color: var(--primary);
+    background: var(--bg-tertiary);
+}
 @media (max-width: 1024px) {
     .similar-movies-grid {
         grid-template-columns: repeat(5, 1fr);

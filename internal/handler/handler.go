@@ -269,7 +269,7 @@ func (h *Handler) Movie(c *gin.Context) {
 
 	// 如果缓存中没有，查询数据库
 	if movies == nil {
-		movies, err = h.Repos.Movie.FindSimilar(doubanID, 12)
+		movies, err = h.Repos.Movie.FindSimilar(doubanID, 6)
 		if err != nil {
 			log.Printf("获取相似电影失败: %v", err)
 		} else if len(movies) > 0 {

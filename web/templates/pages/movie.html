@@ -171,6 +171,9 @@
             </a>
             {{ end }}
         </div>
+        <div class="similar-movies-more">
+            <a href="/similar/{{ .Movie.DoubanID }}">查看更多类似《{{ .Movie.Title }}》的电影 ></a>
+        </div>
         {{ else }}
         <div class="similar-movies-empty">
             <p>暂无相似电影推荐</p>
@@ -277,6 +280,27 @@
         font-size: 0.6875rem;
         padding: 2px 6px;
     }
+}
+
+.similar-movies-more {
+    margin-top: 1.5rem;
+    text-align: center;
+}
+
+.similar-movies-more a {
+    display: inline-block;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: color 0.2s;
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+.similar-movies-more a:hover {
+    color: var(--primary);
+    background: var(--bg-tertiary);
 }
 
 /* 电影页面搜索加载状态 - 复用 search 页面样式 */
