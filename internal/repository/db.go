@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/user/moovie/internal/model"
@@ -22,8 +23,9 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 	}
 
 	// 设置连接池
-	sqlDB.SetMaxOpenConns(25)
-	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetMaxOpenConns(15)           // 最大连接数
+	sqlDB.SetMaxIdleConns(3)            // 最大空闲连接数
+	sqlDB.SetConnMaxLifetime(time.Hour) // 连接最大生命周期
 
 	// 启用 pgvector 扩展
 	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error; err != nil {

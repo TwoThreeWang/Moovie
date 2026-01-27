@@ -267,7 +267,7 @@ func (h *Handler) Movie(c *gin.Context) {
 		movies, err = h.Repos.Movie.FindSimilar(doubanID, 12)
 		if err != nil {
 			log.Printf("获取相似电影失败: %v", err)
-		} else {
+		} else if len(movies) > 0 {
 			// 存入缓存，设置1小时过期时间
 			utils.CacheSet(cacheKey, movies, 1*time.Hour)
 		}
