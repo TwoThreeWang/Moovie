@@ -24,8 +24,8 @@ var Cache *lruCacheInstance
 
 // InitCache 初始化缓存
 func InitCache() {
-	// 创建LRU缓存，设置最大容量为10000条
-	lruCache, _ := lru.New[string, cacheEntry](10000)
+	// 创建LRU缓存，设置最大容量为2000条
+	lruCache, _ := lru.New[string, cacheEntry](2000)
 	Cache = &lruCacheInstance{
 		cache: lruCache,
 	}
