@@ -40,7 +40,7 @@ func (h *Handler) RecommendationsPage(c *gin.Context) {
 	doubanID := c.Param("douban_id")
 	if doubanID == "" {
 		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
-			"Title": "页面未找到 - Moovie",
+			"Title": "页面未找到 - Moovie影牛",
 		}))
 		return
 	}

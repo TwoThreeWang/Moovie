@@ -17,8 +17,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="max-age=7200" />
     <title>{{ .Title }}</title>
-    <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
-    <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}Moovie, 影视搜索, 电影搜索, 电视剧搜索, 在线看电影, 聚合搜索, 全网视频, 豆瓣热门{{ end }}">
+    <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
+    <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}Moovie, 影牛, 影视搜索, 电影搜索, 电视剧搜索, 在线看电影, 聚合搜索, 全网视频, 豆瓣热门{{ end }}">
     <meta name="robots" content="index, follow">
     {{ if .Canonical }}<link rel="canonical" href="{{ .Canonical }}">{{ end }}
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐮</text></svg>">
@@ -28,19 +28,19 @@
     <meta name="theme-color" content="#f60c3e">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Moovie">
+    <meta name="apple-mobile-web-app-title" content="Moovie影牛">
     <link rel="apple-touch-icon" href="/static/img/moovie-app.png">
     <!-- Open Graph -->
     <meta property="og:title" content="{{ .Title }}">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="Moovie">
-    <meta property="og:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
+    <meta property="og:site_name" content="Moovie影牛">
+    <meta property="og:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
     {{ if .Cover }}<meta property="og:image" content="{{ .Cover }}">{{ end }}
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ .Title }}">
-    <meta name="twitter:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
+    <meta name="twitter:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
     {{ if .Cover }}<meta name="twitter:image" content="{{ .Cover }}">{{ end }}
 
     <!-- CSS -->
@@ -194,7 +194,7 @@
                     <span></span>
                     <span></span>
                 </button>
-                <a href="/" class="mobile-logo">🐮 Moovie</a>
+                <a href="/" class="mobile-logo">🐮 Moovie 影牛</a>
                 <div class="mobile-header-actions">
                     {{ if .UserInfo }}
                     <a href="/dashboard" class="mobile-user" title="{{ .UserInfo.Username }}">
@@ -236,7 +236,7 @@
                         <a href="/sitemap.xml">网站地图</a>
                     </div>
                     <p class="footer-copyright">
-                        © 2026 Moovie(v3.1.0). 本站不存储任何视频文件，仅提供搜索服务。
+                        © 2026 Moovie 影牛(v3.1.0). 本站不存储任何视频文件，仅提供搜索服务。
                     </p>
                     <p class="footer-also">
                         除了这个项目，我还在做一些方向相近的实验：<a href="https://zhulink.vip/" target="_blank" rel="noopener">竹林</a>（去算法社区）· <a href="https://pockoo.app/" target="_blank" rel="noopener">Pockoo</a>（智能导航）

@@ -21,7 +21,7 @@ func (h *Handler) AdminDashboard(c *gin.Context) {
 	movieCount, _ := h.Repos.Movie.Count()
 
 	c.HTML(http.StatusOK, "admin_dashboard.html", h.RenderData(c, gin.H{
-		"Title":         "管理后台 - Moovie",
+		"Title":         "管理后台 - Moovie影牛",
 		"SiteCount":     len(sites),
 		"UserCount":     userCount,
 		"FeedbackCount": feedbackCount,
@@ -37,7 +37,7 @@ func (h *Handler) AdminUsers(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "admin_users.html", h.RenderData(c, gin.H{
-		"Title": "用户管理 - Moovie",
+		"Title": "用户管理 - Moovie影牛",
 		"Users": users,
 	}))
 }
@@ -50,7 +50,7 @@ func (h *Handler) AdminSites(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "admin_sites.html", h.RenderData(c, gin.H{
-		"Title": "资源网管理 - Moovie",
+		"Title": "资源网管理 - Moovie影牛",
 		"Sites": sites,
 	}))
 }
@@ -150,7 +150,7 @@ func (h *Handler) AdminSiteTest(c *gin.Context) {
 // AdminData 搜索数据管理页面
 func (h *Handler) AdminData(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin_cache.html", h.RenderData(c, gin.H{
-		"Title": "搜索数据管理 - Moovie",
+		"Title": "搜索数据管理 - Moovie影牛",
 	}))
 }
 
@@ -178,7 +178,7 @@ func (h *Handler) AdminFeedback(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "admin_feedback.html", h.RenderData(c, gin.H{
-		"Title":     "反馈管理 - Moovie",
+		"Title":     "反馈管理 - Moovie影牛",
 		"Feedbacks": feedbacks,
 		"Status":    status,
 	}))
@@ -290,7 +290,7 @@ func (h *Handler) AdminCopyright(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "admin_copyright.html", h.RenderData(c, gin.H{
-		"Title":   "版權限制管理 - Moovie",
+		"Title":   "版權限制管理 - Moovie影牛",
 		"Filters": filters,
 	}))
 }

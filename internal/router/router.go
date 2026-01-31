@@ -136,7 +136,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	// ==================== 404 处理 ====================
 	r.NoRoute(func(c *gin.Context) {
 		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
-			"Title":    "页面未找到 - Moovie",
+			"Title":    "页面未找到 - Moovie影牛",
 			"SiteName": h.Config.SiteName,
 			"Path":     c.Request.URL.Path,
 		}))

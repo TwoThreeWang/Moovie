@@ -171,7 +171,7 @@ func (h *Handler) Search(c *gin.Context) {
 	c.HTML(http.StatusOK, "search.html", h.RenderData(c, gin.H{
 		"Title":       keyword + "在线观看 - " + keyword + "免费高清资源搜索 - " + h.Config.SiteName,
 		"Keyword":     keyword,
-		"Description": "Moovie 为您找到关于“" + keyword + "”的相关资源。包含最新电影、电视剧在线观看线路，支持4K/高清多源码切换。",
+		"Description": "Moovie影牛 为您找到关于“" + keyword + "”的相关资源。包含最新电影、电视剧在线观看线路，支持4K/高清多源码切换。",
 		"Canonical":   fmt.Sprintf("%s/search?kw=%s", h.Config.SiteUrl, keyword),
 		"Bypass":      bypass,
 	}))
@@ -235,7 +235,7 @@ func (h *Handler) Movie(c *gin.Context) {
 		parts := strings.Split(movie.Genres, ",")
 		keywords = append(keywords, parts...)
 	}
-	keywords = append(keywords, "在线观看", "免费下载", "高清资源", "Moovie")
+	keywords = append(keywords, "在线观看", "免费下载", "高清资源", "Moovie", "影牛")
 
 	// 构建描述 (去除空白字符)
 	desc := strings.TrimSpace(movie.Summary)
@@ -439,20 +439,20 @@ func (h *Handler) Discover(c *gin.Context) {
 	}
 	Title := "2026豆瓣高分电影推荐 - 热门在线电影发现"
 	Description := "发现最新上映及豆瓣高分电影，涵盖动作、科幻、悬疑等多种题材，实时同步全网热度。"
-	Keywords := "热门电影,最新电视剧,高分佳作,Moovie发现"
+	Keywords := "热门电影,最新电视剧,高分佳作,Moovie影牛发现"
 	switch movieType {
 	case "tv":
 		Title = "2026近期热门电视剧排行榜 - 好剧推荐在线看"
 		Description = "为您整理近期最火的电视剧、国产剧、美剧及韩剧，支持全网资源搜索与在线播放。"
-		Keywords = "热门电视剧,最新电视剧,高分佳作,Moovie发现"
+		Keywords = "热门电视剧,最新电视剧,高分佳作,Moovie影牛发现"
 	case "show":
 		Title = "2026豆瓣高分综艺推荐 - 热门在线综艺发现"
 		Description = "发现最新、最热的综艺，满足你的综艺需求。"
-		Keywords = "热门综艺,最新综艺,高分佳作,Moovie发现"
+		Keywords = "热门综艺,最新综艺,高分佳作,Moovie影牛发现"
 	case "cartoon":
 		Title = "2026热门动漫新番推荐 - 豆瓣高分动画榜单"
 		Description = "发现本季最强新番及经典高分动漫，支持多线路高清搜索。"
-		Keywords = "热门动漫,最新动漫,高分佳作,Moovie发现"
+		Keywords = "热门动漫,最新动漫,高分佳作,Moovie影牛发现"
 	}
 
 	c.HTML(http.StatusOK, "discover.html", h.RenderData(c, gin.H{
@@ -542,7 +542,7 @@ func (h *Handler) Trends(c *gin.Context) {
 
 	c.HTML(http.StatusOK, "trends.html", h.RenderData(c, gin.H{
 		"Title":       "今日影视热搜榜 - 热门电影电视剧排行榜 - 实时更新 - " + h.Config.SiteName,
-		"Description": "想知道大家都在看什么？Moovie 实时汇总全网搜索热度，为您呈现今日最火电影、电视剧及综艺排行榜。发现好片，一键在线观看。",
+		"Description": "想知道大家都在看什么？Moovie影牛实时汇总全网搜索热度，为您呈现今日最火电影、电视剧及综艺排行榜。发现好片，一键在线观看。",
 		"Keywords":    "电影排行榜, 热搜榜, 热门电影, 电视剧排名, 在线电影搜索, 实时影视热度, 搜索趋势,热门搜索,关键词排行,影视风向",
 		"Trending24h": items24h,
 		"TrendingAll": itemsAll,
@@ -705,7 +705,7 @@ func (h *Handler) Login(c *gin.Context) {
 	user, err := h.Repos.User.FindByEmail(email)
 	if err != nil || user == nil {
 		c.HTML(http.StatusOK, "login.html", gin.H{
-			"Title": "登录 - Moovie",
+			"Title": "登录 - Moovie影牛",
 			"Error": "邮箱或密码错误",
 		})
 		return
@@ -714,7 +714,7 @@ func (h *Handler) Login(c *gin.Context) {
 	// 验证密码
 	if !h.Repos.User.CheckPassword(user, password) {
 		c.HTML(http.StatusOK, "login.html", gin.H{
-			"Title": "登录 - Moovie",
+			"Title": "登录 - Moovie影牛",
 			"Error": "邮箱或密码错误",
 		})
 		return
@@ -724,7 +724,7 @@ func (h *Handler) Login(c *gin.Context) {
 	token, err := middleware.GenerateToken(user.ID, user.Email, user.Role, h.Config.AppSecret, h.Config.JWTExpiry)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "login.html", gin.H{
-			"Title": "登录 - Moovie",
+			"Title": "登录 - Moovie影牛",
 			"Error": "登录失败，请重试",
 		})
 		return
@@ -767,7 +767,7 @@ func (h *Handler) Register(c *gin.Context) {
 	// 使用 validator 验证邮箱格式
 	if err := validate.Var(email, "required,email"); err != nil {
 		c.HTML(http.StatusOK, "register.html", gin.H{
-			"Title": "注册 - Moovie",
+			"Title": "注册 - Moovie影牛",
 			"Error": "请输入有效的邮箱地址",
 		})
 		return
@@ -776,7 +776,7 @@ func (h *Handler) Register(c *gin.Context) {
 	// 验证密码一致性
 	if password != confirmPassword {
 		c.HTML(http.StatusOK, "register.html", gin.H{
-			"Title": "注册 - Moovie",
+			"Title": "注册 - Moovie影牛",
 			"Error": "两次输入的密码不一致",
 		})
 		return
@@ -784,7 +784,7 @@ func (h *Handler) Register(c *gin.Context) {
 
 	if len(password) < 6 {
 		c.HTML(http.StatusOK, "register.html", gin.H{
-			"Title": "注册 - Moovie",
+			"Title": "注册 - Moovie影牛",
 			"Error": "密码至少需要 6 个字符",
 		})
 		return
@@ -794,7 +794,7 @@ func (h *Handler) Register(c *gin.Context) {
 	existing, _ := h.Repos.User.FindByEmail(email)
 	if existing != nil {
 		c.HTML(http.StatusOK, "register.html", gin.H{
-			"Title": "注册 - Moovie",
+			"Title": "注册 - Moovie影牛",
 			"Error": "该邮箱已被注册",
 		})
 		return
@@ -810,7 +810,7 @@ func (h *Handler) Register(c *gin.Context) {
 	user, err := h.Repos.User.Create(email, username, password)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "register.html", gin.H{
-			"Title": "注册 - Moovie",
+			"Title": "注册 - Moovie影牛",
 			"Error": "注册失败，请重试",
 		})
 		return

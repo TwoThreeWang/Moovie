@@ -19,7 +19,7 @@ func (h *Handler) AdminCategory(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "admin_category.html", h.RenderData(c, gin.H{
-		"Title":   "分类过滤管理 - Moovie",
+		"Title":   "分类过滤管理 - Moovie影牛",
 		"Filters": filters,
 	}))
 }
