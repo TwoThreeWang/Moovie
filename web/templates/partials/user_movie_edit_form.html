@@ -1,0 +1,24 @@
+<form
+    hx-patch="/api/user-movies/{{ .Record.ID }}"
+    hx-swap="outerHTML"
+    class="edit-form"
+>
+    <div class="form-group">
+        <label>评分</label>
+        <select name="rating" class="form-select">
+            <option value="0" {{ if eq .Record.Rating 0 }}selected{{ end }}>未评分</option>
+            <option value="1" {{ if eq .Record.Rating 1 }}selected{{ end }}>很差</option>
+            <option value="2" {{ if eq .Record.Rating 2 }}selected{{ end }}>较差</option>
+            <option value="3" {{ if eq .Record.Rating 3 }}selected{{ end }}>还行</option>
+            <option value="4" {{ if eq .Record.Rating 4 }}selected{{ end }}>推荐</option>
+            <option value="5" {{ if eq .Record.Rating 5 }}selected{{ end }}>力荐</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>短评</label>
+        <textarea name="comment" rows="3" class="form-input">{{ .Record.Comment }}</textarea>
+    </div>
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">保存</button>
+    </div>
+</form>

@@ -28,39 +28,54 @@
 
     <!-- 统计信息 -->
     <div class="user-stats">
-        <div class="stat-item" data-tab="favorites">
-            <span class="stat-icon">❤️</span>
-            <span class="stat-value">{{ .FavoriteCount }}</span>
-            <span class="stat-label">部收藏</span>
-        </div>
         <div class="stat-item" data-tab="history">
             <span class="stat-icon">📺</span>
             <span class="stat-value">{{ .HistoryCount }}</span>
-            <span class="stat-label">条记录</span>
+            <span class="stat-label">部在看</span>
+        </div>
+        <div class="stat-item" data-tab="wish">
+            <span class="stat-icon">❤️</span>
+            <span class="stat-value">{{ .FavoriteCount }}</span>
+            <span class="stat-label">部想看</span>
+        </div>
+        <div class="stat-item" data-tab="watched">
+            <span class="stat-icon">✅</span>
+            <span class="stat-value">{{ .WatchedCount }}</span>
+            <span class="stat-label">部已看</span>
         </div>
     </div>
 
     <!-- Tab 切换 -->
     <div class="tab-nav">
         <button class="tab-btn active"
-                hx-get="/api/htmx/dashboard/favorites"
+                hx-get="/api/htmx/dashboard/history"
                 hx-target="#tab-content"
                 hx-trigger="click, load"
                 preload="mouseover" 
                 preload-delay="300ms"
-                data-tab="favorites">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-            我的收藏
+                data-tab="history">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            在看
         </button>
         <button class="tab-btn"
-                hx-get="/api/htmx/dashboard/history"
+                hx-get="/api/htmx/dashboard/wish"
                 hx-target="#tab-content"
                 hx-trigger="click"
                 preload="mouseover" 
                 preload-delay="300ms"
-                data-tab="history">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-            观影历史
+                data-tab="wish">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            想看
+        </button>
+        <button class="tab-btn"
+                hx-get="/api/htmx/dashboard/watched"
+                hx-target="#tab-content"
+                hx-trigger="click"
+                preload="mouseover" 
+                preload-delay="300ms"
+                data-tab="watched">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            已看
         </button>
     </div>
 

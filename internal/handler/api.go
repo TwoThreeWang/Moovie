@@ -15,61 +15,153 @@ import (
 	"github.com/user/moovie/internal/utils"
 )
 
-// AddFavorite 添加收藏
-func (h *Handler) AddFavorite(c *gin.Context) {
+func (h *Handler) MarkWish(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == 0 {
-		c.String(http.StatusUnauthorized, `<button class="btn btn-primary" disabled>请先登录</button>`)
+		c.String(http.StatusUnauthorized, "")
 		return
 	}
-
-	movieID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.String(http.StatusBadRequest, "无效的电影 ID")
+	doubanID := c.Param("id")
+	title := c.Query("title")
+	poster := c.Query("poster")
+	year := c.Query("year")
+	record := &model.UserMovie{
+		UserID:  userID,
+		MovieID: doubanID,
+		Title:   title,
+		Poster:  poster,
+		Year:    year,
+		Status:  "wish",
+	}
+	if err := h.Repos.UserMovie.Upsert(record); err != nil {
+		c.String(http.StatusInternalServerError, "操作失败")
 		return
 	}
-
-	if err := h.Repos.Favorite.Add(userID, movieID); err != nil {
-		c.String(http.StatusInternalServerError, "收藏失败")
-		return
-	}
-
-	// 返回已收藏状态的按钮
-	c.HTML(http.StatusOK, "partials/favorite_btn.html", gin.H{
-		"MovieID":     movieID,
-		"IsFavorited": true,
+	isWish := true
+	isWatched, _ := h.Repos.UserMovie.IsMarked(userID, doubanID, "watched")
+	c.HTML(http.StatusOK, "partials/user_movie_buttons.html", gin.H{
+		"DoubanID":  doubanID,
+		"IsWish":    isWish,
+		"IsWatched": isWatched,
+		"Title":     title,
+		"Poster":    poster,
+		"Year":      year,
 	})
 }
 
-// RemoveFavorite 移除收藏
-func (h *Handler) RemoveFavorite(c *gin.Context) {
+func (h *Handler) MarkWatched(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == 0 {
-		c.String(http.StatusUnauthorized, `<button class="btn btn-primary" disabled>请先登录</button>`)
+		c.String(http.StatusUnauthorized, "")
 		return
 	}
-
-	movieID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.String(http.StatusBadRequest, "无效的电影 ID")
+	doubanID := c.Param("id")
+	title := c.Query("title")
+	poster := c.Query("poster")
+	year := c.Query("year")
+	// 兼容从表单或查询字符串传入评分与短评
+	ratingStr := c.PostForm("rating")
+	if ratingStr == "" {
+		ratingStr = c.DefaultQuery("rating", "0")
+	}
+	rating, _ := strconv.Atoi(ratingStr)
+	comment := c.PostForm("comment")
+	if comment == "" {
+		comment = c.Query("comment")
+	}
+	record := &model.UserMovie{
+		UserID:  userID,
+		MovieID: doubanID,
+		Title:   title,
+		Poster:  poster,
+		Year:    year,
+		Status:  "watched",
+		Rating:  rating,
+		Comment: comment,
+	}
+	if err := h.Repos.UserMovie.Upsert(record); err != nil {
+		c.String(http.StatusInternalServerError, "操作失败")
 		return
 	}
+	isWatched := true
+	isWish, _ := h.Repos.UserMovie.IsMarked(userID, doubanID, "wish")
+	c.HTML(http.StatusOK, "partials/user_movie_buttons.html", gin.H{
+		"DoubanID":  doubanID,
+		"IsWish":    isWish,
+		"IsWatched": isWatched,
+		"Title":     title,
+		"Poster":    poster,
+		"Year":      year,
+		"Rating":    rating,
+	})
+}
 
-	if err := h.Repos.Favorite.Remove(userID, movieID); err != nil {
-		c.String(http.StatusInternalServerError, "取消收藏失败")
+// UserMovieMarkWatchedFormHTMX 标记“已看过”前的评分/短评表单
+func (h *Handler) UserMovieMarkWatchedFormHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusOK, "")
 		return
 	}
+	doubanID := c.Query("douban_id")
+	title := c.Query("title")
+	poster := c.Query("poster")
+	year := c.Query("year")
+	c.HTML(http.StatusOK, "partials/user_movie_mark_watched_form.html", gin.H{
+		"DoubanID": doubanID,
+		"Title":    title,
+		"Poster":   poster,
+		"Year":     year,
+	})
+}
 
-	// 如果带有 hx-target 参数，说明是仪表盘删除操作，返回空（删除 DOM）
-	if c.GetHeader("HX-Target") != "" {
-		c.Status(http.StatusOK)
+// UserMovieButtonsHTMX 返回当前电影的操作按钮片段
+func (h *Handler) UserMovieButtonsHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	doubanID := c.Query("douban_id")
+	title := c.Query("title")
+	poster := c.Query("poster")
+	year := c.Query("year")
+	isWish := false
+	isWatched := false
+	if userID > 0 && doubanID != "" {
+		if rec, err := h.Repos.UserMovie.GetByUserAndMovie(userID, doubanID); err == nil && rec != nil {
+			isWish = rec.Status == "wish"
+			isWatched = rec.Status == "watched"
+		}
+	}
+	c.HTML(http.StatusOK, "partials/user_movie_buttons.html", gin.H{
+		"DoubanID":  doubanID,
+		"IsWish":    isWish,
+		"IsWatched": isWatched,
+		"Title":     title,
+		"Poster":    poster,
+		"Year":      year,
+	})
+}
+
+func (h *Handler) RemoveUserMovie(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusUnauthorized, "")
 		return
 	}
-
-	// 返回未收藏状态的按钮
-	c.HTML(http.StatusOK, "partials/favorite_btn.html", gin.H{
-		"MovieID":     movieID,
-		"IsFavorited": false,
+	doubanID := c.Param("id")
+	title := c.Query("title")
+	poster := c.Query("poster")
+	year := c.Query("year")
+	if err := h.Repos.UserMovie.Remove(userID, doubanID); err != nil {
+		utils.InternalServerError(c, "删除失败")
+		return
+	}
+	// 返回最新的按钮片段（未标记状态）
+	c.HTML(http.StatusOK, "partials/user_movie_buttons.html", gin.H{
+		"DoubanID":  doubanID,
+		"IsWish":    false,
+		"IsWatched": false,
+		"Title":     title,
+		"Poster":    poster,
+		"Year":      year,
 	})
 }
 
@@ -499,26 +591,92 @@ func (h *Handler) FeedbackListHTMX(c *gin.Context) {
 	})
 }
 
-// DashboardFavoritesHTMX 仪表盘收藏列表（htmx 片段）
-func (h *Handler) DashboardFavoritesHTMX(c *gin.Context) {
+func (h *Handler) DashboardWishHTMX(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == 0 {
 		c.String(http.StatusOK, "未登录")
 		return
 	}
-
-	// 使用 ListByUser
-	favorites, err := h.Repos.Favorite.ListByUser(userID, 10000, 0)
+	records, err := h.Repos.UserMovie.ListByUser(userID, "wish", 10000, 0)
 	if err != nil {
-		log.Printf("[DashboardFavoritesHTMX] 获取收藏失败: %v", err)
+		log.Printf("[DashboardWishHTMX] 获取想看失败: %v", err)
 	}
-
-	count, _ := h.Repos.Favorite.CountByUser(userID)
-
-	c.HTML(http.StatusOK, "partials/dashboard_favorites.html", gin.H{
-		"Favorites":     favorites,
-		"FavoriteCount": count,
+	count, _ := h.Repos.UserMovie.CountByUser(userID, "wish")
+	c.HTML(http.StatusOK, "partials/dashboard_wish.html", gin.H{
+		"Wish":      records,
+		"WishCount": count,
 	})
+}
+
+func (h *Handler) DashboardWatchedHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusOK, "未登录")
+		return
+	}
+	records, err := h.Repos.UserMovie.ListByUser(userID, "watched", 10000, 0)
+	if err != nil {
+		log.Printf("[DashboardWatchedHTMX] 获取已看过失败: %v", err)
+	}
+	count, _ := h.Repos.UserMovie.CountByUser(userID, "watched")
+	c.HTML(http.StatusOK, "partials/dashboard_watched.html", gin.H{
+		"Watched":      records,
+		"WatchedCount": count,
+	})
+}
+
+func (h *Handler) MovieCommentsHTMX(c *gin.Context) {
+	doubanID := c.Query("douban_id")
+	if doubanID == "" {
+		c.String(http.StatusOK, "")
+		return
+	}
+	records, err := h.Repos.UserMovie.ListCommentsByMovie(doubanID, 10)
+	if err != nil {
+		log.Printf("[MovieCommentsHTMX] 获取评论失败: %v", err)
+	}
+	c.HTML(http.StatusOK, "partials/movie_user_comments.html", gin.H{
+		"Comments": records,
+	})
+}
+
+func (h *Handler) UserMovieEditFormHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusOK, "")
+		return
+	}
+	id, _ := strconv.Atoi(c.Query("id"))
+	rec, err := h.Repos.UserMovie.GetByID(userID, id)
+	if err != nil || rec == nil {
+		c.String(http.StatusOK, "")
+		return
+	}
+	c.HTML(http.StatusOK, "partials/user_movie_edit_form.html", gin.H{
+		"Record": rec,
+	})
+}
+
+func (h *Handler) UpdateUserMovie(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusUnauthorized, "")
+		return
+	}
+	id, _ := strconv.Atoi(c.Param("id"))
+	rating, _ := strconv.Atoi(c.DefaultPostForm("rating", "0"))
+	comment := c.PostForm("comment")
+	if rating < 0 {
+		rating = 0
+	}
+	if rating > 5 {
+		rating = 5
+	}
+	if err := h.Repos.UserMovie.UpdateRatingComment(userID, id, rating, comment); err != nil {
+		c.String(http.StatusInternalServerError, "保存失败")
+		return
+	}
+	c.String(http.StatusOK, `<div class="alert alert-success">已保存</div>`)
 }
 
 // DashboardHistoryHTMX 仪表盘历史记录（htmx 片段）

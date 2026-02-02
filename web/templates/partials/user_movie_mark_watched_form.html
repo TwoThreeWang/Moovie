@@ -1,0 +1,33 @@
+<div class="movie-actions">
+    <form
+        hx-post="/api/user-movies/{{ .DoubanID }}/watched"
+        hx-swap="outerHTML"
+        class="edit-form"
+    >
+        <input type="hidden" name="title" value="{{ .Title }}">
+        <input type="hidden" name="poster" value="{{ .Poster }}">
+        <input type="hidden" name="year" value="{{ .Year }}">
+        <div class="form-group">
+            <label>评分</label>
+            <select name="rating" class="form-select">
+                <option value="0">未评分</option>
+                <option value="1">很差</option>
+                <option value="2">较差</option>
+                <option value="3">还行</option>
+                <option value="4">推荐</option>
+                <option value="5">力荐</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>短评</label>
+            <textarea name="comment" rows="3" class="form-input" placeholder="写几句感受（可选）"></textarea>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">标记已看过</button>
+            <button type="button" class="btn btn-secondary"
+                    hx-get="/api/htmx/user-movie/buttons?douban_id={{ .DoubanID }}&title={{ .Title }}&poster={{ .Poster }}&year={{ .Year }}"
+                    hx-target="closest .movie-actions"
+                    hx-swap="outerHTML">取消</button>
+        </div>
+    </form>
+</div>

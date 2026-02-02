@@ -1513,6 +1513,10 @@ img {
     line-height: 1;
 }
 
+.movie-actions .btn.btn-current {
+    color: var(--primary);
+}
+
 /* 收藏按钮特定样式 */
 .btn-favorite {
     background: var(--bg-secondary);
@@ -1618,6 +1622,14 @@ img {
         flex: 1;
         flex-direction: row;
         justify-content: flex-start;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .movie-actions .btn {
+        width: auto;
+        flex: 1 1 calc(50% - 4px);
+        min-width: 120px;
     }
 
     .movie-name {
@@ -1640,6 +1652,10 @@ img {
 
     .rating-num {
         font-size: 1.5rem;
+    }
+
+    .movie-actions .btn {
+        flex: 1 1 100%;
     }
 }
 

@@ -1,0 +1,82 @@
+{{ $douban := .DoubanID }}
+{{ $title := .Title }}
+{{ $poster := .Poster }}
+{{ $year := .Year }}
+<div class="movie-actions">
+    {{ if .IsWatched }}
+    <button
+        class="btn btn-secondary btn-current"
+        hx-delete="/api/user-movies/{{ $douban }}?title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-confirm="确定取消“已看过”吗？"
+        hx-target="closest .movie-actions"
+        hx-swap="outerHTML"
+    >
+        <span class="icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 4 4 6.5 4c1.74 0 3.41 1 4.22 2.5C11.09 5 12.76 4 14.5 4 17 4 19 6 19 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            </svg>
+        </span> 取消已看过
+    </button>
+    <button
+        class="btn {{ if .IsWish }}btn-primary{{ else }}btn-secondary{{ end }}"
+        hx-post="/api/user-movies/{{ $douban }}/wish?title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-swap="outerHTML"
+    >
+        <span class="icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-.98-1.06a5.5 5.5 0 0 0-7.78 7.78l.98.98L12 21.35l7.78-7.98.98-.98a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+        </span> 想看
+    </button>
+    {{ else if .IsWish }}
+    <button
+        class="btn btn-secondary btn-current"
+        hx-delete="/api/user-movies/{{ $douban }}?title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-confirm="确定取消“想看”吗？"
+        hx-target="closest .movie-actions"
+        hx-swap="outerHTML"
+    >
+        <span class="icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-.98-1.06a5.5 5.5 0 0 0-7.78 7.78l.98.98L12 21.35l7.78-7.98.98-.98a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+        </span> 取消想看
+    </button>
+    <button
+        class="btn {{ if .IsWatched }}btn-primary{{ else }}btn-secondary{{ end }}"
+        hx-get="/api/htmx/user-movie/mark-watched?douban_id={{ $douban }}&title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-target="closest .movie-actions"
+        hx-swap="outerHTML"
+    >
+        <span class="icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 4 4 6.5 4c1.74 0 3.41 1 4.22 2.5C11.09 5 12.76 4 14.5 4 17 4 19 6 19 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            </svg>
+        </span> 看过
+    </button>
+    {{ else }}
+    <button
+        class="btn btn-secondary"
+        hx-post="/api/user-movies/{{ $douban }}/wish?title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-swap="outerHTML"
+    >
+        <span class="icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-.98-1.06a5.5 5.5 0 0 0-7.78 7.78l.98.98L12 21.35l7.78-7.98.98-.98a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+        </span> 想看
+    </button>
+    <button
+        class="btn btn-secondary"
+        hx-get="/api/htmx/user-movie/mark-watched?douban_id={{ $douban }}&title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-target="closest .movie-actions"
+        hx-swap="outerHTML"
+    >
+        <span class="icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 6 4 4 6.5 4c1.74 0 3.41 1 4.22 2.5C11.09 5 12.76 4 14.5 4 17 4 19 6 19 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            </svg>
+        </span> 看过
+    </button>
+    {{ end }}
+</div>

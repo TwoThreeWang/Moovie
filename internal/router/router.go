@@ -72,8 +72,10 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	api := r.Group("/api")
 	api.Use(middleware.OptionalAuth(h.Config.AppSecret))
 	{
-		api.POST("/favorites/:id", h.AddFavorite)                                       // 添加收藏
-		api.DELETE("/favorites/:id", h.RemoveFavorite)                                  // 移除收藏
+		api.POST("/user-movies/:id/wish", h.MarkWish)                                   // 标记想看
+		api.POST("/user-movies/:id/watched", h.MarkWatched)                             // 标记看过
+		api.DELETE("/user-movies/:id", h.RemoveUserMovie)                               // 取消标记
+		api.PATCH("/user-movies/:id", h.UpdateUserMovie)                                // 更新评分与短评
 		api.POST("/feedback", h.SubmitFeedback)                                         // 提交反馈
 		api.DELETE("/history/:id", h.RemoveHistory)                                     // 删除历史记录
 		api.POST("/history/sync", h.SyncHistory)                                        // 同步历史记录
@@ -82,15 +84,20 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/similar-with-reason/:douban_id", h.SimilarMoviesWithReasonsHTMX) // 相似电影推荐（带原因）
 
 		// htmx 专属 API
-		api.GET("/htmx/search", h.SearchHTMX)                          // 搜索结果片段
-		api.GET("/htmx/similar", h.SimilarMoviesHTMX)                  // 相似电影推荐
-		api.GET("/htmx/foryou", h.ForYouHTMX)                          // 为你推荐
-		api.GET("/htmx/reviews", h.ReviewsHTMX)                        // 豆瓣短评
-		api.GET("/htmx/feedback-list", h.FeedbackListHTMX)             // 反馈列表
-		api.GET("/htmx/dashboard/favorites", h.DashboardFavoritesHTMX) // 仪表盘收藏
-		api.GET("/htmx/dashboard/history", h.DashboardHistoryHTMX)     // 仪表盘历史
-		api.POST("/report/load-speed", h.ReportLoadSpeed)              // 上报加载速度
-		api.GET("/stats/load-speed", h.GetLoadStats)                   // 获取加载统计
+		api.GET("/htmx/search", h.SearchHTMX)                                    // 搜索结果片段
+		api.GET("/htmx/similar", h.SimilarMoviesHTMX)                            // 相似电影推荐
+		api.GET("/htmx/foryou", h.ForYouHTMX)                                    // 为你推荐
+		api.GET("/htmx/reviews", h.ReviewsHTMX)                                  // 豆瓣短评
+		api.GET("/htmx/movie-comments", h.MovieCommentsHTMX)                     // 用户评论片段
+		api.GET("/htmx/user-movie/edit", h.UserMovieEditFormHTMX)                // 编辑表单片段
+		api.GET("/htmx/user-movie/mark-watched", h.UserMovieMarkWatchedFormHTMX) // 标记已看过前的表单
+		api.GET("/htmx/user-movie/buttons", h.UserMovieButtonsHTMX)              // 操作按钮片段
+		api.GET("/htmx/feedback-list", h.FeedbackListHTMX)                       // 反馈列表
+		api.GET("/htmx/dashboard/wish", h.DashboardWishHTMX)                     // 仪表盘想看
+		api.GET("/htmx/dashboard/watched", h.DashboardWatchedHTMX)               // 仪表盘已看过
+		api.GET("/htmx/dashboard/history", h.DashboardHistoryHTMX)               // 仪表盘历史
+		api.POST("/report/load-speed", h.ReportLoadSpeed)                        // 上报加载速度
+		api.GET("/stats/load-speed", h.GetLoadStats)                             // 获取加载统计
 	}
 
 	// ==================== 管理后台 ====================

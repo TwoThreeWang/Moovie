@@ -41,7 +41,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 	err = db.AutoMigrate(
 		&model.User{},
 		&model.Movie{},
-		&model.Favorite{},
+		&model.UserMovie{},
 		&model.WatchHistory{},
 		&model.Feedback{},
 		&model.Site{},
@@ -68,6 +68,28 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		fmt.Printf("警告: 创建视频名称搜索索引失败: %v\n", err)
 	}
 
+	// 创建 user_movies 索引
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_user_movies_lookup ON user_movies (user_id, updated_at DESC);").Error; err != nil {
+		fmt.Printf("警告: 创建 user_movies lookup 索引失败: %v\n", err)
+	}
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_user_movies_stats ON user_movies (user_id, created_at);").Error; err != nil {
+		fmt.Printf("警告: 创建 user_movies stats 索引失败: %v\n", err)
+	}
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_user_movies_comments ON user_movies (movie_id, updated_at DESC) WHERE status='watched' AND comment IS NOT NULL;").Error; err != nil {
+		fmt.Printf("警告: 创建 user_movies comments 索引失败: %v\n", err)
+	}
+
+	// 迁移 favorites 到 user_movies 作为 wish
+	if err := db.Exec(`
+		INSERT INTO user_movies (user_id, movie_id, title, poster, year, status, created_at, updated_at)
+		SELECT f.user_id, m.douban_id, m.title, m.poster, m.year, 'wish', f.created_at, f.created_at
+		FROM favorites f
+		JOIN movies m ON m.id = f.movie_id
+		ON CONFLICT (user_id, movie_id) DO NOTHING
+	`).Error; err != nil {
+		fmt.Printf("警告: 迁移 favorites 到 user_movies 失败: %v\n", err)
+	}
+
 	return db, nil
 }
 
@@ -76,7 +98,7 @@ type Repositories struct {
 	DB              *gorm.DB
 	User            *UserRepository
 	Movie           *MovieRepository
-	Favorite        *FavoriteRepository
+	UserMovie       *UserMovieRepository
 	History         *HistoryRepository
 	Feedback        *FeedbackRepository
 	SearchLog       *SearchLogRepository
@@ -92,7 +114,7 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		DB:              db,
 		User:            NewUserRepository(db),
 		Movie:           NewMovieRepository(db),
-		Favorite:        NewFavoriteRepository(db),
+		UserMovie:       NewUserMovieRepository(db),
 		History:         NewHistoryRepository(db),
 		Feedback:        NewFeedbackRepository(db),
 		SearchLog:       NewSearchLogRepository(db),

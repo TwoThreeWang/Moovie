@@ -117,11 +117,11 @@ func (r *MovieRepository) GetUserRecommendations(userID int, limit int) ([]model
 			JOIN watch_histories wh ON wh.douban_id = m.douban_id
 			WHERE wh.user_id = ? AND m.embedding IS NOT NULL AND wh.progress > 10
 			UNION ALL
-			-- 获取用户收藏的电影 ID (条记录权重为 2)
+			-- 获取用户“想看”的电影 ID (条记录权重为 2)
 			SELECT DISTINCT m.id, m.embedding, 2.0 as weight
 			FROM movies m
-			JOIN favorites f ON f.movie_id = m.id
-			WHERE f.user_id = ? AND m.embedding IS NOT NULL
+			JOIN user_movies um ON um.movie_id = m.douban_id
+			WHERE um.user_id = ? AND um.status = 'wish' AND m.embedding IS NOT NULL
 		),
 		user_vector AS (
 			-- 计算加权平均向量
@@ -130,12 +130,14 @@ func (r *MovieRepository) GetUserRecommendations(userID int, limit int) ([]model
 			WHERE embedding IS NOT NULL
 		),
 		excluded_ids AS (
-			-- 排除用户已看或收藏的电影
+			-- 排除用户已看或“想看”的电影
 			SELECT m.id FROM movies m
 			JOIN watch_histories wh ON wh.douban_id = m.douban_id
 			WHERE wh.user_id = ?
 			UNION
-			SELECT movie_id as id FROM favorites WHERE user_id = ?
+			SELECT m.id FROM movies m
+			JOIN user_movies um ON um.movie_id = m.douban_id
+			WHERE um.user_id = ? AND um.status = 'wish'
 		)
 		SELECT m.* FROM movies m, user_vector uv
 		WHERE m.embedding IS NOT NULL

@@ -104,7 +104,7 @@ func (h *Handler) RenderData(c *gin.Context, data gin.H) gin.H {
 // getActiveMenu 根据路径判断当前高亮菜单
 func (h *Handler) getActiveMenu(c *gin.Context) string {
 	path := c.Request.URL.Path
-	if strings.HasPrefix(path, "/dashboard") || path == "/favorites" || path == "/history" || path == "/settings" {
+	if strings.HasPrefix(path, "/dashboard") || path == "/history" || path == "/settings" {
 		return "user"
 	}
 
@@ -217,11 +217,15 @@ func (h *Handler) Movie(c *gin.Context) {
 		return
 	}
 
-	// 检查是否已收藏
+	// 检查状态
 	userID := middleware.GetUserID(c)
-	isFavorited := false
+	isWish := false
+	isWatched := false
 	if userID > 0 {
-		isFavorited, _ = h.Repos.Favorite.IsFavorited(userID, movie.ID)
+		if rec, err := h.Repos.UserMovie.GetByUserAndMovie(userID, movie.DoubanID); err == nil && rec != nil {
+			isWish = rec.Status == "wish"
+			isWatched = rec.Status == "watched"
+		}
 	}
 
 	// 构建 SEO 关键词
@@ -285,7 +289,8 @@ func (h *Handler) Movie(c *gin.Context) {
 		"Cover":         "https://image.baidu.com/search/down?url=" + movie.Poster,
 		"Canonical":     fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
 		"Movie":         movie,
-		"IsFavorited":   isFavorited,
+		"IsWish":        isWish,
+		"IsWatched":     isWatched,
 		"DirectorList":  directorList,
 		"SearchTitle":   title,
 		"SimilarMovies": movies,
@@ -859,13 +864,15 @@ func (h *Handler) Dashboard(c *gin.Context) {
 	}
 
 	// 获取统计数据
-	favoriteCount, _ := h.Repos.Favorite.CountByUser(userID)
+	favoriteCount, _ := h.Repos.UserMovie.CountByUser(userID, "wish")
+	watchedCount, _ := h.Repos.UserMovie.CountByUser(userID, "watched")
 	historyCount, _ := h.Repos.History.CountByUser(userID)
 
 	c.HTML(http.StatusOK, "dashboard.html", h.RenderData(c, gin.H{
 		"Title":         "用户中心 - " + h.Config.SiteName,
 		"User":          user,
 		"FavoriteCount": favoriteCount,
+		"WatchedCount":  watchedCount,
 		"HistoryCount":  historyCount,
 	}))
 }

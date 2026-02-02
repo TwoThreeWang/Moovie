@@ -1,0 +1,22 @@
+{{ if .Comments }}
+<div class="movie-section">
+    <h2 class="section-title">用户短评</h2>
+    <div class="movie-comments">
+        {{ range .Comments }}
+        <div class="comment-item">
+            {{ if gt .Rating 0 }}
+            <div class="comment-rating">评分 {{ .Rating }}</div>
+            {{ end }}
+            <div class="comment-text">{{ .Comment }}</div>
+        </div>
+        {{ end }}
+    </div>
+</div>
+{{ else }}
+<div class="movie-section">
+    <h2 class="section-title">用户短评</h2>
+    <div class="movie-reviews-empty">
+        暂无短评
+    </div>
+</div>
+{{ end }}

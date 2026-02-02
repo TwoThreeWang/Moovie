@@ -111,7 +111,7 @@
             {{ end }}
 
             <div class="movie-actions">
-                {{ template "favorite_btn.html" (dict "MovieID" .Movie.ID "IsFavorited" .IsFavorited) }}
+                {{ template "user_movie_buttons.html" (dict "DoubanID" .Movie.DoubanID "Title" .Movie.Title "Poster" .Movie.Poster "Year" .Movie.Year "IsWish" .IsWish "IsWatched" .IsWatched) }}
             </div>
         </div>
     </div>
@@ -139,6 +139,19 @@
         </div>
     </div>
     {{ end }}
+
+    <div class="movie-section">
+        <h2 class="section-title">用户短评</h2>
+        <div id="user-comments"
+             hx-get="/api/htmx/movie-comments?douban_id={{ .Movie.DoubanID }}"
+             hx-trigger="load"
+             hx-indicator="#user-comments-loading">
+            <div id="user-comments-loading" class="htmx-indicator movie-search-loading-state">
+                <div class="loading-spinner"></div>
+                <p>正在加载短评...</p>
+            </div>
+        </div>
+    </div>
 
     <!-- 在线资源 -->
     <div class="movie-section">

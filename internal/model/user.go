@@ -22,13 +22,22 @@ type SessionUser struct {
 	Role     string
 }
 
-// Favorite 收藏
-type Favorite struct {
+type UserMovie struct {
 	ID        int       `json:"id" db:"id"`
-	UserID    int       `json:"user_id" db:"user_id" gorm:"uniqueIndex:idx_user_movie"`
-	MovieID   int       `json:"movie_id" db:"movie_id" gorm:"uniqueIndex:idx_user_movie"`
+	UserID    int       `json:"user_id" db:"user_id" gorm:"uniqueIndex:idx_user_movie_status"`
+	MovieID   string    `json:"movie_id" db:"movie_id" gorm:"uniqueIndex:idx_user_movie_status"`
+	Title     string    `json:"title" db:"title"`
+	Poster    string    `json:"poster" db:"poster"`
+	Year      string    `json:"year" db:"year"`
+	Status    string    `json:"status" db:"status" gorm:"index"`
+	Rating    int       `json:"rating" db:"rating"`
+	Comment   string    `json:"comment" db:"comment"`
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"index"`
-	Movie     *Movie    `json:"movie,omitempty"` // 关联查询时填充
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at" gorm:"index"`
+}
+
+func (UserMovie) TableName() string {
+	return "user_movies"
 }
 
 // WatchHistory 观影历史
