@@ -110,34 +110,50 @@ func (r *MovieRepository) GetUserRecommendations(userID int, limit int) ([]model
 	// 2. 计算这些电影向量的平均值（用户兴趣向量）
 	// 3. 用这个兴趣向量查找最相似的电影，排除已看/已收藏的
 	err := r.DB.Raw(`
-		WITH user_movies AS (
-			-- 获取用户观看过的电影 ID (条记录权重为 1)
-			SELECT DISTINCT m.id, m.embedding, 1.0 as weight
+		WITH user_interests AS (
+			-- 1. 已看 (UserMovie: watched) - 权重 1.0
+			SELECT m.id, m.embedding, 1.0 as weight
 			FROM movies m
-			JOIN watch_histories wh ON wh.douban_id = m.douban_id
-			WHERE wh.user_id = ? AND m.embedding IS NOT NULL AND wh.progress > 10
+			JOIN user_movies um ON um.movie_id = m.douban_id
+			WHERE um.user_id = ? AND um.status = 'watched' AND m.embedding IS NOT NULL
+
 			UNION ALL
-			-- 获取用户“想看”的电影 ID (条记录权重为 2)
-			SELECT DISTINCT m.id, m.embedding, 2.0 as weight
+
+			-- 2. 想看 (UserMovie: wish) - 权重 2.0
+			SELECT m.id, m.embedding, 2.0 as weight
 			FROM movies m
 			JOIN user_movies um ON um.movie_id = m.douban_id
 			WHERE um.user_id = ? AND um.status = 'wish' AND m.embedding IS NOT NULL
+
+			UNION ALL
+
+			-- 3. 正在观看 (WatchHistory) - 权重 0.8 (作为隐式兴趣，且排除已在 UserMovie 中的记录)
+			SELECT m.id, m.embedding, 0.8 as weight
+			FROM movies m
+			JOIN watch_histories wh ON wh.douban_id = m.douban_id
+			WHERE wh.user_id = ?
+			  AND m.embedding IS NOT NULL
+			  AND wh.progress > 5
+			  AND NOT EXISTS (
+				  SELECT 1 FROM user_movies um
+				  WHERE um.user_id = ? AND um.movie_id = m.douban_id
+			  )
 		),
 		user_vector AS (
 			-- 计算加权平均向量
 			SELECT AVG(embedding) as avg_embedding
-			FROM user_movies
+			FROM user_interests
 			WHERE embedding IS NOT NULL
 		),
 		excluded_ids AS (
-			-- 排除用户已看或“想看”的电影
+			-- 排除用户已互动的电影 (已看/想看/正在看)
+			SELECT m.id FROM movies m
+			JOIN user_movies um ON um.movie_id = m.douban_id
+			WHERE um.user_id = ?
+			UNION
 			SELECT m.id FROM movies m
 			JOIN watch_histories wh ON wh.douban_id = m.douban_id
 			WHERE wh.user_id = ?
-			UNION
-			SELECT m.id FROM movies m
-			JOIN user_movies um ON um.movie_id = m.douban_id
-			WHERE um.user_id = ? AND um.status = 'wish'
 		)
 		SELECT m.* FROM movies m, user_vector uv
 		WHERE m.embedding IS NOT NULL
@@ -145,7 +161,7 @@ func (r *MovieRepository) GetUserRecommendations(userID int, limit int) ([]model
 		  AND uv.avg_embedding IS NOT NULL
 		ORDER BY m.embedding <-> uv.avg_embedding
 		LIMIT ?
-	`, userID, userID, userID, userID, limit).Scan(&movies).Error
+	`, userID, userID, userID, userID, userID, userID, limit).Scan(&movies).Error
 
 	return movies, err
 }
@@ -180,9 +196,12 @@ func (r *MovieRepository) GetReliveClassics(userID int, limit int) ([]model.Movi
 	var movies []model.Movie
 	err := r.DB.Raw(`
 		SELECT m.* FROM movies m
-		JOIN watch_histories wh ON wh.douban_id = m.douban_id
-		WHERE wh.user_id = ? AND m.rating >= 6.5 AND wh.progress >= 80
-		ORDER BY wh.watched_at DESC
+		JOIN user_movies um ON um.movie_id = m.douban_id
+		WHERE um.user_id = ?
+		  AND um.status = 'watched'
+		  AND m.rating >= 5
+		  AND um.updated_at < NOW() - INTERVAL '30 day'
+		ORDER BY RANDOM()
 		LIMIT ?
 	`, userID, limit).Scan(&movies).Error
 	return movies, err
@@ -194,9 +213,9 @@ func (r *MovieRepository) GetRecentSimilarMovies(userID int, limit int) ([]model
 	// 1. 查找用户最近观看的一部且有 embedding 的电影
 	err := r.DB.Raw(`
 		SELECT m.* FROM movies m
-		JOIN watch_histories wh ON wh.douban_id = m.douban_id
-		WHERE wh.user_id = ? AND m.embedding IS NOT NULL
-		ORDER BY wh.watched_at DESC
+		JOIN user_movies um ON um.movie_id = m.douban_id
+		WHERE um.user_id = ? AND um.status = 'watched' AND m.embedding IS NOT NULL
+		ORDER BY um.updated_at DESC
 		LIMIT 1
 	`, userID).Scan(&lastMovie).Error
 
