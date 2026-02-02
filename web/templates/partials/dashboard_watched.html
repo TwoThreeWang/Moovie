@@ -1,42 +1,9 @@
 {{ if .Watched }}
-<div class="movie-grid">
+<div class="watched-list">
     {{ range .Watched }}
-    <div class="movie-card-wrapper" id="watched-{{ .ID }}">
-        <a href="/movie/{{ .MovieID }}?title={{ .Title }}" class="movie-card">
-            <div class="movie-poster">
-                <img src="https://image.baidu.com/search/down?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
-                {{ if .Rating }}
-                <span class="movie-rating">{{ .Rating }}</span>
-                {{ end }}
-            </div>
-            <div class="movie-info">
-                <h3 class="movie-title">{{ .Title }}</h3>
-                <p class="movie-year">{{ .Year }}</p>
-                {{ if .Comment }}
-                <p class="movie-summary">{{ .Comment }}</p>
-                {{ end }}
-            </div>
-        </a>
-        <div class="card-actions">
-            <button class="watch-delete-btn"
-                    hx-delete="/api/user-movies/{{ .MovieID }}"
-                    hx-target="#watched-{{ .ID }}"
-                    hx-swap="outerHTML"
-                    hx-confirm="确定删除“已看过”标记吗？"
-                    title="删除此标记">
-                删除
-            </button>
-            <button class="watch-edit-btn"
-                    hx-get="/api/htmx/user-movie/edit?id={{ .ID }}"
-                    hx-target="#edit-{{ .ID }}"
-                    hx-swap="innerHTML"
-                    title="编辑评分与短评">
-                编辑
-            </button>
-        </div>
-        <div id="edit-{{ .ID }}"></div>
-    </div>
+        {{ template "dashboard_watched_item.html" . }}
     {{ end }}
+</div>
 {{ else }}
 <div class="empty-state">
     <p>还没有“已看过”的影片</p>

@@ -2054,6 +2054,175 @@ img {
     right: 10px;
 }
 
+/* 已看列表样式 */
+.watched-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.watched-item {
+    display: flex;
+    gap: 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.watched-item:hover {
+    border-color: var(--primary-alpha-high);
+    transform: translateX(4px);
+}
+
+.watched-poster {
+    width: 80px;
+    height: 120px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-tertiary);
+}
+
+.watched-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.watched-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.watched-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    gap: 10px;
+}
+
+.watched-title-link {
+    text-decoration: none;
+    color: inherit;
+    flex: 1;
+    min-width: 0;
+}
+
+.watched-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.2s;
+}
+
+.watched-title:hover {
+    color: var(--primary);
+}
+
+.watched-meta {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.watched-rating {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.rating-stars-active {
+    color: #facc15;
+    font-size: 0.9rem;
+}
+
+.rating-score {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.watched-comment {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    background: var(--bg-secondary);
+    padding: 10px 12px;
+    border-radius: 8px;
+    position: relative;
+    font-style: italic;
+}
+
+.watched-comment::before {
+    content: '"';
+    font-family: serif;
+    font-size: 1.5rem;
+    color: var(--primary-alpha);
+    position: absolute;
+    left: 4px;
+    top: -2px;
+}
+
+.watched-actions {
+    display: flex;
+    gap: 8px;
+    align-self: flex-start;
+}
+
+.watched-btn {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.watched-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.watched-btn.delete:hover {
+    border-color: var(--error);
+    color: var(--error);
+    background: var(--error-bg);
+}
+
+@media (max-width: 640px) {
+    .watched-item {
+        gap: 12px;
+        padding: 12px;
+    }
+    .watched-poster {
+        width: 60px;
+        height: 90px;
+    }
+    .watched-title {
+        font-size: 1rem;
+    }
+    .watched-header {
+        flex-direction: column;
+        gap: 4px;
+    }
+    .watched-actions {
+        align-self: flex-end;
+        margin-top: 8px;
+    }
+}
+
 /* Tab 内容 */
 .tab-content {
     margin-top: 24px;
@@ -2259,6 +2428,21 @@ img {
 
     .user-info {
         width: calc(100% - 80px);
+    }
+
+    /* 个人中心-已看列表优化：按钮移动到底部 */
+    .watched-item {
+        padding-bottom: 48px; /* 底部预留按钮空间 */
+    }
+
+    .watched-actions {
+        position: absolute;
+        bottom: 6px;
+        right: 12px;
+    }
+
+    .watched-rating {
+        margin-bottom: 8px; /* 确保评分和评论之间有间距 */
     }
 }
 

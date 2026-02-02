@@ -1,0 +1,55 @@
+<div class="watched-item" id="watched-{{ .ID }}">
+    <!-- 海报 -->
+    <div class="watched-poster">
+        <img src="https://image.baidu.com/search/down?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+    </div>
+
+    <!-- 影片信息区域 -->
+    <div class="watched-info">
+        <div class="watched-header">
+            <a href="/movie/{{ .MovieID }}?title={{ .Title }}" class="watched-title-link">
+                <h3 class="watched-title">{{ .Title }} <span class="watched-meta">({{ .Year }})</span></h3>
+            </a>
+
+            <!-- 操作按钮组 -->
+            <div class="watched-actions">
+                <button class="watched-btn"
+                        hx-get="/api/htmx/user-movie/edit?id={{ .ID }}"
+                        hx-target="body"
+                        hx-swap="beforeend"
+                        title="编辑评分与短评">
+                    编辑
+                </button>
+                <button class="watched-btn delete"
+                        hx-delete="/api/user-movies/{{ .MovieID }}?source=dashboard"
+                        hx-target="#watched-{{ .ID }}"
+                        hx-swap="outerHTML"
+                        hx-confirm="确定删除“已看过”标记吗？"
+                        title="删除此标记">
+                    删除
+                </button>
+            </div>
+        </div>
+
+        <!-- 我的评分 -->
+        <div class="watched-rating">
+            <span class="rating-stars-active">
+                {{ if eq .Rating 1 }}★{{ else if eq .Rating 2 }}★★{{ else if eq .Rating 3 }}★★★{{ else if eq .Rating 4 }}★★★★{{ else if eq .Rating 5 }}★★★★★{{ else }}未评分{{ end }}
+            </span>
+            {{ if .Rating }}
+            <span class="rating-score">{{ .Rating }}.0</span>
+            {{ end }}
+        </div>
+
+        <!-- 我的短评 -->
+        {{ if .Comment }}
+        <div class="watched-comment">
+            {{ .Comment }}
+        </div>
+        {{ else }}
+        <div class="watched-comment" style="font-style: italic; color: var(--text-muted); opacity: 0.7;">
+            暂无短评
+        </div>
+        {{ end }}
+    </div>
+</div>

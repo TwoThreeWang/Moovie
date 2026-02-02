@@ -280,7 +280,15 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 	// 注册局部模板（用于 htmx）
 	for _, partial := range partials {
 		name := "partials/" + filepath.Base(partial)
-		r.AddFromFilesFuncs(name, funcMap, partial)
+		// 构建文件列表：当前 partial 放第一位（作为主入口），其他 partials 随后（作为依赖）
+		files := make([]string, 0, len(partials))
+		files = append(files, partial)
+		for _, p := range partials {
+			if p != partial {
+				files = append(files, p)
+			}
+		}
+		r.AddFromFilesFuncs(name, funcMap, files...)
 	}
 
 	return r

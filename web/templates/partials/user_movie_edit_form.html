@@ -1,24 +1,65 @@
-<form
-    hx-patch="/api/user-movies/{{ .Record.ID }}"
-    hx-swap="outerHTML"
-    class="edit-form"
->
-    <div class="form-group">
-        <label>评分</label>
-        <select name="rating" class="form-select">
-            <option value="0" {{ if eq .Record.Rating 0 }}selected{{ end }}>未评分</option>
-            <option value="1" {{ if eq .Record.Rating 1 }}selected{{ end }}>很差</option>
-            <option value="2" {{ if eq .Record.Rating 2 }}selected{{ end }}>较差</option>
-            <option value="3" {{ if eq .Record.Rating 3 }}selected{{ end }}>还行</option>
-            <option value="4" {{ if eq .Record.Rating 4 }}selected{{ end }}>推荐</option>
-            <option value="5" {{ if eq .Record.Rating 5 }}selected{{ end }}>力荐</option>
-        </select>
+<div class="modal-overlay" id="edit-watched-modal" onclick="if(event.target==this) this.remove()">
+    <div class="modal-container">
+        <button class="modal-close-btn" onclick="document.getElementById('edit-watched-modal').remove()">×</button>
+
+        <div class="modal-header">
+            <h3 class="modal-title">修改评分与短评</h3>
+            <p class="modal-subtitle">《{{ .Record.Title }}》</p>
+        </div>
+
+        <form
+            hx-patch="/api/user-movies/{{ .Record.ID }}"
+            hx-target="#watched-{{ .Record.ID }}"
+            hx-swap="outerHTML"
+            hx-on::after-request="if(event.detail.successful) document.getElementById('edit-watched-modal').remove()"
+            class="modal-form"
+        >
+            <input type="hidden" name="rating" id="edit-rating-input" value="{{ .Record.Rating }}">
+
+            <div class="form-group">
+                <label class="form-label">修改评分</label>
+                <div class="score-chips-group">
+                    <div class="score-chip {{ if eq .Record.Rating 1 }}active{{ end }}" onclick="selectEditScore(1, this)">
+                        <span class="chip-label">1分</span>
+                        <span class="chip-desc">很差</span>
+                    </div>
+                    <div class="score-chip {{ if eq .Record.Rating 2 }}active{{ end }}" onclick="selectEditScore(2, this)">
+                        <span class="chip-label">2分</span>
+                        <span class="chip-desc">较差</span>
+                    </div>
+                    <div class="score-chip {{ if eq .Record.Rating 3 }}active{{ end }}" onclick="selectEditScore(3, this)">
+                        <span class="chip-label">3分</span>
+                        <span class="chip-desc">还行</span>
+                    </div>
+                    <div class="score-chip {{ if eq .Record.Rating 4 }}active{{ end }}" onclick="selectEditScore(4, this)">
+                        <span class="chip-label">4分</span>
+                        <span class="chip-desc">推荐</span>
+                    </div>
+                    <div class="score-chip {{ if eq .Record.Rating 5 }}active{{ end }}" onclick="selectEditScore(5, this)">
+                        <span class="chip-label">5分</span>
+                        <span class="chip-desc">力荐</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">修改短评</label>
+                <textarea name="comment" rows="3" class="form-textarea" placeholder="写几句感受...">{{ .Record.Comment }}</textarea>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('edit-watched-modal').remove()">取消</button>
+                <button type="submit" class="btn btn-submit">保存修改</button>
+            </div>
+        </form>
     </div>
-    <div class="form-group">
-        <label>短评</label>
-        <textarea name="comment" rows="3" class="form-input">{{ .Record.Comment }}</textarea>
-    </div>
-    <div class="form-actions">
-        <button type="submit" class="btn btn-primary">保存</button>
-    </div>
-</form>
+
+    <script>
+        function selectEditScore(score, el) {
+            document.getElementById('edit-rating-input').value = score;
+            const chips = el.parentElement.querySelectorAll('.score-chip');
+            chips.forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+        }
+    </script>
+</div>

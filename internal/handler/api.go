@@ -56,9 +56,19 @@ func (h *Handler) MarkWatched(c *gin.Context) {
 		return
 	}
 	doubanID := c.Param("id")
-	title := c.Query("title")
-	poster := c.Query("poster")
-	year := c.Query("year")
+	// 优先从 POST 表单获取，因为拟态框是 POST 提交
+	title := c.PostForm("title")
+	if title == "" {
+		title = c.Query("title")
+	}
+	poster := c.PostForm("poster")
+	if poster == "" {
+		poster = c.Query("poster")
+	}
+	year := c.PostForm("year")
+	if year == "" {
+		year = c.Query("year")
+	}
 	// 兼容从表单或查询字符串传入评分与短评
 	ratingStr := c.PostForm("rating")
 	if ratingStr == "" {
@@ -154,6 +164,13 @@ func (h *Handler) RemoveUserMovie(c *gin.Context) {
 		utils.InternalServerError(c, "删除失败")
 		return
 	}
+
+	// 如果是从个人中心发起的删除，返回空字符串以移除 DOM
+	if c.Query("source") == "dashboard" {
+		c.String(http.StatusOK, "")
+		return
+	}
+
 	// 返回最新的按钮片段（未标记状态）
 	c.HTML(http.StatusOK, "partials/user_movie_buttons.html", gin.H{
 		"DoubanID":  doubanID,
@@ -676,7 +693,15 @@ func (h *Handler) UpdateUserMovie(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "保存失败")
 		return
 	}
-	c.String(http.StatusOK, `<div class="alert alert-success">已保存</div>`)
+
+	// 重新获取完整记录并返回片段，以修复海报/标题丢失问题
+	rec, err := h.Repos.UserMovie.GetByID(userID, id)
+	if err != nil || rec == nil {
+		c.String(http.StatusOK, "已保存")
+		return
+	}
+
+	c.HTML(http.StatusOK, "partials/dashboard_watched_item.html", rec)
 }
 
 // DashboardHistoryHTMX 仪表盘历史记录（htmx 片段）
