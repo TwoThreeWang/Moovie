@@ -34,6 +34,9 @@ type UserMovie struct {
 	Comment   string    `json:"comment" db:"comment"`
 	CreatedAt time.Time `json:"created_at" db:"created_at" gorm:"index"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at" gorm:"index"`
+
+	// 关联
+	User User `gorm:"foreignKey:UserID;references:ID"`
 }
 
 func (UserMovie) TableName() string {

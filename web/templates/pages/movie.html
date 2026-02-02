@@ -141,7 +141,7 @@
     {{ end }}
 
     <div class="movie-section">
-        <h2 class="section-title">用户短评</h2>
+        <h2 class="section-title">站内用户短评</h2>
         <div id="user-comments"
              hx-get="/api/htmx/movie-comments?douban_id={{ .Movie.DoubanID }}"
              hx-trigger="load"

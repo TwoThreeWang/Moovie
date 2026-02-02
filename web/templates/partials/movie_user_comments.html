@@ -1,22 +1,117 @@
 {{ if .Comments }}
-<div class="movie-section">
-    <h2 class="section-title">用户短评</h2>
-    <div class="movie-comments">
-        {{ range .Comments }}
-        <div class="comment-item">
+<div class="user-comments-list">
+    {{ range .Comments }}
+    <div class="user-comment-item">
+        <div class="user-comment-meta">
+            <span class="comment-user">
+                <svg class="user-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path>
+                </svg>
+                {{ default "匿名用户" .User.Username }}
+            </span>
             {{ if gt .Rating 0 }}
-            <div class="comment-rating">评分 {{ .Rating }}</div>
+            <span class="comment-stars">
+                {{ $rating := .Rating }}
+                {{ range $i := seq 1 5 }}
+                <span class="star {{ if le $i $rating }}filled{{ end }}">★</span>
+                {{ end }}
+            </span>
             {{ end }}
-            <div class="comment-text">{{ .Comment }}</div>
+            <span class="comment-date">{{ .UpdatedAt.Format "2006-01-02" }}</span>
         </div>
-        {{ end }}
+        <div class="user-comment-content">
+            <span class="comment-text">{{ .Comment }}</span>
+        </div>
     </div>
+    {{ end }}
 </div>
 {{ else }}
-<div class="movie-section">
-    <h2 class="section-title">用户短评</h2>
-    <div class="movie-reviews-empty">
-        暂无短评
-    </div>
+<div class="comments-empty">
+    暂无用户短评
 </div>
 {{ end }}
+
+<style>
+.user-comments-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.user-comment-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.user-comment-item:last-child {
+    border-bottom: none;
+}
+
+.user-comment-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.comment-text {
+    font-size: 0.85rem;
+    color: var(--text-secondary, #e0e0e0);
+    line-height: 1.5;
+    word-break: break-all;
+}
+
+.user-comment-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-muted, #888);
+    flex-shrink: 0;
+}
+
+.comment-user {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-icon {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.comment-stars {
+    color: #e0e0e0;
+    font-size: 0.7rem;
+    letter-spacing: -2px;
+}
+
+.comment-stars .star.filled {
+    color: #ffac2d;
+}
+
+.comment-date {
+    white-space: nowrap;
+}
+
+.comments-empty {
+    text-align: center;
+    color: var(--text-muted, #888);
+    padding: 1.5rem;
+    font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+    .user-comment-meta {
+        font-size: 0.75rem;
+    }
+}
+</style>

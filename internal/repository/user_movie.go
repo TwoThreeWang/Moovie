@@ -90,9 +90,11 @@ func (r *UserMovieRepository) GetByUserAndMovie(userID int, movieID string) (*mo
 
 func (r *UserMovieRepository) ListCommentsByMovie(movieID string, limit int) ([]*model.UserMovie, error) {
 	var records []*model.UserMovie
-	err := r.db.Where("movie_id = ? AND status = ? AND comment IS NOT NULL AND comment <> ''", movieID, "watched").
+	err := r.db.Preload("User").
+		Where("movie_id = ? AND status = ? AND comment IS NOT NULL AND comment <> ''", movieID, "watched").
 		Order("updated_at DESC").
 		Limit(limit).
 		Find(&records).Error
+
 	return records, err
 }

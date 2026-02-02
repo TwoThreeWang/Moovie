@@ -7,11 +7,16 @@
 <div class="reviews-list">
     {{ range .Reviews }}
     <div class="review-item">
-        <a href="{{ .Link }}" target="_blank" rel="noopener nofollow" class="review-title" title="{{ .Title }}">{{ .Title }}</a>
-        <span class="review-meta">
-            <span class="review-author">{{ .Author }}</span>
+        <div class="review-meta">
+            <span class="review-author">
+                <svg class="user-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path>
+                </svg>
+                {{ .Author }}
+            </span>
             <span class="review-date">{{ .Published }}</span>
-        </span>
+        </div>
+        <a href="{{ .Link }}" target="_blank" rel="noopener nofollow" class="review-title" title="{{ .Title }}">{{ .Title }}</a>
     </div>
     {{ end }}
 </div>
@@ -29,10 +34,10 @@
 
 .review-item {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.35rem 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0.75rem 0;
     border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
 }
 
@@ -41,16 +46,11 @@
 }
 
 .review-title {
-    flex: 1;
     font-size: 0.8rem;
     color: var(--text-secondary, #e0e0e0);
     text-decoration: none;
     line-height: 1.5;
-    /* 文字溢出处理 */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 70%;
+    word-break: break-all;
 }
 
 .review-title:hover {
@@ -63,14 +63,23 @@
     gap: 1rem;
     font-size: 0.8125rem;
     color: var(--text-muted, #888);
-    flex-shrink: 0;
 }
 
 .review-author {
-    max-width: 100px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 150px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.user-icon {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+    opacity: 0.8;
 }
 
 .review-date {
@@ -90,22 +99,6 @@
 }
 
 @media (max-width: 640px) {
-    .review-item {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.375rem;
-        padding: 0.75rem 0;
-    }
-
-    .review-title {
-        max-width: 100%;
-        white-space: normal;
-        -webkit-line-clamp: 2;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-
     .review-meta {
         gap: 0.75rem;
         font-size: 0.75rem;

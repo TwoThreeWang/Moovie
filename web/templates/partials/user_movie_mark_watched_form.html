@@ -1,33 +1,67 @@
-<div class="movie-actions">
-    <form
-        hx-post="/api/user-movies/{{ .DoubanID }}/watched"
-        hx-swap="outerHTML"
-        class="edit-form"
-    >
-        <input type="hidden" name="title" value="{{ .Title }}">
-        <input type="hidden" name="poster" value="{{ .Poster }}">
-        <input type="hidden" name="year" value="{{ .Year }}">
-        <div class="form-group">
-            <label>评分</label>
-            <select name="rating" class="form-select">
-                <option value="0">未评分</option>
-                <option value="1">很差</option>
-                <option value="2">较差</option>
-                <option value="3">还行</option>
-                <option value="4">推荐</option>
-                <option value="5">力荐</option>
-            </select>
+<div class="modal-overlay" id="mark-watched-modal" onclick="if(event.target==this) this.remove()">
+    <div class="modal-container">
+        <button class="modal-close-btn" onclick="document.getElementById('mark-watched-modal').remove()">×</button>
+
+        <div class="modal-header">
+            <h3 class="modal-title">标记为“已看过”</h3>
+            <p class="modal-subtitle">《{{ .Title }}》</p>
         </div>
-        <div class="form-group">
-            <label>短评</label>
-            <textarea name="comment" rows="3" class="form-input" placeholder="写几句感受（可选）"></textarea>
-        </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">标记已看过</button>
-            <button type="button" class="btn btn-secondary"
-                    hx-get="/api/htmx/user-movie/buttons?douban_id={{ .DoubanID }}&title={{ .Title }}&poster={{ .Poster }}&year={{ .Year }}"
-                    hx-target="closest .movie-actions"
-                    hx-swap="outerHTML">取消</button>
-        </div>
-    </form>
+
+        <form
+            hx-post="/api/user-movies/{{ .DoubanID }}/watched"
+            hx-target="#actions-{{ .DoubanID }}"
+            hx-swap="outerHTML"
+            hx-on::after-request="document.getElementById('mark-watched-modal').remove()"
+            class="modal-form"
+        >
+            <input type="hidden" name="title" value="{{ .Title }}">
+            <input type="hidden" name="poster" value="{{ .Poster }}">
+            <input type="hidden" name="year" value="{{ .Year }}">
+            <input type="hidden" name="rating" id="rating-input" value="0">
+
+            <div class="form-group">
+                <label class="form-label">点击分值完成评分</label>
+                <div class="score-chips-group">
+                    <div class="score-chip" onclick="selectScore(1, this)">
+                        <span class="chip-label">1分</span>
+                        <span class="chip-desc">很差</span>
+                    </div>
+                    <div class="score-chip" onclick="selectScore(2, this)">
+                        <span class="chip-label">2分</span>
+                        <span class="chip-desc">较差</span>
+                    </div>
+                    <div class="score-chip" onclick="selectScore(3, this)">
+                        <span class="chip-label">3分</span>
+                        <span class="chip-desc">还行</span>
+                    </div>
+                    <div class="score-chip" onclick="selectScore(4, this)">
+                        <span class="chip-label">4分</span>
+                        <span class="chip-desc">推荐</span>
+                    </div>
+                    <div class="score-chip" onclick="selectScore(5, this)">
+                        <span class="chip-label">5分</span>
+                        <span class="chip-desc">力荐</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">简短评价</label>
+                <textarea name="comment" rows="3" class="form-textarea" placeholder="写几句感受..."></textarea>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('mark-watched-modal').remove()">取消</button>
+                <button type="submit" class="btn btn-submit">确定标记</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function selectScore(score, el) {
+            document.getElementById('rating-input').value = score;
+            document.querySelectorAll('.score-chip').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+        }
+    </script>
 </div>
