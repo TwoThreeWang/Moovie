@@ -27,6 +27,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	r.GET("/trends", h.Trends)         // 搜索趋势
 	r.GET("/feedback", h.FeedbackPage) // 反馈页
 	r.GET("/about", h.About)           // 关于页
+	r.GET("/advertise", h.Advertise)   // 广告合作
 	r.GET("/changelog", h.Changelog)   // 更新记录页
 	r.GET("/dmca", h.DMCA)             // DMCA页
 	r.GET("/privacy", h.Privacy)       // 隐私政策
@@ -262,7 +263,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 	pages := []string{
 		"home", "search", "movie", "play", "player", "player_embed",
 		"discover", "trends", "foryou", "feedback",
-		"about", "changelog", "dmca", "privacy", "terms", "404",
+		"about", "advertise", "changelog", "dmca", "privacy", "terms", "404",
 		"login", "register", "recommendations",
 		"dashboard", "settings",
 		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright", "admin_category",

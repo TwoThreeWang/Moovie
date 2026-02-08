@@ -50,21 +50,11 @@
             <span class="section-subtitle">基于你的观影习惯精选</span>
         </div>
         <div class="movie-slider-container">
-            <div class="movie-slider">
-                {{ range .Personalized }}
-                <div class="movie-card">
-                    <a href="/movie/{{ .DoubanID }}">
-                        <div class="movie-poster">
-                            <img src="https://image.baidu.com/search/down?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
-                            {{ if .Rating }}<span class="movie-rating">{{ .Rating }}</span>{{ end }}
-                        </div>
-                        <div class="movie-info">
-                            <span class="movie-title">{{ .Title }}</span>
-                            <span class="movie-meta">{{ .Year }} / {{ .Genres }}</span>
-                        </div>
-                    </a>
-                </div>
-                {{ end }}
+            <div id="personalized-grid" class="movie-slider">
+                {{ template "foryou_movies_grid.html" . }}
+            </div>
+            <div id="foryou-loading" class="htmx-indicator" style="text-align: center; padding: 20px;">
+                <span class="loading-spinner"></span> 正在发现更多好片...
             </div>
         </div>
     </section>
@@ -304,6 +294,52 @@
 .foryou-empty h3 {
     font-size: 1.5rem;
     margin-bottom: 12px;
+}
+
+/* Loading & Buttons */
+.htmx-indicator {
+    display: none;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+.htmx-request .htmx-indicator {
+    display: block;
+}
+.htmx-request.htmx-indicator {
+    display: block;
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(var(--primary-rgb), 0.3);
+    border-radius: 50%;
+    border-top-color: var(--primary);
+    animation: spin 1s ease-in-out infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 30px;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.btn-outline:hover {
+    background: var(--bg-hover);
+    border-color: var(--primary);
+    color: var(--primary);
 }
 
 .foryou-empty p {

@@ -468,62 +468,150 @@ func (h *Handler) ForYouHTMX(c *gin.Context) {
 		return
 	}
 
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize := 12
+
 	// 尝试从缓存获取
-	cacheKey := "foryou_v2:" + strconv.Itoa(userID)
+	cacheKey := "foryou_v3:" + strconv.Itoa(userID)
+	var allData gin.H
 	if cached, found := utils.CacheGet(cacheKey); found {
 		if data, ok := cached.(gin.H); ok {
-			c.HTML(http.StatusOK, "partials/foryou_movies.html", data)
-			return
+			allData = data
 		}
 	}
 
-	// 聚合推荐数据
-	data := gin.H{
-		"UserID": userID,
-	}
+	if allData == nil {
+		// 聚合推荐数据
+		allData = gin.H{
+			"UserID": userID,
+		}
 
-	// 1. 获取个性化推荐 (猜你喜欢)
-	personalized, _ := h.Repos.Movie.GetUserRecommendations(userID, 12)
-	data["Personalized"] = personalized
+		// 1. 获取个性化推荐 (获取更多数据以便分页)
+		personalized, _ := h.Repos.Movie.GetUserRecommendations(userID, 60)
+		allData["Personalized"] = personalized
 
-	// 2. 获取“重温经典”
-	reliveClassics, _ := h.Repos.Movie.GetReliveClassics(userID, 12)
-	data["ReliveClassics"] = reliveClassics
+		// 2. 获取“重温经典”
+		reliveClassics, _ := h.Repos.Movie.GetReliveClassics(userID, 12)
+		allData["ReliveClassics"] = reliveClassics
 
-	// 3. 获取“关联推荐”
-	similarToLast, lastTitle, _ := h.Repos.Movie.GetRecentSimilarMovies(userID, 12)
-	data["SimilarToLast"] = similarToLast
-	data["LastMovieTitle"] = lastTitle
+		// 3. 获取“关联推荐”
+		similarToLast, lastTitle, _ := h.Repos.Movie.GetRecentSimilarMovies(userID, 12)
+		allData["SimilarToLast"] = similarToLast
+		allData["LastMovieTitle"] = lastTitle
 
-	// 4. 确定 Hero Movie (如果有的话，选个性化推荐的第一部，或者评分最高的一部)
-	var heroMovie *model.Movie
-	if len(personalized) > 0 {
-		heroMovie = &personalized[0]
-	} else if len(reliveClassics) > 0 {
-		heroMovie = &reliveClassics[0]
-	}
+		// 4. 确定 Hero Movie 并整理列表
+		var heroMovie *model.Movie
+		if len(personalized) > 0 {
+			// 也就是取第一个作为 Hero
+			heroMovie = &personalized[0]
+			// 从列表中移除 (避免重复显示)
+			personalized = personalized[1:]
+		} else if len(reliveClassics) > 0 {
+			heroMovie = &reliveClassics[0]
+		}
 
-	if heroMovie == nil {
-		// 降级到热门
-		popular, _ := h.Repos.Movie.GetPopularMovies(24)
-		if len(popular) == 0 {
+		// 如果推荐列表太短（少于 24 条），用热门电影补全
+		if len(personalized) < 24 {
+			popular, _ := h.Repos.Movie.GetPopularMovies(60)
+
+			// 建立已存在 ID 的 map 用于去重
+			exists := make(map[int]bool)
+			if heroMovie != nil {
+				exists[heroMovie.ID] = true
+			}
+			for _, m := range personalized {
+				exists[m.ID] = true
+			}
+
+			for _, p := range popular {
+				if !exists[p.ID] {
+					personalized = append(personalized, p)
+					exists[p.ID] = true
+				}
+				// 补够 60 条就停
+				if len(personalized) >= 60 {
+					break
+				}
+			}
+		}
+
+		// 如果还是没有 Hero (说明连热门都没有)，那就真没办法了
+		if heroMovie == nil {
+			if len(personalized) > 0 {
+				heroMovie = &personalized[0]
+				personalized = personalized[1:]
+			} else {
+				// 尝试再次降级（虽然理论上 GetPopularMovies 应该能拿到数据）
+				popular, _ := h.Repos.Movie.GetPopularMovies(24)
+				if len(popular) > 0 {
+					heroMovie = &popular[0]
+					// 剩下的放进列表
+					if len(popular) > 1 {
+						personalized = popular[1:]
+					}
+				}
+			}
+		}
+
+		allData["HeroMovie"] = heroMovie
+		allData["Personalized"] = personalized // 更新补全后的列表
+
+		// 检查是否真的没有任何数据
+		if heroMovie == nil {
 			c.HTML(http.StatusOK, "partials/foryou_movies.html", gin.H{"NoData": true})
 			return
 		}
-		data["Personalized"] = popular
-		heroMovie = &popular[0]
-	}
-	data["HeroMovie"] = heroMovie
 
-	// 检查是否真的没有任何数据（除了降级的）
-	if len(personalized) == 0 && len(reliveClassics) == 0 && len(similarToLast) == 0 {
-		data["NoPersonalData"] = true // 提示用户多看电影
+		// 缓存数据
+		utils.CacheSet(cacheKey, allData, 1*time.Hour)
 	}
 
-	// 缓存 1 小时 (内容更多了，缓存时间缩短一点以便反映近期观看)
-	utils.CacheSet(cacheKey, data, 1*time.Hour)
+	// 处理分页
+	personalized, ok := allData["Personalized"].([]model.Movie)
+	if !ok {
+		personalized = []model.Movie{}
+	}
 
-	c.HTML(http.StatusOK, "partials/foryou_movies.html", data)
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	totalCount := len(personalized)
+
+	if start >= totalCount {
+		c.String(http.StatusOK, "")
+		return
+	}
+	if end > totalCount {
+		end = totalCount
+	}
+
+	pagedPersonalized := personalized[start:end]
+	hasMore := end < totalCount
+
+	// 如果是 page > 1，只返回网格项片段
+	if page > 1 {
+		c.HTML(http.StatusOK, "foryou_movies_grid.html", gin.H{
+			"Personalized": pagedPersonalized,
+			"HasMore":      hasMore,
+			"NextPage":     page + 1,
+			"SectionType":  "personalized",
+		})
+		return
+	}
+
+	// 合并分页后的数据用于首屏渲染
+	renderData := gin.H{}
+	for k, v := range allData {
+		renderData[k] = v
+	}
+	renderData["Personalized"] = pagedPersonalized
+	renderData["HasMore"] = hasMore
+	renderData["NextPage"] = page + 1
+	renderData["IsFirstPage"] = true
+
+	c.HTML(http.StatusOK, "partials/foryou_movies.html", renderData)
 }
 
 // ReviewsHTMX 豆瓣短评（htmx 片段）

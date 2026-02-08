@@ -1,0 +1,29 @@
+{{ define "foryou_movies_grid.html" }}
+{{ range .Personalized }}
+<div class="movie-card">
+    <a href="/movie/{{ .DoubanID }}">
+        <div class="movie-poster">
+            <img src="https://image.baidu.com/search/down?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            {{ if .Rating }}<span class="movie-rating">{{ .Rating }}</span>{{ end }}
+        </div>
+        <div class="movie-info">
+            <span class="movie-title">{{ .Title }}</span>
+            <span class="movie-meta">{{ .Year }} / {{ .Genres }}</span>
+        </div>
+    </a>
+</div>
+{{ end }}
+
+{{ if .HasMore }}
+<div id="personalized-load-more" class="load-more-container" style="grid-column: 1 / -1; display: flex; justify-content: center; padding: 20px 0;">
+    <button class="btn btn-outline"
+            hx-get="/api/htmx/foryou?page={{ .NextPage }}"
+            hx-target="#personalized-grid"
+            hx-swap="beforeend"
+            hx-indicator="#foryou-loading"
+            onclick="this.remove()">
+        展示更多
+    </button>
+</div>
+{{ end }}
+{{ end }}

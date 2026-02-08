@@ -130,6 +130,14 @@
                     </svg>
                     <span>关于本站</span>
                 </a>
+                <a href="/advertise" class="nav-item {{ if eq .ActiveMenu "advertise" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <circle cx="12" cy="12" r="6"></circle>
+                        <circle cx="12" cy="12" r="2"></circle>
+                    </svg>
+                    <span>广告合作</span>
+                </a>
                 <button class="nav-item theme-toggle" onclick="toggleTheme()" title="切换主题" style="width: 100%; text-align: left;">
                     <svg class="nav-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="5"></circle>
@@ -228,6 +236,7 @@
                 <div class="footer-content">
                     <div class="footer-links">
                         <a href="/about">关于我们</a>
+                        <a href="/advertise">广告合作</a>
                         <a href="/feedback">反馈建议</a>
                         <a href="/changelog">更新记录</a>
                         <a href="/dmca">DMCA</a>
@@ -236,7 +245,7 @@
                         <a href="/sitemap.xml">网站地图</a>
                     </div>
                     <p class="footer-copyright">
-                        © 2026 Moovie 影牛(v3.1.1). 本站不存储任何视频文件，仅提供搜索服务。
+                        © 2026 Moovie 影牛(v3.1.2). 本站不存储任何视频文件，仅提供搜索服务。
                     </p>
                     <p class="footer-also">
                         除了这个项目，我还在做一些方向相近的实验：<a href="https://zhulink.vip/" target="_blank" rel="noopener">竹林</a>（去算法社区）· <a href="https://pockoo.app/" target="_blank" rel="noopener">Pockoo</a>（智能导航）

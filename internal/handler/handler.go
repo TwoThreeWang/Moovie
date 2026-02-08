@@ -578,6 +578,14 @@ func (h *Handler) About(c *gin.Context) {
 	}))
 }
 
+// Advertise 广告合作
+func (h *Handler) Advertise(c *gin.Context) {
+	c.HTML(http.StatusOK, "advertise.html", h.RenderData(c, gin.H{
+		"Title":      "广告合作 - " + h.Config.SiteName,
+		"ActiveMenu": "advertise",
+	}))
+}
+
 // Changelog 更新记录页面
 func (h *Handler) Changelog(c *gin.Context) {
 	c.HTML(http.StatusOK, "changelog.html", h.RenderData(c, gin.H{
