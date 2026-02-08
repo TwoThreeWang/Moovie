@@ -209,24 +209,41 @@ func (r *MovieRepository) GetReliveClassics(userID int, limit int) ([]model.Movi
 
 // GetRecentSimilarMovies 获取“关联推荐”：基于用户最近观看的一部电影推荐相似影片
 func (r *MovieRepository) GetRecentSimilarMovies(userID int, limit int) ([]model.Movie, string, error) {
-	var lastMovie model.Movie
-	// 1. 查找用户最近观看的一部且有 embedding 的电影
+	var result struct {
+		DoubanID string
+		Title    string
+	}
+
+	// 查找用户最近观看的一部且有 embedding 的电影
+	// 综合考虑：UserMovie (标记为已看) 和 WatchHistory (播放进度>5%)
 	err := r.DB.Raw(`
-		SELECT m.* FROM movies m
-		JOIN user_movies um ON um.movie_id = m.douban_id
-		WHERE um.user_id = ? AND um.status = 'watched' AND m.embedding IS NOT NULL
-		ORDER BY um.updated_at DESC
+		SELECT douban_id, title FROM (
+			-- 1. UserMovie: 显式标记为已看
+			SELECT m.douban_id, m.title, um.updated_at as action_time
+			FROM movies m
+			JOIN user_movies um ON um.movie_id = m.douban_id
+			WHERE um.user_id = ? AND um.status = 'watched' AND m.embedding IS NOT NULL
+
+			UNION ALL
+
+			-- 2. WatchHistory: 隐式观看 (播放进度 > 5%)
+			SELECT m.douban_id, m.title, wh.watched_at as action_time
+			FROM movies m
+			JOIN watch_histories wh ON wh.douban_id = m.douban_id
+			WHERE wh.user_id = ? AND m.embedding IS NOT NULL AND wh.progress > 5
+		) as t
+		ORDER BY action_time DESC
 		LIMIT 1
-	`, userID).Scan(&lastMovie).Error
+	`, userID, userID).Scan(&result).Error
 
 	if err != nil {
 		return nil, "", err
 	}
-	if lastMovie.ID == 0 {
+	if result.DoubanID == "" {
 		return nil, "", nil
 	}
 
 	// 2. 查找与其相似的项目
-	similarMovies, err := r.FindSimilar(lastMovie.DoubanID, limit)
-	return similarMovies, lastMovie.Title, err
+	similarMovies, err := r.FindSimilar(result.DoubanID, limit)
+	return similarMovies, result.Title, err
 }

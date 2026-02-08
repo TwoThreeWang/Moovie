@@ -18,10 +18,9 @@
 <div id="personalized-load-more" class="load-more-container" style="grid-column: 1 / -1; display: flex; justify-content: center; padding: 20px 0;">
     <button class="btn btn-outline"
             hx-get="/api/htmx/foryou?page={{ .NextPage }}"
-            hx-target="#personalized-grid"
-            hx-swap="beforeend"
-            hx-indicator="#foryou-loading"
-            onclick="this.remove()">
+            hx-target="#personalized-load-more"
+            hx-swap="outerHTML"
+            hx-indicator="#foryou-loading">
         展示更多
     </button>
 </div>

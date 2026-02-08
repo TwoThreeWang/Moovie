@@ -592,7 +592,7 @@ func (h *Handler) ForYouHTMX(c *gin.Context) {
 
 	// 如果是 page > 1，只返回网格项片段
 	if page > 1 {
-		c.HTML(http.StatusOK, "foryou_movies_grid.html", gin.H{
+		c.HTML(http.StatusOK, "partials/foryou_movies_grid.html", gin.H{
 			"Personalized": pagedPersonalized,
 			"HasMore":      hasMore,
 			"NextPage":     page + 1,
