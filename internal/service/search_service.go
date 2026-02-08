@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -92,6 +93,23 @@ func (s *SearchService) Search(ctx context.Context, keyword string, bypassFilter
 	if !bypassFilter {
 		items, filteredCount = s.filterCopyrightContent(items)
 	}
+
+	// 5. 排序处理 (默认按加载速度排序)
+	sort.Slice(items, func(i, j int) bool {
+		// 如果两个都没有速度数据，保持原序
+		if items[i].AvgSpeedMs == 0 && items[j].AvgSpeedMs == 0 {
+			return false
+		}
+		// 有速度数据的排前面
+		if items[i].AvgSpeedMs > 0 && items[j].AvgSpeedMs == 0 {
+			return true
+		}
+		if items[i].AvgSpeedMs == 0 && items[j].AvgSpeedMs > 0 {
+			return false
+		}
+		// 都有速度数据的，耗时少的排前面
+		return items[i].AvgSpeedMs < items[j].AvgSpeedMs
+	})
 
 	return &SearchResult{
 		Items:         items,
