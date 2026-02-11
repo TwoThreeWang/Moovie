@@ -28,6 +28,7 @@ type Handler struct {
 	Repos                 *repository.Repositories
 	Config                *config.Config
 	DoubanCrawler         *service.DoubanCrawler
+	TMDBService           *service.TMDBService
 	SearchService         *service.SearchService
 	RecommendationService *service.RecommendationService
 	SearchCache           *utils.SearchCache[service.SearchResult]
@@ -37,6 +38,9 @@ type Handler struct {
 func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	// 创建爬虫服务
 	doubanCrawler := service.NewDoubanCrawler(repos.Movie)
+
+	// 创建 TMDB 服务
+	tmdbService := service.NewTMDBService(repos.Movie, cfg)
 
 	// 创建资源网爬虫
 	sourceCrawler := service.NewSourceCrawler(10 * time.Second)
@@ -54,6 +58,7 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 		Repos:                 repos,
 		Config:                cfg,
 		DoubanCrawler:         doubanCrawler,
+		TMDBService:           tmdbService,
 		SearchService:         searchService,
 		RecommendationService: recommendationService,
 		SearchCache:           searchCache,

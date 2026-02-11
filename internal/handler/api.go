@@ -745,6 +745,37 @@ func (h *Handler) MovieCommentsHTMX(c *gin.Context) {
 	})
 }
 
+func (h *Handler) MovieBackdropsHTMX(c *gin.Context) {
+	doubanID := c.Query("douban_id")
+	if doubanID == "" {
+		c.String(http.StatusOK, "")
+		return
+	}
+
+	movie, err := h.Repos.Movie.FindByDoubanID(doubanID)
+	if err != nil || movie == nil {
+		c.String(http.StatusOK, "")
+		return
+	}
+
+	// 如果剧照为空，触发异步同步
+	if movie.Backdrops == "" && h.TMDBService != nil {
+		h.TMDBService.SyncMovieSafeAsync(doubanID)
+		c.String(http.StatusOK, `<div class="reviews-empty">正在后台采集精彩剧照...</div>`)
+		return
+	}
+
+	// 将逗号分隔的剧照转为数组
+	var backdrops []string
+	if movie.Backdrops != "" {
+		backdrops = strings.Split(movie.Backdrops, ",")
+	}
+
+	c.HTML(http.StatusOK, "partials/movie_backdrops.html", gin.H{
+		"Backdrops": backdrops,
+	})
+}
+
 func (h *Handler) UserMovieEditFormHTMX(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == 0 {

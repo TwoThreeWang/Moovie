@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
@@ -89,7 +90,8 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/similar", h.SimilarMoviesHTMX)                            // 相似电影推荐
 		api.GET("/htmx/foryou", h.ForYouHTMX)                                    // 为你推荐
 		api.GET("/htmx/reviews", h.ReviewsHTMX)                                  // 豆瓣短评
-		api.GET("/htmx/movie-comments", h.MovieCommentsHTMX)                     // 用户评论片段
+		api.GET("/htmx/movie-comments", h.MovieCommentsHTMX)                     // 电影短评列表
+		api.GET("/htmx/movie-backdrops", h.MovieBackdropsHTMX)                   // 电影剧照列表
 		api.GET("/htmx/user-movie/edit", h.UserMovieEditFormHTMX)                // 编辑表单片段
 		api.GET("/htmx/user-movie/mark-watched", h.UserMovieMarkWatchedFormHTMX) // 标记已看过前的表单
 		api.GET("/htmx/user-movie/buttons", h.UserMovieButtonsHTMX)              // 操作按钮片段
@@ -256,6 +258,9 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 				return 0
 			}
 			return aFloat / bFloat
+		},
+		"contains": func(s, substr string) bool {
+			return strings.Contains(s, substr)
 		},
 	}
 

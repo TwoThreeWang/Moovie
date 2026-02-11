@@ -4,7 +4,7 @@
     {{ range .SimilarMovies }}
     <div class="similar-movie-with-reason-card">
         <a href="/movie/{{ .Movie.DoubanID }}" class="similar-movie-poster">
-            <img src="https://image.baidu.com/search/down?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            <img src="{{ if contains .Movie.Poster "tmdb" }}{{ .Movie.Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .Movie.Poster }}{{ end }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
             {{ if .Movie.Rating }}
             <span class="similar-movie-rating">{{ .Movie.Rating }}</span>
             {{ end }}

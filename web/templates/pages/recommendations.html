@@ -66,7 +66,7 @@
     <!-- 源电影卡片 -->
     <article class="source-movie-card">
         <a href="/movie/{{ .SourceMovie.DoubanID }}" class="source-movie-poster">
-            <img src="https://image.baidu.com/search/down?url={{ .SourceMovie.Poster }}" alt="{{ .SourceMovie.Title }}" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            <img src="{{ if contains .SourceMovie.Poster "tmdb" }}{{ .SourceMovie.Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .SourceMovie.Poster }}{{ end }}" alt="{{ .SourceMovie.Title }}" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
             {{ if .SourceMovie.Rating }}
             <span class="source-movie-rating-badge">⭐ {{ .SourceMovie.Rating }}</span>
             {{ end }}
@@ -100,7 +100,7 @@
             {{ range .SimilarMovies }}
             <article class="recommendation-card">
                 <a href="/movie/{{ .Movie.DoubanID }}" class="recommendation-poster">
-                    <img src="https://image.baidu.com/search/down?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    <img src="{{ if contains .Movie.Poster "tmdb" }}{{ .Movie.Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .Movie.Poster }}{{ end }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                     {{ if .Movie.Rating }}
                     <span class="recommendation-rating-badge">⭐ {{ .Movie.Rating }}</span>
                     {{ end }}

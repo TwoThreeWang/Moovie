@@ -17,11 +17,11 @@
 
     {{ if .HeroMovie }}
     <div class="foryou-hero">
-        <div class="hero-backdrop" style="background-image: url('https://image.baidu.com/search/down?url={{ .HeroMovie.Poster }}')"></div>
+        <div class="hero-backdrop" style="background-image: url('{{ if contains .HeroMovie.Poster "tmdb" }}{{ .HeroMovie.Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .HeroMovie.Poster }}{{ end }}')"></div>
         <div class="hero-overlay"></div>
         <div class="hero-content">
             <div class="hero-poster-wrapper">
-                <img src="https://image.baidu.com/search/down?url={{ .HeroMovie.Poster }}" alt="{{ .HeroMovie.Title }}" class="hero-poster">
+                <img src="{{ if contains .HeroMovie.Poster "tmdb" }}{{ .HeroMovie.Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .HeroMovie.Poster }}{{ end }}" alt="{{ .HeroMovie.Title }}" class="hero-poster">
                 {{ if .HeroMovie.Rating }}
                 <div class="hero-rating">⭐ {{ .HeroMovie.Rating }}</div>
                 {{ end }}
@@ -72,7 +72,7 @@
                 <div class="movie-card">
                     <a href="/movie/{{ .DoubanID }}">
                         <div class="movie-poster">
-                            <img src="https://image.baidu.com/search/down?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                            <img src="{{ if contains .Poster "tmdb" }}{{ .Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .Poster }}{{ end }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                             {{ if .Rating }}<span class="movie-rating">{{ .Rating }}</span>{{ end }}
                         </div>
                         <div class="movie-info">
@@ -99,7 +99,7 @@
                 <div class="movie-card">
                     <a href="/movie/{{ .DoubanID }}">
                         <div class="movie-poster">
-                            <img src="https://image.baidu.com/search/down?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                            <img src="{{ if contains .Poster "tmdb" }}{{ .Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .Poster }}{{ end }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                             {{ if .Rating }}<span class="movie-rating">{{ .Rating }}</span>{{ end }}
                         </div>
                         <div class="movie-info">

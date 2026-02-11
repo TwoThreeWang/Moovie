@@ -51,7 +51,7 @@ func (r *MovieRepository) Upsert(movie *model.Movie) error {
 	updateCols := []string{
 		"title", "original_title", "year", "poster", "rating",
 		"genres", "countries", "directors", "actors",
-		"summary", "duration", "imdb_id", "updated_at",
+		"summary", "duration", "imdb_id", "backdrops", "updated_at",
 		"reviews_json", "reviews_updated_at",
 	}
 

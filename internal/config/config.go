@@ -17,6 +17,7 @@ type Config struct {
 	SiteName    string
 	SiteUrl     string
 	TimeZone    string
+	TMDBToken   string
 }
 
 // Load 加载配置
@@ -51,6 +52,7 @@ func Load() *Config {
 		SiteName:    getEnv("SITE_NAME", "Moovie"),
 		SiteUrl:     getEnv("SITE_URL", "http://localhost:5007"),
 		TimeZone:    dbTZ,
+		TMDBToken:   getEnv("TMDB_API_TOKEN", ""),
 	}
 }
 

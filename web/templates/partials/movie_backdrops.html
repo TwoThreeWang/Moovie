@@ -1,0 +1,196 @@
+{{ if .Backdrops }}
+<div class="movie-backdrops-section">
+    <div class="backdrops-grid {{ if gt (len .Backdrops) 4 }}has-more{{ end }}" id="backdropsGrid">
+        {{ range .Backdrops }}
+        <div class="backdrop-item" onclick="openLightbox('{{ . }}')">
+            <img src="{{ . }}" loading="lazy" alt="电影剧照">
+        </div>
+        {{ end }}
+    </div>
+    {{ if gt (len .Backdrops) 4 }}
+    <div class="backdrops-actions">
+        <button class="btn-show-more" onclick="toggleBackdrops()">展开全部剧照 ({{ len .Backdrops }})</button>
+    </div>
+    {{ end }}
+</div>
+
+<div id="backdropLightbox" class="backdrop-lightbox" onclick="closeLightbox()">
+    <img id="lightboxImg" src="" alt="剧照大图">
+    <div class="lightbox-close">&times;</div>
+</div>
+
+<style>
+.movie-backdrops-section {
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+}
+.backdrops-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 默认只显示两行的高度。
+   280px 宽度下，16:9 高度约为 157px。
+   加上 gap 和一点余量，两行大约 340px。
+*/
+.backdrops-grid.has-more {
+    max-height: 360px; 
+    position: relative;
+}
+
+.backdrops-grid.expanded {
+    max-height: 5000px; /* 足够大的值 */
+}
+
+.backdrop-item {
+    cursor: pointer;
+    border-radius: var(--radius-sm, 8px);
+    overflow: hidden;
+    aspect-ratio: 16/9;
+    background: var(--bg-secondary, #1a1c22);
+    border: 1px solid var(--border, rgba(255,255,255,0.05));
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.backdrop-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s ease;
+}
+
+.backdrop-item:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+}
+
+.backdrop-item:hover img {
+    transform: scale(1.08);
+}
+
+.backdrops-actions {
+    text-align: center;
+    margin-top: 20px;
+}
+
+.btn-show-more {
+    color: var(--text-secondary, #a0a0a0);
+    font-size: 0.85rem;
+    padding: 6px 20px;
+    border: 1px solid var(--border, #333);
+    border-radius: 30px;
+    transition: all 0.2s ease;
+    background: var(--bg-secondary, #1a1c22);
+}
+
+.btn-show-more:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-alpha, rgba(246, 12, 62, 0.1));
+}
+
+/* Lightbox */
+.backdrop-lightbox {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.92);
+    z-index: 10000;
+    justify-content: center;
+    align-items: center;
+    cursor: zoom-out;
+    backdrop-filter: blur(5px);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.backdrop-lightbox.active {
+    display: flex;
+    opacity: 1;
+}
+
+.backdrop-lightbox img {
+    max-width: 95%;
+    max-height: 92%;
+    object-fit: contain;
+    border-radius: 4px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.backdrop-lightbox.active img {
+    transform: scale(1);
+}
+
+.lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 25px;
+    color: #fff;
+    font-size: 35px;
+    font-weight: 300;
+    cursor: pointer;
+    line-height: 1;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    transition: transform 0.2s;
+}
+
+.lightbox-close:hover {
+    transform: scale(1.2);
+    color: var(--primary);
+}
+
+@media (max-width: 768px) {
+    .backdrops-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    }
+    .backdrops-grid.has-more {
+        max-height: 220px;
+    }
+}
+</style>
+
+<script>
+function toggleBackdrops() {
+    const grid = document.getElementById('backdropsGrid');
+    const btn = document.querySelector('.btn-show-more');
+    if (grid.classList.contains('expanded')) {
+        grid.classList.remove('expanded');
+        btn.innerHTML = '展开全部剧照 (' + grid.querySelectorAll('.backdrop-item').length + ')';
+        // 滚动回网格顶部，避免突然收起导致视点丢失
+        grid.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+        grid.classList.add('expanded');
+        btn.textContent = '收起剧照';
+    }
+}
+
+function openLightbox(url) {
+    const lightbox = document.getElementById('backdropLightbox');
+    const img = document.getElementById('lightboxImg');
+    img.src = url;
+    lightbox.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox() {
+    const lightbox = document.getElementById('backdropLightbox');
+    lightbox.classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+// 监听 ESC 键关闭大图
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeLightbox();
+    }
+});
+</script>
+{{ end }}

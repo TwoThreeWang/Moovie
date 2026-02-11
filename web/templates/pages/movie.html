@@ -34,7 +34,7 @@
     <div class="movie-header">
         <!-- 海报 -->
         <div class="movie-poster-col">
-            <img src="https://image.baidu.com/search/down?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" class="movie-poster-img" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            <img src="{{ if contains .Movie.Poster "tmdb" }}{{ .Movie.Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .Movie.Poster }}{{ end }}" alt="{{ .Movie.Title }}" class="movie-poster-img" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
         </div>
 
         <!-- 信息列 -->
@@ -82,17 +82,17 @@
                 </div>
                 {{ end }}
 
-                {{ if .Movie.IMDbID }}
-                <div class="attr-row">
-                    <span class="attr-label">IMDb:</span>
-                    <span class="attr-value">{{ .Movie.IMDbID }}</span>
-                </div>
-                {{ end }}
-
                 {{ if .Movie.DoubanID }}
                 <div class="attr-row">
                     <span class="attr-label">豆瓣:</span>
-                    <span class="attr-value"><a href="https://movie.douban.com/subject/{{ .Movie.DoubanID }}" target="_blank" rel="noopener nofollow" style="color: #007722; text-decoration: none;">subject/{{ .Movie.DoubanID }}</a></span>
+                    <span class="attr-value"><a href="https://movie.douban.com/subject/{{ .Movie.DoubanID }}" target="_blank" rel="noopener nofollow" style="color: #007722; text-decoration: none;">{{ .Movie.DoubanID }}</a></span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.IMDbID }}
+                <div class="attr-row">
+                    <span class="attr-label">IMDb:</span>
+                    <span class="attr-value"><a href="https://www.imdb.com/title/{{ .Movie.IMDbID }}" target="_blank" rel="noopener nofollow" style="color: #f8c303; text-decoration: none;">{{ .Movie.IMDbID }}</a></span>
                 </div>
                 {{ end }}
             </div>
@@ -123,6 +123,20 @@
         <p class="movie-summary">{{ .Movie.Summary }}</p>
     </div>
     {{ end }}
+
+    <!-- 剧照展示 -->
+    <div class="movie-section">
+        <h2 class="section-title">剧照</h2>
+        <div id="movie-backdrops"
+             hx-get="/api/htmx/movie-backdrops?douban_id={{ .Movie.DoubanID }}"
+             hx-trigger="load"
+             hx-indicator="#backdrops-loading">
+            <div id="backdrops-loading" class="htmx-indicator movie-search-loading-state">
+                <div class="loading-spinner"></div>
+                <p>正在加载剧照...</p>
+            </div>
+        </div>
+    </div>
 
     <!-- 豆瓣短评 -->
     {{ if .Movie.DoubanID }}
@@ -175,7 +189,7 @@
             {{ range .SimilarMovies }}
             <a href="/movie/{{ .DoubanID }}" class="similar-movie-card">
                 <div class="similar-movie-poster">
-                    <img src="https://image.baidu.com/search/down?url={{ .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    <img src="{{ if contains .Poster "tmdb" }}{{ .Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .Poster }}{{ end }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                     {{ if .Rating }}
                     <span class="similar-movie-rating">{{ .Rating }}</span>
                     {{ end }}
