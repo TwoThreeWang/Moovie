@@ -1586,6 +1586,45 @@ img {
     text-indent: 2em;
 }
 
+/* AI 推荐语 */
+.movie-recommendation-section {
+    border-top: none;
+    margin-top: 10px;
+}
+
+.movie-recommendation {
+    background: var(--primary-alpha);
+    padding: 1.25rem;
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+}
+
+.movie-recommendation::before {
+    content: '"';
+    position: absolute;
+    top: -10px;
+    right: 10px;
+    font-size: 5rem;
+    font-family: serif;
+    color: var(--primary);
+    opacity: 0.1;
+    line-height: 1;
+}
+
+.movie-recommendation p {
+    font-size: 0.95rem;
+    line-height: 1.7;
+    color: var(--text);
+    margin: 0;
+    position: relative;
+    z-index: 1;
+}
+
+[data-theme='dark'] .movie-recommendation {
+    background: rgba(246, 12, 62, 0.08);
+}
+
 /* ==================== 电影详情页响应式 ==================== */
 @media (max-width: 640px) {
     .movie-page {

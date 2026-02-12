@@ -1,5 +1,9 @@
 {{ if .Backdrops }}
 <div class="movie-backdrops-section">
+    {{ if gt (len .Backdrops) 4 }}
+    <input type="checkbox" id="toggle-backdrops-check" class="toggle-backdrops-check" style="display: none;">
+    {{ end }}
+
     <div class="backdrops-grid {{ if gt (len .Backdrops) 4 }}has-more{{ end }}" id="backdropsGrid">
         {{ range .Backdrops }}
         <div class="backdrop-item" onclick="openLightbox('{{ . }}')">
@@ -7,9 +11,13 @@
         </div>
         {{ end }}
     </div>
+
     {{ if gt (len .Backdrops) 4 }}
     <div class="backdrops-actions">
-        <button class="btn-show-more" onclick="toggleBackdrops()">展开全部剧照 ({{ len .Backdrops }})</button>
+        <label for="toggle-backdrops-check" class="btn-show-more-label">
+            <span class="text-expand">展开全部剧照 ({{ len .Backdrops }})</span>
+            <span class="text-collapse">收起剧照</span>
+        </label>
     </div>
     {{ end }}
 </div>
@@ -32,17 +40,14 @@
     transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 默认只显示两行的高度。
-   280px 宽度下，16:9 高度约为 157px。
-   加上 gap 和一点余量，两行大约 340px。
-*/
 .backdrops-grid.has-more {
     max-height: 360px; 
     position: relative;
 }
 
-.backdrops-grid.expanded {
-    max-height: 5000px; /* 足够大的值 */
+/* 纯 CSS 展开逻辑 */
+.toggle-backdrops-check:checked ~ .backdrops-grid {
+    max-height: 5000px;
 }
 
 .backdrop-item {
@@ -74,9 +79,12 @@
 .backdrops-actions {
     text-align: center;
     margin-top: 20px;
+    position: relative;
+    z-index: 10;
 }
 
-.btn-show-more {
+.btn-show-more-label {
+    display: inline-block;
     color: var(--text-secondary, #a0a0a0);
     font-size: 0.85rem;
     padding: 6px 20px;
@@ -84,13 +92,22 @@
     border-radius: 30px;
     transition: all 0.2s ease;
     background: var(--bg-secondary, #1a1c22);
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.btn-show-more:hover {
+.btn-show-more-label:hover {
     border-color: var(--primary);
     color: var(--primary);
     background: var(--primary-alpha, rgba(246, 12, 62, 0.1));
 }
+
+/* 按钮文字切换逻辑 */
+.text-collapse { display: none; }
+.toggle-backdrops-check:checked ~ .backdrops-actions .text-expand { display: none; }
+.toggle-backdrops-check:checked ~ .backdrops-actions .text-collapse { display: inline; }
 
 /* Lightbox */
 .backdrop-lightbox {
@@ -158,20 +175,6 @@
 </style>
 
 <script>
-function toggleBackdrops() {
-    const grid = document.getElementById('backdropsGrid');
-    const btn = document.querySelector('.btn-show-more');
-    if (grid.classList.contains('expanded')) {
-        grid.classList.remove('expanded');
-        btn.innerHTML = '展开全部剧照 (' + grid.querySelectorAll('.backdrop-item').length + ')';
-        // 滚动回网格顶部，避免突然收起导致视点丢失
-        grid.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    } else {
-        grid.classList.add('expanded');
-        btn.textContent = '收起剧照';
-    }
-}
-
 function openLightbox(url) {
     const lightbox = document.getElementById('backdropLightbox');
     const img = document.getElementById('lightboxImg');

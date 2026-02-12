@@ -15,6 +15,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/pgvector/pgvector-go"
+	"github.com/user/moovie/internal/config"
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
 	"github.com/user/moovie/internal/utils"
@@ -107,13 +108,14 @@ type DoubanRexxarReviewResponse struct {
 // Crawler 豆瓣爬虫服务
 type DoubanCrawler struct {
 	movieRepo *repository.MovieRepository
+	config    *config.Config
 	client    *http.Client
 	sf        singleflight.Group // 防止并发重复抓取同一电影
 	proxy     string             // 豆瓣透明代理地址
 }
 
 // NewDoubanCrawler 创建爬虫服务
-func NewDoubanCrawler(movieRepo *repository.MovieRepository) *DoubanCrawler {
+func NewDoubanCrawler(movieRepo *repository.MovieRepository, cfg *config.Config) *DoubanCrawler {
 	proxy := os.Getenv("DOUBAN_PROXY")
 	if proxy == "None" {
 		proxy = ""
@@ -121,6 +123,7 @@ func NewDoubanCrawler(movieRepo *repository.MovieRepository) *DoubanCrawler {
 
 	return &DoubanCrawler{
 		movieRepo: movieRepo,
+		config:    cfg,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -494,13 +497,55 @@ func (c *DoubanCrawler) EnrichMovieWithVector(movie *model.Movie) error {
 		actNames = append(actNames, a.Name)
 	}
 
-	rawContent := fmt.Sprintf("标题: %s | 类型: %s | 导演: %s | 主演: %s | 剧情简介: %s",
+	rawContent := fmt.Sprintf("《%s》。类型：%s。导演：%s。主演：%s。剧情：%s",
 		movie.Title,
 		movie.Genres,
 		strings.Join(dirNames, ","),
 		strings.Join(actNames, ","),
 		movie.Summary,
 	)
+
+	// 尝试使用 Gemini 生成语义化内容
+	if c.config.GeminiKey != "" {
+		prompt := fmt.Sprintf(`**Role:** 你是一位精通影视社会学和推荐算法的专家。你的任务是将碎片化的电影元数据重构成一段**极高语义密度的描述文本**，专供向量嵌入（Embedding）模型使用。
+
+**Task:** 请根据提供的原始数据，撰写一段 150-200 字的语义特征文本。
+
+**Input Data:**
+*   **标题/原名:** %s / %s
+*   **年份/地区:** %s / %s
+*   **类型标签:** %s
+*   **核心主创:** 导演 %s，主演 %s
+*   **剧情摘要:** %s
+
+**Writing Guidelines (核心要求):**
+
+1.  **元数据叙事化与加权:** 不要使用“导演：xxx”这种列表格式。请将导演的执导风格、演员的演技标签融入叙事，禁止使用“这部电影是由...”等废话引导。
+2.  **特征压缩（Feature Density）**: 放弃长难句，使用“名词+形容词”的短句堆叠。将剧情摘要转化为核心冲突与母题（Trope）。例如：不写“讲述了抢劫的过程”，写“聚焦银行抢劫、高智商博弈与团队救赎”。
+2.  **提取深层语义标签:** 深入挖掘摘要自然地融合电影的主题、艺术风格、核心冲突，提取隐含的**电影冲突（Conflict）**和**母题（Trope）**。例如：不要只写“抢劫”，要写“密闭空间压力、高智商博弈、反英雄主义、社会阶级对抗”。
+3.  **视听风格建模:** 精炼描述视听风格。使用诸如“冷峻、压抑、快节奏剪辑、迷幻视觉、黑色电影叙事”等具有强区分度的风格词。
+4.  **系列与关联处理:** 如果是续集或系列剧，请明确标注其在系列中的地位（如：系列序章、高潮转折），并强调其核心宇宙的共性，以便同系列作品在向量空间聚类。
+5.  **推荐理由预埋:** 结尾必须包含“该片适合喜欢 [具体风格/作品/导演] 的观众”，模拟用户的搜索意图，增强匹配权重。
+
+**Output Format:**
+*   以“《电影标题》(英文名/别名)”开头输出为一段连贯、无标题、无列表的自然语言段落，字数严格控制在 200 字以内。`,
+			movie.Title,
+			movie.OriginalTitle,
+			movie.Year,
+			movie.Countries,
+			movie.Genres,
+			strings.Join(dirNames, ","),
+			strings.Join(actNames, ","),
+			movie.Summary,
+		)
+		log.Printf("[DoubanCrawler] 生成的原始提示: %s", prompt)
+		semanticContent, err := utils.GenerateGeminiSummary(c.config.GeminiKey, c.config.GeminiModel, prompt)
+		if err != nil {
+			log.Printf("[DoubanCrawler] Gemini 生成语义描述失败，使用备用方案: %v", err)
+		} else {
+			rawContent = semanticContent
+		}
+	}
 
 	// 截断过长文本（保留前1000个字符）
 	if len([]rune(rawContent)) > 1000 {

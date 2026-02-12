@@ -37,7 +37,7 @@ type Handler struct {
 // NewHandler 创建处理器
 func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	// 创建爬虫服务
-	doubanCrawler := service.NewDoubanCrawler(repos.Movie)
+	doubanCrawler := service.NewDoubanCrawler(repos.Movie, cfg)
 
 	// 创建 TMDB 服务
 	tmdbService := service.NewTMDBService(repos.Movie, cfg)

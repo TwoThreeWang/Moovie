@@ -18,6 +18,8 @@ type Config struct {
 	SiteUrl     string
 	TimeZone    string
 	TMDBToken   string
+	GeminiKey   string
+	GeminiModel string
 }
 
 // Load 加载配置
@@ -53,6 +55,8 @@ func Load() *Config {
 		SiteUrl:     getEnv("SITE_URL", "http://localhost:5007"),
 		TimeZone:    dbTZ,
 		TMDBToken:   getEnv("TMDB_API_TOKEN", ""),
+		GeminiKey:   getEnv("GEMINI_API_KEY", ""),
+		GeminiModel: getEnv("GEMINI_MODEL", "gemini-3-flash-preview"),
 	}
 }
 

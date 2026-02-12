@@ -116,6 +116,16 @@
         </div>
     </div>
 
+    <!-- AI 推荐语 -->
+    {{ if .Movie.EmbeddingContent }}
+    <div class="movie-section movie-recommendation-section">
+        <h2 class="section-title">✨ Moovie 推荐语</h2>
+        <div class="movie-recommendation">
+            <p>{{ .Movie.EmbeddingContent }}</p>
+        </div>
+    </div>
+    {{ end }}
+
     <!-- 剧情简介 -->
     {{ if .Movie.Summary }}
     <div class="movie-section">
