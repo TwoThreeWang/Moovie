@@ -538,7 +538,7 @@ func (c *DoubanCrawler) EnrichMovieWithVector(movie *model.Movie) error {
 			strings.Join(actNames, ","),
 			movie.Summary,
 		)
-		log.Printf("[DoubanCrawler] 生成的原始提示: %s", prompt)
+		// log.Printf("[DoubanCrawler] 生成的原始提示: %s", prompt)
 		semanticContent, err := utils.GenerateGeminiSummary(c.config.GeminiKey, c.config.GeminiModel, prompt)
 		if err != nil {
 			log.Printf("[DoubanCrawler] Gemini 生成语义描述失败，使用备用方案: %v", err)
