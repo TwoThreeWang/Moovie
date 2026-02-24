@@ -455,6 +455,10 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 		return
 	}
 
+	// 设置浏览器缓存，缓存时间为 1 天
+	c.Header("Cache-Control", "public, max-age=86400")
+	c.Header("Expires", time.Now().AddDate(0, 0, 1).Format(http.TimeFormat))
+
 	c.DataFromReader(http.StatusOK, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
 }
 

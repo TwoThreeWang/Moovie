@@ -178,6 +178,7 @@
 function openLightbox(url) {
     const lightbox = document.getElementById('backdropLightbox');
     const img = document.getElementById('lightboxImg');
+    img.src = '';
     if (url.includes('tmdb')) {
         img.src = '/api/proxy/image?url=' + url;
     } else {
@@ -189,8 +190,15 @@ function openLightbox(url) {
 
 function closeLightbox() {
     const lightbox = document.getElementById('backdropLightbox');
+    const img = document.getElementById('lightboxImg');
     lightbox.classList.remove('active');
     document.body.style.overflow = '';
+    // 关闭时也清空 src
+    setTimeout(() => {
+        if (!lightbox.classList.contains('active')) {
+            img.src = '';
+        }
+    }, 300); // 等待淡出动画结束
 }
 
 // 监听 ESC 键关闭大图
