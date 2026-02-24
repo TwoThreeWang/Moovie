@@ -34,7 +34,7 @@
     <div class="movie-header">
         <!-- 海报 -->
         <div class="movie-poster-col">
-            <img src="{{ if contains .Movie.Poster "tmdb" }}{{ .Movie.Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .Movie.Poster }}{{ end }}" alt="{{ .Movie.Title }}" class="movie-poster-img" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            <img src="https://image.baidu.com/search/down?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" class="movie-poster-img" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
         </div>
 
         <!-- 信息列 -->

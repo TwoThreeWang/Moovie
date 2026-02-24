@@ -100,7 +100,7 @@
             {{ range .SimilarMovies }}
             <article class="recommendation-card">
                 <a href="/movie/{{ .Movie.DoubanID }}" class="recommendation-poster">
-                    <img src="{{ if contains .Movie.Poster "tmdb" }}{{ .Movie.Poster }}{{ else }}https://image.baidu.com/search/down?url={{ .Movie.Poster }}{{ end }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    <img src="https://image.baidu.com/search/down?url={{ .Movie.Poster }}" alt="{{ .Movie.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                     {{ if .Movie.Rating }}
                     <span class="recommendation-rating-badge">⭐ {{ .Movie.Rating }}</span>
                     {{ end }}
