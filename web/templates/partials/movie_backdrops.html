@@ -180,7 +180,7 @@ function openLightbox(url) {
     const img = document.getElementById('lightboxImg');
     img.src = '';
     if (url.includes('tmdb')) {
-        img.src = '/api/proxy/image?url=' + url;
+        img.src = '/api/proxy/image?url=' + url + '&raw=1';
     } else {
         img.src = 'https://image.baidu.com/search/down?url=' + url;
     }
