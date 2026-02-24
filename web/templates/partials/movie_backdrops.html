@@ -6,8 +6,8 @@
 
     <div class="backdrops-grid {{ if gt (len .Backdrops) 4 }}has-more{{ end }}" id="backdropsGrid">
         {{ range .Backdrops }}
-        <div class="backdrop-item" onclick="openLightbox('{{ . }}')">
-            <img src="{{ . }}" loading="lazy" alt="电影剧照">
+        <div class="backdrop-item" onclick="openLightbox('https:\/\/image.baidu.com/search/down?url={{ . }}')">
+            <img src="https://image.baidu.com/search/down?url={{ . }}" loading="lazy" alt="电影剧照">
         </div>
         {{ end }}
     </div>
