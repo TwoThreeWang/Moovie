@@ -22,6 +22,12 @@ function showMsg(msg, type) {
     console.log(`[Player Msg] ${type}: ${msg}`);
 }
 
+// 辅助函数：检测是否为 iOS 设备
+function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 // 本地存储管理
 var Storage = {
     key: 'moovie_play_state',
@@ -143,15 +149,20 @@ function initPlayer(containerId, url, options) {
         lang: 'zh-cn',
         moreVideoAttr: {
             crossOrigin: 'anonymous',
+            webkitPlaysinline: true,
+            playsinline: true,
+            x5Playsinline: true,
             preload: 'auto'
         },
         customType: {
             m3u8: function(video, url, art) {
-                if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                const forceMSE = isIOS();
+                if (typeof Hls !== 'undefined' && (Hls.isSupported() || forceMSE)) {
                     if (art.hls) art.hls.destroy();
                     var hls = new Hls({
-                        maxBufferLength: 15,
-                        maxMaxBufferLength: 60,
+                        overrideNative: true,
+                        maxBufferLength: forceMSE ? 60 : 15,
+                        maxMaxBufferLength: forceMSE ? 120 : 60,
                         maxBufferSize: 60 * 1000 * 1000,
                         maxBufferHole: 1.5,
                         backBufferLength: 10,
@@ -160,7 +171,11 @@ function initPlayer(containerId, url, options) {
                         autoStartLoad: true,
                         enableWorker: true,
                         fragLoadingMaxRetry: 5,
-                        manifestLoadingMaxRetry: 5
+                        manifestLoadingMaxRetry: 5,
+                        maxLoadingDelay: 4,
+                        fragLoadingTimeOut: 20000,
+                        manifestLoadingTimeOut: 15000,
+                        maxFragLookUpTolerance: 0.2,
                     });
                     hls.loadSource(url);
                     hls.attachMedia(video);
@@ -249,6 +264,19 @@ function initPlayer(containerId, url, options) {
                 video.mozPreservesPitch = true;
                 video.webkitPreservesPitch = true;
             }
+
+            let recoverTimer = null;
+            video.addEventListener('waiting', () => {
+                if (recoverTimer) return;
+                recoverTimer = setTimeout(() => {
+                    console.log('iOS卡顿自动恢复');
+                    if (art.hls) {
+                        art.hls.startLoad();
+                    }
+                    video.play().catch(()=>{});
+                    recoverTimer = null;
+                }, 1200);
+            });
 
             // 获取上次播放进度并自动跳转
             var playState = Storage.find(options.sourceKey + options.vodId);
