@@ -21,6 +21,7 @@
                 <ul>
                     <li><strong>剧照展示引擎重构</strong>：针对移动端（尤其是安卓设备）进行了底层交互重写。将“展开/收起”逻辑由 JavaScript 驱动迁移至<strong>纯 CSS Checkbox 状态引擎</strong>，从根本上解决了脚本兼容性、点击失效及响应延迟问题。</li>
                     <li><strong>触控响应性能优化</strong>：为交互组件引入 <code>touch-action: manipulation</code> 属性，彻底消除移动端浏览器默认的 300ms 点击延迟，提供原生级的灵敏触控体验。</li>
+                    <li><strong>视频播放优化</strong>：针对 iOS 设备，优化了视频播放时的缓冲策略，有效减少了视频加载延迟，提升了用户在移动设备上的播放体验。</li>
                 </ul>
                 <h3>🐞 修复 (Fixed)</h3>
                 <ul>
