@@ -6,8 +6,8 @@
 
     <div class="backdrops-grid {{ if gt (len .Backdrops) 4 }}has-more{{ end }}" id="backdropsGrid">
         {{ range .Backdrops }}
-        <div class="backdrop-item" onclick="openLightbox('https:\/\/image.baidu.com/search/down?url={{ . }}')">
-            <img src="https://image.baidu.com/search/down?url={{ . }}" loading="lazy" alt="电影剧照">
+        <div class="backdrop-item" onclick="openLightbox('{{ . }}')">
+            <img src="{{ if contains . "tmdb" }}/api/proxy/image?url={{ . }}{{ else }}https://image.baidu.com/search/down?url={{ . }}{{ end }}" loading="lazy" alt="电影剧照">
         </div>
         {{ end }}
     </div>
@@ -41,7 +41,7 @@
 }
 
 .backdrops-grid.has-more {
-    max-height: 360px; 
+    max-height: 360px;
     position: relative;
 }
 
@@ -178,15 +178,27 @@
 function openLightbox(url) {
     const lightbox = document.getElementById('backdropLightbox');
     const img = document.getElementById('lightboxImg');
-    img.src = url;
+    img.src = '';
+    if (url.includes('tmdb')) {
+        img.src = '/api/proxy/image?url=' + url + '&raw=1';
+    } else {
+        img.src = 'https://image.baidu.com/search/down?url=' + url;
+    }
     lightbox.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
 
 function closeLightbox() {
     const lightbox = document.getElementById('backdropLightbox');
+    const img = document.getElementById('lightboxImg');
     lightbox.classList.remove('active');
     document.body.style.overflow = '';
+    // 关闭时也清空 src
+    setTimeout(() => {
+        if (!lightbox.classList.contains('active')) {
+            img.src = '';
+        }
+    }, 300); // 等待淡出动画结束
 }
 
 // 监听 ESC 键关闭大图
