@@ -286,6 +286,15 @@ func (h *Handler) Movie(c *gin.Context) {
 			utils.CacheSet(cacheKey, movies, 1*time.Hour)
 		}
 	}
+	// 如果EmbeddingContent为空，异步生成并更新数据库
+	if movie.EmbeddingContent == "" {
+		go func() {
+			log.Printf("[Handler] 正在异步生成EmbeddingContent ID: %s", doubanID)
+			if err := h.DoubanCrawler.EnrichMovieWithVector(movie); err == nil {
+				_ = h.Repos.Movie.Upsert(movie)
+			}
+		}()
+	}
 
 	c.HTML(http.StatusOK, "movie.html", h.RenderData(c, gin.H{
 		"Title":         "《" + movie.Title + "》 (" + movie.Year + ") - 剧情介绍/演职员表 - " + h.Config.SiteName,
