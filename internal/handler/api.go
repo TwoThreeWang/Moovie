@@ -353,8 +353,24 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 		}(keyword, userID, ipHash)
 	}
 
-	// 分页返回
-	h.renderSearchResults(c, results, page, pageSize)
+	// 分页返回之前进行年份过滤
+	year := c.Query("year")
+	finalResults := results
+	if year != "" {
+		filteredItems := make([]model.VodItem, 0)
+		for _, item := range results.Items {
+			if item.VodYear == year || item.VodYear == "" {
+				filteredItems = append(filteredItems, item)
+			}
+		}
+		// 创建一个新的 SearchResult 结构体，避免修改缓存中的 Items 原始切片
+		finalResults = &service.SearchResult{
+			Items:         filteredItems,
+			FilteredCount: results.FilteredCount,
+		}
+	}
+
+	h.renderSearchResults(c, finalResults, page, pageSize)
 }
 
 // renderSearchResults 渲染搜索结果（带分页）
@@ -366,6 +382,7 @@ func (h *Handler) renderSearchResults(c *gin.Context, results *service.SearchRes
 		c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
 			"Results":       []model.VodItem{},
 			"FilteredCount": results.FilteredCount,
+			"Year":          "",
 			"CurrentPage":   page,
 			"HasNextPage":   false,
 		})
@@ -379,12 +396,14 @@ func (h *Handler) renderSearchResults(c *gin.Context, results *service.SearchRes
 
 	// 获取查询参数用于模板
 	keyword := c.Query("kw")
+	year := c.Query("year")
 	bypass := c.Query("bypass") == "1"
 
 	c.HTML(http.StatusOK, "partials/search_results.html", gin.H{
 		"Results":       results.Items[start:end],
 		"FilteredCount": results.FilteredCount,
 		"Keyword":       keyword,
+		"Year":          year,
 		"CurrentPage":   page,
 		"PrevPage":      page - 1,
 		"NextPage":      page + 1,

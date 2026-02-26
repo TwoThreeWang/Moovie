@@ -46,7 +46,7 @@
     <div class="pagination-container" id="pagination">
         {{ if gt .CurrentPage 1 }}
         <button class="pagination-btn"
-                hx-get="/api/htmx/search?kw={{ .Keyword }}&page={{ .PrevPage }}{{ if .Bypass }}&bypass=1{{ end }}"
+                hx-get="/api/htmx/search?kw={{ .Keyword }}&year={{ .Year }}&page={{ .PrevPage }}{{ if .Bypass }}&bypass=1{{ end }}"
                 hx-target="#search-container"
                 hx-swap="innerHTML show:window:top"
                 preload="mouseover"
@@ -61,7 +61,7 @@
 
         {{ if .HasNextPage }}
         <button class="pagination-btn"
-                hx-get="/api/htmx/search?kw={{ .Keyword }}&page={{ .NextPage }}{{ if .Bypass }}&bypass=1{{ end }}"
+                hx-get="/api/htmx/search?kw={{ .Keyword }}&year={{ .Year }}&page={{ .NextPage }}{{ if .Bypass }}&bypass=1{{ end }}"
                 hx-target="#search-container"
                 hx-swap="innerHTML show:window:top"
                 preload="mouseover"

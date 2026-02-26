@@ -103,14 +103,16 @@
         <!-- 操作区域 -->
         <div class="video-actions-bar">
             {{ if .DoubanID }}
-            <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" class="video-action-btn">
-                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="16" x2="12" y2="12"></line>
-                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                </svg>
-                <span>影片详情</span>
-            </a>
+                {{ if ne .DoubanID "0" }}
+                <a href="/movie/{{ .DoubanID }}?title={{ .Detail.VodName }}" class="video-action-btn" title="查看《{{ .Detail.VodName }}》完整剧情、演职员及影评">
+                    <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>《{{ .Detail.VodName }}》详情、演职员及短评</span>
+                </a>
+                {{ end }}
             {{ end }}
             <button class="video-action-btn"
                     hx-post="/api/feedback"
@@ -192,6 +194,7 @@
         </div>
 
         {{ if .DoubanID }}
+        {{ if ne .DoubanID "0" }}
         <!-- 相似电影推荐 -->
         <div class="movie-section" style="margin-top: 40px;">
             <h2 class="section-title">喜欢这部剧集的人也喜欢</h2>
@@ -205,6 +208,7 @@
                 </div>
             </div>
         </div>
+        {{ end }}
         {{ end }}
     </section>
 </div>
