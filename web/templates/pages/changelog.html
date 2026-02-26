@@ -4,6 +4,25 @@
     <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
     <div class="changelog-container">
+        <!-- v3.2.2 -->
+        <section class="changelog-item">
+            <div class="version-badge">v3.2.2 <small>2026-02-26</small></div>
+            <div class="changelog-details">
+                <h3>✨ 新增 (Added)</h3>
+                <ul>
+                    <li><strong>搜索年份过滤</strong>：搜索 API 新增 <code>year</code> 参数支持，允许用户精确按年份筛选影片，并优化了翻页时的过滤状态保持。</li>
+                </ul>
+                <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+                <ul>
+                    <li><strong>iOS 播放引擎优化</strong>：针对 iOS 设备重构 HLS 播放逻辑，引入卡顿自动恢复机制与 MSE 参数调优，显著提升移动端播放稳定性。</li>
+                    <li><strong>异步向量内容生成</strong>：实现 <code>EmbeddingContent</code> 后台异步生成机制，在访问未索引影片时自动补全语义向量，提升推荐覆盖率且不影响页面响应。</li>
+                </ul>
+                <h3>🐞 修复 (Fixed)</h3>
+                <ul>
+                    <li><strong>详情页逻辑容错</strong>：优化影片详情页展示，当豆瓣 ID 无效时自动隐藏相关链接和推荐模块，避免空数据展示。</li>
+                </ul>
+            </div>
+        </section>
         <!-- v3.2.1 -->
         <section class="changelog-item">
             <div class="version-badge">v3.2.1 <small>2026-02-24</small></div>
