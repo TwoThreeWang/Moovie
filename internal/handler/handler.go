@@ -524,7 +524,7 @@ func (h *Handler) Trends(c *gin.Context) {
 				Keyword: t.Keyword,
 				Count:   t.Count,
 			}
-			if t.Count > 50 { // 24小时内50次就算热
+			if t.Count > 100 { // 24小时内100次就算热
 				item.Tag = "热"
 				item.TagClass = "hot"
 			} else if t.LastSearchedAt.After(time.Now().Add(-1 * time.Hour)) {
@@ -549,8 +549,11 @@ func (h *Handler) Trends(c *gin.Context) {
 				Keyword: t.Keyword,
 				Count:   t.Count,
 			}
-			if t.Count > 200 {
-				item.Tag = "火爆"
+			if t.Count > 4000 {
+				item.Tag = "爆"
+				item.TagClass = "bao"
+			} else if t.Count > 2000 {
+				item.Tag = "热"
 				item.TagClass = "hot"
 			}
 			itemsAll = append(itemsAll, item)

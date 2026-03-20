@@ -353,21 +353,39 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 		}(keyword, userID, ipHash)
 	}
 
-	// 分页返回之前进行年份过滤
+	// 处理过滤参数：年份和 exclude
 	year := c.Query("year")
-	finalResults := results
-	if year != "" {
-		filteredItems := make([]model.VodItem, 0)
-		for _, item := range results.Items {
-			if item.VodYear == year || item.VodYear == "" {
-				filteredItems = append(filteredItems, item)
-			}
+	exclude := c.Query("exclude")
+
+	// 解析 exclude 参数（格式：sourceKey:vodID）
+	var excludeSourceKey, excludeVodID string
+	if exclude != "" {
+		parts := strings.Split(exclude, ":")
+		if len(parts) == 2 {
+			excludeSourceKey = parts[0]
+			excludeVodID = parts[1]
 		}
-		// 创建一个新的 SearchResult 结构体，避免修改缓存中的 Items 原始切片
-		finalResults = &service.SearchResult{
-			Items:         filteredItems,
-			FilteredCount: results.FilteredCount,
+	}
+
+	// 只遍历一次，同时应用年份和 exclude 过滤
+	filteredItems := make([]model.VodItem, 0)
+	for _, item := range results.Items {
+		// 年份过滤：如果指定了年份且当前项年份不匹配，则跳过
+		if year != "" && item.VodYear != year && item.VodYear != "" {
+			continue
 		}
+		// exclude 过滤：如果当前项与 exclude 参数匹配，则跳过
+		if excludeSourceKey != "" && item.SourceKey == excludeSourceKey && item.VodId == excludeVodID {
+			continue
+		}
+		// 通过所有过滤条件，添加到结果中
+		filteredItems = append(filteredItems, item)
+	}
+
+	// 创建一个新的 SearchResult 结构体，避免修改缓存中的 Items 原始切片
+	finalResults := &service.SearchResult{
+		Items:         filteredItems,
+		FilteredCount: results.FilteredCount,
 	}
 
 	h.renderSearchResults(c, finalResults, page, pageSize)

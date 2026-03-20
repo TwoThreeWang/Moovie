@@ -1,133 +1,138 @@
-
 {{ define "content" }}
 <!-- 24小时热搜榜单 JSON-LD -->
 <script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "ItemList",
-  "name": "24小时电影热搜榜 - 今日最火",
-  "description": "实时更新的过去24小时内搜索热度最高的电影和电视剧",
-  "itemListOrder": "https://schema.org/ItemListOrderDescending",
-  "numberOfItems": {{ len .Trending24h }},
-  "itemListElement": [
-    {{ range $index, $item := .Trending24h }}
-    {
-      "@type": "ListItem",
-      "position": {{ add $index 1 }},
-      "name": "{{ $item.Keyword | js }}",
-      "url": "{{ $.SiteUrl }}/search?kw={{ $item.Keyword }}"
-    }{{ if lt $index (sub (len $.Trending24h) 1) }},{{ end }}
-    {{ end }}
-  ]
-}
+  {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "24小时电影热搜榜 - 今日最火",
+    "description": "实时更新的过去24小时内搜索热度最高的电影和电视剧",
+    "itemListOrder": "https://schema.org/ItemListOrderDescending",
+    "numberOfItems": {{ len .Trending24h }},
+    "itemListElement": [
+      {{ range $index, $item := .Trending24h }}
+      {
+        "@type": "ListItem",
+        "position": {{ add $index 1 }},
+        "name": "{{ $item.Keyword | js }}",
+        "url": "{{ $.SiteUrl }}/search?kw={{ $item.Keyword }}"
+      }{{ if lt $index (sub (len $.Trending24h) 1) }},{{ end }}
+      {{ end }}
+    ]
+  }
 </script>
 
 <!-- 本月热搜总榜 JSON-LD -->
 <script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "ItemList",
-  "name": "本月电影搜索总榜 - 热门推荐",
-  "description": "根据本月全网搜索数据汇总的影视热度排行榜",
-  "itemListOrder": "https://schema.org/ItemListOrderDescending",
-  "numberOfItems": {{ len .TrendingAll }},
-  "itemListElement": [
-    {{ range $index, $item := .TrendingAll }}
-    {
-      "@type": "ListItem",
-      "position": {{ add $index 1 }},
-      "name": "{{ $item.Keyword | js }}",
-      "url": "{{ $.SiteUrl }}/search?kw={{ $item.Keyword }}"
-    }{{ if lt $index (sub (len $.TrendingAll) 1) }},{{ end }}
-    {{ end }}
-  ]
-}
+  {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "本月电影搜索总榜 - 热门推荐",
+    "description": "根据本月全网搜索数据汇总的影视热度排行榜",
+    "itemListOrder": "https://schema.org/ItemListOrderDescending",
+    "numberOfItems": {{ len .TrendingAll }},
+    "itemListElement": [
+      {{ range $index, $item := .TrendingAll }}
+      {
+        "@type": "ListItem",
+        "position": {{ add $index 1 }},
+        "name": "{{ $item.Keyword | js }}",
+        "url": "{{ $.SiteUrl }}/search?kw={{ $item.Keyword }}"
+      }{{ if lt $index (sub (len $.TrendingAll) 1) }},{{ end }}
+      {{ end }}
+    ]
+  }
 </script>
 <div class="trends-page">
-    <div class="trends-header">
-        <h1 class="page-title">🔥 搜索趋势</h1>
-        <span class="trends-update">更新于 {{ .UpdateTime }}</span>
-    </div>
+  <div class="trends-header">
+    <h1 class="page-title">🔥 搜索趋势</h1>
+    <span class="trends-update">更新于 {{ .UpdateTime }}</span>
+  </div>
 
-    <div class="trends-tabs">
-        <button class="tab-btn active" onclick="switchTab(this, '24h')">24小时热搜</button>
-        <button class="tab-btn" onclick="switchTab(this, 'all')">本月热搜</button>
-    </div>
+  <div class="trends-tabs">
+    <button class="tab-btn active" onclick="switchTab(this, '24h')">
+      24小时热搜
+    </button>
+    <button class="tab-btn" onclick="switchTab(this, 'all')">本月热搜</button>
+  </div>
 
-    <div id="tab-24h" class="tab-content active">
-        {{ if .Trending24h }}
-        <div class="trends-list">
-            {{ range $i, $item := .Trending24h }}
-            <a href="/search?kw={{ $item.Keyword }}" class="trend-item">
-                <span class="trend-rank {{ if le (add $i 1) 3 }}top{{ end }}">{{ add $i 1 }}</span>
-                <div class="trend-content">
-                    <span class="trend-keyword">{{ $item.Keyword }}</span>
-                    {{ if $item.Tag }}
-                    <span class="trend-tag {{ $item.TagClass }}">{{ $item.Tag }}</span>
-                    {{ end }}
-                </div>
-                <span class="trend-heat">{{ $item.Count }}</span>
-            </a>
-            {{ end }}
+  <div id="tab-24h" class="tab-content active">
+    {{ if .Trending24h }}
+    <div class="trends-list">
+      {{ range $i, $item := .Trending24h }}
+      <a href="/search?kw={{ $item.Keyword }}" class="trend-item">
+        <span class="trend-rank {{ if le (add $i 1) 3 }}top{{ end }}"
+          >{{ add $i 1 }}</span
+        >
+        <div class="trend-content">
+          <span class="trend-keyword">{{ $item.Keyword }}</span>
+          {{ if $item.Tag }}
+          <span class="trend-tag {{ $item.TagClass }}">{{ $item.Tag }}</span>
+          {{ end }}
         </div>
-        {{ else }}
-        <div class="empty-state">
-            <p>暂无 24 小时热搜数据</p>
-        </div>
-        {{ end }}
+        <span class="trend-heat">{{ $item.Count }}</span>
+      </a>
+      {{ end }}
     </div>
+    {{ else }}
+    <div class="empty-state">
+      <p>暂无 24 小时热搜数据</p>
+    </div>
+    {{ end }}
+  </div>
 
-    <div id="tab-all" class="tab-content">
-        {{ if .TrendingAll }}
-        <div class="trends-list">
-            {{ range $i, $item := .TrendingAll }}
-            <a href="/search?kw={{ $item.Keyword }}" class="trend-item">
-                <span class="trend-rank {{ if le (add $i 1) 3 }}top{{ end }}">{{ add $i 1 }}</span>
-                <div class="trend-content">
-                    <span class="trend-keyword">{{ $item.Keyword }}</span>
-                    {{ if $item.Tag }}
-                    <span class="trend-tag {{ $item.TagClass }}">{{ $item.Tag }}</span>
-                    {{ end }}
-                </div>
-                <span class="trend-heat">{{ $item.Count }}</span>
-            </a>
-            {{ end }}
+  <div id="tab-all" class="tab-content">
+    {{ if .TrendingAll }}
+    <div class="trends-list">
+      {{ range $i, $item := .TrendingAll }}
+      <a href="/search?kw={{ $item.Keyword }}" class="trend-item">
+        <span class="trend-rank {{ if le (add $i 1) 3 }}top{{ end }}"
+          >{{ add $i 1 }}</span
+        >
+        <div class="trend-content">
+          <span class="trend-keyword">{{ $item.Keyword }}</span>
+          {{ if $item.Tag }}
+          <span class="trend-tag {{ $item.TagClass }}">{{ $item.Tag }}</span>
+          {{ end }}
         </div>
-        {{ else }}
-        <div class="empty-state">
-            <p>暂无全量热搜数据</p>
-        </div>
-        {{ end }}
+        <span class="trend-heat">{{ $item.Count }}</span>
+      </a>
+      {{ end }}
     </div>
+    {{ else }}
+    <div class="empty-state">
+      <p>暂无全量热搜数据</p>
+    </div>
+    {{ end }}
+  </div>
 </div>
 
 <script>
-function switchTab(el, tabId) {
+  function switchTab(el, tabId) {
     // 切换按钮状态
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.classList.remove("active");
     });
-    el.classList.add('active');
+    el.classList.add("active");
 
     // 切换内容显示
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
+    document.querySelectorAll(".tab-content").forEach((content) => {
+      content.classList.remove("active");
     });
-    document.getElementById('tab-' + tabId).classList.add('active');
-}
+    document.getElementById("tab-" + tabId).classList.add("active");
+  }
 </script>
 
 <style>
-/* 选项卡样式 */
-.trends-tabs {
+  /* 选项卡样式 */
+  .trends-tabs {
     display: flex;
     gap: 12px;
     margin-bottom: 20px;
     border-bottom: 1px solid var(--border);
     padding-bottom: 10px;
-}
+  }
 
-.tab-btn {
+  .tab-btn {
     background: none;
     border: none;
     padding: 8px 16px;
@@ -137,154 +142,159 @@ function switchTab(el, tabId) {
     border-radius: 8px;
     transition: all var(--transition);
     font-weight: 500;
-}
+  }
 
-.tab-btn:hover {
+  .tab-btn:hover {
     background: var(--bg-secondary);
     color: var(--text);
-}
+  }
 
-.tab-btn.active {
+  .tab-btn.active {
     background: var(--primary);
     color: white;
-}
+  }
 
-.tab-content {
+  .tab-content {
     display: none;
-}
+  }
 
-.tab-content.active {
+  .tab-content.active {
     display: block;
-}
-/* 热搜页面样式 */
-.trends-page {
+  }
+  /* 热搜页面样式 */
+  .trends-page {
     max-width: 700px;
     margin: 0 auto;
     padding: 20px 0;
-}
+  }
 
-.trends-header {
+  .trends-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 20px;
-}
+  }
 
-.trends-update {
+  .trends-update {
     font-size: 0.85rem;
     color: var(--text-muted);
-}
+  }
 
-.trends-list {
+  .trends-list {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
-}
+  }
 
-.trend-item {
+  .trend-item {
     display: flex;
     align-items: center;
     gap: 16px;
     padding: 14px 20px;
     border-bottom: 1px solid var(--border);
     transition: background var(--transition);
-}
+  }
 
-.trend-item:last-child {
+  .trend-item:last-child {
     border-bottom: none;
-}
+  }
 
-.trend-item:hover {
+  .trend-item:hover {
     background: var(--bg-secondary);
-}
+  }
 
-.trend-rank {
+  .trend-rank {
     width: 24px;
     font-size: 1rem;
     font-weight: 700;
     color: var(--text-muted);
     text-align: center;
     flex-shrink: 0;
-}
+  }
 
-.trend-rank.top {
+  .trend-rank.top {
     color: var(--primary);
-}
+  }
 
-.trend-content {
+  .trend-content {
     flex: 1;
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
-}
+  }
 
-.trend-keyword {
+  .trend-keyword {
     font-size: 0.95rem;
     color: var(--text);
     font-weight: 500;
-}
+  }
 
-.trend-item:hover .trend-keyword {
+  .trend-item:hover .trend-keyword {
     color: var(--primary);
-}
+  }
 
-.trend-tag {
+  .trend-tag {
     font-size: 0.7rem;
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: 500;
     flex-shrink: 0;
-}
+  }
 
-.trend-tag.hot {
+  .trend-tag.bao {
+    background: #ff0015;
+    color: white;
+  }
+
+  .trend-tag.hot {
     background: #ff4757;
     color: white;
-}
+  }
 
-.trend-tag.new {
+  .trend-tag.new {
     background: #2ed573;
     color: white;
-}
+  }
 
-.trend-tag.recommend {
+  .trend-tag.recommend {
     background: #1e90ff;
     color: white;
-}
+  }
 
-.trend-tag.movie {
+  .trend-tag.movie {
     background: #ff9800;
     color: white;
-}
+  }
 
-.trend-tag.tv {
+  .trend-tag.tv {
     background: #9c27b0;
     color: white;
-}
+  }
 
-.trend-heat {
+  .trend-heat {
     font-size: 0.8rem;
     color: var(--text-muted);
     flex-shrink: 0;
-}
+  }
 
-/* 响应式 */
-@media (max-width: 600px) {
+  /* 响应式 */
+  @media (max-width: 600px) {
     .trends-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
     }
 
     .trend-item {
-        padding: 12px 16px;
-        gap: 12px;
+      padding: 12px 16px;
+      gap: 12px;
     }
 
     .trend-keyword {
-        font-size: 0.9rem;
+      font-size: 0.9rem;
     }
-}
+  }
 </style>
 {{ end }}
