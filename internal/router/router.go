@@ -270,7 +270,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		"discover", "trends", "foryou", "feedback",
 		"about", "advertise", "changelog", "dmca", "privacy", "terms", "404",
 		"login", "register", "recommendations",
-		"dashboard", "settings",
+		"dashboard", "settings", "fetching",
 		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright", "admin_category",
 	}
 

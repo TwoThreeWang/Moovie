@@ -18,10 +18,14 @@ import (
 	"github.com/user/moovie/internal/repository"
 	"github.com/user/moovie/internal/service"
 	"github.com/user/moovie/internal/utils"
+	"sync"
 )
 
 // 全局 validator 实例
 var validate = validator.New()
+
+// 全局变量，记录正在抓取的电影ID，避免重复抓取
+var crawlingMap sync.Map
 
 // Handler HTTP 处理器
 type Handler struct {
@@ -197,27 +201,31 @@ func (h *Handler) Movie(c *gin.Context) {
 	}
 
 	if err != nil || movie == nil {
-		// 如果数据库中没有或已被认定为脏数据，尝试从豆瓣抓取
-		if h.DoubanCrawler != nil {
-			log.Printf("[Handler] 正在从豆瓣抓取/更新信息 ID: %s", doubanID)
-			if err := h.DoubanCrawler.CrawlDoubanMovieApi(doubanID); err == nil {
-				// 抓取成功后再次查询
-				movie, _ = h.Repos.Movie.FindByDoubanID(doubanID)
-			} else {
-				log.Printf("[Handler] 豆瓣抓取失败: %v", err)
-			}
+		// 如果数据库中没有电影数据，显示正在抓取页面
+		
+		// 检查是否已有抓取任务在进行，避免重复抓取
+		if _, isCrawling := crawlingMap.Load(doubanID); !isCrawling {
+			// 标记为正在抓取
+			crawlingMap.Store(doubanID, time.Now())
+			
+			// 启动后台异步抓取任务
+			go func(id string) {
+				defer crawlingMap.Delete(id) // 抓取完成后删除标记
+				
+				log.Printf("[Handler] 后台异步抓取电影信息 ID: %s", id)
+				if h.DoubanCrawler != nil {
+					if err := h.DoubanCrawler.CrawlDoubanMovieApi(id); err != nil {
+						log.Printf("[Handler] 豆瓣抓取失败: %v", err)
+					}
+				}
+			}(doubanID)
 		}
-	}
-
-	if movie == nil {
-		// 如果采集失败，但传了标题，尝试跳回搜索页
-		if title != "" {
-			c.Redirect(http.StatusFound, "/search?kw="+url.QueryEscape(title))
-			return
-		}
-
-		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
-			"Title": "电影未找到 - " + h.Config.SiteName,
+		
+		// 返回正在抓取中的页面，提供刷新按钮和搜索链接
+		c.HTML(http.StatusOK, "fetching.html", h.RenderData(c, gin.H{
+			"Title":       title,
+			"DoubanID":    doubanID,
+			"SiteName":    h.Config.SiteName,
 		}))
 		return
 	}
