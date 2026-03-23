@@ -158,7 +158,10 @@ function initPlayer(containerId, url, options) {
             m3u8: function(video, url, art) {
                 const forceMSE = isIOS();
                 if (typeof Hls !== 'undefined' && (Hls.isSupported() || forceMSE)) {
-                    if (art.hls) art.hls.destroy();
+                    if (art.hls) {
+                        art.hls.destroy();
+                        art.hls = null;
+                    };
                     var hls = new Hls({
                         overrideNative: true,
                         maxBufferLength: forceMSE ? 60 : 15,
@@ -182,7 +185,10 @@ function initPlayer(containerId, url, options) {
                     hls.attachMedia(video);
                     art.hls = hls;
                     art.on('destroy', function() {
-                        hls.destroy();
+                        if (hls) {
+                            hls.destroy();
+                            hls = null;
+                        }
                     });
                     let errorCount = 0;
                     hls.on(Hls.Events.ERROR, function(event, data) {
