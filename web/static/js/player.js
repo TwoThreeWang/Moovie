@@ -184,23 +184,42 @@ function initPlayer(containerId, url, options) {
                     art.on('destroy', function() {
                         hls.destroy();
                     });
+                    let errorCount = 0;
                     hls.on(Hls.Events.ERROR, function(event, data) {
                         if (data.fatal) {
                             switch(data.type) {
                                 case Hls.ErrorTypes.NETWORK_ERROR:
-                                    console.error('网络错误,尝试恢复...');
-                                    hls.startLoad();
+                                    errorCount++;
+                                    console.error(`网络错误, 累计次数: ${errorCount}`);
+                                    if (errorCount >= 3) {
+                                        console.error('连续错误超过阈值，尝试强制刷新 URL');
+                                        if (art && art.notice) {
+                                            art.notice.show = '视频片段加载失败，请尝试刷新页面或切换其他视频源';
+                                        }
+                                        hls.destroy(); 
+                                    } else {
+                                        hls.startLoad();
+                                    }
                                     break;
                                 case Hls.ErrorTypes.MEDIA_ERROR:
-                                    console.error('媒体错误,尝试恢复...');
+                                    errorCount++;
+                                    if (art && art.notice) {
+                                        art.notice.show = '媒体错误,正在尝试自动恢复...';
+                                    }
                                     hls.recoverMediaError();
                                     break;
                                 default:
                                     console.error('无法恢复的错误');
-                                    showMsg('播放出错,请刷新重试', 'error');
+                                    if (art && art.notice) {
+                                        art.notice.show = '视频片段加载失败，请尝试刷新页面或切换其他视频源';
+                                    }
+                                    hls.destroy();
                                     break;
                             }
                         }
+                    });
+                    hls.on(Hls.Events.FRAG_LOADED, () => {
+                        errorCount = 0;
                     });
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         console.log('[Player] HLS manifest 解析完成');
