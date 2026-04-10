@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"sync"
+
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -18,7 +20,6 @@ import (
 	"github.com/user/moovie/internal/repository"
 	"github.com/user/moovie/internal/service"
 	"github.com/user/moovie/internal/utils"
-	"sync"
 )
 
 // 全局 validator 实例
@@ -202,16 +203,16 @@ func (h *Handler) Movie(c *gin.Context) {
 
 	if err != nil || movie == nil {
 		// 如果数据库中没有电影数据，显示正在抓取页面
-		
+
 		// 检查是否已有抓取任务在进行，避免重复抓取
 		if _, isCrawling := crawlingMap.Load(doubanID); !isCrawling {
 			// 标记为正在抓取
 			crawlingMap.Store(doubanID, time.Now())
-			
+
 			// 启动后台异步抓取任务
 			go func(id string) {
 				defer crawlingMap.Delete(id) // 抓取完成后删除标记
-				
+
 				log.Printf("[Handler] 后台异步抓取电影信息 ID: %s", id)
 				if h.DoubanCrawler != nil {
 					if err := h.DoubanCrawler.CrawlDoubanMovieApi(id); err != nil {
@@ -220,12 +221,12 @@ func (h *Handler) Movie(c *gin.Context) {
 				}
 			}(doubanID)
 		}
-		
+
 		// 返回正在抓取中的页面，提供刷新按钮和搜索链接
 		c.HTML(http.StatusOK, "fetching.html", h.RenderData(c, gin.H{
-			"Title":       title,
-			"DoubanID":    doubanID,
-			"SiteName":    h.Config.SiteName,
+			"Title":    title,
+			"DoubanID": doubanID,
+			"SiteName": h.Config.SiteName,
 		}))
 		return
 	}
@@ -308,7 +309,7 @@ func (h *Handler) Movie(c *gin.Context) {
 		"Title":         "《" + movie.Title + "》 (" + movie.Year + ") - 剧情介绍/演职员表 - " + h.Config.SiteName,
 		"Description":   desc,
 		"Keywords":      strings.Join(keywords, ","),
-		"Cover":         "https://image.baidu.com/search/down?url=" + movie.Poster,
+		"Cover":         "/api/proxy/image?url=" + movie.Poster,
 		"Canonical":     fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
 		"Movie":         movie,
 		"IsWish":        isWish,

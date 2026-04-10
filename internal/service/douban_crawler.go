@@ -667,7 +667,7 @@ func (c *DoubanCrawler) SearchSuggest(keyword string) ([]MovieSuggestResponse, e
 	var results []MovieSuggestResponse
 	for _, item := range doubanResults {
 		// 使用本地图片代理，绕过防盗链
-		proxyImg := fmt.Sprintf("https://image.baidu.com/search/down?url=%s", item.Img)
+		proxyImg := fmt.Sprintf("/api/proxy/image?url=%s", item.Img)
 
 		results = append(results, MovieSuggestResponse{
 			ID:       item.ID,
@@ -782,7 +782,7 @@ func (c *DoubanCrawler) GetPopularSubjects(movieType string) ([]DoubanPopularSub
 
 	// 处理图片，使用代理绕过防盗链
 	for i := range response.Subjects {
-		response.Subjects[i].Cover = fmt.Sprintf("https://image.baidu.com/search/down?url=%s", response.Subjects[i].Cover)
+		response.Subjects[i].Cover = fmt.Sprintf("/api/proxy/image?url=%s", response.Subjects[i].Cover)
 	}
 
 	// 缓存结果，缓存时间12小时

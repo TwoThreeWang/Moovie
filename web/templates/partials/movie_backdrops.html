@@ -7,7 +7,7 @@
     <div class="backdrops-grid {{ if gt (len .Backdrops) 4 }}has-more{{ end }}" id="backdropsGrid">
         {{ range .Backdrops }}
         <div class="backdrop-item" onclick="openLightbox('{{ . }}')">
-            <img src="{{ if contains . "tmdb" }}/api/proxy/image?url={{ . }}{{ else }}https://image.baidu.com/search/down?url={{ . }}{{ end }}" loading="lazy" alt="电影剧照">
+            <img src="{{ if contains . "tmdb" }}/api/proxy/image?url={{ . }}{{ else }}/api/proxy/image?url={{ . }}{{ end }}" loading="lazy" alt="电影剧照">
         </div>
         {{ end }}
     </div>
@@ -182,7 +182,7 @@ function openLightbox(url) {
     if (url.includes('tmdb')) {
         img.src = '/api/proxy/image?url=' + url + '&raw=1';
     } else {
-        img.src = 'https://image.baidu.com/search/down?url=' + url;
+        img.src = '/api/proxy/image?url=' + url;
     }
     lightbox.classList.add('active');
     document.body.style.overflow = 'hidden';

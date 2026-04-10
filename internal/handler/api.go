@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	_ "golang.org/x/image/webp"
+
 	"github.com/gin-gonic/gin"
 	"github.com/user/moovie/internal/middleware"
 	"github.com/user/moovie/internal/model"

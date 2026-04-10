@@ -87,7 +87,8 @@ func (c *DefaultSourceCrawler) Search(ctx context.Context, baseUrl, keyword, sou
 	// 解析JSON
 	var apiResp vodApiResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return nil, fmt.Errorf("解析JSON失败: %w", err)
+		fmt.Println("解析JSON失败: ", err)
+		return nil, fmt.Errorf("解析JSON失败: %s", string(body))
 	}
 
 	// 转换为VodItem列表，所有字段统一转为string

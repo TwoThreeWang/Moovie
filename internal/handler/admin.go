@@ -131,7 +131,7 @@ func (h *Handler) AdminSiteTest(c *gin.Context) {
 	}
 
 	// 测试关键词
-	keyword := "肖申克的救赎"
+	keyword := c.DefaultQuery("keyword", "肖申克的救赎")
 
 	// 调用搜索服务进行测试
 	items, err := h.SearchService.GetSearchCrawler().Search(c.Request.Context(), site.BaseUrl, keyword, site.Key, nil)

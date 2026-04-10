@@ -125,8 +125,12 @@
         </div>
         <div class="modal-body">
             <div id="test_status" class="test-status-info">
-                正在测试搜索关键词: <code id="test_keyword">...</code><br>
-                如果失败建议等一段时间多试几次，排除偶尔抽风超时的情况。
+                <div class="form-group" style="margin-bottom: 15px; display: flex; gap: 10px;">
+                    <input type="text" id="test_input_keyword" class="form-control" placeholder="输入搜索关键词..." style="flex: 1;">
+                    <button type="button" class="btn btn-primary" onclick="retestCurrentSite()">测试搜索</button>
+                </div>
+                正在测试站点: <code id="test_site_key">...</code><br>
+                如果不显示结果，请尝试更换关键词或稍后多试几次。
             </div>
             <div id="test_loader" class="test-loader" style="display: none; padding: 20px; text-align: center;">
                 <div class="spinner"></div>
@@ -238,11 +242,35 @@ function closeEditModal() {
     document.getElementById('editModal').style.display = 'none';
 }
 
+let currentTestSiteId = null;
+let currentTestSiteKey = null;
+
 // 资源网测试
 async function testSite(id, key) {
+    currentTestSiteId = id;
+    currentTestSiteKey = key;
+
     document.getElementById('test_site_name').innerText = key;
-    document.getElementById('test_keyword').innerText = '...';
-    document.getElementById('test_status').style.display = 'block';
+    document.getElementById('test_site_key').innerText = key;
+    document.getElementById('test_input_keyword').value = '肖申克的救赎';
+
+    await performSiteTest('肖申克的救赎');
+}
+
+// 重新测试当前站点
+async function retestCurrentSite() {
+    const keyword = document.getElementById('test_input_keyword').value.trim();
+    if (!keyword) {
+        alert('请输入搜索关键词');
+        return;
+    }
+    await performSiteTest(keyword);
+}
+
+// 执行测试请求
+async function performSiteTest(keyword) {
+    if (!currentTestSiteId) return;
+
     document.getElementById('test_loader').style.display = 'block';
     document.getElementById('test_results_area').style.display = 'none';
     document.getElementById('test_error').style.display = 'none';
@@ -250,13 +278,12 @@ async function testSite(id, key) {
     document.getElementById('testResultsTable').innerHTML = '';
 
     try {
-        const resp = await fetch(`/admin/sites/${id}/test`);
+        const resp = await fetch(`/admin/sites/${currentTestSiteId}/test?keyword=${encodeURIComponent(keyword)}`);
         const data = await resp.json();
 
         document.getElementById('test_loader').style.display = 'none';
 
         if (data.success) {
-            document.getElementById('test_keyword').innerText = data.data.keyword;
             document.getElementById('test_result_count').innerText = data.data.count;
             document.getElementById('test_results_area').style.display = 'block';
 
