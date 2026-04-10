@@ -7,83 +7,65 @@
 <div class="tab-nav" style="margin-bottom: 24px;">
     <a href="javascript:void(0)"
        hx-get="/discover/movie"
-       preload="mouseover" 
-        preload-delay="300ms"
        hx-target="#discover-content"
        hx-push-url="true"
-       hx-indicator="#loading-indicator"
+       hx-on:click="showDiscoverLoading()"
        class="tab-btn {{ if eq .CurrentType "movie" }}active{{ end }}"
        onclick="updateActiveTab(this)">热门电影</a>
     <a href="javascript:void(0)"
        hx-get="/discover/tv"
-       preload="mouseover" 
-        preload-delay="300ms"
        hx-target="#discover-content"
        hx-push-url="true"
-       hx-indicator="#loading-indicator"
+       hx-on:click="showDiscoverLoading()"
        class="tab-btn {{ if eq .CurrentType "tv" }}active{{ end }}"
        onclick="updateActiveTab(this)">热门剧集</a>
     <a href="javascript:void(0)"
        hx-get="/discover/show"
-       preload="mouseover" 
-        preload-delay="300ms"
        hx-target="#discover-content"
        hx-push-url="true"
-       hx-indicator="#loading-indicator"
+       hx-on:click="showDiscoverLoading()"
        class="tab-btn {{ if eq .CurrentType "show" }}active{{ end }}"
        onclick="updateActiveTab(this)">热门综艺</a>
     <a href="javascript:void(0)"
        hx-get="/discover/cartoon"
-       preload="mouseover" 
-        preload-delay="300ms"
        hx-target="#discover-content"
        hx-push-url="true"
-       hx-indicator="#loading-indicator"
+       hx-on:click="showDiscoverLoading()"
        class="tab-btn {{ if eq .CurrentType "cartoon" }}active{{ end }}"
        onclick="updateActiveTab(this)">日本动画</a>
 </div>
 
 <div id="discover-content-wrapper" style="position: relative; min-height: 400px;">
-    <!-- Loading 动画 (Skeleton) -->
-    <div id="loading-indicator" class="htmx-indicator" style="position: absolute; top: 0; left: 0; width: 100%; z-index: 10;">
-        <div class="movie-grid discover-grid">
-            {{ range (seq 1 12) }}
-            <div class="movie-card skeleton-card">
-                <div class="movie-poster skeleton" style="aspect-ratio: 2/3; background: #e0e0e0; border-radius: 8px;"></div>
-                <div class="movie-info">
-                    <div class="skeleton" style="height: 1rem; width: 80%; background: #e0e0e0; margin-top: 8px; border-radius: 4px;"></div>
-                </div>
-            </div>
-            {{ end }}
-        </div>
-    </div>
-
     <!-- 内容区域 -->
     <div id="discover-content"
          hx-get="/discover?type={{ .CurrentType }}"
-         hx-trigger="load"
-         hx-indicator="#loading-indicator">
+         hx-trigger="load">
         <!-- 初始加载通过 htmx 触发 -->
+        <div class="loading-container"><div class="simple-spinner"></div></div>
     </div>
 </div>
 
 <style>
-    .htmx-indicator {
-        display: none;
+    .loading-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 300px;
+        width: 100%;
     }
-    .htmx-request .htmx-indicator {
-        display: block;
+
+    /* 极简 Spinner 效果 */
+    .simple-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid rgba(0,0,0,0.1);
+        border-top-color: #f60c3e;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
     }
-    .htmx-request#discover-content {
-        opacity: 0.5;
-    }
-    .skeleton {
-        animation: skeleton-loading 1.5s infinite linear;
-    }
-    @keyframes skeleton-loading {
-        0% { background-color: rgba(200, 200, 200, 0.1); }
-        50% { background-color: rgba(200, 200, 200, 0.3); }
-        100% { background-color: rgba(200, 200, 200, 0.1); }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
     }
 </style>
 
@@ -92,6 +74,12 @@
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         el.classList.add('active');
     }
+    function showDiscoverLoading() {
+    const content = document.getElementById('discover-content');
+    if (content) {
+        content.innerHTML = '<div class="loading-container"><div class="simple-spinner"></div></div>';
+    }
+}
 </script>
 
 {{ end }}

@@ -74,7 +74,7 @@
                                 {{ $loadTime := divf .LoadStats.AvgSpeedMs 1000 }}
                                 <span class="speed-indicator {{ if lt $loadTime 1.0 }}fast{{ else if lt $loadTime 3.0 }}normal{{ else }}slow{{ end }}"></span>
                                 {{ if lt $loadTime 1.0 }}极速{{ else if lt $loadTime 3.0 }}正常{{ else }}较慢{{ end }}
-                                {{ printf "%.1f" $loadTime }}秒 
+                                {{ printf "%.1f" $loadTime }}秒
                                 ({{ printf "%.0f" .LoadStats.SuccessRate }}%成功率{{ if gt .LoadStats.SampleCount 0 }} · {{ .LoadStats.SampleCount }}次播放{{ end }})
                             {{ else }}
                                 暂无统计数据
@@ -140,7 +140,7 @@
                     {{ range $i, $source := .Sources }}
                     <a href="/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $source.Name }}{{ if $.Episode }}&ep={{ $.Episode }}{{ end }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}"
                        class="source-btn {{ if eq $source.Name $.Source }}active{{ end }}">
-                        {{ $.SourceKey }}
+                        {{ $.SourceKey }}{{$source.Name}}
                     </a>
                     {{ end }}
                 </div>
@@ -212,8 +212,8 @@
         {{ end }}
 
         <center>
-        <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script> 
-        <ins class="eas6a97888e20" data-zoneid="5863824"></ins> 
+        <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>
+        <ins class="eas6a97888e20" data-zoneid="5863824"></ins>
         <script>(AdProvider = window.AdProvider || []).push({"serve": {}});</script>
 
         <script async="async" data-cfasync="false" src="https://pl29019213.profitablecpmratenetwork.com/343a4bf8ded9b0e8ac88d00b225e8dcf/invoke.js"></script>

@@ -60,6 +60,13 @@
     gtag('js', new Date());
 
     gtag('config', 'G-CGYQX86P0P');
+
+    // HTMX: 取其 200ms 的延迟，确保切换时立即清空内容并显示 loading
+    document.addEventListener('DOMContentLoaded', () => {
+        if (typeof htmx !== 'undefined') {
+            htmx.config.indicatorDelay = 0;
+        }
+    });
     </script>
 </head>
 <body hx-ext="preload">

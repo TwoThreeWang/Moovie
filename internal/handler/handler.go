@@ -382,7 +382,7 @@ func (h *Handler) Play(c *gin.Context) {
 
 	// 如果有豆瓣ID，异步安全抓取豆瓣电影信息
 	// 使用 singleflight 机制防止同一电影被并发重复抓取
-	if doubanID != "" && h.DoubanCrawler != nil {
+	if doubanID != "" && doubanID != "0" && h.DoubanCrawler != nil {
 		h.DoubanCrawler.CrawlMovieSafeAsync(doubanID)
 	}
 
