@@ -1618,7 +1618,6 @@ img {
     color: var(--text);
     margin: 0;
     position: relative;
-    z-index: 1;
 }
 
 [data-theme='dark'] .movie-recommendation {
