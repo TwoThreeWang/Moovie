@@ -35,6 +35,9 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	r.GET("/terms", h.Terms)           // 使用条款
 	r.GET("/sitemap.xml", h.Sitemap)   // 网站地图
 	r.GET("/robots.txt", h.Robots)     // Robots.txt
+	r.GET("/monoo-verify.txt", func(c *gin.Context) {
+		c.String(http.StatusOK, "monoo_verify_6ec090aa1f53018a12c8030087e10cc6")
+	}) // 验证文件
 
 	// 需要识别登录状态但又不强制登录的页面
 	optional := r.Group("/")
