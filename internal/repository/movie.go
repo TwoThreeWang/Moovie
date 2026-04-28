@@ -183,6 +183,26 @@ func (r *MovieRepository) Count() (int64, error) {
 	return count, err
 }
 
+// FuzzySearchFirst 模糊搜索本地豆瓣数据，取评分最高的第一条
+func (r *MovieRepository) FuzzySearchFirst(keyword string) (*model.Movie, error) {
+	if r.DB == nil {
+		return nil, errors.New("database connection is nil")
+	}
+	var movie model.Movie
+	like := "%" + keyword + "%"
+	err := r.DB.Where("title LIKE ? OR original_title LIKE ?", like, like).
+		Order("rating DESC").
+		Limit(1).
+		Take(&movie).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &movie, nil
+}
+
 // UpdateReviews 更新电影评论数据
 func (r *MovieRepository) UpdateReviews(doubanID string, reviewsJSON string) error {
 	return r.DB.Model(&model.Movie{}).Where("douban_id = ?", doubanID).Updates(map[string]interface{}{

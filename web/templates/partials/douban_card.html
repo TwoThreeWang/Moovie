@@ -1,0 +1,288 @@
+{{/* 豆瓣精准匹配卡片 */}}
+{{ with .Movie }}
+<div class="dbc-wrap">
+    <div class="dbc-label">豆瓣收录</div>
+    <a href="/movie/{{ .DoubanID }}" class="dbc-card">
+        {{/* 左：海报 */}}
+        <div class="dbc-poster">
+            <img
+                src="{{ if contains .Poster "tmdb" }}{{ .Poster }}{{ else }}/api/proxy/image?url={{ .Poster }}{{ end }}"
+                alt="{{ .Title }}"
+                loading="lazy"
+                onerror="this.onerror=null;this.src='/static/img/placeholder.svg'"
+            >
+            {{ if .Rating }}
+            <span class="dbc-rating-badge">
+                <span class="dbc-rating-star">★</span>
+                <span class="dbc-rating-val">{{ .Rating }}</span>
+            </span>
+            {{ end }}
+        </div>
+
+        {{/* 右：信息 */}}
+        <div class="dbc-info">
+            <div class="dbc-title-row">
+                <h2 class="dbc-title">{{ .Title }}</h2>
+                {{ if .Year }}<span class="dbc-year">{{ .Year }}</span>{{ end }}
+            </div>
+
+            {{ if .OriginalTitle }}
+            <p class="dbc-original-title">{{ .OriginalTitle }}</p>
+            {{ end }}
+
+            {{/* 类型 / 国家 / 时长 标签 */}}
+            <div class="dbc-tags">
+                {{ range $.Genres }}
+                <span class="dbc-tag">{{ . }}</span>
+                {{ end }}
+                {{ range $.Countries }}
+                <span class="dbc-tag">{{ . }}</span>
+                {{ end }}
+                {{ if .Duration }}<span class="dbc-tag">{{ .Duration }}</span>{{ end }}
+            </div>
+
+            {{/* 导演 / 演员 */}}
+            <div class="dbc-crew">
+                {{ if $.DirectorNames }}
+                <p class="dbc-crew-row">
+                    <span class="dbc-crew-label">导演：</span>
+                    <span class="dbc-crew-names">{{ range $i, $n := $.DirectorNames }}{{ if $i }} / {{ end }}{{ $n }}{{ end }}</span>
+                </p>
+                {{ end }}
+                {{ if $.ActorNames }}
+                <p class="dbc-crew-row">
+                    <span class="dbc-crew-label">主演：</span>
+                    <span class="dbc-crew-names">{{ range $i, $n := $.ActorNames }}{{ if $i }} / {{ end }}{{ $n }}{{ end }}</span>
+                </p>
+                {{ end }}
+            </div>
+
+            {{/* 简介 */}}
+            {{ if $.SummaryShort }}
+            <p class="dbc-summary">{{ $.SummaryShort }}</p>
+            {{ end }}
+
+            <div class="dbc-action">
+                <span class="dbc-btn">查看详情 →</span>
+            </div>
+        </div>
+    </a>
+</div>
+{{ end }}
+
+<style>
+/* ---- 豆瓣卡片容器 ---- */
+.dbc-wrap {
+    margin-bottom: 1.5rem;
+}
+
+.dbc-label {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+
+/* ---- 卡片本体，对齐 .search-result-card ---- */
+.dbc-card {
+    display: flex;
+    gap: 16px;
+    padding: 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    align-items: flex-start;
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+}
+
+.dbc-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    transform: translateY(-3px);
+}
+
+/* ---- 海报，与 .card-poster 完全一致 ---- */
+.dbc-poster {
+    position: relative;
+    width: 90px;
+    height: 127px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dbc-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform var(--transition);
+}
+
+.dbc-card:hover .dbc-poster img {
+    transform: scale(1.05);
+}
+
+.dbc-rating-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 6px;
+    background: linear-gradient(135deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.7) 100%);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+}
+
+.dbc-rating-star {
+    color: var(--rating, #facc15);
+    font-size: 0.68rem;
+}
+
+.dbc-rating-val {
+    color: var(--rating, #facc15);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+/* ---- 信息区，与 .card-content 对齐 ---- */
+.dbc-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* 标题行 */
+.dbc-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dbc-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+    margin: 0;
+}
+
+.dbc-year {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--primary);
+    flex-shrink: 0;
+}
+
+.dbc-original-title {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---- 标签，对齐 .source-item ---- */
+.dbc-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.dbc-tag {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* ---- 导演/演员，对齐 .card-director ---- */
+.dbc-crew {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.dbc-crew-row {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: flex;
+    gap: 0;
+    overflow: hidden;
+}
+
+.dbc-crew-label {
+    flex-shrink: 0;
+}
+
+.dbc-crew-names {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+/* ---- 简介 ---- */
+.dbc-summary {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* ---- 查看详情 ---- */
+.dbc-action {
+    margin-top: 2px;
+}
+
+.dbc-btn {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--primary);
+    transition: color 0.2s;
+}
+
+.dbc-card:hover .dbc-btn {
+    opacity: 0.8;
+}
+
+/* ---- 移动端，与搜索结果卡片一致 ---- */
+@media (max-width: 600px) {
+    .dbc-card {
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .dbc-poster {
+        width: 65px;
+        height: 92px;
+    }
+
+    .dbc-title {
+        font-size: 0.95rem;
+    }
+
+    .dbc-summary {
+        display: none;
+    }
+}
+</style>

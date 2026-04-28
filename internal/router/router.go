@@ -102,6 +102,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/dashboard/wish", h.DashboardWishHTMX)                     // 仪表盘想看
 		api.GET("/htmx/dashboard/watched", h.DashboardWatchedHTMX)               // 仪表盘已看过
 		api.GET("/htmx/dashboard/history", h.DashboardHistoryHTMX)               // 仪表盘历史
+		api.GET("/htmx/douban-card", h.DoubanCardHTMX)                           // 搜索页豆瓣电影卡片
 		api.POST("/report/load-speed", h.ReportLoadSpeed)                        // 上报加载速度
 		api.GET("/stats/load-speed", h.GetLoadStats)                             // 获取加载统计
 	}

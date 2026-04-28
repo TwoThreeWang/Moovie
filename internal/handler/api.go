@@ -938,3 +938,87 @@ func (h *Handler) GetLoadStats(c *gin.Context) {
 
 	utils.Success(c, stats)
 }
+
+// DoubanCardHTMX 搜索页豆瓣电影卡片 (本地库模糊搜索，取第一条)
+// GET /api/htmx/douban-card?kw=xxx
+func (h *Handler) DoubanCardHTMX(c *gin.Context) {
+	keyword := strings.TrimSpace(c.Query("kw"))
+	if keyword == "" {
+		c.String(http.StatusOK, "")
+		return
+	}
+
+	movie, err := h.Repos.Movie.FuzzySearchFirst(keyword)
+	if err != nil {
+		log.Printf("[DoubanCardHTMX] 查询失败: %v", err)
+		c.String(http.StatusOK, "")
+		return
+	}
+	if movie == nil {
+		// 本地无匹配数据，不展示卡片
+		c.String(http.StatusOK, "")
+		return
+	}
+
+	// 解析导演 JSON -> 名字列表（最多取3位）
+	type Person struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	var directors []Person
+	_ = json.Unmarshal([]byte(movie.Directors), &directors)
+	directorNames := make([]string, 0, 3)
+	for i, d := range directors {
+		if i >= 3 {
+			break
+		}
+		directorNames = append(directorNames, d.Name)
+	}
+
+	// 解析演员 JSON -> 名字列表（最多取4位）
+	var actors []Person
+	_ = json.Unmarshal([]byte(movie.Actors), &actors)
+	actorNames := make([]string, 0, 4)
+	for i, a := range actors {
+		if i >= 4 {
+			break
+		}
+		actorNames = append(actorNames, a.Name)
+	}
+
+	// 简介截断（最多 120 字）
+	summary := []rune(strings.TrimSpace(movie.Summary))
+	summaryShort := string(summary)
+	if len(summary) > 120 {
+		summaryShort = string(summary[:120]) + "..."
+	}
+
+	// 类型 / 国家 拆分为 slice（逗号分隔）
+	genres := splitTrimmed(movie.Genres)
+	countries := splitTrimmed(movie.Countries)
+
+	c.HTML(http.StatusOK, "partials/douban_card.html", gin.H{
+		"Movie":         movie,
+		"DirectorNames": directorNames,
+		"ActorNames":    actorNames,
+		"SummaryShort":  summaryShort,
+		"Genres":        genres,
+		"Countries":     countries,
+	})
+}
+
+// splitTrimmed 按逗号拆分并去除空白
+func splitTrimmed(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
