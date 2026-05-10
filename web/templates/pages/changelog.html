@@ -4,6 +4,34 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v3.2.6 -->
+    <section class="changelog-item">
+      <div class="version-badge">v3.2.6 <small>2026-05-10</small></div>
+      <div class="changelog-details">
+        <h3>✨ 新增 (Added)</h3>
+        <ul>
+          <li>
+            <strong>AI 语义化描述生成</strong>：接入 Cloudflare AI Gateway，支持 Kimi 等高性能模型为影视作品自动生成高密度语义摘要。
+          </li>
+          <li>
+            <strong>多模型回退机制</strong>：实现了 Cloudflare AI 与 Gemini API 的双向容错，确保在主模型不可用时能平滑切换，保障核心业务稳定性。
+          </li>
+          <li>
+            <strong>向量检索精度提升</strong>：通过 LLM 生成的特征文本显著增强了 Embedding 向量的表达能力，大幅提升了语义搜索的匹配度。
+          </li>
+        </ul>
+        <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+        <ul>
+          <li>
+            <strong>配置系统升级</strong>：重构了应用配置加载逻辑，支持通过环境变量动态配置多个 AI 服务商及其模型参数。
+          </li>
+          <li>
+            <strong>Prompt 深度调优</strong>：优化了用于特征提取的 System Prompt，使其更符合影视社会学与语义检索的需求。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v3.2.5 -->
     <section class="changelog-item">
       <div class="version-badge">v3.2.5 <small>2026-04-28</small></div>

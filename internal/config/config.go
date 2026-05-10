@@ -20,6 +20,9 @@ type Config struct {
 	TMDBToken   string
 	GeminiKey   string
 	GeminiModel string
+	CFGatewayURL string
+	CFAPIToken   string
+	CFAIModel    string
 }
 
 // Load 加载配置
@@ -57,6 +60,9 @@ func Load() *Config {
 		TMDBToken:   getEnv("TMDB_API_TOKEN", ""),
 		GeminiKey:   getEnv("GEMINI_API_KEY", ""),
 		GeminiModel: getEnv("GEMINI_MODEL", "gemini-3-flash-preview"),
+		CFGatewayURL: getEnv("CF_GATEWAY_URL", ""),
+		CFAPIToken:   getEnv("CF_API_TOKEN", ""),
+		CFAIModel:    getEnv("CF_AI_MODEL", "custom-alibaba-coding/kimi-k2.5"),
 	}
 }
 

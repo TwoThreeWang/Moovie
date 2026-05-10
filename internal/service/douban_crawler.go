@@ -505,9 +505,8 @@ func (c *DoubanCrawler) EnrichMovieWithVector(movie *model.Movie) error {
 		movie.Summary,
 	)
 
-	// 尝试使用 Gemini 生成语义化内容
-	if c.config.GeminiKey != "" {
-		prompt := fmt.Sprintf(`**Role:** 你是一位精通影视社会学和推荐算法的专家。你的任务是将碎片化的电影元数据重构成一段**极高语义密度的描述文本**，专供向量嵌入（Embedding）模型使用。
+	// 尝试生成语义化内容
+	prompt := fmt.Sprintf(`**Role:** 你是一位精通影视社会学和推荐算法的专家。你的任务是将碎片化的电影元数据重构成一段**极高语义密度的描述文本**，专供向量嵌入（Embedding）模型使用。
 
 **Task:** 请根据提供的原始数据，撰写一段 150-200 字的语义特征文本。
 
@@ -529,16 +528,35 @@ func (c *DoubanCrawler) EnrichMovieWithVector(movie *model.Movie) error {
 
 **Output Format:**
 *   以“《电影标题》(英文名/别名)”开头输出为一段连贯、无标题、无列表的自然语言段落，字数严格控制在 200 字以内。`,
-			movie.Title,
-			movie.OriginalTitle,
-			movie.Year,
-			movie.Countries,
-			movie.Genres,
-			strings.Join(dirNames, ","),
-			strings.Join(actNames, ","),
-			movie.Summary,
-		)
-		// log.Printf("[DoubanCrawler] 生成的原始提示: %s", prompt)
+		movie.Title,
+		movie.OriginalTitle,
+		movie.Year,
+		movie.Countries,
+		movie.Genres,
+		strings.Join(dirNames, ","),
+		strings.Join(actNames, ","),
+		movie.Summary,
+	)
+
+	if c.config.CFGatewayURL != "" && c.config.CFAPIToken != "" {
+		// 优先使用 Cloudflare AI Gateway
+		semanticContent, err := utils.GenerateCloudflareAISummary(c.config.CFGatewayURL, c.config.CFAPIToken, c.config.CFAIModel, prompt)
+		if err != nil {
+			log.Printf("[DoubanCrawler] Cloudflare AI 生成语义描述失败，尝试切换到 Gemini: %v", err)
+			// 只有 Cloudflare 失败时才尝试 Gemini
+			if c.config.GeminiKey != "" {
+				semanticContent, err = utils.GenerateGeminiSummary(c.config.GeminiKey, c.config.GeminiModel, prompt)
+				if err != nil {
+					log.Printf("[DoubanCrawler] Gemini 生成语义描述也失败，使用备用方案: %v", err)
+				} else {
+					rawContent = semanticContent
+				}
+			}
+		} else {
+			rawContent = semanticContent
+		}
+	} else if c.config.GeminiKey != "" {
+		// 如果没有配置 Cloudflare，直接使用 Gemini
 		semanticContent, err := utils.GenerateGeminiSummary(c.config.GeminiKey, c.config.GeminiModel, prompt)
 		if err != nil {
 			log.Printf("[DoubanCrawler] Gemini 生成语义描述失败，使用备用方案: %v", err)
