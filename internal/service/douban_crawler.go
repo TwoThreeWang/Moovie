@@ -226,7 +226,7 @@ func (c *DoubanCrawler) CrawlDoubanMovieApi(doubanID string) error {
 	}
 
 	// Rexxar API 需要区分 movie 和 tv，这里尝试两种路径
-	types := []string{"tv", "movie", "show"}
+	types := []string{"movie", "tv", "show"}
 	var lastErr error
 	var rexxarResp DoubanRexxarResponse
 
@@ -268,7 +268,8 @@ func (c *DoubanCrawler) CrawlDoubanMovieApi(doubanID string) error {
 				lastErr = fmt.Errorf("解析 JSON 失败 (%s): %w", t, err)
 			}
 		} else {
-			lastErr = fmt.Errorf("接口返回状态码 (%s): %d", t, resp.StatusCode)
+			lastErr = fmt.Errorf("接口（%s）返回状态码 (%s): %d", baseURL, t, resp.StatusCode)
+			log.Printf("接口（%s）返回状态码 (%s): %d", baseURL, t, resp.StatusCode)
 		}
 	}
 
