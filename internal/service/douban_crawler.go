@@ -625,7 +625,15 @@ func (c *DoubanCrawler) CrawlMovieSafe(doubanID string) error {
 
 		// 执行实际抓取
 		log.Printf("[爬虫] 开始安全抓取电影: %s", doubanID)
-		return nil, c.CrawlDoubanMovieApi(doubanID)
+		// 1. 优先尝试 API 方案
+		err := c.CrawlDoubanMovieApi(doubanID)
+		if err == nil {
+			return nil, nil
+		}
+
+		// 2. 如果 API 失败，尝试网页爬虫方案作为回退
+		log.Printf("[爬虫] API 方案抓取失败 (豆瓣ID: %s), 正在尝试回退至网页解析方案: %v", doubanID, err)
+		return nil, c.CrawlDoubanMovie(doubanID)
 	})
 
 	return err
