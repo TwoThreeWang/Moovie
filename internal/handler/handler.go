@@ -215,8 +215,8 @@ func (h *Handler) Movie(c *gin.Context) {
 
 				log.Printf("[Handler] 后台异步抓取电影信息 ID: %s", id)
 				if h.DoubanCrawler != nil {
-					if err := h.DoubanCrawler.CrawlDoubanMovieApi(id); err != nil {
-						log.Printf("[Handler] 豆瓣抓取失败: %v", err)
+					if err := h.DoubanCrawler.CrawlMovieSafe(id); err != nil {
+						log.Printf("[Handler] 豆瓣抓取失败 (已尝试 API 和网页回退): %v", err)
 					}
 				}
 			}(doubanID)
