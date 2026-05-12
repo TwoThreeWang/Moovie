@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -124,10 +125,8 @@ func NewDoubanCrawler(movieRepo *repository.MovieRepository, cfg *config.Config)
 	return &DoubanCrawler{
 		movieRepo: movieRepo,
 		config:    cfg,
-		client: &http.Client{
-			Timeout: 15 * time.Second,
-		},
-		sf:    singleflight.Group{},
+		client:    utils.GlobalHttpClient,
+		sf:        singleflight.Group{},
 		proxy: proxy,
 	}
 }
@@ -156,13 +155,16 @@ func isValidDoubanID(id string) bool {
 }
 
 // CrawlDoubanMovie 爬取豆瓣电影详情页
-func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
+func (c *DoubanCrawler) CrawlDoubanMovie(ctx context.Context, doubanID string) error {
 	if !isValidDoubanID(doubanID) {
 		return fmt.Errorf("无效的豆瓣ID:%s", doubanID)
 	}
 	url := fmt.Sprintf("https://movie.douban.com/subject/%s/", doubanID)
+	if c.proxy != "" {
+		url = c.proxy + url
+	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("创建请求失败: %w", err)
 	}
@@ -219,8 +221,8 @@ func (c *DoubanCrawler) CrawlDoubanMovie(doubanID string) error {
 	return nil
 }
 
-// CrawlDoubanMovieApi 备用爬取方案：使用豆瓣 Rexxar API (移动端接口)
-func (c *DoubanCrawler) CrawlDoubanMovieApi(doubanID string) error {
+// CrawlDoubanMovieApi 使用 Rexxar API 爬取豆瓣电影信息 (移动端接口，结构化更好)
+func (c *DoubanCrawler) CrawlDoubanMovieApi(ctx context.Context, doubanID string) error {
 	if !isValidDoubanID(doubanID) {
 		return fmt.Errorf("无效的豆瓣ID:%s", doubanID)
 	}
@@ -238,7 +240,7 @@ func (c *DoubanCrawler) CrawlDoubanMovieApi(doubanID string) error {
 			finalURL = c.proxy + baseURL
 		}
 
-		req, err := http.NewRequest("GET", finalURL, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
 		if err != nil {
 			lastErr = err
 			continue
@@ -597,16 +599,16 @@ func (c *DoubanCrawler) EnrichMovieWithVector(movie *model.Movie) error {
 
 // CrawlAsync 异步爬取电影信息
 func (c *DoubanCrawler) CrawlAsync(doubanID string) {
-	go func() {
-		if err := c.CrawlDoubanMovieApi(doubanID); err != nil {
+	utils.GoSafe(60*time.Second, func(ctx context.Context) {
+		if err := c.CrawlDoubanMovieApi(ctx, doubanID); err != nil {
 			log.Printf("[爬虫] 爬取失败 (豆瓣ID: %s): %v", doubanID, err)
 		}
-	}()
+	})
 }
 
 // CrawlMovieSafe 安全抓取电影信息(防止并发重复抓取)
 // 使用 singleflight 确保同一 doubanID 在同一时间只会被抓取一次
-func (c *DoubanCrawler) CrawlMovieSafe(doubanID string) error {
+func (c *DoubanCrawler) CrawlMovieSafe(ctx context.Context, doubanID string) error {
 	// 先快速检查数据库，避免不必要的 singleflight 等待
 	movie, _ := c.movieRepo.FindByDoubanID(doubanID)
 	if movie != nil {
@@ -626,14 +628,14 @@ func (c *DoubanCrawler) CrawlMovieSafe(doubanID string) error {
 		// 执行实际抓取
 		log.Printf("[爬虫] 开始安全抓取电影: %s", doubanID)
 		// 1. 优先尝试 API 方案
-		err := c.CrawlDoubanMovieApi(doubanID)
+		err := c.CrawlDoubanMovieApi(ctx, doubanID)
 		if err == nil {
 			return nil, nil
 		}
 
 		// 2. 如果 API 失败，尝试网页爬虫方案作为回退
 		log.Printf("[爬虫] API 方案抓取失败 (豆瓣ID: %s), 正在尝试回退至网页解析方案: %v", doubanID, err)
-		return nil, c.CrawlDoubanMovie(doubanID)
+		return nil, c.CrawlDoubanMovie(ctx, doubanID)
 	})
 
 	return err
@@ -642,11 +644,11 @@ func (c *DoubanCrawler) CrawlMovieSafe(doubanID string) error {
 // CrawlMovieSafeAsync 异步安全抓取电影信息
 // 适用于播放页等场景，不需要等待抓取结果
 func (c *DoubanCrawler) CrawlMovieSafeAsync(doubanID string) {
-	go func() {
-		if err := c.CrawlMovieSafe(doubanID); err != nil {
+	utils.GoSafe(60*time.Second, func(ctx context.Context) {
+		if err := c.CrawlMovieSafe(ctx, doubanID); err != nil {
 			log.Printf("[爬虫] 异步安全抓取失败 (豆瓣ID: %s): %v", doubanID, err)
 		}
-	}()
+	})
 }
 
 // SearchSuggest 电影搜索建议（优先从数据库搜索，无结果时调用豆瓣API）
@@ -850,7 +852,7 @@ type rssItem struct {
 }
 
 // GetReviews 获取豆瓣短评
-func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
+func (c *DoubanCrawler) GetReviews(ctx context.Context, doubanID string) ([]DoubanReview, error) {
 	if !isValidDoubanID(doubanID) {
 		return nil, fmt.Errorf("无效的豆瓣ID:%s", doubanID)
 	}
@@ -864,7 +866,7 @@ func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
 
 	url := fmt.Sprintf("https://www.douban.com/feed/subject/%s/reviews", doubanID)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
 	}
@@ -943,7 +945,7 @@ func (c *DoubanCrawler) GetReviews(doubanID string) ([]DoubanReview, error) {
 }
 
 // GetReviewsApi 备用短评方案：使用豆瓣 Rexxar API (移动端接口)
-func (c *DoubanCrawler) GetReviewsApi(doubanID string) ([]DoubanReview, error) {
+func (c *DoubanCrawler) GetReviewsApi(ctx context.Context, doubanID string) ([]DoubanReview, error) {
 	if !isValidDoubanID(doubanID) {
 		return nil, fmt.Errorf("无效的豆瓣ID:%s", doubanID)
 	}
@@ -970,7 +972,7 @@ func (c *DoubanCrawler) GetReviewsApi(doubanID string) ([]DoubanReview, error) {
 			finalURL = c.proxy + baseURL
 		}
 
-		req, err := http.NewRequest("GET", finalURL, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
 		if err != nil {
 			lastErr = err
 			continue

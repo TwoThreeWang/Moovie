@@ -10,6 +10,7 @@ import (
 
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
+	"github.com/user/moovie/internal/utils"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -81,11 +82,11 @@ func (s *SearchService) Search(ctx context.Context, keyword string, bypassFilter
 		}
 	} else {
 		// 3. 本地有结果，异步刷新
-		go func() {
+		utils.GoSafe(30*time.Second, func(ctx context.Context) {
 			_, _, _ = s.sf.Do(keyword, func() (interface{}, error) {
-				return s.fetchAndSave(context.Background(), keyword)
+				return s.fetchAndSave(ctx, keyword)
 			})
-		}()
+		})
 	}
 
 	// 4. 版权过滤（可通过参数跳过）
@@ -123,12 +124,12 @@ func (s *SearchService) GetDetail(ctx context.Context, sourceKey, vodId string) 
 	item, err := s.vodItemRepo.FindBySourceId(sourceKey, vodId)
 	if err == nil && item != nil {
 		// 如果数据库里有，直接返回，但异步触发一次刷新，保证播放链接是最新的
-		go func() {
+		utils.GoSafe(30*time.Second, func(ctx context.Context) {
 			key := "detail:" + sourceKey + ":" + vodId
 			_, _, _ = s.sf.Do(key, func() (interface{}, error) {
-				return s.fetchAndSaveDetail(context.Background(), sourceKey, vodId)
+				return s.fetchAndSaveDetail(ctx, sourceKey, vodId)
 			})
-		}()
+		})
 		return item, nil
 	}
 

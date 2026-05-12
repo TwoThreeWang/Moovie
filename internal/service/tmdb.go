@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"github.com/user/moovie/internal/config"
 	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/repository"
+	"github.com/user/moovie/internal/utils"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -28,10 +30,10 @@ func NewTMDBService(repo *repository.MovieRepository, cfg *config.Config) *TMDBS
 }
 
 // FetchAndSync 从 TMDB 同步数据并保存到数据库
-func (s *TMDBService) FetchAndSync(doubanID string) (*model.Movie, error) {
+func (s *TMDBService) FetchAndSync(ctx context.Context, doubanID string) (*model.Movie, error) {
 	// 使用 singleflight 避免并发重复抓取
 	val, err, _ := s.group.Do(doubanID, func() (interface{}, error) {
-		return s.fetchAndSyncInternal(doubanID)
+		return s.fetchAndSyncInternal(ctx, doubanID)
 	})
 	if err != nil {
 		return nil, err
@@ -39,7 +41,7 @@ func (s *TMDBService) FetchAndSync(doubanID string) (*model.Movie, error) {
 	return val.(*model.Movie), nil
 }
 
-func (s *TMDBService) fetchAndSyncInternal(doubanID string) (*model.Movie, error) {
+func (s *TMDBService) fetchAndSyncInternal(ctx context.Context, doubanID string) (*model.Movie, error) {
 	movie, err := s.movieRepo.FindByDoubanID(doubanID)
 	if err != nil {
 		return nil, err
@@ -50,7 +52,7 @@ func (s *TMDBService) fetchAndSyncInternal(doubanID string) (*model.Movie, error
 
 	// 1. 获取 IMDb ID (如果缺失)
 	if movie.IMDbID == "" {
-		imdbID, err := s.fetchIMDbIDFromWMDB(doubanID)
+		imdbID, err := s.fetchIMDbIDFromWMDB(ctx, doubanID)
 		if err != nil {
 			log.Printf("[TMDB] 从 WMDB 获取 IMDb ID 失败 (DoubanID: %s): %v", doubanID, err)
 		} else if imdbID != "" {
@@ -63,19 +65,19 @@ func (s *TMDBService) fetchAndSyncInternal(doubanID string) (*model.Movie, error
 	}
 
 	// 2. 通过 IMDb ID 获取 TMDB ID
-	tmdbID, mediaType, err := s.findTMDBID(movie.IMDbID)
+	tmdbID, mediaType, err := s.findTMDBID(ctx, movie.IMDbID)
 	if err != nil {
 		return movie, fmt.Errorf("failed to find TMDB ID: %w", err)
 	}
 
 	// 3. 获取 TMDB 剧照
-	tmdbImages, err := s.fetchTMDBImages(tmdbID, mediaType)
+	tmdbImages, err := s.fetchTMDBImages(ctx, tmdbID, mediaType)
 	if err != nil {
 		log.Printf("[TMDB] 获取剧照失败: %v", err)
 	}
 
 	// 4. 获取 TMDB 详情 (用于补全缺失字段)
-	tmdbDetails, err := s.fetchTMDBDetails(tmdbID, mediaType)
+	tmdbDetails, err := s.fetchTMDBDetails(ctx, tmdbID, mediaType)
 	if err != nil {
 		log.Printf("[TMDB] 获取详情失败: %v", err)
 	}
@@ -91,9 +93,13 @@ func (s *TMDBService) fetchAndSyncInternal(doubanID string) (*model.Movie, error
 	return movie, nil
 }
 
-func (s *TMDBService) fetchIMDbIDFromWMDB(doubanID string) (string, error) {
+func (s *TMDBService) fetchIMDbIDFromWMDB(ctx context.Context, doubanID string) (string, error) {
 	url := fmt.Sprintf("https://api.wmdb.tv/movie/api?id=%s", doubanID)
-	resp, err := http.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := utils.GlobalHttpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -117,13 +123,13 @@ type tmdbFindResponse struct {
 	} `json:"tv_results"`
 }
 
-func (s *TMDBService) findTMDBID(imdbID string) (int, string, error) {
+func (s *TMDBService) findTMDBID(ctx context.Context, imdbID string) (int, string, error) {
 	url := fmt.Sprintf("https://api.themoviedb.org/3/find/%s?external_source=imdb_id&language=zh-CN", imdbID)
-	req, _ := http.NewRequest("GET", url, nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+s.config.TMDBToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := utils.GlobalHttpClient.Do(req)
 	if err != nil {
 		return 0, "", err
 	}
@@ -154,13 +160,13 @@ type tmdbImagesResponse struct {
 	} `json:"posters"`
 }
 
-func (s *TMDBService) fetchTMDBImages(tmdbID int, mediaType string) (*tmdbImagesResponse, error) {
+func (s *TMDBService) fetchTMDBImages(ctx context.Context, tmdbID int, mediaType string) (*tmdbImagesResponse, error) {
 	url := fmt.Sprintf("https://api.themoviedb.org/3/%s/%d/images?include_image_language=zh,en,null", mediaType, tmdbID)
-	req, _ := http.NewRequest("GET", url, nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+s.config.TMDBToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := utils.GlobalHttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -188,13 +194,13 @@ type tmdbDetailsResponse struct {
 	} `json:"genres"`
 }
 
-func (s *TMDBService) fetchTMDBDetails(tmdbID int, mediaType string) (*tmdbDetailsResponse, error) {
+func (s *TMDBService) fetchTMDBDetails(ctx context.Context, tmdbID int, mediaType string) (*tmdbDetailsResponse, error) {
 	url := fmt.Sprintf("https://api.themoviedb.org/3/%s/%d?language=zh-CN", mediaType, tmdbID)
-	req, _ := http.NewRequest("GET", url, nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+s.config.TMDBToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := utils.GlobalHttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -261,18 +267,16 @@ func (s *TMDBService) applyTMDBData(movie *model.Movie, images *tmdbImagesRespon
 
 // SyncMovieSafeAsync 异步安全同步 TMDB 信息
 func (s *TMDBService) SyncMovieSafeAsync(doubanID string) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("[TMDB] 异步抓取发生恐慌 (DoubanID: %s): %v", doubanID, r)
-			}
-		}()
-
+	utils.GoSafe(30*time.Second, func(ctx context.Context) {
 		// 增加随机延迟，避免请求过频
-		time.Sleep(time.Duration(200+(time.Now().UnixNano()%800)) * time.Millisecond)
+		select {
+		case <-time.After(time.Duration(200+(time.Now().UnixNano()%800)) * time.Millisecond):
+		case <-ctx.Done():
+			return
+		}
 
-		if _, err := s.FetchAndSync(doubanID); err != nil {
+		if _, err := s.FetchAndSync(ctx, doubanID); err != nil {
 			log.Printf("[TMDB] 异步抓取失败 (DoubanID: %s): %v", doubanID, err)
 		}
-	}()
+	})
 }

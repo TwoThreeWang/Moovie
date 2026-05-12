@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"log"
 	"time"
 
 	"github.com/user/moovie/internal/repository"
+	"github.com/user/moovie/internal/utils"
 )
 
 // CleanupService 清理服务
@@ -23,13 +25,20 @@ func (s *CleanupService) Start() {
 	ticker := time.NewTicker(24 * time.Hour)
 
 	// 启动时先运行一次
-	go s.runCleanup()
+	utils.GoSafe(0, func(ctx context.Context) {
+		s.runCleanup()
+	})
 
-	go func() {
-		for range ticker.C {
-			s.runCleanup()
+	utils.GoSafe(0, func(ctx context.Context) {
+		for {
+			select {
+			case <-ticker.C:
+				s.runCleanup()
+			case <-ctx.Done():
+				return
+			}
 		}
-	}()
+	})
 }
 
 func (s *CleanupService) runCleanup() {

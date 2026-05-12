@@ -140,5 +140,8 @@ func main() {
 		log.Fatal("服务器强制关闭:", err)
 	}
 
+	// 等待所有后台任务安全退出
+	utils.WaitAsync(10 * time.Second)
+
 	log.Println("服务器已退出")
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 )
 
 // OpenAIRequest OpenAI 兼容的请求结构
@@ -51,9 +50,7 @@ func GenerateCloudflareAISummary(gatewayURL, apiToken, model, prompt string) (st
 		return "", fmt.Errorf("marshal request failed: %v", err)
 	}
 
-	client := &http.Client{
-		Timeout: 60 * time.Second, // AI 响应可能较慢，给予充足时间
-	}
+	client := GlobalHttpClient
 
 	req, err := http.NewRequest("POST", gatewayURL+"/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {

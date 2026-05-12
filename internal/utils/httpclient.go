@@ -3,13 +3,42 @@ package utils
 import (
 	"compress/flate"
 	"compress/gzip"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"time"
+)
+
+var (
+	// defaultTransport 带有优化的连接池参数
+	defaultTransport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   50, // 增加单域名复用上限，避免僵尸连接
+		MaxConnsPerHost:       0,  // 无硬性限制
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // 某些代理或旧站点可能需要
+		},
+	}
+
+	// GlobalHttpClient 全局复用的 HTTP 客户端
+	GlobalHttpClient = &http.Client{
+		Transport: defaultTransport,
+		Timeout:   30 * time.Second,
+	}
 )
 
 // HTTPClient HTTP客户端
@@ -18,12 +47,10 @@ type HTTPClient struct {
 	userAgents []string
 }
 
-// NewHTTPClient 创建新的HTTP客户端
+// NewHTTPClient 创建新的HTTP客户端（底层复用 GlobalHttpClient 的 Transport）
 func NewHTTPClient() *HTTPClient {
 	return &HTTPClient{
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		httpClient: GlobalHttpClient,
 		userAgents: []string{
 			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

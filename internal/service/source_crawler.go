@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/user/moovie/internal/model"
+	"github.com/user/moovie/internal/utils"
 )
 
 // SourceCrawler 资源网爬虫接口
@@ -35,9 +36,7 @@ func NewSourceCrawler(timeout time.Duration) *DefaultSourceCrawler {
 		timeout = 10 * time.Second
 	}
 	return &DefaultSourceCrawler{
-		client: &http.Client{
-			Timeout: timeout,
-		},
+		client:  utils.GlobalHttpClient,
 		timeout: timeout,
 	}
 }

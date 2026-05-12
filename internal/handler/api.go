@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"image"
 	_ "image/gif"
@@ -348,11 +349,11 @@ func (h *Handler) SearchHTMX(c *gin.Context) {
 	if len(results.Items) > 0 {
 		userID := middleware.GetUserIDPtr(c)
 		ipHash := utils.HashIP(c.ClientIP())
-		go func(kw string, uid *int, ip string) {
-			if err := h.Repos.SearchLog.Log(kw, uid, ip); err != nil {
+		utils.GoSafe(5*time.Second, func(ctx context.Context) {
+			if err := h.Repos.SearchLog.Log(keyword, userID, ipHash); err != nil {
 				log.Printf("[SearchHTMX] 记录搜索日志失败: %v", err)
 			}
-		}(keyword, userID, ipHash)
+		})
 	}
 
 	// 处理过滤参数：年份和 exclude
@@ -489,7 +490,7 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", "https://movie.douban.com/")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := utils.GlobalHttpClient.Do(req)
 	if err != nil {
 		utils.InternalServerError(c, "请求图片失败")
 		return
@@ -716,10 +717,10 @@ func (h *Handler) ReviewsHTMX(c *gin.Context) {
 			}
 
 			// 如果过期，异步静默更新
-			go func() {
+			utils.GoSafe(15*time.Second, func(ctx context.Context) {
 				log.Printf("[ReviewsHTMX] 数据过期，静默更新 (豆瓣ID: %s)", doubanID)
-				h.DoubanCrawler.GetReviewsApi(doubanID)
-			}()
+				h.DoubanCrawler.GetReviewsApi(ctx, doubanID)
+			})
 
 			// 返回旧数据
 			c.HTML(http.StatusOK, "partials/reviews.html", gin.H{
@@ -730,10 +731,10 @@ func (h *Handler) ReviewsHTMX(c *gin.Context) {
 	}
 
 	// 2. 如果库中没有或数据损坏，异步抓取
-	go func() {
+	utils.GoSafe(15*time.Second, func(ctx context.Context) {
 		log.Printf("[ReviewsHTMX] 库中无数据，启动采集 (豆瓣ID: %s)", doubanID)
-		h.DoubanCrawler.GetReviewsApi(doubanID)
-	}()
+		h.DoubanCrawler.GetReviewsApi(ctx, doubanID)
+	})
 
 	// 返回加载中状态
 	c.HTML(http.StatusOK, "partials/reviews.html", gin.H{

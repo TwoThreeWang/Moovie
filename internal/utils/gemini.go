@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"time"
 )
 
 // GeminiRequest Gemini API 请求结构
@@ -62,9 +60,7 @@ func GenerateGeminiSummary(apiKey, model, prompt string) (string, error) {
 		return "", fmt.Errorf("marshal request failed: %v", err)
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := GlobalHttpClient
 
 	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {

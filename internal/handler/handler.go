@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -57,7 +58,7 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	recommendationService := service.NewRecommendationService(repos.Movie)
 
 	// 创建搜索缓存（容量1000条，TTL 3小时）
-	searchCache := utils.NewSearchCache[service.SearchResult](1000, 3*time.Hour)
+	searchCache := utils.NewSearchCache[service.SearchResult](500, 3*time.Hour)
 
 	return &Handler{
 		Repos:                 repos,
@@ -210,16 +211,16 @@ func (h *Handler) Movie(c *gin.Context) {
 			crawlingMap.Store(doubanID, time.Now())
 
 			// 启动后台异步抓取任务
-			go func(id string) {
-				defer crawlingMap.Delete(id) // 抓取完成后删除标记
+			utils.GoSafe(60*time.Second, func(ctx context.Context) {
+				defer crawlingMap.Delete(doubanID) // 抓取完成后删除标记
 
-				log.Printf("[Handler] 后台异步抓取电影信息 ID: %s", id)
+				log.Printf("[Handler] 后台异步抓取电影信息 ID: %s", doubanID)
 				if h.DoubanCrawler != nil {
-					if err := h.DoubanCrawler.CrawlMovieSafe(id); err != nil {
+					if err := h.DoubanCrawler.CrawlMovieSafe(ctx, doubanID); err != nil {
 						log.Printf("[Handler] 豆瓣抓取失败 (已尝试 API 和网页回退): %v", err)
 					}
 				}
-			}(doubanID)
+			})
 		}
 
 		// 返回正在抓取中的页面，提供刷新按钮和搜索链接
@@ -297,12 +298,12 @@ func (h *Handler) Movie(c *gin.Context) {
 	}
 	// 如果EmbeddingContent为空，异步生成并更新数据库
 	if movie.EmbeddingContent == "" {
-		go func() {
+		utils.GoSafe(30*time.Second, func(ctx context.Context) {
 			log.Printf("[Handler] 正在异步生成EmbeddingContent ID: %s", doubanID)
 			if err := h.DoubanCrawler.EnrichMovieWithVector(movie); err == nil {
 				_ = h.Repos.Movie.Upsert(movie)
 			}
-		}()
+		})
 	}
 
 	c.HTML(http.StatusOK, "movie.html", h.RenderData(c, gin.H{

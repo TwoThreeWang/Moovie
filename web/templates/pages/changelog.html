@@ -4,6 +4,31 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v3.2.7 -->
+    <section class="changelog-item">
+      <div class="version-badge">v3.2.7 <small>2026-05-12</small></div>
+      <div class="changelog-details">
+        <h3>✨ 新增 (Added)</h3>
+        <ul>
+          <li>
+            <strong>异步任务安全管理</strong>：新增 <code>utils.GoSafe</code> 封装，为所有的后台并发任务提供统一的恐慌恢复 (Panic Recovery) 机制，避免局部报错导致主程序崩溃。
+          </li>
+          <li>
+            <strong>优雅停机机制</strong>：在服务关闭时引入等待队列，保障正在进行的后台任务（如保存数据、同步记录）在彻底停止前有充足的收尾时间。
+          </li>
+        </ul>
+        <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+        <ul>
+          <li>
+            <strong>全局 HTTP 连接池</strong>：重构了底层的 HTTP 请求模块，使用全局单例 <code>Transport</code> 替代频繁新建的 Client，显著提高了高并发下的连接复用率，彻底修复了引发“僵尸连接”与文件描述符 (FD) 枯竭的隐患。
+          </li>
+          <li>
+            <strong>防阻塞超时控制</strong>：为所有的外部 API 请求（豆瓣、TMDB、外部大模型）注入带时间限制的 <code>Context</code>，彻底解决了因外部网络无响应造成的爬虫请求无限阻塞与协程内存泄漏问题。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v3.2.6 -->
     <section class="changelog-item">
       <div class="version-badge">v3.2.6 <small>2026-05-10</small></div>
