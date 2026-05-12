@@ -1,20 +1,13 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"image"
-	_ "image/gif"
-	"image/jpeg"
-	_ "image/png"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	_ "golang.org/x/image/webp"
 
 	"github.com/gin-gonic/gin"
 	"github.com/user/moovie/internal/middleware"
@@ -479,8 +472,6 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 		return
 	}
 
-	raw := c.Query("raw") == "1"
-
 	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		utils.InternalServerError(c, "创建请求失败")
@@ -502,37 +493,12 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 		return
 	}
 
-	// 设置浏览器缓存，缓存时间为 1 天
-	c.Header("Cache-Control", "public, max-age=86400")
-	c.Header("Expires", time.Now().AddDate(0, 0, 1).Format(http.TimeFormat))
+	// 设置浏览器缓存，缓存时间为 30 天 (2592000 秒)
+	c.Header("Cache-Control", "public, max-age=2592000")
+	c.Header("Expires", time.Now().AddDate(0, 0, 30).Format(http.TimeFormat))
 
-	// 如果需要原图，直接透传
-	if raw {
-		c.DataFromReader(http.StatusOK, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
-		return
-	}
-
-	// 否则进行压缩处理
-	img, _, err := image.Decode(resp.Body)
-	if err != nil {
-		// 如果解码失败（比如不是图片格式），降级直接透传原数据内容
-		// 注意：如果之前读取过一部分 Body，可能需要重新获取流，但这里 resp.Body 是流式读取，
-		// 所以如果 Decode 失败，后续读取可能不完整。
-		// 在这种情况下，通常如果是在代理场景，读失败了报错较稳妥。
-		// 但由于 Decode 可能只是不支持某种格式，这里我们可以尝试恢复（通常需要通过 bytes.Buffer 预读）。
-		utils.InternalServerError(c, "解码图片失败")
-		return
-	}
-
-	// 使用 JPEG 重新编码压缩
-	var buf bytes.Buffer
-	err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: 20})
-	if err != nil {
-		utils.InternalServerError(c, "压缩图片失败")
-		return
-	}
-
-	c.Data(http.StatusOK, "image/jpeg", buf.Bytes())
+	// 直接透传原始数据，不再进行解码和转码，彻底消除内存占用
+	c.DataFromReader(http.StatusOK, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
 }
 
 // ForYouHTMX 为你推荐（htmx 片段）
