@@ -106,6 +106,32 @@ type DoubanRexxarReviewResponse struct {
 	} `json:"interests"`
 }
 
+// RexxarPopularItem Rexxar 接口中的通用项目
+type RexxarPopularItem struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Pic   struct {
+		Normal string `json:"normal"`
+		Large  string `json:"large"`
+	} `json:"pic"`
+	Rating struct {
+		Value float64 `json:"value"`
+	} `json:"rating"`
+	Year         string `json:"year"`
+	EpisodesInfo string `json:"episodes_info"`
+	URI          string `json:"uri"`
+}
+
+// RexxarMoviePopularResponse 针对 /movie/hot_gaia 接口
+type RexxarMoviePopularResponse struct {
+	Items []RexxarPopularItem `json:"items"`
+}
+
+// RexxarCollectionPopularResponse 针对 /subject_collection/.../items 接口
+type RexxarCollectionPopularResponse struct {
+	Items []RexxarPopularItem `json:"subject_collection_items"`
+}
+
 // Crawler 豆瓣爬虫服务
 type DoubanCrawler struct {
 	movieRepo *repository.MovieRepository
@@ -767,6 +793,108 @@ func (c *DoubanCrawler) inferMovieType(genres string) string {
 	return "movie"
 }
 
+// fetchPopularFromRexxar 从 Rexxar (移动端) API 获取热门数据作为回退
+func (c *DoubanCrawler) fetchPopularFromRexxar(ctx context.Context, movieType string) ([]DoubanPopularSubject, error) {
+	log.Printf("[爬虫] 正在尝试通过备选 Rexxar API 抓取热门数据: %s", movieType)
+
+	var items []RexxarPopularItem
+	var err error
+
+	switch movieType {
+	case "movie":
+		url := "https://m.douban.com/rexxar/api/v2/movie/hot_gaia?area=%E5%85%A8%E9%83%A8&sort=recommend&playable=0&loc_id=0&start=0&count=50&for_mobile=1"
+		var resp RexxarMoviePopularResponse
+		if err = c.doRexxarRequest(ctx, url, &resp); err == nil {
+			items = resp.Items
+		}
+	case "tv":
+		// 合并国内和国外剧集
+		urls := []string{
+			"https://m.douban.com/rexxar/api/v2/subject_collection/tv_domestic/items?items_only=1&start=0&count=25&for_mobile=1",
+			"https://m.douban.com/rexxar/api/v2/subject_collection/tv_american/items?items_only=1&start=0&count=25&for_mobile=1",
+		}
+		for _, url := range urls {
+			var resp RexxarCollectionPopularResponse
+			if err = c.doRexxarRequest(ctx, url, &resp); err == nil {
+				items = append(items, resp.Items...)
+			} else {
+				log.Printf("[爬虫] Rexxar TV 子接口抓取失败 (%s): %v", url, err)
+			}
+		}
+		if len(items) > 0 {
+			err = nil // 只要有一部分数据就算成功
+		}
+	case "show":
+		url := "https://m.douban.com/rexxar/api/v2/subject_collection/tv_variety_show/items?items_only=1&start=0&count=50&for_mobile=1"
+		var resp RexxarCollectionPopularResponse
+		if err = c.doRexxarRequest(ctx, url, &resp); err == nil {
+			items = resp.Items
+		}
+	case "cartoon":
+		url := "https://m.douban.com/rexxar/api/v2/subject_collection/tv_animation/items?items_only=1&start=0&count=50&for_mobile=1"
+		var resp RexxarCollectionPopularResponse
+		if err = c.doRexxarRequest(ctx, url, &resp); err == nil {
+			items = resp.Items
+		}
+	default:
+		return nil, fmt.Errorf("Rexxar 不支持的类型: %s", movieType)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换为 DoubanPopularSubject
+	var results []DoubanPopularSubject
+	for _, item := range items {
+		cover := item.Pic.Normal
+		if cover == "" {
+			cover = item.Pic.Large
+		}
+		results = append(results, DoubanPopularSubject{
+			ID:           item.ID,
+			Title:        item.Title,
+			Rate:         fmt.Sprintf("%.1f", item.Rating.Value),
+			Cover:        cover,
+			URL:          fmt.Sprintf("https://movie.douban.com/subject/%s/", item.ID),
+			IsNew:        false,
+			EpisodesInfo: item.EpisodesInfo,
+		})
+	}
+
+	return results, nil
+}
+
+// doRexxarRequest 执行 Rexxar API 请求的辅助方法
+func (c *DoubanCrawler) doRexxarRequest(ctx context.Context, url string, result interface{}) error {
+	finalURL := url
+	if c.proxy != "" {
+		finalURL = c.proxy + url
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
+	req.Header.Set("Referer", "https://m.douban.com/")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Cookie", fmt.Sprintf("bid=%s", c.generateBid()))
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Rexxar API 返回状态码: %d", resp.StatusCode)
+	}
+
+	return json.NewDecoder(resp.Body).Decode(result)
+}
+
 // GetPopularSubjects 获取热门电影/电视剧
 func (c *DoubanCrawler) GetPopularSubjects(movieType string) ([]DoubanPopularSubject, error) {
 	// 检查缓存
@@ -797,8 +925,18 @@ func (c *DoubanCrawler) GetPopularSubjects(movieType string) ([]DoubanPopularSub
 
 	// 正常抓取逻辑
 	if err := client.GetJSON(url, &response); err != nil {
-		log.Printf("[爬虫] 豆瓣热门数据抓取失败: %v, 尝试读取备选缓存", err)
-		// 抓取失败，尝试从备选缓存读取
+		log.Printf("[爬虫] 豆瓣热门数据抓取失败: %v, 尝试使用备选 Rexxar API", err)
+
+		// 回退逻辑 1: 尝试 Rexxar API
+		rexxarResults, rerr := c.fetchPopularFromRexxar(context.Background(), movieType)
+		if rerr == nil && len(rexxarResults) > 0 {
+			log.Printf("[爬虫] 成功通过备选 Rexxar API 抓取到 %d 条数据 (%s)", len(rexxarResults), movieType)
+			// 继续后续的代理图片和缓存逻辑
+			return c.processAndCachePopular(cacheKey, rexxarResults)
+		}
+
+		log.Printf("[爬虫] Rexxar API 抓取也失败: %v, 尝试读取备选缓存", rerr)
+		// 回退逻辑 2: 尝试从备选缓存读取
 		fallbackKey := fmt.Sprintf("fallback:%s", cacheKey)
 		if cached, found := utils.CacheGet(fallbackKey); found {
 			if results, ok := cached.([]DoubanPopularSubject); ok {
@@ -806,20 +944,25 @@ func (c *DoubanCrawler) GetPopularSubjects(movieType string) ([]DoubanPopularSub
 				return results, nil
 			}
 		}
-		return nil, fmt.Errorf("豆瓣热门数据抓取失败且无备选缓存: %w", err)
+		return nil, fmt.Errorf("豆瓣热门数据抓取失败（主接口、Rexxar及备选缓存均不可用）: %w", err)
 	}
 
+	return c.processAndCachePopular(cacheKey, response.Subjects)
+}
+
+// processAndCachePopular 处理图片代理并缓存热门数据
+func (c *DoubanCrawler) processAndCachePopular(cacheKey string, subjects []DoubanPopularSubject) ([]DoubanPopularSubject, error) {
 	// 处理图片，使用代理绕过防盗链
-	for i := range response.Subjects {
-		response.Subjects[i].Cover = fmt.Sprintf("/api/proxy/image?url=%s", response.Subjects[i].Cover)
+	for i := range subjects {
+		subjects[i].Cover = fmt.Sprintf("/api/proxy/image?url=%s", subjects[i].Cover)
 	}
 
 	// 缓存结果，缓存时间12小时
-	utils.CacheSet(cacheKey, response.Subjects, 12*time.Hour)
+	utils.CacheSet(cacheKey, subjects, 12*time.Hour)
 	// 同时更新备选缓存（永不过期），用于抓取失败时降级
-	utils.CacheSet(fmt.Sprintf("fallback:%s", cacheKey), response.Subjects, 0)
+	utils.CacheSet(fmt.Sprintf("fallback:%s", cacheKey), subjects, 0)
 
-	return response.Subjects, nil
+	return subjects, nil
 }
 
 // DoubanReview 豆瓣短评
