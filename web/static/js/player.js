@@ -77,9 +77,167 @@ function reportLoad(status, loadTime, reason, sourceKey, vodId) {
     }).catch(() => {}); // 静默处理错误
 }
 
+// XSS 防护：转义 HTML
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// 自动播放下一集管理器
+function createAutoPlayManager(options) {
+    var AUTO_PLAY_KEY = 'moovie_auto_play_next';
+    var COUNTDOWN_SECONDS = 15;
+    var episodes = options.episodes;
+    var currentEpisode = options.episode;
+
+    // 找到当前集索引
+    var currentIndex = -1;
+    for (var i = 0; i < episodes.length; i++) {
+        if (episodes[i].title === currentEpisode) {
+            currentIndex = i;
+            break;
+        }
+    }
+
+    // 最后一集或未找到，不触发
+    if (currentIndex < 0 || currentIndex >= episodes.length - 1) {
+        return null;
+    }
+
+    var nextEpisode = episodes[currentIndex + 1];
+    var countdownTimer = null;
+    var overlayEl = null;
+
+    function isEnabled() {
+        return localStorage.getItem(AUTO_PLAY_KEY) !== 'false';
+    }
+
+    function setEnabled(enabled) {
+        localStorage.setItem(AUTO_PLAY_KEY, enabled ? 'true' : 'false');
+    }
+
+    function getOverlay() {
+        if (overlayEl) return overlayEl;
+
+        var container = document.getElementById('artplayer-app');
+        if (!container) return null;
+
+        if (getComputedStyle(container).position === 'static') {
+            container.style.position = 'relative';
+        }
+
+        var circumference = 2 * Math.PI * 36;
+
+        overlayEl = document.createElement('div');
+        overlayEl.className = 'autoplay-overlay';
+        overlayEl.innerHTML =
+            '<div class="autoplay-card">' +
+                '<div class="autoplay-progress-ring">' +
+                    '<svg viewBox="0 0 80 80">' +
+                        '<circle class="ring-bg" cx="40" cy="40" r="36"/>' +
+                        '<circle class="ring-fg" cx="40" cy="40" r="36" ' +
+                            'stroke-dasharray="' + circumference + '" ' +
+                            'stroke-dashoffset="0"/>' +
+                    '</svg>' +
+                    '<div class="autoplay-countdown">' + COUNTDOWN_SECONDS + '</div>' +
+                '</div>' +
+                '<div class="autoplay-title">即将播放</div>' +
+                '<div class="autoplay-next-name">' + escapeHtml(nextEpisode.title) + '</div>' +
+                '<div class="autoplay-actions">' +
+                    '<button class="autoplay-btn autoplay-btn-cancel">取消</button>' +
+                    '<button class="autoplay-btn autoplay-btn-play">立即播放</button>' +
+                '</div>' +
+                '<div class="autoplay-toggle">不再自动播放下一集</div>' +
+            '</div>';
+
+        overlayEl.querySelector('.autoplay-btn-cancel').addEventListener('click', function(e) {
+            e.stopPropagation();
+            hideOverlay();
+        });
+        overlayEl.querySelector('.autoplay-btn-play').addEventListener('click', function(e) {
+            e.stopPropagation();
+            navigateToNext();
+        });
+        overlayEl.querySelector('.autoplay-toggle').addEventListener('click', function(e) {
+            e.stopPropagation();
+            setEnabled(false);
+            hideOverlay();
+        });
+        overlayEl.addEventListener('click', function() {
+            hideOverlay();
+        });
+        overlayEl.querySelector('.autoplay-card').addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+
+        return overlayEl;
+    }
+
+    function showOverlay() {
+        if (!isEnabled()) return;
+
+        var el = getOverlay();
+        if (!el) return;
+
+        var container = document.getElementById('artplayer-app');
+        container.appendChild(el);
+
+        var remaining = COUNTDOWN_SECONDS;
+        var circumference = 2 * Math.PI * 36;
+        var countdownEl = el.querySelector('.autoplay-countdown');
+        var ringFg = el.querySelector('.ring-fg');
+
+        countdownEl.textContent = remaining;
+        ringFg.style.strokeDashoffset = '0';
+
+        countdownTimer = setInterval(function() {
+            remaining--;
+            if (remaining <= 0) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+                navigateToNext();
+                return;
+            }
+            countdownEl.textContent = remaining;
+            var progress = (COUNTDOWN_SECONDS - remaining) / COUNTDOWN_SECONDS;
+            ringFg.style.strokeDashoffset = (circumference * progress).toString();
+        }, 1000);
+    }
+
+    function hideOverlay() {
+        if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+        }
+        if (overlayEl && overlayEl.parentNode) {
+            overlayEl.parentNode.removeChild(overlayEl);
+        }
+    }
+
+    function navigateToNext() {
+        hideOverlay();
+        window.location.href = nextEpisode.url;
+    }
+
+    return {
+        isEnabled: isEnabled,
+        setEnabled: setEnabled,
+        trigger: showOverlay,
+        cancel: hideOverlay,
+        destroy: hideOverlay
+    };
+}
+
 // 初始化播放器
 function initPlayer(containerId, url, options) {
     options = options || {};
+
+    // 自动播放下一集
+    var autoPlayState = null;
+    if (options.episodes && options.episodes.length > 1) {
+        autoPlayState = createAutoPlayManager(options);
+    }
 
     console.log('[Player] 初始化播放器');
     console.log('[Player] 容器:', containerId);
@@ -357,6 +515,27 @@ function initPlayer(containerId, url, options) {
                 if (typeof scheduleSync === 'function') {
                     scheduleSync();
                 }
+            }
+        });
+
+        // 自动播放下一集：视频结束时触发
+        art.on('video:ended', function() {
+            if (autoPlayState) {
+                autoPlayState.trigger();
+            }
+        });
+
+        // 用户拖回进度条或重新播放时取消倒计时
+        art.on('video:play', function() {
+            if (autoPlayState) {
+                autoPlayState.cancel();
+            }
+        });
+
+        // 播放器销毁时清理
+        art.on('destroy', function() {
+            if (autoPlayState) {
+                autoPlayState.destroy();
             }
         });
 

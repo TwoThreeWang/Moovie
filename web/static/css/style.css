@@ -4251,3 +4251,181 @@ img {
 .movie-actions .edit-form {
     display: none;
 }
+
+/* ==================== 自动播放下一集浮层 ==================== */
+.autoplay-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: autoplayFadeIn 0.3s ease;
+    cursor: pointer;
+}
+
+@keyframes autoplayFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.autoplay-card {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 32px 40px;
+    text-align: center;
+    max-width: 380px;
+    width: 90%;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+    animation: autoplaySlideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    cursor: default;
+}
+
+@keyframes autoplaySlideUp {
+    from { opacity: 0; transform: translateY(20px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.autoplay-title {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+}
+
+.autoplay-next-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 20px;
+}
+
+.autoplay-progress-ring {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 20px;
+    position: relative;
+}
+
+.autoplay-progress-ring svg {
+    transform: rotate(-90deg);
+}
+
+.autoplay-progress-ring circle {
+    fill: none;
+    stroke-width: 4;
+}
+
+.autoplay-progress-ring .ring-bg {
+    stroke: rgba(255, 255, 255, 0.1);
+}
+
+.autoplay-progress-ring .ring-fg {
+    stroke: var(--primary);
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s linear;
+}
+
+.autoplay-countdown {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+}
+
+.autoplay-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.autoplay-btn {
+    padding: 10px 24px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.autoplay-btn-cancel {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.autoplay-btn-cancel:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+.autoplay-btn-play {
+    background: var(--primary);
+    color: #fff;
+}
+
+.autoplay-btn-play:hover {
+    background: var(--primary-light);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px var(--primary-alpha-high);
+}
+
+.autoplay-toggle {
+    margin-top: 16px;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s;
+}
+
+.autoplay-toggle:hover {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* 移动端适配：避开播放器控制栏 */
+@media (max-width: 768px) {
+    .autoplay-overlay {
+        padding: 48px 12px 56px;
+    }
+    .autoplay-card {
+        padding: 20px 16px;
+        border-radius: 12px;
+        max-width: 100%;
+    }
+    .autoplay-progress-ring {
+        width: 56px;
+        height: 56px;
+        margin-bottom: 12px;
+    }
+    .autoplay-countdown {
+        font-size: 1.5rem;
+    }
+    .autoplay-title {
+        font-size: 0.75rem;
+        margin-bottom: 4px;
+    }
+    .autoplay-next-name {
+        font-size: 1rem;
+        margin-bottom: 14px;
+    }
+    .autoplay-btn {
+        padding: 8px 18px;
+        font-size: 0.8rem;
+    }
+    .autoplay-toggle {
+        margin-top: 12px;
+        font-size: 0.7rem;
+    }
+}

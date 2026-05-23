@@ -237,9 +237,16 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
 <!-- 播放器初始化 -->
-<script src="/static/js/player.js?v=0.3"></script>
+<script src="/static/js/player.js?v=0.4"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // 构建剧集列表（供自动播放下一集使用）
+        var episodeList = [
+            {{ range $i, $ep := .Episodes }}
+            {{ if $i }},{{ end }}
+            { "title": "{{ $ep.Title }}", "url": "/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $.Source }}&ep={{ $ep.Title }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}" }
+            {{ end }}
+        ];
 
         // 初始化播放器
         initPlayer('artplayer-app', '{{ .PlayURL }}', {
@@ -248,7 +255,9 @@
             douban_id: '{{ .DoubanID }}',
             sourceKey: '{{ .SourceKey }}',
             vodId: '{{ .VodID }}',
-            episode: '{{ .Episode }}'
+            episode: '{{ .Episode }}',
+            episodes: episodeList,
+            vodName: '{{ .Detail.VodName }}'
         });
     });
 </script>
