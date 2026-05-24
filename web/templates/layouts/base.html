@@ -66,10 +66,34 @@
         if (typeof htmx !== 'undefined') {
             htmx.config.indicatorDelay = 0;
         }
+        // 进度条
+        var progressBar = document.getElementById('htmx-progress');
+        if (progressBar) {
+            document.body.addEventListener('htmx:beforeRequest', function() {
+                progressBar.classList.remove('done');
+                progressBar.classList.add('active');
+            });
+            document.body.addEventListener('htmx:afterSwap', function() {
+                progressBar.classList.add('done');
+                setTimeout(function() {
+                    progressBar.classList.remove('active', 'done');
+                }, 300);
+            });
+            document.body.addEventListener('htmx:responseError', function() {
+                progressBar.classList.add('done');
+                setTimeout(function() {
+                    progressBar.classList.remove('active', 'done');
+                }, 300);
+            });
+        }
     });
     </script>
 </head>
 <body hx-ext="preload">
+    <!-- htmx 进度条 -->
+    <div class="htmx-progress" id="htmx-progress">
+        <div class="htmx-progress-bar"></div>
+    </div>
     <!-- 固定边框层 -->
     <div class="app-frame"></div>
 

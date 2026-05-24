@@ -4468,3 +4468,41 @@ img {
         font-size: 0.7rem;
     }
 }
+
+/* 全局 htmx 进度条 */
+.htmx-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+.htmx-progress.active {
+    opacity: 1;
+}
+.htmx-progress-bar {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #1a1a2e, #16213e);
+    border-radius: 0 2px 2px 0;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+}
+.htmx-progress.active .htmx-progress-bar {
+    animation: htmx-progress-grow 2s ease-in-out forwards;
+}
+.htmx-progress.done .htmx-progress-bar {
+    width: 100% !important;
+    transition: width 0.2s ease;
+}
+@keyframes htmx-progress-grow {
+    0% { width: 0; }
+    20% { width: 30%; }
+    50% { width: 60%; }
+    80% { width: 85%; }
+    100% { width: 90%; }
+}
