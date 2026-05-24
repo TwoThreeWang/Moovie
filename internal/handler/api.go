@@ -709,7 +709,7 @@ func (h *Handler) ReviewsHTMX(c *gin.Context) {
 	})
 }
 
-// FeedbackListHTMX 反馈列表（htmx 片段，分页）
+// FeedbackListHTMX 反馈列表（htmx 片段，分页，支持按类型筛选）
 func (h *Handler) FeedbackListHTMX(c *gin.Context) {
 	pageStr := c.DefaultQuery("page", "1")
 	page, err := strconv.Atoi(pageStr)
@@ -717,18 +717,18 @@ func (h *Handler) FeedbackListHTMX(c *gin.Context) {
 		page = 1
 	}
 
+	feedbackType := c.DefaultQuery("type", "")
+
 	const pageSize = 10
 	offset := (page - 1) * pageSize
 
-	// 获取反馈列表
-	feedbacks, err := h.Repos.Feedback.ListPublic(pageSize, offset)
+	feedbacks, err := h.Repos.Feedback.ListPublic(feedbackType, pageSize, offset)
 	if err != nil {
 		log.Printf("[FeedbackListHTMX] 获取反馈列表失败: %v", err)
 		feedbacks = []*model.Feedback{}
 	}
 
-	// 获取总数用于判断是否有更多
-	total, _ := h.Repos.Feedback.CountPublic()
+	total, _ := h.Repos.Feedback.CountPublic(feedbackType)
 	hasMore := int64(page*pageSize) < total
 
 	c.HTML(http.StatusOK, "partials/feedback_list.html", gin.H{
@@ -736,6 +736,7 @@ func (h *Handler) FeedbackListHTMX(c *gin.Context) {
 		"HasMore":     hasMore,
 		"NextPage":    page + 1,
 		"IsFirstPage": page == 1,
+		"Type":        feedbackType,
 	})
 }
 
@@ -882,6 +883,40 @@ func (h *Handler) DashboardHistoryHTMX(c *gin.Context) {
 
 	c.HTML(http.StatusOK, "partials/dashboard_history.html", gin.H{
 		"History": histories,
+	})
+}
+
+// DashboardFeedbackHTMX 用户中心 - 我的反馈
+func (h *Handler) DashboardFeedbackHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusOK, "未登录")
+		return
+	}
+
+	pageStr := c.DefaultQuery("page", "1")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	const pageSize = 10
+	offset := (page - 1) * pageSize
+
+	feedbacks, err := h.Repos.Feedback.ListByUserID(userID, pageSize, offset)
+	if err != nil {
+		log.Printf("[DashboardFeedbackHTMX] 获取用户反馈失败: %v", err)
+		feedbacks = []*model.Feedback{}
+	}
+
+	total, _ := h.Repos.Feedback.CountByUserID(userID)
+	hasMore := int64(page*pageSize) < total
+
+	c.HTML(http.StatusOK, "partials/dashboard_feedback.html", gin.H{
+		"Feedbacks":   feedbacks,
+		"HasMore":     hasMore,
+		"NextPage":    page + 1,
+		"IsFirstPage": page == 1,
 	})
 }
 

@@ -3754,6 +3754,36 @@ img {
     color: var(--primary);
 }
 
+.feedback-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.feedback-filter .filter-btn {
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.feedback-filter .filter-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.feedback-filter .filter-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
 /* 反馈列表容器 */
 .feedback-history {
     display: flex;
@@ -3944,6 +3974,15 @@ img {
     .feedback-history-section {
         margin-top: 32px;
         padding-top: 24px;
+    }
+
+    .feedback-filter {
+        gap: 6px;
+    }
+
+    .feedback-filter .filter-btn {
+        padding: 5px 12px;
+        font-size: 0.8rem;
     }
 
     .feedback-item {

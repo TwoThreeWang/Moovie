@@ -68,10 +68,32 @@ func (r *FeedbackRepository) FindByID(id int) (*model.Feedback, error) {
 }
 
 // ListPublic 获取公开反馈列表（用于前台页面展示）
-// 只返回已处理(resolved)的反馈，按创建时间倒序
-func (r *FeedbackRepository) ListPublic(limit, offset int) ([]*model.Feedback, error) {
+func (r *FeedbackRepository) ListPublic(feedbackType string, limit, offset int) ([]*model.Feedback, error) {
+	var feedbacks []*model.Feedback
+	db := r.db.Model(&model.Feedback{})
+	if feedbackType != "" {
+		db = db.Where("type = ?", feedbackType)
+	}
+	err := db.Order("created_at DESC").Limit(limit).Offset(offset).Find(&feedbacks).Error
+	return feedbacks, err
+}
+
+// CountPublic 统计公开反馈总数
+func (r *FeedbackRepository) CountPublic(feedbackType string) (int64, error) {
+	var count int64
+	db := r.db.Model(&model.Feedback{})
+	if feedbackType != "" {
+		db = db.Where("type = ?", feedbackType)
+	}
+	err := db.Count(&count).Error
+	return count, err
+}
+
+// ListByUserID 获取指定用户的反馈列表
+func (r *FeedbackRepository) ListByUserID(userID int, limit, offset int) ([]*model.Feedback, error) {
 	var feedbacks []*model.Feedback
 	err := r.db.Model(&model.Feedback{}).
+		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Limit(limit).
 		Offset(offset).
@@ -79,9 +101,9 @@ func (r *FeedbackRepository) ListPublic(limit, offset int) ([]*model.Feedback, e
 	return feedbacks, err
 }
 
-// CountPublic 统计公开反馈总数
-func (r *FeedbackRepository) CountPublic() (int64, error) {
+// CountByUserID 统计指定用户的反馈总数
+func (r *FeedbackRepository) CountByUserID(userID int) (int64, error) {
 	var count int64
-	err := r.db.Model(&model.Feedback{}).Count(&count).Error
+	err := r.db.Model(&model.Feedback{}).Where("user_id = ?", userID).Count(&count).Error
 	return count, err
 }

@@ -902,6 +902,7 @@ func (h *Handler) Dashboard(c *gin.Context) {
 	favoriteCount, _ := h.Repos.UserMovie.CountByUser(userID, "wish")
 	watchedCount, _ := h.Repos.UserMovie.CountByUser(userID, "watched")
 	historyCount, _ := h.Repos.History.CountByUser(userID)
+	feedbackCount, _ := h.Repos.Feedback.CountByUserID(userID)
 
 	c.HTML(http.StatusOK, "dashboard.html", h.RenderData(c, gin.H{
 		"Title":         "用户中心 - " + h.Config.SiteName,
@@ -909,6 +910,7 @@ func (h *Handler) Dashboard(c *gin.Context) {
 		"FavoriteCount": favoriteCount,
 		"WatchedCount":  watchedCount,
 		"HistoryCount":  historyCount,
+		"FeedbackCount": feedbackCount,
 	}))
 }
 

@@ -37,6 +37,33 @@
             历史反馈
         </h2>
     </div>
+    <div class="feedback-filter">
+        <button class="filter-btn active"
+                hx-get="/api/htmx/feedback-list?page=1"
+                hx-target="#feedback-list-container"
+                hx-swap="innerHTML"
+                onclick="setActiveFilter(this)">全部</button>
+        <button class="filter-btn"
+                hx-get="/api/htmx/feedback-list?page=1&type=bug"
+                hx-target="#feedback-list-container"
+                hx-swap="innerHTML"
+                onclick="setActiveFilter(this)">Bug 报告</button>
+        <button class="filter-btn"
+                hx-get="/api/htmx/feedback-list?page=1&type=request"
+                hx-target="#feedback-list-container"
+                hx-swap="innerHTML"
+                onclick="setActiveFilter(this)">求片</button>
+        <button class="filter-btn"
+                hx-get="/api/htmx/feedback-list?page=1&type=suggestion"
+                hx-target="#feedback-list-container"
+                hx-swap="innerHTML"
+                onclick="setActiveFilter(this)">功能建议</button>
+        <button class="filter-btn"
+                hx-get="/api/htmx/feedback-list?page=1&type=dmca"
+                hx-target="#feedback-list-container"
+                hx-swap="innerHTML"
+                onclick="setActiveFilter(this)">版权投诉</button>
+    </div>
     <div id="feedback-list-container"
          hx-get="/api/htmx/feedback-list?page=1"
          hx-trigger="load"
@@ -47,5 +74,12 @@
         </div>
     </div>
 </section>
+
+<script>
+function setActiveFilter(btn) {
+    btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+</script>
 {{ end }}
 

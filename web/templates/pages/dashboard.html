@@ -46,6 +46,11 @@
             <span class="stat-value">{{ .WatchedCount }}</span>
             <span class="stat-label">部已看</span>
         </div>
+        <div class="stat-item" data-tab="feedback">
+            <span class="stat-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></span>
+            <span class="stat-value">{{ .FeedbackCount }}</span>
+            <span class="stat-label">条反馈</span>
+        </div>
     </div>
 
     <!-- Tab 切换 -->
@@ -82,6 +87,16 @@
                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
             </svg>
             已看
+        </button>
+        <button class="tab-btn"
+                hx-get="/api/htmx/dashboard/feedback"
+                hx-target="#tab-content"
+                hx-trigger="click"
+                preload="mouseover"
+                preload-delay="300ms"
+                data-tab="feedback">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            反馈
         </button>
     </div>
 

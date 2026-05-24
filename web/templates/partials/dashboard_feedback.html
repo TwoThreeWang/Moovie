@@ -1,7 +1,7 @@
-{{/* 反馈列表分页组件 */}}
+{{/* 用户中心 - 我的反馈列表 */}}
 
 {{ if .Feedbacks }}
-<div class="feedback-history">
+<div class="dashboard-feedback-list feedback-history">
     {{ range .Feedbacks }}
     <div class="feedback-item">
         <div class="feedback-header">
@@ -53,12 +53,11 @@
     </div>
     {{ end }}
 
-    {{/* 分页：加载更多按钮 */}}
     {{ if .HasMore }}
     <div class="load-more-wrapper">
         <button class="btn btn-secondary load-more-btn"
-                hx-get="/api/htmx/feedback-list?page={{ .NextPage }}{{ if .Type }}&type={{ .Type }}{{ end }}"
-                hx-target="closest .feedback-history"
+                hx-get="/api/htmx/dashboard/feedback?page={{ .NextPage }}"
+                hx-target="closest .dashboard-feedback-list"
                 hx-swap="outerHTML"
                 hx-indicator=".feedback-loading">
             加载更多
@@ -74,7 +73,7 @@
     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
     </svg>
-    <p>暂无反馈记录</p>
-    <span class="feedback-empty-hint">成为第一个提交反馈的用户吧！</span>
+    <p>还没有提交过反馈</p>
+    <span class="feedback-empty-hint">遇到问题或有建议？<a href="/feedback">点此提交</a></span>
 </div>
 {{ end }}
