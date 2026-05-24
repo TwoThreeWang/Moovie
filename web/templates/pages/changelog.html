@@ -4,6 +4,40 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v3.2.8 -->
+    <section class="changelog-item">
+      <div class="version-badge">v3.2.8 <small>2026-05-24</small></div>
+      <div class="changelog-details">
+        <h3>✨ 新增 (Added)</h3>
+        <ul>
+          <li>
+            <strong>自动播放下一集</strong>：视频播放结束后，自动弹出倒计时浮层，5 秒内无操作将跳转至下一集；支持「立即播放」与「取消」两种交互，配合圆形进度环直观展示剩余时间。
+          </li>
+          <li>
+            <strong>反馈列表类型筛选</strong>：历史反馈页新增筛选栏，可按「Bug 报告 / 求片 / 功能建议 / 版权投诉」分类查看，翻页时自动保留当前筛选状态。
+          </li>
+          <li>
+            <strong>用户中心「我的反馈」</strong>：个人中心新增独立反馈记录页，登录用户可分页查看自己提交的所有反馈。
+          </li>
+          <li>
+            <strong>全局 htmx 请求进度条</strong>：页面顶部新增固定进度条，所有 htmx 局部刷新请求期间自动显示加载进度，提升操作反馈感知。
+          </li>
+        </ul>
+        <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+        <ul>
+          <li>
+            <strong>后台服务优雅停机完善</strong>：CleanupService 与内存缓存均新增 Stop 方法，服务退出时按序调用，杜绝定时器与 goroutine 泄漏。
+          </li>
+          <li>
+            <strong>播放器资源清理加固</strong>：HLS bufferTimer、iOS 卡顿恢复 recoverTimer 及 waiting 事件监听器在播放器销毁时统一清理，解决内存泄漏隐患。
+          </li>
+          <li>
+            <strong>豆瓣爬虫 HTTP Body 修复</strong>：修复重试循环中 <code>resp.Body</code> 被 <code>defer</code> 延迟关闭的问题，改为请求成功后立即关闭，避免连接被长期占用。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v3.2.7 -->
     <section class="changelog-item">
       <div class="version-badge">v3.2.7 <small>2026-05-12</small></div>
