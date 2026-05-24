@@ -31,6 +31,7 @@ function isIOS() {
 // 本地存储管理
 var Storage = {
     key: 'moovie_play_state',
+    maxItems: 100,
     get: function() {
         try {
             return JSON.parse(localStorage.getItem(this.key) || '{}');
@@ -41,6 +42,18 @@ var Storage = {
     upsert: function(item) {
         var data = this.get();
         data[item.id] = item;
+        // 裁剪：保留最近 maxItems 条，防止 localStorage 无限增长
+        var keys = Object.keys(data);
+        if (keys.length > this.maxItems) {
+            keys.sort(function(a, b) {
+                return (data[b].updatedAt || 0) - (data[a].updatedAt || 0);
+            });
+            var trimmed = {};
+            for (var i = 0; i < this.maxItems; i++) {
+                trimmed[keys[i]] = data[keys[i]];
+            }
+            data = trimmed;
+        }
         localStorage.setItem(this.key, JSON.stringify(data));
     },
     find: function(id) {
@@ -232,6 +245,7 @@ function createAutoPlayManager(options) {
 // 初始化播放器
 function initPlayer(containerId, url, options) {
     options = options || {};
+    hasReported = false; // 重置上报标记，确保每次初始化都能正常上报
 
     // 自动播放下一集
     var autoPlayState = null;
@@ -344,6 +358,7 @@ function initPlayer(containerId, url, options) {
                     art.hls = hls;
                     art.on('destroy', function() {
                         if (hls) {
+                            if (hls._bufferTimer) clearTimeout(hls._bufferTimer);
                             hls.destroy();
                             hls = null;
                         }
@@ -387,7 +402,7 @@ function initPlayer(containerId, url, options) {
                     });
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         console.log('[Player] HLS manifest 解析完成');
-                        setTimeout(() => {
+                        hls._bufferTimer = setTimeout(() => {
                             hls.config.maxBufferLength = 40;
                             hls.config.maxMaxBufferLength = 90;
                         }, 8000);
@@ -449,18 +464,23 @@ function initPlayer(containerId, url, options) {
                 video.webkitPreservesPitch = true;
             }
 
-            let recoverTimer = null;
-            video.addEventListener('waiting', () => {
+            // 保存引用供 destroy 时清理
+            var recoverTimer = null;
+            var waitingHandler = function() {
                 if (recoverTimer) return;
-                recoverTimer = setTimeout(() => {
+                recoverTimer = setTimeout(function() {
                     console.log('iOS卡顿自动恢复');
                     if (art.hls) {
                         art.hls.startLoad();
                     }
-                    video.play().catch(()=>{});
+                    video.play().catch(function(){});
                     recoverTimer = null;
+                    art._recoverTimer = null;
                 }, 1200);
-            });
+                art._recoverTimer = recoverTimer;
+            };
+            video.addEventListener('waiting', waitingHandler);
+            art._waitingHandler = waitingHandler;
 
             // 获取上次播放进度并自动跳转
             var playState = Storage.find(options.sourceKey + options.vodId);
@@ -534,6 +554,11 @@ function initPlayer(containerId, url, options) {
 
         // 播放器销毁时清理
         art.on('destroy', function() {
+            clearTimeout(timeoutTimer);
+            if (art._recoverTimer) clearTimeout(art._recoverTimer);
+            if (art._waitingHandler && art.video) {
+                art.video.removeEventListener('waiting', art._waitingHandler);
+            }
             if (autoPlayState) {
                 autoPlayState.destroy();
             }

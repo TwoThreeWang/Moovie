@@ -36,8 +36,12 @@ function _saveWatchHistoryInternal(data) {
  * 保存观影历史（从数组转换回存储对象）
  */
 function saveWatchHistory(historyArray) {
+    // 按时间降序排序，保留最近 MAX_HISTORY 条，防止 localStorage 无限增长
+    historyArray.sort((a, b) => (b.updatedAt || b.watchedAt || 0) - (a.updatedAt || a.watchedAt || 0));
+    const trimmed = historyArray.slice(0, MAX_HISTORY);
+
     const data = {};
-    historyArray.forEach(h => {
+    trimmed.forEach(h => {
         const source = h.source || h.source_key || '';
         const vodId = h.vod_id || h.vodId || '';
         const key = source + vodId;
@@ -59,6 +63,7 @@ function saveWatchHistory(historyArray) {
 // ==================== 同步逻辑 ====================
 
 let syncTimer = null;
+let isSyncing = false;
 
 /**
  * 检查是否登录
@@ -72,7 +77,7 @@ function isLoggedIn() {
  * 调度同步任务
  */
 function scheduleSync() {
-    if (!isLoggedIn() || syncTimer) return;
+    if (!isLoggedIn() || isSyncing || syncTimer) return;
 
     const lastSync = parseInt(localStorage.getItem(SYNC_KEY) || '0');
     const elapsed = Date.now() - lastSync;
@@ -91,32 +96,30 @@ function scheduleSync() {
  * 执行同步
  */
 async function doSync() {
-    if (!isLoggedIn()) return;
-
-    const lastSyncAt = parseInt(localStorage.getItem(SYNC_KEY) || '0');
-    const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
-
-    // 找出需要同步的新记录 (watchedAt/updatedAt > lastSyncAt)
-    const newRecords = Object.values(data).filter(h =>
-        (h.watchedAt || h.updatedAt || 0) > lastSyncAt
-    ).map(h => ({
-        douban_id: h.douban_id || h.doubanId || '',
-        vod_id: h.vod_id || h.vodId || '',
-        title: h.title,
-        poster: h.poster || h.img,
-        episode: h.episode || '',
-        progress: h.progress || (h.duration > 0 ? Math.floor((h.lastTime / h.duration) * 100) : 0),
-        last_time: h.lastTime || 0,
-        duration: h.duration || 0,
-        source: h.source || h.source_key || '',
-        watchedAt: h.watchedAt || h.updatedAt || Date.now()
-    }));
-
-    // 即使本地没有新记录 (newRecords.length === 0)，也允许发起请求以拉取服务器端可能的更新
-    // 如果本地有记录但不需要上传，newRecords 将是空数组，服务器会识别并只返回增量数据数据数据数据
-
+    if (!isLoggedIn() || isSyncing) return;
+    isSyncing = true;
 
     try {
+        const lastSyncAt = parseInt(localStorage.getItem(SYNC_KEY) || '0');
+        const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
+
+        // 找出需要同步的新记录 (watchedAt/updatedAt > lastSyncAt)
+        const newRecords = Object.values(data).filter(h =>
+            (h.watchedAt || h.updatedAt || 0) > lastSyncAt
+        ).map(h => ({
+            douban_id: h.douban_id || h.doubanId || '',
+            vod_id: h.vod_id || h.vodId || '',
+            title: h.title,
+            poster: h.poster || h.img,
+            episode: h.episode || '',
+            progress: h.progress || (h.duration > 0 ? Math.floor((h.lastTime / h.duration) * 100) : 0),
+            last_time: h.lastTime || 0,
+            duration: h.duration || 0,
+            source: h.source || h.source_key || '',
+            watchedAt: h.watchedAt || h.updatedAt || Date.now()
+        }));
+
+        // 即使本地没有新记录，也允许发起请求以拉取服务器端可能的更新
         const response = await fetch('/api/history/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -128,20 +131,22 @@ async function doSync() {
 
         if (response.ok) {
             const result = await response.json();
-            const data = result.data || {};
+            const syncData = result.data || {};
 
             // 合并服务器返回的记录
-            if (data.serverRecords && data.serverRecords.length > 0) {
-                mergeServerRecords(data.serverRecords);
+            if (syncData.serverRecords && syncData.serverRecords.length > 0) {
+                mergeServerRecords(syncData.serverRecords);
             }
 
             // 更新同步时间
-            const syncedAt = data.syncedAt || Date.now();
+            const syncedAt = syncData.syncedAt || Date.now();
             localStorage.setItem(SYNC_KEY, syncedAt.toString());
             return true;
         }
     } catch (error) {
         console.error('同步观影历史失败:', error);
+    } finally {
+        isSyncing = false;
     }
     return false;
 }
@@ -154,11 +159,20 @@ function mergeServerRecords(serverRecords) {
     const localHistory = getWatchHistory();
 
     serverRecords.forEach(serverRecord => {
-        // 匹配逻辑：优先使用 source_key + vod_id
-        const localIdx = localHistory.findIndex(h =>
-            (h.source_key === serverRecord.source && h.vod_id === serverRecord.vod_id) ||
-            (h.douban_id === serverRecord.douban_id && h.episode === serverRecord.episode && serverRecord.douban_id)
-        );
+        // 统一字段名：服务器返回 source，本地存储 source_key
+        const recSource = serverRecord.source_key || serverRecord.source || '';
+        const recVodId = serverRecord.vod_id || serverRecord.vodId || '';
+
+        // 匹配逻辑：优先 source_key + vod_id，其次 douban_id + episode
+        const localIdx = localHistory.findIndex(h => {
+            if (recSource && recVodId && h.source_key === recSource && h.vod_id === recVodId) {
+                return true;
+            }
+            if (serverRecord.douban_id && h.douban_id === serverRecord.douban_id && h.episode === serverRecord.episode) {
+                return true;
+            }
+            return false;
+        });
 
         const serverTime = new Date(serverRecord.watched_at).getTime();
 
@@ -174,8 +188,8 @@ function mergeServerRecords(serverRecords) {
                     img: serverRecord.poster,
                     episode: serverRecord.episode,
                     progress: serverRecord.progress,
-                    source_key: serverRecord.source,
-                    vod_id: serverRecord.vod_id,
+                    source_key: recSource,
+                    vod_id: recVodId,
                     watchedAt: serverTime,
                     updatedAt: serverTime
                 };
@@ -189,8 +203,8 @@ function mergeServerRecords(serverRecords) {
                 img: serverRecord.poster,
                 episode: serverRecord.episode,
                 progress: serverRecord.progress,
-                source_key: serverRecord.source,
-                vod_id: serverRecord.vod_id,
+                source_key: recSource,
+                vod_id: recVodId,
                 watchedAt: serverTime,
                 updatedAt: serverTime,
                 lastTime: (serverRecord.progress / 100) * (serverRecord.duration || 0),

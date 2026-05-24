@@ -11,7 +11,8 @@ import (
 
 // CleanupService 清理服务
 type CleanupService struct {
-	repos *repository.Repositories
+	repos  *repository.Repositories
+	cancel context.CancelFunc
 }
 
 // NewCleanupService 创建清理服务
@@ -21,7 +22,9 @@ func NewCleanupService(repos *repository.Repositories) *CleanupService {
 
 // Start 启动定时清理任务
 func (s *CleanupService) Start() {
-	// 每天凌晨 3 点执行一次
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+
 	ticker := time.NewTicker(24 * time.Hour)
 
 	// 启动时先运行一次
@@ -29,7 +32,8 @@ func (s *CleanupService) Start() {
 		s.runCleanup()
 	})
 
-	utils.GoSafe(0, func(ctx context.Context) {
+	go func() {
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
@@ -38,7 +42,14 @@ func (s *CleanupService) Start() {
 				return
 			}
 		}
-	})
+	}()
+}
+
+// Stop 停止定时清理任务
+func (s *CleanupService) Stop() {
+	if s.cancel != nil {
+		s.cancel()
+	}
 }
 
 func (s *CleanupService) runCleanup() {

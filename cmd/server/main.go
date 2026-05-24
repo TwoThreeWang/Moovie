@@ -141,6 +141,8 @@ func main() {
 	}
 
 	// 等待所有后台任务安全退出
+	utils.Cache.Stop()
+	cleanupSvc.Stop()
 	utils.WaitAsync(10 * time.Second)
 
 	log.Println("服务器已退出")

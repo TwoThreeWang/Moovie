@@ -283,11 +283,10 @@ func (c *DoubanCrawler) CrawlDoubanMovieApi(ctx context.Context, doubanID string
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode == http.StatusOK {
 			if err := json.NewDecoder(resp.Body).Decode(&rexxarResp); err == nil {
-				// 校验返回的 ID 是否匹配，防止某些异常情况
+				resp.Body.Close()
 				if rexxarResp.ID != "" {
 					success = true
 					break
@@ -299,6 +298,7 @@ func (c *DoubanCrawler) CrawlDoubanMovieApi(ctx context.Context, doubanID string
 			lastErr = fmt.Errorf("接口（%s）返回状态码 (%s): %d", baseURL, t, resp.StatusCode)
 			log.Printf("接口（%s）返回状态码 (%s): %d", baseURL, t, resp.StatusCode)
 		}
+		resp.Body.Close()
 	}
 
 	if !success {
@@ -1132,10 +1132,10 @@ func (c *DoubanCrawler) GetReviewsApi(ctx context.Context, doubanID string) ([]D
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode == http.StatusOK {
 			if err := json.NewDecoder(resp.Body).Decode(&rexxarResp); err == nil {
+				resp.Body.Close()
 				success = true
 				break
 			} else {
@@ -1144,6 +1144,7 @@ func (c *DoubanCrawler) GetReviewsApi(ctx context.Context, doubanID string) ([]D
 		} else {
 			lastErr = fmt.Errorf("接口返回状态码 (%s): %d", t, resp.StatusCode)
 		}
+		resp.Body.Close()
 	}
 
 	if !success {

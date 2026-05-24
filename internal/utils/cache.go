@@ -17,6 +17,7 @@ type cacheEntry struct {
 type lruCacheInstance struct {
 	cache *lru.Cache[string, cacheEntry]
 	mu    sync.RWMutex
+	done  chan struct{}
 }
 
 // Cache 全局缓存实例（保持原有变量名）
@@ -28,6 +29,7 @@ func InitCache() {
 	lruCache, _ := lru.New[string, cacheEntry](2000)
 	Cache = &lruCacheInstance{
 		cache: lruCache,
+		done:  make(chan struct{}),
 	}
 
 	// 启动后台清理goroutine
@@ -39,20 +41,30 @@ func (c *lruCacheInstance) cleanupExpired() {
 	ticker := time.NewTicker(5 * time.Minute) // 每5分钟清理一次
 	defer ticker.Stop()
 
-	for range ticker.C {
-		c.mu.Lock()
-		keys := c.cache.Keys()
-		now := time.Now()
+	for {
+		select {
+		case <-ticker.C:
+			c.mu.Lock()
+			keys := c.cache.Keys()
+			now := time.Now()
 
-		for _, key := range keys {
-			if entry, ok := c.cache.Get(key); ok {
-				if now.After(entry.expiredAt) {
-					c.cache.Remove(key)
+			for _, key := range keys {
+				if entry, ok := c.cache.Get(key); ok {
+					if now.After(entry.expiredAt) {
+						c.cache.Remove(key)
+					}
 				}
 			}
+			c.mu.Unlock()
+		case <-c.done:
+			return
 		}
-		c.mu.Unlock()
 	}
+}
+
+// Stop 停止后台清理 goroutine
+func (c *lruCacheInstance) Stop() {
+	close(c.done)
 }
 
 // CacheGet 获取缓存值（保持原有接口）
@@ -70,9 +82,8 @@ func (c *lruCacheInstance) Get(key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	// 检查是否过期
+	// 检查是否过期（不在此处删除，交给 cleanupExpired 后台统一清理）
 	if time.Now().After(entry.expiredAt) {
-		c.cache.Remove(key)
 		return nil, false
 	}
 
