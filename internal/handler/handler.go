@@ -598,6 +598,14 @@ func (h *Handler) FeedbackPage(c *gin.Context) {
 	}))
 }
 
+// TVBoxGuide TVBox 配置指南页面
+func (h *Handler) TVBoxGuide(c *gin.Context) {
+	c.HTML(http.StatusOK, "tvbox.html", h.RenderData(c, gin.H{
+		"Title":       "TVBox 配置指南 - " + h.Config.SiteName,
+		"TVBoxAPIURL": h.Config.SiteUrl + "/api/tvbox.json",
+	}))
+}
+
 // About 关于页面
 func (h *Handler) About(c *gin.Context) {
 	c.HTML(http.StatusOK, "about.html", h.RenderData(c, gin.H{

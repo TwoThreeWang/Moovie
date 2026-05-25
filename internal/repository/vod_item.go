@@ -65,6 +65,45 @@ func (r *VodItemRepository) UpdateLastVisited(sourceKey, vodId string) error {
 		Update("last_visited_at", time.Now()).Error
 }
 
+// GetTypes 获取所有不重复的类型名称
+func (r *VodItemRepository) GetTypes() ([]string, error) {
+	var types []string
+	err := r.db.Model(&model.VodItem{}).Distinct().Pluck("type_name", &types).Error
+	return types, err
+}
+
+// ListByType 按类型分页查询视频（精确匹配 type_name）
+func (r *VodItemRepository) ListByType(typeName string, page, pageSize int) ([]model.VodItem, int64, error) {
+	var items []model.VodItem
+	var total int64
+
+	q := r.db.Model(&model.VodItem{}).Where("type_name = ?", typeName)
+	q.Count(&total)
+
+	offset := (page - 1) * pageSize
+	err := q.Order("last_visited_at DESC").Offset(offset).Limit(pageSize).Find(&items).Error
+	return items, total, err
+}
+
+// ListLatest 按更新时间分页查询视频（兜底用）
+func (r *VodItemRepository) ListLatest(page, pageSize int) ([]model.VodItem, int64, error) {
+	var items []model.VodItem
+	var total int64
+
+	r.db.Model(&model.VodItem{}).Count(&total)
+
+	offset := (page - 1) * pageSize
+	err := r.db.Order("last_visited_at DESC").Offset(offset).Limit(pageSize).Find(&items).Error
+	return items, total, err
+}
+
+// SearchByDoubanID 根据豆瓣 ID 搜索资源网视频
+func (r *VodItemRepository) SearchByDoubanID(doubanID string) ([]model.VodItem, error) {
+	var items []model.VodItem
+	err := r.db.Where("vod_douban_id = ?", doubanID).Find(&items).Error
+	return items, err
+}
+
 // DeleteInactive 删除指定天数内未访问的数据
 func (r *VodItemRepository) DeleteInactive(days int) (int64, error) {
 	result := r.db.Where("last_visited_at < NOW() - INTERVAL '1 day' * ?", days).

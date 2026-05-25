@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -1006,6 +1007,434 @@ func (h *Handler) DoubanCardHTMX(c *gin.Context) {
 		"SummaryShort":  summaryShort,
 		"Genres":        genres,
 		"Countries":     countries,
+	})
+}
+
+// TVBoxConfig TVBox 配置接口，直接填入 TVBox 配置地址即可使用
+func (h *Handler) TVBoxConfig(c *gin.Context) {
+	scheme := "http"
+	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+
+	c.JSON(http.StatusOK, gin.H{
+		"sites": []gin.H{
+			{
+				"key":         "moovie",
+				"name":        "Moovie 影牛",
+				"type":        1,
+				"api":         baseURL + "/api/vod",
+				"searchable":  1,
+				"quickSearch": 1,
+				"filterable":  0,
+			},
+		},
+		"lives":  []gin.H{},
+		"parses": []gin.H{},
+		"flags":  []string{},
+	})
+}
+
+// TVBoxVodAPI TVBox 数据接口（兼容苹果CMS v10）
+func (h *Handler) TVBoxVodAPI(c *gin.Context) {
+	ac := c.Query("ac")
+	ids := c.Query("ids")
+	wd := c.Query("wd")
+	t := c.Query("t")
+	pg, _ := strconv.Atoi(c.DefaultQuery("pg", "1"))
+	if pg < 1 {
+		pg = 1
+	}
+
+	// ac=detail&ids=xxx 获取详情（支持逗号分隔的多个 ID）
+	if ids != "" {
+		h.tvboxDetail(c, ids)
+		return
+	}
+
+	// wd=xxx 搜索（TVBox 快搜会带 ac=detail&wd=xxx）
+	if wd != "" {
+		h.tvboxSearch(c, wd, pg)
+		return
+	}
+
+	// ac=detail&t=xxx 按分类浏览
+	if ac == "detail" && t != "" {
+		h.tvboxCategory(c, t, pg)
+		return
+	}
+
+	// 无参数：首屏初始化（返回分类列表 + 热门推荐）
+	h.tvboxHome(c, pg)
+}
+
+// tvboxEncodeID 将 sourceKey:vodId 编码为纯数字 ID（供 TVBox 使用）
+func tvboxEncodeID(sourceKey, vodId string) string {
+	// 使用 FNV-1a 哈希生成稳定的数字 ID
+	hash := uint32(2166136261)
+	for _, b := range []byte(sourceKey + ":" + vodId) {
+		hash ^= uint32(b)
+		hash *= 16777619
+	}
+	return strconv.FormatUint(uint64(hash), 10)
+}
+
+// tvboxDecodeID 从纯数字 ID 解码回 sourceKey:vodId（需要数据库查询）
+// TVBox 传回的 ids 参数就是原始的 sourceKey:vodId 字符串，不需要解码
+// 此函数仅用于兼容 TVBox 的 vod_id 类型要求
+
+// tvboxBuildVod 构建 TVBox 兼容的 vod 字段 map
+func (h *Handler) tvboxBuildVod(vodId string, item *model.VodItem) gin.H {
+	playFrom, playURL := h.formatTVBoxPlayUrl(item.VodPlayUrl)
+	return gin.H{
+		"vod_id":        vodId,
+		"type_id":       tvboxTypeNameToID(item.TypeName),
+		"type_name":     item.TypeName,
+		"vod_name":      item.VodName,
+		"vod_pic":       item.VodPic,
+		"vod_lang":      item.VodLang,
+		"vod_area":      item.VodArea,
+		"vod_year":      item.VodYear,
+		"vod_remarks":   item.VodRemarks,
+		"vod_actor":     item.VodActor,
+		"vod_director":  item.VodDirector,
+		"vod_content":   item.VodContent,
+		"vod_blurb":     item.VodBlurb,
+		"vod_tag":       item.VodTag,
+		"vod_time":      item.VodTime,
+		"vod_play_from": playFrom,
+		"vod_play_url":  playURL,
+	}
+}
+
+// tvboxSearch 搜索接口
+func (h *Handler) tvboxSearch(c *gin.Context, keyword string, page int) {
+	items, err := h.Repos.VodItem.Search(keyword)
+	if err != nil {
+		log.Printf("[TVBox] 搜索失败: %v", err)
+	}
+
+	list := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		list = append(list, h.tvboxBuildVod(item.SourceKey+":"+item.VodId, &item))
+	}
+
+	total := len(list)
+	pageSize := 20
+	totalPages := (total + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":      1,
+		"msg":       "数据列表",
+		"page":      page,
+		"pagecount": totalPages,
+		"limit":     strconv.Itoa(pageSize),
+		"total":     total,
+		"list":      list[start:end],
+	})
+}
+
+// tvboxDetail 详情接口
+func (h *Handler) tvboxDetail(c *gin.Context, ids string) {
+
+	// 测试端点：返回 TVBox 源码中的官方测试数据格式
+	if ids == "test" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":      1,
+			"msg":       "数据列表",
+			"page":      1,
+			"pagecount": 1,
+			"limit":     "20",
+			"total":     1,
+			"list": []gin.H{
+				{
+					"vod_id":        "test",
+					"type_id":       1,
+					"type_name":     "电影",
+					"vod_name":      "TVBox格式测试",
+					"vod_pic":       "https://img9.doubanio.com/view/photo/s_ratio_poster/public/p2656327176.webp",
+					"vod_lang":      "国语",
+					"vod_area":      "中国大陆",
+					"vod_year":      "2024",
+					"vod_remarks":   "测试",
+					"vod_actor":     "测试演员",
+					"vod_director":  "测试导演",
+					"vod_content":   "这是一个TVBox格式测试视频",
+					"vod_blurb":     "测试简介",
+					"vod_tag":       "测试",
+					"vod_time":      "2024-01-01 00:00:00",
+					"vod_play_from": "测试源",
+					"vod_play_url":  "第01集$https://test-stream.m3u8",
+				},
+			},
+		})
+		return
+	}
+
+	parts := strings.SplitN(ids, ":", 2)
+	if len(parts) != 2 {
+		log.Printf("[TVBox] 无法解析 ID: %s", ids)
+		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": "无效的ID", "list": []gin.H{}})
+		return
+	}
+	prefix, vodId := parts[0], parts[1]
+
+	// 豆瓣条目：用标题搜索资源网
+	if prefix == "douban" {
+		h.tvboxDetailFromDouban(c, vodId)
+		return
+	}
+	sourceKey := prefix
+
+	// 1. 获取详情
+	detail, err := h.SearchService.GetDetail(c.Request.Context(), sourceKey, vodId)
+	if err != nil || detail == nil {
+		log.Printf("[TVBox] 详情查询失败: %v", err)
+		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": "未找到内容", "list": []gin.H{}})
+		return
+	}
+
+	// 2. 检查播放链接，如果为空，尝试强制同步抓取一次
+	if detail.VodPlayUrl == "" {
+		site, _ := h.Repos.Site.FindByKey(sourceKey)
+		if site != nil {
+			crawler := h.SearchService.GetSearchCrawler()
+			if d, err := crawler.GetDetail(c.Request.Context(), site.BaseUrl, vodId, sourceKey); err == nil && d != nil {
+				detail = d
+				_ = h.Repos.VodItem.Upsert(d)
+			}
+		}
+	}
+
+	// 3. 格式化播放源
+	_, playURL := h.formatTVBoxPlayUrl(detail.VodPlayUrl)
+	if playURL == "" {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": "无播放链接", "list": []gin.H{}})
+		return
+	}
+
+	vod := h.tvboxBuildVod(ids, detail)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":      1,
+		"msg":       "数据列表",
+		"page":      1,
+		"pagecount": 1,
+		"limit":     "20",
+		"total":     1,
+		"list":      []gin.H{vod},
+	})
+}
+
+// tvboxDetailFromDouban 豆瓣条目详情：搜索资源网获取播放链接
+func (h *Handler) tvboxDetailFromDouban(c *gin.Context, doubanID string) {
+		log.Printf("[TVBox] 豆瓣条目详情: %s", doubanID)
+
+	// 1. 先用 douban_id 精确匹配资源网数据
+	items, _ := h.Repos.VodItem.SearchByDoubanID(doubanID)
+	if len(items) > 0 {
+		for _, item := range items {
+			if _, playURL := h.formatTVBoxPlayUrl(item.VodPlayUrl); playURL != "" {
+				vod := h.tvboxBuildVod(item.SourceKey+":"+item.VodId, &item)
+				c.JSON(http.StatusOK, gin.H{
+					"code": 1, "msg": "数据列表", "page": 1, "pagecount": 1, "limit": "20", "total": 1,
+					"list": []gin.H{vod},
+				})
+				return
+			}
+		}
+	}
+
+	// 2. 用标题模糊搜索
+	movie, _ := h.Repos.Movie.FindByDoubanID(doubanID)
+	if movie != nil {
+		items, _ = h.Repos.VodItem.Search(movie.Title)
+		for _, item := range items {
+			if _, playURL := h.formatTVBoxPlayUrl(item.VodPlayUrl); playURL != "" {
+				vod := h.tvboxBuildVod(item.SourceKey+":"+item.VodId, &item)
+				c.JSON(http.StatusOK, gin.H{
+					"code": 1, "msg": "数据列表", "page": 1, "pagecount": 1, "limit": "20", "total": 1,
+					"list": []gin.H{vod},
+				})
+				return
+			}
+		}
+	}
+
+	log.Printf("[TVBox] 豆瓣 %s 未找到可播放资源", doubanID)
+	c.JSON(http.StatusOK, gin.H{"code": 1, "msg": "未找到播放源", "list": []gin.H{}})
+}
+
+// formatTVBoxPlayUrl 将内部播放链接格式转为 TVBox 格式
+// 内部格式: Source1$url1#url2$$$Source2$url3#url4
+// TVBox 需要 vod_play_from: "源1$$$源2"  vod_play_url: "集1$url1#集2$url2$$$集1$url3"
+func (h *Handler) formatTVBoxPlayUrl(rawPlayURL string) (string, string) {
+	sources := utils.ParsePlayUrl(rawPlayURL)
+	if len(sources) == 0 {
+		return "", ""
+	}
+
+	var names []string
+	var urls []string
+
+	for _, src := range sources {
+		name := src.Name
+		if name == "" {
+			name = "默认源"
+		}
+		names = append(names, name)
+
+		var eps []string
+		for _, ep := range src.Episodes {
+			eps = append(eps, ep.Title+"$"+ep.URL)
+		}
+		urls = append(urls, strings.Join(eps, "#"))
+	}
+
+	return strings.Join(names, "$$$"), strings.Join(urls, "$$$")
+}
+
+// 固定分类（精确匹配数据库中的 type_name）
+var tvboxCategories = []gin.H{
+	{"type_id": 1, "type_name": "电影"},
+	{"type_id": 2, "type_name": "电视剧"},
+	{"type_id": 3, "type_name": "综艺"},
+	{"type_id": 4, "type_name": "动漫"},
+}
+
+var tvboxTypeIDMap = map[int]string{
+	1: "电影",
+	2: "电视剧",
+	3: "综艺",
+	4: "动漫",
+}
+
+// tvboxTypeNameToID 类型名转 ID
+func tvboxTypeNameToID(typeName string) int {
+	switch typeName {
+	case "电影":
+		return 1
+	case "电视剧":
+		return 2
+	case "综艺":
+		return 3
+	case "动漫":
+		return 4
+	default:
+		return 0
+	}
+}
+
+// tvboxTypeIDToDoubanType 分类 ID 映射到豆瓣 API 类型
+var tvboxTypeIDToDoubanType = map[int]string{
+	1: "movie",
+	2: "tv",
+	3: "show",
+	4: "cartoon",
+}
+
+// tvboxDoubanToVod 将豆瓣热门条目转为 TVBox vod map，补全图片代理的绝对路径
+func (h *Handler) tvboxDoubanToVod(c *gin.Context, subject service.DoubanPopularSubject) gin.H {
+	scheme := "http"
+	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+
+	pic := subject.Cover
+	if strings.HasPrefix(pic, "/") {
+		pic = baseURL + pic
+	}
+
+	return gin.H{
+		"vod_id":        "douban:" + subject.ID,
+		"type_id":       0,
+		"type_name":     "",
+		"vod_name":      subject.Title,
+		"vod_pic":       pic,
+		"vod_lang":      "",
+		"vod_area":      "",
+		"vod_year":      "",
+		"vod_remarks":   subject.EpisodesInfo,
+		"vod_actor":     "",
+		"vod_director":  "",
+		"vod_content":   "",
+		"vod_blurb":     "",
+		"vod_tag":       "",
+		"vod_time":      "",
+		"vod_play_from": "",
+		"vod_play_url":  "",
+	}
+}
+
+// tvboxHome 首屏初始化（无参数请求）
+func (h *Handler) tvboxHome(c *gin.Context, page int) {
+	// 首屏默认展示豆瓣热门电影
+	subjects, err := h.DoubanCrawler.GetPopularSubjects("movie")
+	if err != nil {
+		log.Printf("[TVBox] 豆瓣热门获取失败: %v", err)
+	}
+
+	list := make([]gin.H, 0, len(subjects))
+	for _, s := range subjects {
+		list = append(list, h.tvboxDoubanToVod(c, s))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":      1,
+		"msg":       "数据列表",
+		"page":      1,
+		"pagecount": 1,
+		"limit":     "20",
+		"total":     len(list),
+		"list":      list,
+		"class":     tvboxCategories,
+	})
+}
+
+// tvboxCategory 按分类浏览（豆瓣热搜）
+func (h *Handler) tvboxCategory(c *gin.Context, typeIDStr string, page int) {
+	typeID, _ := strconv.Atoi(typeIDStr)
+	doubanType := tvboxTypeIDToDoubanType[typeID]
+
+	if doubanType == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code": 1, "msg": "数据列表", "page": 1, "pagecount": 1, "limit": "20", "total": 0, "list": []gin.H{},
+		})
+		return
+	}
+
+	subjects, err := h.DoubanCrawler.GetPopularSubjects(doubanType)
+	if err != nil {
+		log.Printf("[TVBox] 豆瓣分类获取失败 (%s): %v", doubanType, err)
+	}
+
+	list := make([]gin.H, 0, len(subjects))
+	for _, s := range subjects {
+		list = append(list, h.tvboxDoubanToVod(c, s))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":      1,
+		"msg":       "数据列表",
+		"page":      1,
+		"pagecount": 1,
+		"limit":     "20",
+		"total":     len(list),
+		"list":      list,
 	})
 }
 

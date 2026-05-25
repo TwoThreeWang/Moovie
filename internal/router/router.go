@@ -27,6 +27,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	r.GET("/player", h.Player)         // M3U8 播放器
 	r.GET("/trends", h.Trends)         // 搜索趋势
 	r.GET("/feedback", h.FeedbackPage) // 反馈页
+	r.GET("/tvbox", h.TVBoxGuide)      // TVBox 配置指南
 	r.GET("/about", h.About)           // 关于页
 	r.GET("/advertise", h.Advertise)   // 广告合作
 	r.GET("/changelog", h.Changelog)   // 更新记录页
@@ -71,6 +72,13 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		dashboard.POST("/settings/email", h.UpdateEmail)       // 更新邮箱
 		dashboard.POST("/settings/username", h.UpdateUsername) // 更新用户名
 		dashboard.POST("/settings/password", h.UpdatePassword) // 更新密码
+	}
+
+	// ==================== TVBox 公开接口（无需认证）====================
+	tvboxAPI := r.Group("/api")
+	{
+		tvboxAPI.GET("/tvbox.json", h.TVBoxConfig) // TVBox 配置文件
+		tvboxAPI.GET("/vod", h.TVBoxVodAPI)         // TVBox 数据接口
 	}
 
 	// ==================== htmx API ====================
@@ -273,7 +281,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 	pages := []string{
 		"home", "search", "movie", "play", "player", "player_embed",
 		"discover", "trends", "foryou", "feedback",
-		"about", "advertise", "changelog", "dmca", "privacy", "terms", "404",
+		"about", "advertise", "changelog", "dmca", "privacy", "terms", "tvbox", "404",
 		"login", "register", "recommendations",
 		"dashboard", "settings", "fetching",
 		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright", "admin_category",
