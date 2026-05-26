@@ -6,7 +6,7 @@
         {{/* 左：海报 */}}
         <div class="dbc-poster">
             <img
-                src="{{ if contains .Poster "tmdb" }}{{ .Poster }}{{ else }}/api/proxy/image?url={{ .Poster }}{{ end }}"
+                src="{{ proxyImg .Poster }}"
                 alt="{{ .Title }}"
                 loading="lazy"
                 onerror="this.onerror=null;this.src='/static/img/placeholder.svg'"

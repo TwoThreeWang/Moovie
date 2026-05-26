@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"encoding/base64"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -118,4 +120,44 @@ func ParsePlayUrl(playUrl string) []PlaySource {
 	}
 
 	return sources
+}
+
+// EncodeProxyImageURL 将图片原始 URL 转成带有 r76RqSIVvUryzx 前缀的 base64 路径参数形式
+func EncodeProxyImageURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(rawURL))
+	return "/api/proxy/image/r76RqSIVvUryzx" + encoded
+}
+
+// DecodeProxyImageURL 解析 url 参数值，去除 r76RqSIVvUryzx 前缀并做 base64 解码
+func DecodeProxyImageURL(proxyParam string) (string, error) {
+	prefix := "r76RqSIVvUryzx"
+	if !strings.HasPrefix(proxyParam, prefix) {
+		return "", fmt.Errorf("invalid proxy prefix")
+	}
+	encoded := proxyParam[len(prefix):]
+
+	var decoded []byte
+	var err error
+
+	// 尝试 RawURLEncoding
+	if decoded, err = base64.RawURLEncoding.DecodeString(encoded); err == nil {
+		return string(decoded), nil
+	}
+	// 尝试 URLEncoding
+	if decoded, err = base64.URLEncoding.DecodeString(encoded); err == nil {
+		return string(decoded), nil
+	}
+	// 尝试 RawStdEncoding
+	if decoded, err = base64.RawStdEncoding.DecodeString(encoded); err == nil {
+		return string(decoded), nil
+	}
+	// 尝试 StdEncoding
+	if decoded, err = base64.StdEncoding.DecodeString(encoded); err == nil {
+		return string(decoded), nil
+	}
+
+	return "", fmt.Errorf("failed to decode base64: %v", err)
 }

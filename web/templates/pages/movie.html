@@ -34,7 +34,7 @@
     <div class="movie-header">
         <!-- 海报 -->
         <div class="movie-poster-col">
-            <img src="{{ if contains .Movie.Poster "tmdb" }}/api/proxy/image?url={{ .Movie.Poster }}{{ else }}/api/proxy/image?url={{ .Movie.Poster }}{{ end }}" alt="{{ .Movie.Title }}" class="movie-poster-img" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            <img src="{{ proxyImg .Movie.Poster }}" alt="{{ .Movie.Title }}" class="movie-poster-img" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
         </div>
 
         <!-- 信息列 -->
@@ -199,7 +199,7 @@
             {{ range .SimilarMovies }}
             <a href="/movie/{{ .DoubanID }}" class="similar-movie-card">
                 <div class="similar-movie-poster">
-                    <img src="{{ if contains .Poster "tmdb" }}{{ .Poster }}{{ else }}/api/proxy/image?url={{ .Poster }}{{ end }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                     {{ if .Rating }}
                     <span class="similar-movie-rating">{{ .Rating }}</span>
                     {{ end }}

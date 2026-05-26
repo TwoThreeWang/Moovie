@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -467,9 +468,22 @@ func (h *Handler) MovieSuggest(c *gin.Context) {
 
 // ProxyImage 豆瓣图片代理
 func (h *Handler) ProxyImage(c *gin.Context) {
-	targetURL := c.Query("url")
-	if targetURL == "" {
-		utils.BadRequest(c, "URL 不能为空")
+	// 1. Referer 验证 (防盗链)
+	referer := c.GetHeader("Referer")
+	if referer != "" {
+		if parsedSite, err := url.Parse(h.Config.SiteUrl); err == nil {
+			siteHost := parsedSite.Host
+			if !strings.Contains(referer, siteHost) && !strings.Contains(referer, "localhost") && !strings.Contains(referer, "127.0.0.1") {
+				c.Status(http.StatusForbidden)
+				return
+			}
+		}
+	}
+
+	// 2. 获取参数并解码
+	targetURL, err := utils.DecodeProxyImageURL(c.Param("url"))
+	if err != nil {
+		utils.BadRequest(c, "非法的图片代理链接")
 		return
 	}
 

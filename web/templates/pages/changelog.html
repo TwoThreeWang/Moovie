@@ -4,6 +4,37 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v3.2.10 -->
+    <section class="changelog-item">
+      <div class="version-badge">v3.2.10 <small>2026-05-26</small></div>
+      <div class="changelog-details">
+        <h3>✨ 新增 (Added)</h3>
+        <ul>
+          <li>
+            <strong>Base64 安全前缀代理</strong>：图片代理支持将图片原始 URL 编码为安全格式，隐藏上游豆瓣等敏感源站 URL，降低图片加载被拦截风险。
+          </li>
+          <li>
+            <strong>Referer 防盗链验证</strong>：后端图片代理路由新增 <code>Referer</code> 安全验证。非白名单及本站发起的图片请求一律拦截并返回 403，保护服务器流量，同时本地调试支持自动放行。
+          </li>
+        </ul>
+        <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+        <ul>
+          <li>
+            <strong>RESTful 路径参数重构</strong>：将图片代理地址由 <code>/api/proxy/image?url=</code> 重构为 <code>/api/proxy/image/:url</code> 路径参数形式，提供极其卓越的 CDN 缓存和边缘加速支持，降低源站穿透率。
+          </li>
+          <li>
+            <strong>全局模板函数与前端简化</strong>：注册 <code>proxyImg</code> 全局模板函数，将前端十余处原有的繁冗条件分支统一简化重构成单行，并无缝适配搜索栏下拉图及剧照大图预览组件。
+          </li>
+          <li>
+            <strong>爬虫抓取防御</strong>：在动态 <code>robots.txt</code> 服务中新增显式 <code>Disallow: /api/proxy/image/</code> 规则，强力限制各大搜索引擎抓取。
+          </li>
+          <li>
+            <strong>代码整洁优化</strong>：利用 Gin 框架路由特性，精简了 <code>ProxyImage</code> 处理器中冗余的空参数校验逻辑。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v3.2.9 -->
     <section class="changelog-item">
       <div class="version-badge">v3.2.9 <small>2026-05-25</small></div>

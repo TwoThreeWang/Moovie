@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/user/moovie/internal/handler"
 	"github.com/user/moovie/internal/middleware"
+	"github.com/user/moovie/internal/utils"
 )
 
 // RegisterRoutes 注册所有路由
@@ -93,7 +94,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.DELETE("/history/:id", h.RemoveHistory)                                     // 删除历史记录
 		api.POST("/history/sync", h.SyncHistory)                                        // 同步历史记录
 		api.GET("/movies/suggest", h.MovieSuggest)                                      // 电影建议
-		api.GET("/proxy/image", h.ProxyImage)                                           // 图片代理
+		api.GET("/proxy/image/:url", h.ProxyImage)                                           // 图片代理
 		api.GET("/htmx/similar-with-reason/:douban_id", h.SimilarMoviesWithReasonsHTMX) // 相似电影推荐（带原因）
 
 		// htmx 专属 API
@@ -192,6 +193,18 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 
 	// 模板函数
 	funcMap := template.FuncMap{
+		"proxyImg": func(u string) string {
+			if u == "" {
+				return ""
+			}
+			if strings.HasPrefix(u, "/api/proxy/image") {
+				return u
+			}
+			if strings.Contains(u, "tmdb") {
+				return u
+			}
+			return utils.EncodeProxyImageURL(u)
+		},
 		"dict": func(values ...interface{}) (map[string]interface{}, error) {
 			if len(values)%2 != 0 {
 				return nil, fmt.Errorf("invalid dict call")

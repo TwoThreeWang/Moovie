@@ -310,7 +310,7 @@ func (h *Handler) Movie(c *gin.Context) {
 		"Title":         "《" + movie.Title + "》 (" + movie.Year + ") - 剧情介绍/演职员表 - " + h.Config.SiteName,
 		"Description":   desc,
 		"Keywords":      strings.Join(keywords, ","),
-		"Cover":         "/api/proxy/image?url=" + movie.Poster,
+		"Cover":         utils.EncodeProxyImageURL(movie.Poster),
 		"Canonical":     fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
 		"Movie":         movie,
 		"IsWish":        isWish,
@@ -716,6 +716,7 @@ func (h *Handler) Robots(c *gin.Context) {
 	sb.WriteString("Disallow: /admin/\n")
 	sb.WriteString("Disallow: /auth/\n")
 	sb.WriteString("Disallow: /dashboard/\n")
+	sb.WriteString("Disallow: /api/proxy/image/\n")
 	sb.WriteString("Disallow: /api/\n")
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Sitemap: %s/sitemap.xml\n", baseUrl))

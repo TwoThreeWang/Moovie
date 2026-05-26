@@ -294,9 +294,20 @@ function renderSuggestions(suggestions) {
         // 构建搜索链接
         const searchUrl = `/search?kw=${encodeURIComponent(item.title || '')}&doubanId=${encodeURIComponent(item.id)}`;
 
+        let imgSrc = '/static/img/placeholder.svg';
+        if (item.img) {
+            if (item.img.startsWith('/api/proxy/image')) {
+                imgSrc = item.img;
+            } else if (item.img.includes('tmdb')) {
+                imgSrc = item.img;
+            } else {
+                imgSrc = '/api/proxy/image/r76RqSIVvUryzx' + btoa(item.img);
+            }
+        }
+
         return `
             <a href="${searchUrl}" class="search-suggestion-item" data-index="${index}">
-                <img src="${item.img ? '/api/proxy/image?url=' + item.img : '/static/img/placeholder.svg'}"
+                <img src="${imgSrc}"
                      alt="${item.title || ''}"
                      class="suggestion-poster"
                      onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
