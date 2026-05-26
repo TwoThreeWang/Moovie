@@ -200,9 +200,6 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 			if strings.HasPrefix(u, "/api/proxy/image") {
 				return u
 			}
-			if strings.Contains(u, "tmdb") {
-				return u
-			}
 			return utils.EncodeProxyImageURL(u)
 		},
 		"dict": func(values ...interface{}) (map[string]interface{}, error) {

@@ -298,8 +298,6 @@ function renderSuggestions(suggestions) {
         if (item.img) {
             if (item.img.startsWith('/api/proxy/image')) {
                 imgSrc = item.img;
-            } else if (item.img.includes('tmdb')) {
-                imgSrc = item.img;
             } else {
                 imgSrc = '/api/proxy/image/r76RqSIVvUryzx' + btoa(item.img);
             }
