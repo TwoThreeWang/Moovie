@@ -568,30 +568,36 @@ func (c *DoubanCrawler) EnrichMovieWithVector(movie *model.Movie) error {
 	)
 
 	if c.config.CFGatewayURL != "" && c.config.CFAPIToken != "" {
-		// 优先使用 Cloudflare AI Gateway
-		semanticContent, err := utils.GenerateCloudflareAISummary(c.config.CFGatewayURL, c.config.CFAPIToken, c.config.CFAIModel, prompt)
-		if err != nil {
-			log.Printf("[DoubanCrawler] Cloudflare AI 生成语义描述失败，尝试切换到 Gemini: %v", err)
-			// 只有 Cloudflare 失败时才尝试 Gemini
-			if c.config.GeminiKey != "" {
-				semanticContent, err = utils.GenerateGeminiSummary(c.config.GeminiKey, c.config.GeminiModel, prompt)
-				if err != nil {
-					log.Printf("[DoubanCrawler] Gemini 生成语义描述也失败，使用备用方案: %v", err)
-				} else {
-					rawContent = semanticContent
-				}
+		// 使用 Cloudflare AI Gateway，失败重试3次
+		retryDelays := []time.Duration{3 * time.Second, 5 * time.Second, 8 * time.Second}
+		var err error
+		var semanticContent string
+
+		for i := 0; i <= len(retryDelays); i++ {
+			semanticContent, err = utils.GenerateCloudflareAISummary(c.config.CFGatewayURL, c.config.CFAPIToken, c.config.CFAIModel, prompt)
+			if err == nil {
+				rawContent = semanticContent
+				break
 			}
-		} else {
-			rawContent = semanticContent
+
+			if i < len(retryDelays) {
+				log.Printf("[DoubanCrawler] Cloudflare AI 生成语义描述失败 (第%d次)，%v后重试: %v", i+1, retryDelays[i], err)
+				time.Sleep(retryDelays[i])
+			} else {
+				log.Printf("[DoubanCrawler] Cloudflare AI 生成语义描述最终失败，使用备用方案: %v", err)
+			}
 		}
 	} else if c.config.GeminiKey != "" {
-		// 如果没有配置 Cloudflare，直接使用 Gemini
-		semanticContent, err := utils.GenerateGeminiSummary(c.config.GeminiKey, c.config.GeminiModel, prompt)
-		if err != nil {
-			log.Printf("[DoubanCrawler] Gemini 生成语义描述失败，使用备用方案: %v", err)
-		} else {
-			rawContent = semanticContent
-		}
+		// 已禁用：不再使用 Gemini fallback
+		// if c.config.GeminiKey != "" {
+		// 	semanticContent, err := utils.GenerateGeminiSummary(c.config.GeminiKey, c.config.GeminiModel, prompt)
+		// 	if err != nil {
+		// 		log.Printf("[DoubanCrawler] Gemini 生成语义描述失败，使用备用方案: %v", err)
+		// 	} else {
+		// 		rawContent = semanticContent
+		// 	}
+		// }
+		log.Printf("[DoubanCrawler] Cloudflare AI 未配置，且 Gemini 已停用，使用备用方案")
 	}
 
 	// 截断过长文本（保留前1000个字符）
