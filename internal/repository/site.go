@@ -32,9 +32,21 @@ func (r *SiteRepository) Update(site *model.Site) error {
 	return r.db.Save(site).Error
 }
 
-// Delete 物理删除站点
+// Delete 物理删除站点，并级联删除其所有 VodItem 数据
 func (r *SiteRepository) Delete(id uint) error {
-	return r.db.Delete(&model.Site{}, id).Error
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var key string
+		if err := tx.Model(&model.Site{}).Select("key").Where("id = ?", id).Scan(&key).Error; err != nil {
+			return err
+		}
+		if key == "" {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Where("source_key = ?", key).Delete(&model.VodItem{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.Site{}, id).Error
+	})
 }
 
 // FindByKey 根据Key查找站点
