@@ -103,9 +103,10 @@ async function doSync() {
         const lastSyncAt = parseInt(localStorage.getItem(SYNC_KEY) || '0');
         const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
 
-        // 找出需要同步的新记录 (watchedAt/updatedAt > lastSyncAt)
+        // 找出需要同步的新记录 (watchedAt/updatedAt > lastSyncAt)，排除 IPTV
         const newRecords = Object.values(data).filter(h =>
-            (h.watchedAt || h.updatedAt || 0) > lastSyncAt
+            (h.watchedAt || h.updatedAt || 0) > lastSyncAt &&
+            (h.source_key || h.source || '') !== 'iptv'
         ).map(h => ({
             douban_id: h.douban_id || h.doubanId || '',
             vod_id: h.vod_id || h.vodId || '',

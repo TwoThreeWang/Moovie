@@ -40,6 +40,7 @@ var Storage = {
         }
     },
     upsert: function(item) {
+        if (item && (item.source_key === 'iptv' || item.source === 'iptv' || item.sourceKey === 'iptv')) return;
         var data = this.get();
         data[item.id] = item;
         // 裁剪：保留最近 maxItems 条，防止 localStorage 无限增长
@@ -292,7 +293,7 @@ function initPlayer(containerId, url, options) {
         title: options.title || '',
         poster: options.poster || '',
         volume: 1,
-        isLive: false,
+        isLive: options.isLive || false,
         muted: false,
         autoplay: true,
         autoSize: false,
@@ -512,8 +513,8 @@ function initPlayer(containerId, url, options) {
         });
 
         art.on('video:timeupdate', () => {
-            // “手动播放”不需要记录历史也不需要同步服务器
-            if (options.title === '手动播放') return;
+            // “手动播放”或 iptv 不需要记录历史也不需要同步服务器
+            if (options.title === '手动播放' || options.sourceKey === 'iptv') return;
 
             // 每隔 3 秒本地保存一次
             if (Math.floor(art.currentTime) % 3 === 0) {

@@ -26,6 +26,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	r.GET("/", h.Home)                 // 首页
 	r.GET("/search", h.Search)         // 搜索页面
 	r.GET("/player", h.Player)         // M3U8 播放器
+	r.GET("/iptv", h.IPTV)             // IPTV 直播
 	r.GET("/trends", h.Trends)         // 搜索趋势
 	r.GET("/feedback", h.FeedbackPage) // 反馈页
 	r.GET("/tvbox", h.TVBoxGuide)      // TVBox 配置指南
@@ -79,7 +80,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	tvboxAPI := r.Group("/api")
 	{
 		tvboxAPI.GET("/tvbox.json", h.TVBoxConfig) // TVBox 配置文件
-		tvboxAPI.GET("/vod", h.TVBoxVodAPI)         // TVBox 数据接口
+		tvboxAPI.GET("/vod", h.TVBoxVodAPI)        // TVBox 数据接口
 	}
 
 	// ==================== htmx API ====================
@@ -94,7 +95,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.DELETE("/history/:id", h.RemoveHistory)                                     // 删除历史记录
 		api.POST("/history/sync", h.SyncHistory)                                        // 同步历史记录
 		api.GET("/movies/suggest", h.MovieSuggest)                                      // 电影建议
-		api.GET("/proxy/image/:url", h.ProxyImage)                                           // 图片代理
+		api.GET("/proxy/image/:url", h.ProxyImage)                                      // 图片代理
 		api.GET("/htmx/similar-with-reason/:douban_id", h.SimilarMoviesWithReasonsHTMX) // 相似电影推荐（带原因）
 
 		// htmx 专属 API
@@ -289,7 +290,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 
 	// 注册所有页面模板
 	pages := []string{
-		"home", "search", "movie", "play", "player", "player_embed",
+		"home", "search", "movie", "play", "player", "player_embed", "iptv",
 		"discover", "trends", "foryou", "feedback",
 		"about", "advertise", "changelog", "dmca", "privacy", "terms", "tvbox", "404",
 		"login", "register", "recommendations",

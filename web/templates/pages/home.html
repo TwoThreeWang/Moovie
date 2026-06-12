@@ -104,7 +104,7 @@
 
         const playState = getPlayState();
         const history = Object.values(playState)
-            .filter(item => item.title)
+            .filter(item => item.title && item.source_key !== 'iptv')
             .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
         if (history.length === 0) {

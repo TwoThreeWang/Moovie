@@ -142,6 +142,8 @@ func (h *Handler) getActiveMenu(c *gin.Context) string {
 		return "foryou"
 	case "/player":
 		return "player"
+	case "/iptv":
+		return "iptv"
 	case "/feedback":
 		return "feedback"
 	case "/about":
@@ -421,6 +423,16 @@ func (h *Handler) Play(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "play.html", h.RenderData(c, renderData))
+}
+
+// IPTV IPTV电视直播页面
+func (h *Handler) IPTV(c *gin.Context) {
+	c.HTML(http.StatusOK, "iptv.html", h.RenderData(c, gin.H{
+		"Title":        fmt.Sprintf("IPTV电视直播 - 全国卫视央视在线观看 - %s", h.Config.SiteName),
+		"Description":  fmt.Sprintf("%s 提供的免费 IPTV 电视直播播放器。支持导入 M3U 直播源，观看央视、卫视等频道。", h.Config.SiteName),
+		"Keywords":     fmt.Sprintf("IPTV,电视直播,央视,卫视,在线观看,%s", h.Config.SiteName),
+		"ContentClass": "full-width",
+	}))
 }
 
 // Player 播放器页面
