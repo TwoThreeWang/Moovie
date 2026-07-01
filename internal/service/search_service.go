@@ -245,6 +245,29 @@ func (s *SearchService) fetchAndSave(ctx context.Context, keyword string) ([]mod
 	return items, nil
 }
 
+// matchCopyrightKeyword 检查名称是否包含版权关键词（大小写不敏感）
+func matchCopyrightKeyword(name string, keywords []string) (bool, string) {
+	lowerName := strings.ToLower(name)
+	for _, kw := range keywords {
+		if strings.TrimSpace(kw) == "" {
+			continue
+		}
+		if strings.Contains(lowerName, strings.ToLower(kw)) {
+			return true, kw
+		}
+	}
+	return false, ""
+}
+
+// IsCopyrightRestricted 检查单个视频名称是否命中版权关键词
+func (s *SearchService) IsCopyrightRestricted(vodName string) (bool, string) {
+	keywords, err := s.copyrightRepo.GetAllKeywords()
+	if err != nil || len(keywords) == 0 {
+		return false, ""
+	}
+	return matchCopyrightKeyword(vodName, keywords)
+}
+
 // filterCopyrightContent 过滤版权限制内容，返回过滤后的列表和被过滤的数量
 func (s *SearchService) filterCopyrightContent(items []model.VodItem) ([]model.VodItem, int) {
 	// 获取版权关键词列表
@@ -256,13 +279,7 @@ func (s *SearchService) filterCopyrightContent(items []model.VodItem) ([]model.V
 	// 过滤包含版权关键词的内容
 	filtered := make([]model.VodItem, 0, len(items))
 	for _, item := range items {
-		blocked := false
-		for _, kw := range keywords {
-			if strings.Contains(strings.ToLower(item.VodName), strings.ToLower(kw)) {
-				blocked = true
-				break
-			}
-		}
+		blocked, _ := matchCopyrightKeyword(item.VodName, keywords)
 		if !blocked {
 			filtered = append(filtered, item)
 		}

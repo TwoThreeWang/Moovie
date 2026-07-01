@@ -389,6 +389,12 @@ func (h *Handler) Play(c *gin.Context) {
 		h.DoubanCrawler.CrawlMovieSafeAsync(doubanID)
 	}
 
+	// 版权限制拦截
+	if blocked, _ := h.SearchService.IsCopyrightRestricted(detail.VodName); blocked {
+		c.Redirect(http.StatusFound, "/copyright-restricted?title="+url.QueryEscape(detail.VodName))
+		return
+	}
+
 	// 动态生成标题
 	pageTitle := "《" + detail.VodName + "》"
 	if episode != "" {
@@ -423,6 +429,14 @@ func (h *Handler) Play(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "play.html", h.RenderData(c, renderData))
+}
+
+// CopyrightRestricted 版权限制提示页
+func (h *Handler) CopyrightRestricted(c *gin.Context) {
+	c.HTML(http.StatusOK, "copyright_restricted.html", h.RenderData(c, gin.H{
+		"Title":      "版权限制 - " + h.Config.SiteName,
+		"MovieTitle": c.Query("title"),
+	}))
 }
 
 // IPTV IPTV电视直播页面

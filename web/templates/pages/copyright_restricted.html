@@ -1,0 +1,10 @@
+{{ define "content" }}
+<div class="empty-state" style="padding: 5rem 1rem; max-width: 720px; margin: 0 auto;">
+    <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">版权限制</h1>
+    {{ if .MovieTitle }}
+    <p style="margin-bottom: 0.5rem;">《{{ .MovieTitle }}》暂时无法播放</p>
+    {{ end }}
+    <p>该影片因版权限制暂时无法播放。</p>
+    <a href="/" class="btn btn-primary" style="margin-top: 1.5rem;">返回首页</a>
+</div>
+{{ end }}

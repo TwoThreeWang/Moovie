@@ -23,21 +23,22 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	})
 
 	// ==================== 公开页面 ====================
-	r.GET("/", h.Home)                 // 首页
-	r.GET("/search", h.Search)         // 搜索页面
-	r.GET("/player", h.Player)         // M3U8 播放器
-	r.GET("/iptv", h.IPTV)             // IPTV 直播
-	r.GET("/trends", h.Trends)         // 搜索趋势
-	r.GET("/feedback", h.FeedbackPage) // 反馈页
-	r.GET("/tvbox", h.TVBoxGuide)      // TVBox 配置指南
-	r.GET("/about", h.About)           // 关于页
-	r.GET("/advertise", h.Advertise)   // 广告合作
-	r.GET("/changelog", h.Changelog)   // 更新记录页
-	r.GET("/dmca", h.DMCA)             // DMCA页
-	r.GET("/privacy", h.Privacy)       // 隐私政策
-	r.GET("/terms", h.Terms)           // 使用条款
-	r.GET("/sitemap.xml", h.Sitemap)   // 网站地图
-	r.GET("/robots.txt", h.Robots)     // Robots.txt
+	r.GET("/", h.Home)                                    // 首页
+	r.GET("/search", h.Search)                            // 搜索页面
+	r.GET("/player", h.Player)                            // M3U8 播放器
+	r.GET("/iptv", h.IPTV)                                // IPTV 直播
+	r.GET("/trends", h.Trends)                            // 搜索趋势
+	r.GET("/feedback", h.FeedbackPage)                    // 反馈页
+	r.GET("/tvbox", h.TVBoxGuide)                         // TVBox 配置指南
+	r.GET("/about", h.About)                              // 关于页
+	r.GET("/advertise", h.Advertise)                      // 广告合作
+	r.GET("/changelog", h.Changelog)                      // 更新记录页
+	r.GET("/dmca", h.DMCA)                                // DMCA页
+	r.GET("/copyright-restricted", h.CopyrightRestricted) // 版权限制页
+	r.GET("/privacy", h.Privacy)                          // 隐私政策
+	r.GET("/terms", h.Terms)                              // 使用条款
+	r.GET("/sitemap.xml", h.Sitemap)                      // 网站地图
+	r.GET("/robots.txt", h.Robots)                        // Robots.txt
 	r.GET("/monoo-verify.txt", func(c *gin.Context) {
 		c.String(http.StatusOK, "monoo_verify_6ec090aa1f53018a12c8030087e10cc6")
 	}) // 验证文件
@@ -292,7 +293,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 	pages := []string{
 		"home", "search", "movie", "play", "player", "player_embed", "iptv",
 		"discover", "trends", "foryou", "feedback",
-		"about", "advertise", "changelog", "dmca", "privacy", "terms", "tvbox", "404",
+		"about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "tvbox", "404",
 		"login", "register", "recommendations",
 		"dashboard", "settings", "fetching",
 		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright", "admin_category",
