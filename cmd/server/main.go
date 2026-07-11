@@ -94,6 +94,11 @@ func main() {
 	// 初始化 Handler
 	h := handler.NewHandler(repos, cfg)
 
+	// 启动豆瓣同步调度器
+	doubanSyncScheduler := service.NewDoubanSyncScheduler(repos, h.DoubanSyncService)
+	doubanSyncScheduler.Start()
+	h.DoubanSyncScheduler = doubanSyncScheduler
+
 	// 启动定时清理任务
 	cleanupSvc := service.NewCleanupService(repos)
 	cleanupSvc.Start()
@@ -143,6 +148,7 @@ func main() {
 	// 等待所有后台任务安全退出
 	utils.Cache.Stop()
 	cleanupSvc.Stop()
+	doubanSyncScheduler.Stop()
 	utils.WaitAsync(10 * time.Second)
 
 	log.Println("服务器已退出")

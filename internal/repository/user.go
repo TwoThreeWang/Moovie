@@ -93,6 +93,11 @@ func (r *UserRepository) UpdatePassword(userID int, newPassword string) error {
 	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("password_hash", string(hash)).Error
 }
 
+// UpdateDoubanUserID 更新用户绑定的豆瓣用户 ID
+func (r *UserRepository) UpdateDoubanUserID(userID int, doubanUserID string) error {
+	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("douban_user_id", doubanUserID).Error
+}
+
 // ListAll 获取所有用户列表
 func (r *UserRepository) ListAll() ([]*model.User, error) {
 	var users []*model.User

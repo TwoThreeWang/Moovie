@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -34,6 +35,8 @@ type Handler struct {
 	Repos                 *repository.Repositories
 	Config                *config.Config
 	DoubanCrawler         *service.DoubanCrawler
+	DoubanSyncService     *service.DoubanSyncService
+	DoubanSyncScheduler   *service.DoubanSyncScheduler
 	TMDBService           *service.TMDBService
 	SearchService         *service.SearchService
 	RecommendationService *service.RecommendationService
@@ -44,6 +47,9 @@ type Handler struct {
 func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	// 创建爬虫服务
 	doubanCrawler := service.NewDoubanCrawler(repos.Movie, cfg)
+
+	// 创建豆瓣同步服务
+	doubanSyncService := service.NewDoubanSyncService(repos, doubanCrawler)
 
 	// 创建 TMDB 服务
 	tmdbService := service.NewTMDBService(repos.Movie, cfg)
@@ -64,6 +70,7 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 		Repos:                 repos,
 		Config:                cfg,
 		DoubanCrawler:         doubanCrawler,
+		DoubanSyncService:     doubanSyncService,
 		TMDBService:           tmdbService,
 		SearchService:         searchService,
 		RecommendationService: recommendationService,
@@ -963,10 +970,14 @@ func (h *Handler) Settings(c *gin.Context) {
 	// 获取 success 参数用于显示成功提示
 	success := c.Query("success")
 
+	// 获取豆瓣同步状态
+	syncJob, _ := h.Repos.DoubanSyncJob.GetLatestByUser(userID)
+
 	c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
-		"Title":   "账号设置 - " + h.Config.SiteName,
-		"User":    user,
-		"Success": success,
+		"Title":       "账号设置 - " + h.Config.SiteName,
+		"User":        user,
+		"Success":     success,
+		"DoubanJob":   syncJob,
 	}))
 }
 
@@ -1106,4 +1117,152 @@ func (h *Handler) UpdatePassword(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=password")
+}
+
+// extractDoubanUserID 从输入中提取豆瓣用户 ID（支持纯数字 ID 或个人主页链接）
+func extractDoubanUserID(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return ""
+	}
+
+	// 如果是纯数字直接返回
+	isAllDigits := true
+	for _, c := range input {
+		if c < '0' || c > '9' {
+			isAllDigits = false
+			break
+		}
+	}
+	if isAllDigits {
+		return input
+	}
+
+	// 从 URL 中提取 people/xxx 或 user/xxx
+	patterns := []string{
+		`(?:people|user)/(\d+)`,
+		`douban\.com/people/(\d+)`,
+		`douban\.com/user/(\d+)`,
+	}
+	for _, p := range patterns {
+		re := regexp.MustCompile(p)
+		if matches := re.FindStringSubmatch(input); len(matches) >= 2 {
+			return matches[1]
+		}
+	}
+
+	return ""
+}
+
+// BindDouban 绑定豆瓣账号
+func (h *Handler) BindDouban(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+
+	input := strings.TrimSpace(c.PostForm("douban_user_id"))
+	doubanUserID := extractDoubanUserID(input)
+	if doubanUserID == "" {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "请输入有效的豆瓣用户 ID 或主页链接",
+		}))
+		return
+	}
+
+	// 验证用户是否存在且公开
+	if err := h.DoubanSyncService.ValidateUser(c.Request.Context(), doubanUserID); err != nil {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "验证豆瓣账号失败: " + err.Error(),
+		}))
+		return
+	}
+
+	// 保存绑定
+	if err := h.Repos.User.UpdateDoubanUserID(userID, doubanUserID); err != nil {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "绑定失败，请稍后重试",
+		}))
+		return
+	}
+
+	// 立即创建全量同步任务并触发执行
+	if jobID, err := h.DoubanSyncScheduler.CreateFullSyncJob(userID); err != nil {
+		log.Printf("[BindDouban] 为用户 %d 创建全量同步任务失败: %v", userID, err)
+	} else {
+		h.DoubanSyncScheduler.ExecuteJobNow(jobID)
+	}
+
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=douban_bind")
+}
+
+// UnbindDouban 解绑豆瓣账号
+func (h *Handler) UnbindDouban(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	if err := h.Repos.User.UpdateDoubanUserID(userID, ""); err != nil {
+		user, _ := h.Repos.User.FindByID(userID)
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "解绑失败，请稍后重试",
+		}))
+		return
+	}
+
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=douban_unbind")
+}
+
+// SyncDouban 手动触发豆瓣同步
+func (h *Handler) SyncDouban(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+
+	if user.DoubanUserID == "" {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "请先绑定豆瓣账号",
+		}))
+		return
+	}
+
+	// 检查是否已有运行中的任务
+	hasRunning, _ := h.Repos.DoubanSyncJob.HasRunningJob(userID)
+	if hasRunning {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "已有同步任务正在运行",
+		}))
+		return
+	}
+
+	// 创建全量同步任务并触发执行
+	if jobID, err := h.DoubanSyncScheduler.CreateFullSyncJob(userID); err != nil {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"User":  user,
+			"Error": "创建同步任务失败",
+		}))
+		return
+	} else {
+		h.DoubanSyncScheduler.ExecuteJobNow(jobID)
+	}
+
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=douban_sync")
 }

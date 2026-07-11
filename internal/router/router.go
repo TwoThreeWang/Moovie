@@ -71,10 +71,13 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 	dashboard.Use(middleware.RequireAuth(h.Config.AppSecret))
 	{
 		dashboard.GET("", h.Dashboard)                         // 用户中心首页
-		dashboard.GET("/settings", h.Settings)                 // 设置
-		dashboard.POST("/settings/email", h.UpdateEmail)       // 更新邮箱
-		dashboard.POST("/settings/username", h.UpdateUsername) // 更新用户名
-		dashboard.POST("/settings/password", h.UpdatePassword) // 更新密码
+		dashboard.GET("/settings", h.Settings)                   // 设置
+		dashboard.POST("/settings/email", h.UpdateEmail)         // 更新邮箱
+		dashboard.POST("/settings/username", h.UpdateUsername)   // 更新用户名
+		dashboard.POST("/settings/password", h.UpdatePassword)   // 更新密码
+		dashboard.POST("/settings/douban/bind", h.BindDouban)    // 绑定豆瓣
+		dashboard.POST("/settings/douban/unbind", h.UnbindDouban) // 解绑豆瓣
+		dashboard.POST("/settings/douban/sync", h.SyncDouban)    // 手动同步豆瓣
 	}
 
 	// ==================== TVBox 公开接口（无需认证）====================
@@ -115,6 +118,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/dashboard/history", h.DashboardHistoryHTMX)               // 仪表盘历史
 		api.GET("/htmx/dashboard/feedback", h.DashboardFeedbackHTMX)             // 仪表盘我的反馈
 		api.GET("/htmx/douban-card", h.DoubanCardHTMX)                           // 搜索页豆瓣电影卡片
+		api.GET("/htmx/douban-sync-status", h.DoubanSyncStatusHTMX)              // 豆瓣同步状态
 		api.POST("/report/load-speed", h.ReportLoadSpeed)                        // 上报加载速度
 		api.GET("/stats/load-speed", h.GetLoadStats)                             // 获取加载统计
 	}

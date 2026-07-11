@@ -50,6 +50,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		&model.VodItem{},
 		&model.SearchLog{},
 		&model.TrendingKeyword{},
+		&model.DoubanSyncJob{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
@@ -104,8 +105,9 @@ type Repositories struct {
 	SearchLog       *SearchLogRepository
 	Site            *SiteRepository
 	VodItem         *VodItemRepository
-	CopyrightFilter *CopyrightFilterRepository
-	CategoryFilter  *CategoryFilterRepository
+	CopyrightFilter   *CopyrightFilterRepository
+	CategoryFilter    *CategoryFilterRepository
+	DoubanSyncJob     *DoubanSyncJobRepository
 }
 
 // NewRepositories 创建仓库集合
@@ -120,7 +122,8 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		SearchLog:       NewSearchLogRepository(db),
 		Site:            NewSiteRepository(db),
 		VodItem:         NewVodItemRepository(db),
-		CopyrightFilter: NewCopyrightFilterRepository(db),
-		CategoryFilter:  NewCategoryFilterRepository(db),
+		CopyrightFilter:   NewCopyrightFilterRepository(db),
+		CategoryFilter:    NewCategoryFilterRepository(db),
+		DoubanSyncJob:     NewDoubanSyncJobRepository(db),
 	}
 }

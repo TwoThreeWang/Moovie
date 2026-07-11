@@ -1467,3 +1467,29 @@ func splitTrimmed(s string) []string {
 	}
 	return result
 }
+
+// DoubanSyncStatusHTMX 豆瓣同步状态片段（用于 htmx 轮询）
+func (h *Handler) DoubanSyncStatusHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusOK, "")
+		return
+	}
+
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil {
+		c.String(http.StatusOK, "")
+		return
+	}
+
+	job, err := h.Repos.DoubanSyncJob.GetLatestByUser(userID)
+	if err != nil {
+		c.String(http.StatusOK, "")
+		return
+	}
+
+	c.HTML(http.StatusOK, "partials/douban_sync_status.html", gin.H{
+		"User":      user,
+		"DoubanJob": job,
+	})
+}

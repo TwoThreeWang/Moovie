@@ -6,6 +6,8 @@ Moovie 是一款基于 **Golang** 开发的聚合影视搜索工具。它通过�
 
 示例链接：[Moovie影牛 - 发现你的下一部电影](https://moovie.c2v2.com/)
 
+![Moovie_架构概览](Moovie_架构概览.png)
+
 ---
 
 ## 🚀 特性亮点

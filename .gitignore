@@ -40,3 +40,4 @@
 
 # Docker
 .docker/
+.env.online
