@@ -30,7 +30,7 @@
     </section>
 
     <!-- 广告横幅位：300x60 响应式居中换行 -->
-    <div class="ad-banner-row" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 12px;">
+    <div class="m-banner-row">
         <!-- <div class="ad-item" style="width: 300px; height: 60px; flex-shrink: 0; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden;">
             <a href="javascript:void(0);" style="display: block; width: 100%; height: 100%;">
                 <img src="https://zhulink.vip/img/6qkXwft.png" alt="广告占位" style="width: 100%; height: 100%; object-fit: cover;">
@@ -40,8 +40,28 @@
         <div data-monoo-slot="2"></div>
         <div data-monoo-slot="3"></div>
         <div data-monoo-slot="4"></div>
-
     </div>
+    <style>
+.m-banner-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.2rem;
+}
+
+/* 平板：一行2个 */
+@media (max-width: 1024px) {
+  .m-banner-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 手机：一行1个 */
+@media (max-width: 576px) {
+  .m-banner-row {
+    grid-template-columns: 1fr;
+  }
+}
+    </style>
     <script src="https://monoo.c2v2.com/loader.js?v=0.1" async></script>
     <!-- 视频信息区域 -->
     <section class="video-info-section">
