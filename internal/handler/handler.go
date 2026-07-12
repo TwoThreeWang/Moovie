@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -946,6 +947,9 @@ func (h *Handler) Dashboard(c *gin.Context) {
 	historyCount, _ := h.Repos.History.CountByUser(userID)
 	feedbackCount, _ := h.Repos.Feedback.CountByUserID(userID)
 
+	// 获取最新月度报告
+	monthlyReport, _ := h.Repos.MonthlyReport.GetLatestByUser(userID)
+
 	c.HTML(http.StatusOK, "dashboard.html", h.RenderData(c, gin.H{
 		"Title":         "用户中心 - " + h.Config.SiteName,
 		"User":          user,
@@ -953,6 +957,7 @@ func (h *Handler) Dashboard(c *gin.Context) {
 		"WatchedCount":  watchedCount,
 		"HistoryCount":  historyCount,
 		"FeedbackCount": feedbackCount,
+		"MonthlyReport": monthlyReport,
 	}))
 }
 
@@ -1117,6 +1122,115 @@ func (h *Handler) UpdatePassword(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=password")
+}
+
+// UpdateShareSetting 更新分享设置
+func (h *Handler) UpdateShareSetting(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	isPublic := c.PostForm("is_public") == "on"
+
+	if err := h.Repos.User.UpdateIsPublic(userID, isPublic); err != nil {
+		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+			"Title": "账号设置 - " + h.Config.SiteName,
+			"Error": "分享设置更新失败",
+		}))
+		return
+	}
+
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=share")
+}
+
+// PublicProfile 公开观影记录页
+func (h *Handler) PublicProfile(c *gin.Context) {
+	userIDStr := c.Param("user_id")
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil || userID <= 0 {
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title": "页面未找到 - " + h.Config.SiteName,
+		}))
+		return
+	}
+
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil {
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title": "页面未找到 - " + h.Config.SiteName,
+		}))
+		return
+	}
+
+	// 未开启分享时，对任何访问者都显示 404
+	if !user.IsPublic {
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title": "页面未找到 - " + h.Config.SiteName,
+		}))
+		return
+	}
+
+	wishList, _ := h.Repos.UserMovie.ListByUser(userID, "wish", 1000, 0)
+	watchedList, _ := h.Repos.UserMovie.ListByUser(userID, "watched", 1000, 0)
+	wishCount, _ := h.Repos.UserMovie.CountByUser(userID, "wish")
+	watchedCount, _ := h.Repos.UserMovie.CountByUser(userID, "watched")
+
+	c.HTML(http.StatusOK, "share.html", h.RenderData(c, gin.H{
+		"Title":         user.Username + " 的观影记录 - " + h.Config.SiteName,
+		"User":          user,
+		"WishList":      wishList,
+		"WatchedList":   watchedList,
+		"WishCount":     wishCount,
+		"WatchedCount":  watchedCount,
+		"Canonical":     fmt.Sprintf("%s/share/%d", h.Config.SiteUrl, user.ID),
+	}))
+}
+
+// PublicMonthly 公开月度小记页
+func (h *Handler) PublicMonthly(c *gin.Context) {
+	userIDStr := c.Param("user_id")
+	yearMonth := c.Param("year_month")
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil || userID <= 0 {
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title": "页面未找到 - " + h.Config.SiteName,
+		}))
+		return
+	}
+
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil || !user.IsPublic {
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title": "页面未找到 - " + h.Config.SiteName,
+		}))
+		return
+	}
+
+	report, err := h.Repos.MonthlyReport.GetByUserAndMonth(userID, yearMonth)
+	if err != nil {
+		log.Printf("[PublicMonthly] 查询月报失败 user=%d month=%s err=%v", userID, yearMonth, err)
+	}
+	if report == nil {
+		log.Printf("[PublicMonthly] 月报不存在 user=%d month=%s", userID, yearMonth)
+	}
+	if err != nil || report == nil {
+		c.HTML(http.StatusNotFound, "404.html", h.RenderData(c, gin.H{
+			"Title": "未找到报告 - " + h.Config.SiteName,
+		}))
+		return
+	}
+
+	// 解析类型统计
+	var genreStats []service.GenreStat
+	if report.GenreStats != "" {
+		_ = json.Unmarshal([]byte(report.GenreStats), &genreStats)
+	}
+
+	c.HTML(http.StatusOK, "share_monthly.html", h.RenderData(c, gin.H{
+		"Title":     user.Username + " " + yearMonth + " 月度观影小记 - " + h.Config.SiteName,
+		"User":      user,
+		"Report":    report,
+		"GenreStats": genreStats,
+		"Canonical": fmt.Sprintf("%s/share/%d/monthly/%s", h.Config.SiteUrl, user.ID, yearMonth),
+	}))
 }
 
 // extractDoubanUserID 从输入中提取豆瓣用户 ID（支持纯数字 ID 或个人主页链接）

@@ -4,6 +4,36 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v3.2.12 -->
+    <section class="changelog-item">
+      <div class="version-badge">v3.2.12 <small>2026-07-12</small></div>
+      <div class="changelog-details">
+        <h3>✨ 新增 (Added)</h3>
+        <ul>
+          <li>
+            <strong>豆瓣观影记录同步完整功能</strong>：新增豆瓣同步调度器与同步服务，支持定时自动同步和手动触发同步任务。添加用户绑定、解绑豆瓣账号的接口和页面逻辑，实现同步任务状态的 HTMX 轮询展示，新增豆瓣同步任务的数据库模型与存储逻辑。
+          </li>
+          <li>
+            <strong>播放页版权拦截及提示页面</strong>：重构版权关键词匹配逻辑为可复用函数，兼顾搜索结果过滤与播放页拦截，新增版权限制提示页面、对应路由及处理函数。
+          </li>
+          <li>
+            <strong>观影月报功能</strong>：新增月度报告服务，自动生成用户每月观影统计，包括观影数量、平均评分、本月最佳电影、连续观影天数、类型分布统计等；支持报告导出为图片。
+          </li>
+          <li>
+            <strong>公开分享功能</strong>：用户可在设置中开启观影记录公开分享，生成专属分享页面展示想看/已看列表；支持分享月度报告。
+          </li>
+        </ul>
+        <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+        <ul>
+          <li>
+            <strong>更新管理员版权关键词管理页帮助提示</strong>：补充播放页面拦截说明，优化用户体验。
+          </li>
+          <li>
+            <strong>用户模型扩展</strong>：新增公开分享开关、豆瓣用户ID等字段支持。
+          </li>
+        </ul>
+      </div>
+    </section>
     <!-- v3.2.11 -->
     <section class="changelog-item">
       <div class="version-badge">v3.2.11 <small>2026-06-12</small></div>

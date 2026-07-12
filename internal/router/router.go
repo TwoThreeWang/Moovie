@@ -53,7 +53,9 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		optional.GET("/discover/:type", h.Discover)                // 发现页
 		optional.GET("/foryou", h.ForYou)                          // 为你推荐
 		optional.GET("/recommend", h.ForYou)                       // 为你推荐
-		optional.GET("/similar/:douban_id", h.RecommendationsPage) // 相似电影推荐
+		optional.GET("/similar/:douban_id", h.RecommendationsPage)          // 相似电影推荐
+		optional.GET("/share/:user_id", h.PublicProfile)                   // 公开观影记录分享页
+		optional.GET("/share/:user_id/monthly/:year_month", h.PublicMonthly) // 公开月度小记
 	}
 
 	// ==================== 认证页面 ====================
@@ -73,8 +75,9 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		dashboard.GET("", h.Dashboard)                         // 用户中心首页
 		dashboard.GET("/settings", h.Settings)                   // 设置
 		dashboard.POST("/settings/email", h.UpdateEmail)         // 更新邮箱
-		dashboard.POST("/settings/username", h.UpdateUsername)   // 更新用户名
+		dashboard.POST("/settings/username", h.UpdateUsername)    // 更新用户名
 		dashboard.POST("/settings/password", h.UpdatePassword)   // 更新密码
+		dashboard.POST("/settings/share", h.UpdateShareSetting)  // 更新分享设置
 		dashboard.POST("/settings/douban/bind", h.BindDouban)    // 绑定豆瓣
 		dashboard.POST("/settings/douban/unbind", h.UnbindDouban) // 解绑豆瓣
 		dashboard.POST("/settings/douban/sync", h.SyncDouban)    // 手动同步豆瓣
@@ -299,7 +302,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 		"discover", "trends", "foryou", "feedback",
 		"about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "tvbox", "404",
 		"login", "register", "recommendations",
-		"dashboard", "settings", "fetching",
+		"dashboard", "settings", "share", "share_monthly", "fetching",
 		"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_feedback", "admin_copyright", "admin_category",
 	}
 

@@ -20,6 +20,9 @@
 # IDEs
 .vscode/
 .idea/
+.claude/
+.workbuddy/
+design/
 *.swp
 *.swo
 
@@ -41,3 +44,4 @@
 # Docker
 .docker/
 .env.online
+

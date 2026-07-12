@@ -17,6 +17,11 @@
             <p class="user-since">注册于 {{ .User.CreatedAt.Format "2006-01-02" }}</p>
         </div>
         <div class="user-actions">
+            {{ if .User.IsPublic }}
+            <a href="javascript:void(0)" class="action-link share-link" title="复制分享链接" onclick="copyDashboardShareLink('{{ .SiteUrl }}/share/{{ .User.ID }}')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+            </a>
+            {{ end }}
             <a href="/dashboard/settings" class="action-link settings-link" title="账号设置">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             </a>
@@ -52,6 +57,42 @@
             <span class="stat-label">条反馈</span>
         </div>
     </div>
+
+    <!-- 月度小记 -->
+    {{ if .MonthlyReport }}
+    <div class="monthly-card">
+        <div class="monthly-card-header">
+            <h3>观影月记</h3>
+            <span class="monthly-badge">{{ .MonthlyReport.YearMonth }}</span>
+        </div>
+        <div class="monthly-card-stats">
+            <div class="monthly-stat">
+                <span class="monthly-stat-num">{{ .MonthlyReport.WatchedCount }}</span>
+                <span class="monthly-stat-label">部看过</span>
+            </div>
+            <div class="monthly-stat">
+                <span class="monthly-stat-num">{{ .MonthlyReport.AvgRating }}</span>
+                <span class="monthly-stat-label">平均评分</span>
+            </div>
+            {{ if .MonthlyReport.ContinuousDays }}
+            <div class="monthly-stat">
+                <span class="monthly-stat-num">{{ .MonthlyReport.ContinuousDays }}</span>
+                <span class="monthly-stat-label">天连续</span>
+            </div>
+            {{ end }}
+        </div>
+        {{ if .MonthlyReport.TopMovieTitle }}
+        <div class="monthly-best">
+            <span class="monthly-best-label">本月最佳：</span>
+            <span class="monthly-best-title">《{{ .MonthlyReport.TopMovieTitle }}》</span>
+            {{ if .MonthlyReport.TopMovieRating }}
+            <span class="monthly-best-stars">{{ .MonthlyReport.TopMovieRating }}.0</span>
+            {{ end }}
+        </div>
+        {{ end }}
+        <a href="/share/{{ .User.ID }}/monthly/{{ .MonthlyReport.YearMonth }}" class="btn btn-sm btn-outline">查看详情</a>
+    </div>
+    {{ end }}
 
     <!-- Tab 切换 -->
     <div class="tab-nav">
@@ -109,6 +150,79 @@
     </div>
 </div>
 
+<style>
+.monthly-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.monthly-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.monthly-card-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.monthly-badge {
+    font-size: 0.8125rem;
+    background: var(--primary);
+    color: #fff;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+}
+
+.monthly-card-stats {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.monthly-stat {
+    display: flex;
+    flex-direction: column;
+}
+
+.monthly-stat-num {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.monthly-stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.monthly-best {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.monthly-best-title {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.monthly-best-stars {
+    color: #ffac2d;
+    font-weight: 600;
+}
+
+.monthly-best-label {
+    color: var(--text-muted);
+}
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Tab 样式切换（不处理内容加载，加载由 HTMX 负责）
@@ -132,5 +246,11 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+
+function copyDashboardShareLink(url) {
+    navigator.clipboard.writeText(url).then(function() {
+        alert('分享链接已复制');
+    });
+}
 </script>
 {{ end }}

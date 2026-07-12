@@ -98,6 +98,24 @@ func (r *UserRepository) UpdateDoubanUserID(userID int, doubanUserID string) err
 	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("douban_user_id", doubanUserID).Error
 }
 
+// UpdateIsPublic 更新用户公开分享状态
+func (r *UserRepository) UpdateIsPublic(userID int, isPublic bool) error {
+	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("is_public", isPublic).Error
+}
+
+// FindByUsername 根据用户名查找用户
+func (r *UserRepository) FindByUsername(username string) (*model.User, error) {
+	var user model.User
+	err := r.db.Where("username = ?", username).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // ListAll 获取所有用户列表
 func (r *UserRepository) ListAll() ([]*model.User, error) {
 	var users []*model.User

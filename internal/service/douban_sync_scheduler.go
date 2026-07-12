@@ -13,20 +13,22 @@ import (
 
 // DoubanSyncScheduler 豆瓣同步调度器
 type DoubanSyncScheduler struct {
-	repos   *repository.Repositories
-	syncSvc *DoubanSyncService
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	sem     chan struct{} // 限制并发数
+	repos           *repository.Repositories
+	syncSvc         *DoubanSyncService
+	monthlyReportSvc *MonthlyReportService
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	sem             chan struct{} // 限制并发数
 }
 
 // NewDoubanSyncScheduler 创建调度器
 func NewDoubanSyncScheduler(repos *repository.Repositories, syncSvc *DoubanSyncService) *DoubanSyncScheduler {
 	return &DoubanSyncScheduler{
-		repos:   repos,
-		syncSvc: syncSvc,
-		sem:     make(chan struct{}, 2), // 最多同时跑 2 个同步任务
+		repos:            repos,
+		syncSvc:          syncSvc,
+		monthlyReportSvc: NewMonthlyReportService(repos),
+		sem:              make(chan struct{}, 2), // 最多同时跑 2 个同步任务
 	}
 }
 
@@ -182,6 +184,37 @@ func (s *DoubanSyncScheduler) runDailySync(ctx context.Context) {
 		}
 		if _, err := s.CreateIncrementalSyncJob(user.ID); err != nil {
 			log.Printf("[DoubanSyncScheduler] 为用户 %d 创建增量任务失败: %v", user.ID, err)
+		}
+	}
+
+	// 每月 1 日生成上月报告
+	if time.Now().Day() == 1 {
+		s.generateMonthlyReports(ctx)
+	}
+}
+
+// generateMonthlyReports 为已绑定用户生成上月报告
+func (s *DoubanSyncScheduler) generateMonthlyReports(ctx context.Context) {
+	lastMonth := time.Now().AddDate(0, -1, 0).Format("2006-01")
+	log.Printf("[DoubanSyncScheduler] 开始生成月度报告 (%s)...", lastMonth)
+
+	users, err := s.repos.User.ListAll()
+	if err != nil {
+		log.Printf("[DoubanSyncScheduler] 获取用户列表失败: %v", err)
+		return
+	}
+
+	for _, user := range users {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		if user.DoubanUserID == "" {
+			continue
+		}
+		if err := s.monthlyReportSvc.GenerateReport(user.ID, lastMonth); err != nil {
+			log.Printf("[DoubanSyncScheduler] 生成用户 %d 月度报告失败: %v", user.ID, err)
 		}
 	}
 }

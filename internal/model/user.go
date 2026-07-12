@@ -12,6 +12,7 @@ type User struct {
 	PasswordHash  string    `json:"-" db:"password_hash"`
 	Role          string    `json:"role" db:"role"`
 	DoubanUserID  string    `json:"douban_user_id" db:"douban_user_id" gorm:"index"`
+	IsPublic      bool      `json:"is_public" db:"is_public" gorm:"default:false"`
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -84,6 +85,7 @@ const (
 
 // DoubanSyncJob 豆瓣观影记录同步任务
 type DoubanSyncJob struct {
+
 	ID            int              `json:"id" db:"id"`
 	UserID        int              `json:"user_id" db:"user_id" gorm:"index"`
 	Status        DoubanSyncStatus `json:"status" db:"status" gorm:"index"`
@@ -101,4 +103,40 @@ type DoubanSyncJob struct {
 
 func (DoubanSyncJob) TableName() string {
 	return "douban_sync_jobs"
+}
+
+// MonthlyReportStatus 月度报告状态
+type MonthlyReportStatus string
+
+const (
+	MonthlyReportStatusPending    MonthlyReportStatus = "pending"
+	MonthlyReportStatusGenerating MonthlyReportStatus = "generating"
+	MonthlyReportStatusGenerated  MonthlyReportStatus = "generated"
+	MonthlyReportStatusFailed     MonthlyReportStatus = "failed"
+)
+
+// MonthlyReport 月度观影小记
+type MonthlyReport struct {
+	ID                    int                 `json:"id" db:"id"`
+	UserID                int                 `json:"user_id" db:"user_id" gorm:"uniqueIndex:idx_user_month"`
+	YearMonth             string              `json:"year_month" db:"year_month" gorm:"uniqueIndex:idx_user_month"` // 格式 2026-06
+	WatchedCount          int                 `json:"watched_count" db:"watched_count"`
+	TotalDurationMinutes  int                 `json:"total_duration_minutes" db:"total_duration_minutes"`
+	AvgRating             float64             `json:"avg_rating" db:"avg_rating"`
+	GenreStats            string              `json:"genre_stats" db:"genre_stats"` // JSON
+	TopMovieID            string              `json:"top_movie_id" db:"top_movie_id"`
+	TopMovieTitle         string              `json:"top_movie_title" db:"top_movie_title"`
+	TopMoviePoster        string              `json:"top_movie_poster" db:"top_movie_poster"`
+	TopMovieRating        int                 `json:"top_movie_rating" db:"top_movie_rating"`
+	ContinuousDays        int                 `json:"continuous_days" db:"continuous_days"`
+	Status                MonthlyReportStatus `json:"status" db:"status" gorm:"default:'pending'"`
+	GeneratedAt           *time.Time          `json:"generated_at" db:"generated_at"`
+	CreatedAt             time.Time           `json:"created_at" db:"created_at"`
+	UpdatedAt             time.Time           `json:"updated_at" db:"updated_at"`
+
+	User User `gorm:"foreignKey:UserID;references:ID"`
+}
+
+func (MonthlyReport) TableName() string {
+	return "monthly_reports"
 }
