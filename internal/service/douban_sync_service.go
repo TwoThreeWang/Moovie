@@ -248,6 +248,16 @@ func (s *DoubanSyncService) upsertInterest(userID int, item rexxarInterest) erro
 		}
 	}
 
+	// 使用豆瓣的 create_time 作为创建时间
+	var createdAt time.Time
+	if item.CreateTime != "" {
+		// 尝试解析不同格式的时间
+		createdAt, _ = time.Parse("2006-01-02 15:04:05", item.CreateTime)
+		if createdAt.IsZero() {
+			createdAt, _ = time.Parse("2006-01-02", item.CreateTime)
+		}
+	}
+
 	record := &model.UserMovie{
 		UserID:  userID,
 		MovieID: subjectID,
@@ -257,6 +267,8 @@ func (s *DoubanSyncService) upsertInterest(userID int, item rexxarInterest) erro
 		Status:  status,
 		Rating:  rating,
 		Comment: item.Comment,
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
 	}
 	return s.repos.UserMovie.Upsert(record)
 }

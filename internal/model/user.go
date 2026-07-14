@@ -13,6 +13,7 @@ type User struct {
 	Role          string    `json:"role" db:"role"`
 	DoubanUserID  string    `json:"douban_user_id" db:"douban_user_id" gorm:"index"`
 	IsPublic      bool      `json:"is_public" db:"is_public" gorm:"default:false"`
+	Avatar        string    `json:"avatar" db:"avatar" gorm:"default:🎬"`
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -22,6 +23,7 @@ type SessionUser struct {
 	Email    string
 	Username string
 	Role     string
+	Avatar   string
 }
 
 type UserMovie struct {

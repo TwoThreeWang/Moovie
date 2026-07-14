@@ -24,11 +24,22 @@
                         hx-delete="/api/user-movies/{{ .MovieID }}?source=dashboard"
                         hx-target="#watched-{{ .ID }}"
                         hx-swap="outerHTML"
-                        hx-confirm="确定删除“已看过”标记吗？"
+                        hx-confirm="确定删除「已看过」标记吗？"
                         title="删除此标记">
                     删除
                 </button>
             </div>
+        </div>
+
+        <!-- 观看日期 -->
+        <div class="watched-date">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            {{ .UpdatedAt.Format "2006-01-02" }}
         </div>
 
         <!-- 我的评分 -->

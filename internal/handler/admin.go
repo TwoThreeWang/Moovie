@@ -357,3 +357,4 @@ func (h *Handler) AdminCopyrightDelete(c *gin.Context) {
 
 	utils.Success(c, nil)
 }
+

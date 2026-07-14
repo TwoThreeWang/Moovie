@@ -30,6 +30,7 @@ func (r *UserRepository) Create(email, username, password string) (*model.User, 
 		Username:     username,
 		PasswordHash: string(hash),
 		Role:         "user",
+		Avatar:       "🎬",
 		CreatedAt:    time.Now(),
 	}
 
@@ -138,4 +139,9 @@ func (r *UserRepository) UpdateRole(userID int, role string) error {
 // Delete 删除用户
 func (r *UserRepository) Delete(userID int) error {
 	return r.db.Delete(&model.User{}, userID).Error
+}
+
+// UpdateAvatar 更新用户头像 emoji
+func (r *UserRepository) UpdateAvatar(userID int, avatar string) error {
+	return r.db.Model(&model.User{}).Where("id = ?", userID).Update("avatar", avatar).Error
 }

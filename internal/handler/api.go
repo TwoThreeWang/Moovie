@@ -486,6 +486,8 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 		utils.BadRequest(c, "非法的图片代理链接")
 		return
 	}
+	// 豆瓣图片的img9替换为img3
+	targetURL = strings.ReplaceAll(targetURL, "img9", "img3")
 
 	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
@@ -1255,7 +1257,7 @@ func (h *Handler) tvboxDetail(c *gin.Context, ids string) {
 
 // tvboxDetailFromDouban 豆瓣条目详情：搜索资源网获取播放链接
 func (h *Handler) tvboxDetailFromDouban(c *gin.Context, doubanID string) {
-		log.Printf("[TVBox] 豆瓣条目详情: %s", doubanID)
+	log.Printf("[TVBox] 豆瓣条目详情: %s", doubanID)
 
 	// 1. 先用 douban_id 精确匹配资源网数据
 	items, _ := h.Repos.VodItem.SearchByDoubanID(doubanID)
@@ -1492,4 +1494,26 @@ func (h *Handler) DoubanSyncStatusHTMX(c *gin.Context) {
 		"User":      user,
 		"DoubanJob": job,
 	})
+}
+
+// RefreshMovie 强制刷新电影信息
+func (h *Handler) RefreshMovie(c *gin.Context) {
+	doubanID := c.Param("douban_id")
+	if doubanID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少豆瓣ID"})
+		return
+	}
+
+	// 异步执行强制抓取
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if err := h.DoubanCrawler.CrawlForce(ctx, doubanID); err != nil {
+			log.Printf("[RefreshMovie] 强制刷新失败 (豆瓣ID: %s): %v", doubanID, err)
+		} else {
+			log.Printf("[RefreshMovie] 强制刷新成功 (豆瓣ID: %s)", doubanID)
+		}
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"message": "已开始刷新，请稍后刷新页面查看"})
 }

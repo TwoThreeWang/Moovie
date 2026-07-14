@@ -6,11 +6,13 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"time"
 	"strings"
 
 	"github.com/gin-contrib/multitemplate"
 	"github.com/gin-gonic/gin"
 	"github.com/user/moovie/internal/handler"
+	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/middleware"
 	"github.com/user/moovie/internal/utils"
 )
@@ -54,8 +56,8 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		optional.GET("/foryou", h.ForYou)                          // 为你推荐
 		optional.GET("/recommend", h.ForYou)                       // 为你推荐
 		optional.GET("/similar/:douban_id", h.RecommendationsPage)          // 相似电影推荐
-		optional.GET("/share/:user_id", h.PublicProfile)                   // 公开观影记录分享页
-		optional.GET("/share/:user_id/monthly/:year_month", h.PublicMonthly) // 公开月度小记
+		optional.GET("/user/:user_id", h.PublicProfile)                   // 公开观影记录分享页
+		optional.GET("/user/:user_id/monthly/:year_month", h.PublicMonthly) // 公开月度小记
 	}
 
 	// ==================== 认证页面 ====================
@@ -78,6 +80,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		dashboard.POST("/settings/username", h.UpdateUsername)    // 更新用户名
 		dashboard.POST("/settings/password", h.UpdatePassword)   // 更新密码
 		dashboard.POST("/settings/share", h.UpdateShareSetting)  // 更新分享设置
+		dashboard.POST("/settings/avatar", h.UpdateAvatar)        // 更新头像 emoji
 		dashboard.POST("/settings/douban/bind", h.BindDouban)    // 绑定豆瓣
 		dashboard.POST("/settings/douban/unbind", h.UnbindDouban) // 解绑豆瓣
 		dashboard.POST("/settings/douban/sync", h.SyncDouban)    // 手动同步豆瓣
@@ -102,6 +105,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.DELETE("/history/:id", h.RemoveHistory)                                     // 删除历史记录
 		api.POST("/history/sync", h.SyncHistory)                                        // 同步历史记录
 		api.GET("/movies/suggest", h.MovieSuggest)                                      // 电影建议
+		api.POST("/movie/:douban_id/refresh", h.RefreshMovie)                          // 强制刷新电影信息
 		api.GET("/proxy/image/:url", h.ProxyImage)                                      // 图片代理
 		api.GET("/htmx/similar-with-reason/:douban_id", h.SimilarMoviesWithReasonsHTMX) // 相似电影推荐（带原因）
 
@@ -261,6 +265,9 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 			r := []rune(s)
 			return string(r[0:1])
 		},
+		"daysSince": func(t time.Time) int {
+			return int(time.Since(t).Hours() / 24)
+		},
 		"seq": func(start, end int) []int {
 			res := make([]int, 0, end-start+1)
 			for i := start; i <= end; i++ {
@@ -291,8 +298,33 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 			}
 			return aFloat / bFloat
 		},
+		"tof": func(v interface{}) float64 {
+			switch val := v.(type) {
+			case int:
+				return float64(val)
+			case int64:
+				return float64(val)
+			case float64:
+				return val
+			case float32:
+				return float64(val)
+			default:
+				return 0
+			}
+		},
 		"contains": func(s, substr string) bool {
 			return strings.Contains(s, substr)
+		},
+		"firstN": func(n int, items interface{}) interface{} {
+			switch v := items.(type) {
+			case []*model.UserMovie:
+				if n > len(v) {
+					n = len(v)
+				}
+				return v[:n]
+			default:
+				return items
+			}
 		},
 	}
 

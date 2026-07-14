@@ -15,6 +15,9 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700;900&display=swap" rel="stylesheet">
     <meta http-equiv="Cache-Control" content="max-age=7200" />
     <title>{{ .Title }}</title>
     <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
@@ -45,7 +48,7 @@
     {{ if .Cover }}<meta name="twitter:image" content="{{ .Cover }}">{{ end }}
 
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=0.8">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.5">
 
     <!-- htmx -->
     <script src="/static/js/htmx.min.js?v=0.1" defer></script>

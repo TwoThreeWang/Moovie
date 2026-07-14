@@ -673,6 +673,25 @@ func (c *DoubanCrawler) CrawlMovieSafe(ctx context.Context, doubanID string) err
 	return err
 }
 
+
+// CrawlForce 强制重新抓取电影信息（跳过数据库检查）
+func (c *DoubanCrawler) CrawlForce(ctx context.Context, doubanID string) error {
+	if !isValidDoubanID(doubanID) {
+		return fmt.Errorf("无效的豆瓣ID:%s", doubanID)
+	}
+
+	log.Printf("[爬虫] 强制重新抓取电影: %s", doubanID)
+
+	// 1. 优先尝试 API 方案
+	err := c.CrawlDoubanMovieApi(ctx, doubanID)
+	if err == nil {
+		return nil
+	}
+
+	// 2. 如果 API 失败，尝试网页爬虫方案作为回退
+	log.Printf("[爬虫] API 方案抓取失败 (豆瓣ID: %s), 正在尝试回退至网页解析方案: %v", doubanID, err)
+	return c.CrawlDoubanMovie(ctx, doubanID)
+}
 // CrawlMovieSafeAsync 异步安全抓取电影信息
 // 适用于播放页等场景，不需要等待抓取结果
 func (c *DoubanCrawler) CrawlMovieSafeAsync(doubanID string) {

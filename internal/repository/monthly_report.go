@@ -97,3 +97,9 @@ func (r *MonthlyReportRepository) Exists(userID int, yearMonth string) (bool, er
 	err := r.db.Model(&model.MonthlyReport{}).Where("user_id = ? AND year_month = ?", userID, yearMonth).Count(&count).Error
 	return count > 0, err
 }
+
+// Save 直接保存报告（用于更新已有记录）
+func (r *MonthlyReportRepository) Save(report *model.MonthlyReport) error {
+	report.UpdatedAt = time.Now()
+	return r.db.Save(report).Error
+}

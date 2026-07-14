@@ -100,17 +100,21 @@
 
         <!-- 评分与操作 -->
         <div class="movie-rating-col">
-            {{ if .Movie.Rating }}
             <div class="rating-block">
                 <div class="rating-title">豆瓣评分</div>
+                {{ if .Movie.Rating }}
                 <div class="rating-num">{{ .Movie.Rating }}</div>
                 <div class="rating-stars">
                     ★★★★★
                 </div>
-            </div>
-            {{ end }}
-
-            <div class="movie-actions">
+                {{ else }}
+                <div class="rating-num" style="font-size:1rem;color:var(--text-muted);cursor:pointer" 
+                            hx-post="/api/movie/{{ .Movie.DoubanID }}/refresh" 
+                            hx-swap="none" 
+                            hx-confirm="确定要重新抓取豆瓣评分吗？" 
+                            title="点击重新抓取豆瓣评分">暂无</div>
+                {{ end }}
+            </div>            <div class="movie-actions">
                 {{ template "user_movie_buttons.html" (dict "DoubanID" .Movie.DoubanID "Title" .Movie.Title "Poster" .Movie.Poster "Year" .Movie.Year "IsWish" .IsWish "IsWatched" .IsWatched) }}
             </div>
         </div>

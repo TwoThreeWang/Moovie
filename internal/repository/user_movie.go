@@ -17,13 +17,24 @@ func NewUserMovieRepository(db *gorm.DB) *UserMovieRepository {
 }
 
 func (r *UserMovieRepository) Upsert(m *model.UserMovie) error {
+	// 记录是否提供了外部时间（来自豆瓣）
+	hasExternalTime := !m.CreatedAt.IsZero() || !m.UpdatedAt.IsZero()
+	
+	if m.UpdatedAt.IsZero() {
+		m.UpdatedAt = time.Now()
+	}
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now()
 	}
-	m.UpdatedAt = time.Now()
+	// 需要更新的字段列表
+	updateCols := []string{"title", "poster", "year", "status", "rating", "comment", "updated_at"}
+	// 如果提供了有效的创建时间（来自豆瓣），也更新它
+	if hasExternalTime {
+		updateCols = append(updateCols, "created_at")
+	}
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "movie_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"title", "poster", "year", "status", "rating", "comment", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns(updateCols),
 	}).Create(m).Error
 }
 

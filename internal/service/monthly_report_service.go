@@ -48,26 +48,23 @@ type TopMovieData struct {
 
 // GenerateReport 为指定用户生成指定月份的报告
 func (s *MonthlyReportService) GenerateReport(userID int, yearMonth string) error {
-	// 检查是否已存在
-	exists, _ := s.repos.MonthlyReport.Exists(userID, yearMonth)
-	if exists {
-		return nil
-	}
-
 	// 解析月份范围
 	startTime, endTime, err := s.parseMonthRange(yearMonth)
 	if err != nil {
 		return fmt.Errorf("解析月份失败: %w", err)
 	}
 
-	// 创建 pending 记录
-	report := &model.MonthlyReport{
-		UserID:    userID,
-		YearMonth: yearMonth,
-		Status:    model.MonthlyReportStatusPending,
-	}
-	if err := s.repos.MonthlyReport.Upsert(report); err != nil {
-		return fmt.Errorf("创建报告记录失败: %w", err)
+	// 查询或创建报告记录
+	report, _ := s.repos.MonthlyReport.GetByUserAndMonth(userID, yearMonth)
+	if report == nil {
+		report = &model.MonthlyReport{
+			UserID:    userID,
+			YearMonth: yearMonth,
+			Status:    model.MonthlyReportStatusPending,
+		}
+		if err := s.repos.MonthlyReport.Upsert(report); err != nil {
+			return fmt.Errorf("创建报告记录失败: %w", err)
+		}
 	}
 
 	// 查询本月 user_movies
@@ -114,7 +111,7 @@ func (s *MonthlyReportService) GenerateReport(userID int, yearMonth string) erro
 		report.TopMovieRating = data.TopMovie.Rating
 	}
 
-	if err := s.repos.MonthlyReport.Upsert(report); err != nil {
+	if err := s.repos.MonthlyReport.Save(report); err != nil {
 		return fmt.Errorf("更新报告失败: %w", err)
 	}
 

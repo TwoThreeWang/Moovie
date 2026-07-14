@@ -14,6 +14,7 @@ import (
 
 	"sync"
 
+
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -823,6 +824,7 @@ func (h *Handler) Login(c *gin.Context) {
 		Email:    user.Email,
 		Username: user.Username,
 		Role:     user.Role,
+		Avatar:   user.Avatar,
 	})
 	session.Save()
 
@@ -910,6 +912,7 @@ func (h *Handler) Register(c *gin.Context) {
 		Email:    user.Email,
 		Username: user.Username,
 		Role:     user.Role,
+		Avatar:   user.Avatar,
 	})
 	session.Save()
 
@@ -986,25 +989,32 @@ func (h *Handler) Settings(c *gin.Context) {
 	}))
 }
 
+
+// renderSettingsError 渲染设置页错误（携带用户信息）
+func (h *Handler) renderSettingsError(c *gin.Context, errMsg string) {
+	userID := middleware.GetUserID(c)
+	user, _ := h.Repos.User.FindByID(userID)
+	syncJob, _ := h.Repos.DoubanSyncJob.GetLatestByUser(userID)
+	c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
+		"Title":     "账号设置 - " + h.Config.SiteName,
+		"User":      user,
+		"Error":     errMsg,
+		"DoubanJob": syncJob,
+	}))
+}
 // UpdateUsername 修改用户名
 func (h *Handler) UpdateUsername(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	newUsername := strings.TrimSpace(c.PostForm("username"))
 
 	if newUsername == "" || len(newUsername) < 2 || len(newUsername) > 20 {
-		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
-			"Title": "账号设置 - " + h.Config.SiteName,
-			"Error": "用户名应在 2-20 个字符之间",
-		}))
+		h.renderSettingsError(c, "用户名应在 2-20 个字符之间")
 		return
 	}
 
 	err := h.Repos.User.UpdateUsername(userID, newUsername)
 	if err != nil {
-		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
-			"Title": "账号设置 - " + h.Config.SiteName,
-			"Error": "用户名更新失败",
-		}))
+		h.renderSettingsError(c, "用户名更新失败")
 		return
 	}
 
@@ -1028,29 +1038,20 @@ func (h *Handler) UpdateEmail(c *gin.Context) {
 
 	// 简单邮箱格式验证
 	if newEmail == "" || !strings.Contains(newEmail, "@") {
-		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
-			"Title": "账号设置 - " + h.Config.SiteName,
-			"Error": "请输入有效的邮箱地址",
-		}))
+		h.renderSettingsError(c, "请输入有效的邮箱地址")
 		return
 	}
 
 	// 检查邮箱是否已被使用
 	existing, _ := h.Repos.User.FindByEmail(newEmail)
 	if existing != nil && existing.ID != userID {
-		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
-			"Title": "账号设置 - " + h.Config.SiteName,
-			"Error": "该邮箱已被其他账号使用",
-		}))
+		h.renderSettingsError(c, "该邮箱已被其他账号使用")
 		return
 	}
 
 	err := h.Repos.User.UpdateEmail(userID, newEmail)
 	if err != nil {
-		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
-			"Title": "账号设置 - " + h.Config.SiteName,
-			"Error": "邮箱更新失败",
-		}))
+		h.renderSettingsError(c, "邮箱更新失败")
 		return
 	}
 
@@ -1130,14 +1131,46 @@ func (h *Handler) UpdateShareSetting(c *gin.Context) {
 	isPublic := c.PostForm("is_public") == "on"
 
 	if err := h.Repos.User.UpdateIsPublic(userID, isPublic); err != nil {
-		c.HTML(http.StatusOK, "settings.html", h.RenderData(c, gin.H{
-			"Title": "账号设置 - " + h.Config.SiteName,
-			"Error": "分享设置更新失败",
-		}))
+		h.renderSettingsError(c, "分享设置更新失败")
 		return
 	}
 
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=share")
+}
+
+// UpdateAvatar 更新用户头像 emoji
+func (h *Handler) UpdateAvatar(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	avatar := strings.TrimSpace(c.PostForm("avatar"))
+
+	if avatar == "" {
+		h.renderSettingsError(c, "请选择或输入一个 emoji 作为头像")
+		return
+	}
+
+	// 验证长度（单个 emoji 最多 8 字节）
+	runes := []rune(avatar)
+	if len(runes) > 4 {
+		h.renderSettingsError(c, "头像最多支持 4 个 emoji 字符")
+		return
+	}
+
+	if err := h.Repos.User.UpdateAvatar(userID, avatar); err != nil {
+		h.renderSettingsError(c, "头像更新失败")
+		return
+	}
+
+	// 更新 Session 中的头像
+	session := sessions.Default(c)
+	if userinfo := session.Get("userinfo"); userinfo != nil {
+		if su, ok := userinfo.(model.SessionUser); ok {
+			su.Avatar = avatar
+			session.Set("userinfo", su)
+			session.Save()
+		}
+	}
+
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=avatar")
 }
 
 // PublicProfile 公开观影记录页
@@ -1171,15 +1204,32 @@ func (h *Handler) PublicProfile(c *gin.Context) {
 	watchedList, _ := h.Repos.UserMovie.ListByUser(userID, "watched", 1000, 0)
 	wishCount, _ := h.Repos.UserMovie.CountByUser(userID, "wish")
 	watchedCount, _ := h.Repos.UserMovie.CountByUser(userID, "watched")
+	monthlyReports, _ := h.Repos.MonthlyReport.ListByUser(userID, 6, 0)
+
+	// 计算平均评分
+	var totalRating, ratedCount int
+	for _, m := range watchedList {
+		if m.Rating > 0 {
+			totalRating += m.Rating
+			ratedCount++
+		}
+	}
+	var avgRating float64
+	if ratedCount > 0 {
+		avgRating = float64(totalRating) / float64(ratedCount)
+	}
 
 	c.HTML(http.StatusOK, "share.html", h.RenderData(c, gin.H{
-		"Title":         user.Username + " 的观影记录 - " + h.Config.SiteName,
-		"User":          user,
-		"WishList":      wishList,
-		"WatchedList":   watchedList,
-		"WishCount":     wishCount,
-		"WatchedCount":  watchedCount,
-		"Canonical":     fmt.Sprintf("%s/share/%d", h.Config.SiteUrl, user.ID),
+		"Title":           user.Username + " 的观影记录 - " + h.Config.SiteName,
+		"User":            user,
+		"WishList":        wishList,
+		"WatchedList":     watchedList,
+		"WishCount":       wishCount,
+		"WatchedCount":    watchedCount,
+		"AvgRating":       avgRating,
+		"RatedCount":      ratedCount,
+		"MonthlyReports":  monthlyReports,
+		"Canonical":       fmt.Sprintf("%s/user/%d", h.Config.SiteUrl, user.ID),
 	}))
 }
 
@@ -1224,12 +1274,26 @@ func (h *Handler) PublicMonthly(c *gin.Context) {
 		_ = json.Unmarshal([]byte(report.GenreStats), &genreStats)
 	}
 
+	// 查询本月已看电影列表
+	startTime, _ := time.Parse("2006-01", yearMonth)
+	endTime := startTime.AddDate(0, 1, 0)
+	allWatched, _ := h.Repos.UserMovie.ListByUser(userID, "watched", 10000, 0)
+	var monthlyMovies []*model.UserMovie
+	for _, m := range allWatched {
+		if m.CreatedAt.After(startTime) && m.CreatedAt.Before(endTime) {
+			monthlyMovies = append(monthlyMovies, m)
+		}
+	}
+
+	shareURL := fmt.Sprintf("%s/user/%d/monthly/%s", h.Config.SiteUrl, user.ID, yearMonth)
+
 	c.HTML(http.StatusOK, "share_monthly.html", h.RenderData(c, gin.H{
-		"Title":     user.Username + " " + yearMonth + " 月度观影小记 - " + h.Config.SiteName,
-		"User":      user,
-		"Report":    report,
-		"GenreStats": genreStats,
-		"Canonical": fmt.Sprintf("%s/share/%d/monthly/%s", h.Config.SiteUrl, user.ID, yearMonth),
+		"Title":         user.Username + " " + yearMonth + " 月度观影小记 - " + h.Config.SiteName,
+		"User":          user,
+		"Report":        report,
+		"GenreStats":    genreStats,
+		"MonthlyMovies": monthlyMovies,
+		"Canonical":     shareURL,
 	}))
 }
 
