@@ -1902,8 +1902,10 @@ img {
 
 /* ==================== 用户中心页面 ==================== */
 .user-center {
+    overflow-x: hidden;
     margin: 0 auto;
     padding: 20px 0;
+    min-width: 0;
 }
 
 /* 用户信息卡片 */
@@ -1935,16 +1937,13 @@ img {
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    color: white;
+    background: var(--primary-alpha);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 1.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
     flex-shrink: 0;
-    border: none;
+    line-height: 1;
 }
 
 .user-info {
@@ -2096,6 +2095,9 @@ img {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
 }
 
 .watched-item {
@@ -2106,12 +2108,15 @@ img {
     border-radius: 12px;
     padding: 16px;
     position: relative;
-    transition: transform 0.2s ease, border-color 0.2s ease;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .watched-item:hover {
     border-color: var(--primary-alpha-high);
-    transform: translateX(4px);
 }
 
 .watched-poster {
@@ -2132,6 +2137,9 @@ img {
 .watched-info {
     flex: 1;
     min-width: 0;
+    width: 0;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .watched-header {
@@ -2157,6 +2165,7 @@ img {
     overflow: hidden;
     text-overflow: ellipsis;
     transition: color 0.2s;
+    min-width: 0;
 }
 
 .watched-title:hover {
@@ -2210,6 +2219,9 @@ img {
     border-radius: 8px;
     position: relative;
     font-style: italic;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    overflow: hidden;
 }
 
 .watched-comment::before {
@@ -2275,6 +2287,7 @@ img {
 /* Tab 内容 */
 .tab-content {
     margin-top: 24px;
+    overflow: hidden;
 }
 
 .tab-pane {

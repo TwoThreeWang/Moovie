@@ -69,7 +69,7 @@
 
     <!-- ====== 主内容区 ====== -->
     <div class="main-grid">
-        <div class="content-main" id="content-main">
+        <div class="content-main" id="content-main" style="overflow-x: hidden;">
             <div class="tab-bar">
                 <button class="tab-btn active"
                         hx-get="/api/htmx/dashboard/history"
@@ -346,6 +346,12 @@
     display: grid;
     grid-template-columns: 1fr 340px;
     gap: 20px;
+    min-width: 0;
+}
+
+.main-grid > * {
+    min-width: 0;
+    overflow: hidden;
 }
 
 /* ============ Tab 栏 ============ */
