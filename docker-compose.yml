@@ -10,6 +10,13 @@ services:
       - .env
     environment:
       - APP_ENV=production
+      # 如下几行是 WARP 代理配置，如果没有 WARP 代理，注释掉即可
+      # WARP 代理配置 - 走 SOCKS5
+      - HTTP_PROXY=socks5://cloudflare-warp:1080
+      - HTTPS_PROXY=socks5://cloudflare-warp:1080
+      - ALL_PROXY=socks5://cloudflare-warp:1080
+      # 排除本地和内部服务
+      - NO_PROXY=localhost,127.0.0.1,postgres
     restart: unless-stopped
     networks:
       - postgres_default
