@@ -4835,8 +4835,8 @@ img {
 .pub-monthly-card {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 1rem 1.25rem;
+    gap: 0.875rem;
+    padding: 0.875rem 1rem;
     background: var(--bg-secondary);
     border-radius: var(--radius-sm);
     text-decoration: none;
@@ -4849,47 +4849,59 @@ img {
     box-shadow: var(--shadow);
 }
 
-.pub-monthly-left {
+/* 呼应票根卡片的小票签，暗色 + 暖金月份数字 */
+.pub-monthly-tag {
     flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    background: linear-gradient(160deg, #1a1710 0%, #121115 60%, #0d0d10 100%);
+    color: #f3ede2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.1;
 }
 
-.pub-monthly-ym {
-    font-size: 1rem;
+.pub-monthly-tag-m {
+    font-size: 1.05rem;
     font-weight: 700;
-    color: var(--text);
+    font-family: "Noto Serif SC", serif;
 }
 
-.pub-monthly-sub {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin-top: 0.125rem;
+.pub-monthly-tag-y {
+    font-size: 0.625rem;
+    color: #e3b25c;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
 }
 
-.pub-monthly-best {
+.pub-monthly-body {
     flex: 1;
     min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    overflow: hidden;
 }
 
-.pub-monthly-best-label {
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-
-.pub-monthly-best-title {
-    color: var(--text-secondary);
+.pub-monthly-persona {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.pub-monthly-best-rating {
-    color: var(--rating-star);
-    font-weight: 700;
+.pub-monthly-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+.pub-monthly-best-poster {
+    width: 32px;
+    height: 45px;
+    border-radius: 4px;
+    object-fit: cover;
     flex-shrink: 0;
 }
 
@@ -4979,20 +4991,42 @@ img {
         gap: 0.75rem;
     }
 
-    .pub-monthly-best {
+    .pub-monthly-best-poster {
         display: none;
     }
 }
 
 /* ====== 月度观影小记 /user/:id/monthly/:ym ====== */
 .monthly-page {
-    max-width: 680px;
+    max-width: 900px;
     margin: 0 auto;
     padding: 0 1rem 3rem;
 }
 
 .monthly-top-bar {
     padding: 1.5rem 0 1rem;
+}
+
+/* -- 左右布局：左侧票根卡片，右侧完整片单 -- */
+.monthly-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 2.5rem;
+}
+
+.monthly-card-col {
+    flex: 0 0 380px;
+    width: 380px;
+}
+
+.monthly-list-col {
+    flex: 1;
+    min-width: 0;
+    padding-top: 4px;
+}
+
+.monthly-list-col .monthly-full-list {
+    margin-bottom: 0;
 }
 
 .back-link {
@@ -5103,246 +5137,124 @@ img {
     margin: 0;
 }
 
-.monthly-bottom-note {
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    margin-top: 2rem;
-}
-
-/* --- 月记移动端 --- */
-@media (max-width: 640px) {
-    .monthly-page {
-        padding: 0 0.75rem 2rem;
-    }
-
-    .mc-card {
-        padding: 1.5rem;
-        border-radius: 16px;
-    }
-
-    .mc-headline {
-        font-size: 1.375rem;
-    }
-
-    .mc-stat-num {
-        font-size: 1.375rem;
-    }
-
-    .mc-best-poster {
-        width: 64px;
-    }
-
-    .mc-best-poster img {
-        width: 64px;
-        height: 96px;
-    }
-
-    .mc-best-title {
-        font-size: 0.9375rem;
-    }
-
-    .mc-poster-grid {
-        gap: 4px;
-    }
-}
-
-/* 二维码 */
-.mc-qr {
-    flex-shrink: 0;
-}
-
-.mc-qr img {
-    display: block;
-    border-radius: 6px;
-    background: #fff;
-    padding: 4px;
-}
-
-.mc-footer-brand {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-}
-
-
-/* ====== 月度观影小记卡片（新设计） ====== */
+/* ====== 月度观影小记卡片：电影票根 ====== */
 .mc-card-wrap {
-    max-width: 430px;
+    max-width: 380px;
     margin: 0 auto 2rem;
 }
 
 .mc-card {
     width: 100%;
-    border-radius: 26px;
+    border-radius: 24px;
     overflow: hidden;
     position: relative;
-    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
 }
 
-/* 暗夜影院风格背景 */
-.mc-card {
-    background:
-        radial-gradient(120% 90% at 100% 0%, rgba(246, 12, 62, 0.30), transparent 48%),
-        radial-gradient(90% 70% at 0% 100%, rgba(255, 107, 138, 0.10), transparent 50%),
-        linear-gradient(160deg, #1a0d12 0%, #0f0f14 60%, #0c0b10 100%);
-    color: #fff;
-}
-
-/* 胶片纹理 */
-.mc-card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 4px);
-    opacity: 0.5;
-    pointer-events: none;
-    z-index: 0;
-}
-
-/* 胶片颗粒噪点 */
-.mc-card::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.4'/%3E%3C/svg%3E");
-    background-size: 200px 200px;
-    pointer-events: none;
-    opacity: 0.08;
-    mix-blend-mode: overlay;
-    border-radius: 26px;
-    z-index: 0;
-}
-
-.mc-inner {
+/* -- 正片区（暗色，人设 + 拼贴海报墙） -- */
+.mc-feature {
     position: relative;
-    padding: 30px 28px;
-    display: flex;
-    flex-direction: column;
-    z-index: 1;
-    min-height: 100%;
+    background:
+        radial-gradient(120% 90% at 100% 0%, rgba(227, 178, 92, 0.16), transparent 50%),
+        linear-gradient(160deg, #1a1710 0%, #121115 55%, #0d0d10 100%);
+    color: #f3ede2;
+    padding: 26px 22px 20px;
 }
 
-/* 顶部：品牌 + 用户 */
-.mc-top {
+.mc-feature::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+    opacity: 0.06;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+}
+
+.mc-feature-top {
+    position: relative;
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
+    z-index: 1;
 }
 
-.mc-brand {
-    font-weight: 900;
-    font-size: 16px;
-    letter-spacing: 0.5px;
-}
-
-.mc-brand span {
-    color: var(--primary);
-}
-
-.mc-who {
-    font-size: 18px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.85);
-    text-align: right;
-    line-height: 1.4;
-}
-
-.mc-who small {
+.mc-feature-brand {
     font-size: 11px;
-    font-weight: 400;
-    color: rgba(255, 255, 255, 0.45);
-}
-
-/* 月份 */
-.mc-month {
-    font-family: "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
-    font-weight: 900;
-    font-size: 34px;
-    letter-spacing: 1px;
-    margin-top: 18px;
-}
-
-.mc-month small {
-    display: block;
-    font-family: "Noto Sans SC", -apple-system, sans-serif;
-    font-weight: 500;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
     letter-spacing: 3px;
-    margin-top: 2px;
+    font-weight: 700;
+    color: #e3b25c;
 }
 
-/* 统计数字 */
-.mc-stat {
-    display: flex;
-    gap: 22px;
-    margin-top: 16px;
-}
-
-.mc-stat-v {
-    font-family: "Noto Serif SC", serif;
-    font-weight: 900;
-    font-size: 26px;
-    line-height: 1;
-}
-
-.mc-stat-v small {
-    font-size: 12px;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.6);
-    font-family: "Noto Sans SC", sans-serif;
-}
-
-.mc-stat-k {
+.mc-feature-issue {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.55);
-    margin-top: 5px;
+    letter-spacing: 1px;
+    color: rgba(243, 237, 226, 0.5);
+    font-family: "SFMono-Regular", Consolas, monospace;
 }
 
-/* 海报网格容器 */
-.mc-grid-wrap {
-    position: relative;
-    margin: 16px 0 14px;
-    overflow: hidden;
-}
-
-.mc-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-}
-
-/* 渐变遮罩（底部渐变隐藏） */
-.mc-grid-fade {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 60%;
-    background: linear-gradient(180deg, transparent 0%, rgba(15, 15, 20, 0.95) 100%);
-    pointer-events: none;
-}
-
-.mc-pc {
-    aspect-ratio: 2/3;
-    border-radius: 9px;
-    position: relative;
-    overflow: hidden;
+.mc-feature-top-right {
     display: flex;
+    flex-direction: column;
     align-items: flex-end;
-    padding: 8px;
+    gap: 3px;
+}
+
+.mc-feature-user {
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    color: rgba(243, 237, 226, 0.75);
+    font-weight: 600;
+}
+
+.mc-persona {
+    position: relative;
+    z-index: 1;
+    margin-top: 24px;
+}
+
+.mc-persona-label {
+    font-size: 12px;
+    color: rgba(243, 237, 226, 0.55);
+}
+
+.mc-persona-title {
+    margin-top: 6px;
+    font-family: "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.28;
+}
+
+.mc-persona-line {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+    font-style: italic;
+    color: rgba(243, 237, 226, 0.72);
+}
+
+.mc-filmstrip {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 22px;
+}
+
+.mc-filmstrip-item {
+    flex: 0 1 78px;
+    max-width: 78px;
+    aspect-ratio: 2/3;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
     background: linear-gradient(160deg, #3a3a42, #16161a);
 }
 
-.mc-pc::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, 0.6));
-}
-
-.mc-pc img {
+.mc-filmstrip-item img {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -5350,93 +5262,198 @@ img {
     object-fit: cover;
 }
 
-.mc-pc span {
-    position: relative;
-    z-index: 1;
-    color: #fff;
-    font-family: "Noto Serif SC", serif;
-    font-weight: 700;
+.mc-filmstrip-item:nth-child(4n+1) { transform: rotate(-3deg); }
+.mc-filmstrip-item:nth-child(4n+2) { transform: rotate(2deg); }
+.mc-filmstrip-item:nth-child(4n+3) { transform: rotate(-2deg); }
+.mc-filmstrip-item:nth-child(4n+4) { transform: rotate(3deg); }
+
+.mc-filmstrip-cap {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 4px 5px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.82));
     font-size: 11px;
-    line-height: 1.25;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    color: #fff;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* 第3行海报缩小半透明 */
-.mc-grid .mc-pc:nth-child(7),
-.mc-grid .mc-pc:nth-child(8),
-.mc-grid .mc-pc:nth-child(9) {
-    opacity: 0.65;
-    transform: scale(0.88);
-}
-
-/* 本月最佳 */
-.mc-best {
+.mc-filmstrip-more {
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
-    gap: 7px;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.7);
-    margin: 12px 0 4px;
-}
-
-.mc-best b {
+    justify-content: center;
+    background: rgba(10, 10, 12, 0.72);
     color: #fff;
-    font-weight: 700;
-}
-
-.mc-star {
-    color: #e0a13a;
-}
-
-/* 本期影评 */
-.mc-review {
-    margin-top: auto;
-    padding-top: 14px;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.mc-review-lab {
-    font-size: 10.5px;
-    letter-spacing: 2px;
-    color: var(--primary-light);
-    font-weight: 600;
-}
-
-.mc-review-txt {
     font-family: "Noto Serif SC", serif;
-    font-style: italic;
-    font-size: 15px;
-    line-height: 1.6;
-    margin-top: 6px;
-    color: rgba(255, 255, 255, 0.92);
+    font-weight: 700;
+    font-size: 16px;
 }
 
-/* 底部水印 + 二维码 */
-.mc-bottom {
+/* -- 撕票口 -- */
+.mc-perf {
+    position: relative;
+    height: 0;
+    border-top: 2px dashed rgba(243, 237, 226, 0.3);
+    background: #121115;
+}
+
+.mc-perf::before,
+.mc-perf::after {
+    content: "";
+    position: absolute;
+    top: -10px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--bg);
+}
+
+.mc-perf::before { left: -10px; }
+.mc-perf::after { right: -10px; }
+
+/* -- 票根区（浅色，数据字段 + 短评 + 底部条码） -- */
+.mc-stub {
+    background: #f3ede2;
+    color: #2a231a;
+    padding: 18px 22px 20px;
+}
+
+.mc-fields {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
-    margin-top: 10px;
+    font-family: "SFMono-Regular", Consolas, monospace;
 }
 
-.mc-wm {
-    font-size: 10.5px;
-    color: rgba(255, 255, 255, 0.35);
+.mc-field-label {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: #8a7d68;
 }
+
+.mc-field-value {
+    font-size: 18px;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.mc-featured {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed rgba(42, 35, 26, 0.2);
+}
+
+.mc-featured-poster {
+    width: 40px;
+    height: 56px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: #cabfa8;
+}
+
+.mc-featured-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.mc-featured-label {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: #8a7d68;
+}
+
+.mc-featured-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mc-featured-rating {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: #b5822c;
+    flex-shrink: 0;
+}
+
+.mc-quote {
+    margin-top: 14px;
+    font-family: "Noto Serif SC", serif;
+    font-style: italic;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #5b5142;
+}
+
+.mc-stub-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px dashed rgba(42, 35, 26, 0.2);
+}
+
+.mc-barcode {
+    display: flex;
+    gap: 2px;
+    height: 32px;
+    align-items: flex-end;
+}
+
+.mc-barcode span {
+    display: block;
+    width: 2px;
+    height: 100%;
+    background: #2a231a;
+}
+
+.mc-barcode span:nth-child(3n) { width: 1px; height: 65%; }
+.mc-barcode span:nth-child(4n) { width: 3px; height: 85%; }
+.mc-barcode span:nth-child(5n) { height: 55%; }
 
 .mc-qr {
     flex-shrink: 0;
+    width: 44px;
+    height: 44px;
 }
 
 .mc-qr img {
     display: block;
+    width: 100%;
+    height: 100%;
     border-radius: 4px;
-    background: #fff;
-    padding: 2px;
-    opacity: 0.8;
 }
 
-/* 分享按钮 */
+.mc-stub-hint {
+    text-align: center;
+    font-size: 11px;
+    color: #8a7d68;
+    margin-top: 10px;
+}
+
+.mc-stub-domain {
+    text-align: center;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: #b0a692;
+    margin-top: 3px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+/* -- 分享按钮 & 底部说明 -- */
 .monthly-actions {
     text-align: center;
     margin: 1.5rem 0;
@@ -5469,31 +5486,49 @@ img {
 
 .monthly-bottom-note {
     text-align: center;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.3);
-    margin-bottom: 2rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
 }
 
 /* ====== 响应式 ====== */
+@media (max-width: 860px) {
+    .monthly-layout {
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+    }
+
+    .monthly-card-col {
+        width: 100%;
+        max-width: 380px;
+        flex: initial;
+    }
+
+    .monthly-list-col {
+        width: 100%;
+        max-width: 480px;
+        padding-top: 0;
+    }
+}
+
 @media (max-width: 480px) {
     .mc-card-wrap {
         max-width: 100%;
         padding: 0 16px;
     }
-    
-    .mc-card {
-        border-radius: 20px;
+
+    .mc-feature,
+    .mc-stub {
+        padding-left: 18px;
+        padding-right: 18px;
     }
-    
-    .mc-inner {
-        padding: 24px 20px;
+
+    .mc-persona-title {
+        font-size: 26px;
     }
-    
-    .mc-month {
-        font-size: 28px;
-    }
-    
-    .mc-stat-v {
-        font-size: 22px;
+
+    .mc-field-value {
+        font-size: 16px;
     }
 }

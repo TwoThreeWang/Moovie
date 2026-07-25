@@ -838,6 +838,77 @@ func (h *Handler) DashboardWatchedHTMX(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/dashboard_watched.html", data)
 }
 
+// PublicWishHTMX 公开主页"想看"列表加载更多（与仪表盘同款分页，但面向未登录访客，
+// 需要校验目标用户是否开启了公开分享，避免绕过 PublicProfile 的 404 直接探测私密用户的数据）
+func (h *Handler) PublicWishHTMX(c *gin.Context) {
+	userID, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil || userID <= 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil || !user.IsPublic {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * dashboardGridPageSize
+
+	records, err := h.Repos.UserMovie.ListByUser(userID, "wish", dashboardGridPageSize, offset)
+	if err != nil {
+		log.Printf("[PublicWishHTMX] 获取想看失败: %v", err)
+	}
+	count, _ := h.Repos.UserMovie.CountByUser(userID, "wish")
+	hasMore := offset+len(records) < count
+
+	c.HTML(http.StatusOK, "partials/public_wish_grid.html", gin.H{
+		"WishList":     records,
+		"WishHasMore":  hasMore,
+		"WishNextPage": page + 1,
+		"UserID":       userID,
+	})
+}
+
+// PublicWatchedHTMX 公开主页"已看"列表加载更多
+func (h *Handler) PublicWatchedHTMX(c *gin.Context) {
+	userID, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil || userID <= 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	user, err := h.Repos.User.FindByID(userID)
+	if err != nil || user == nil || !user.IsPublic {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * dashboardGridPageSize
+
+	records, err := h.Repos.UserMovie.ListByUser(userID, "watched", dashboardGridPageSize, offset)
+	if err != nil {
+		log.Printf("[PublicWatchedHTMX] 获取已看失败: %v", err)
+	}
+	count, _ := h.Repos.UserMovie.CountByUser(userID, "watched")
+	hasMore := offset+len(records) < count
+
+	c.HTML(http.StatusOK, "partials/public_watched_grid.html", gin.H{
+		"WatchedList":     records,
+		"WatchedHasMore":  hasMore,
+		"WatchedNextPage": page + 1,
+		"UserID":          userID,
+	})
+}
+
 func (h *Handler) MovieCommentsHTMX(c *gin.Context) {
 	doubanID := c.Query("douban_id")
 	if doubanID == "" {

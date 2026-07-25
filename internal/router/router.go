@@ -124,6 +124,8 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/dashboard/watched", h.DashboardWatchedHTMX)               // 仪表盘已看过
 		api.GET("/htmx/dashboard/history", h.DashboardHistoryHTMX)               // 仪表盘历史
 		api.GET("/htmx/dashboard/feedback", h.DashboardFeedbackHTMX)             // 仪表盘我的反馈
+		api.GET("/htmx/public/:user_id/wish", h.PublicWishHTMX)                  // 公开主页想看（加载更多）
+		api.GET("/htmx/public/:user_id/watched", h.PublicWatchedHTMX)            // 公开主页已看（加载更多）
 		api.GET("/htmx/douban-card", h.DoubanCardHTMX)                           // 搜索页豆瓣电影卡片
 		api.GET("/htmx/douban-sync-status", h.DoubanSyncStatusHTMX)              // 豆瓣同步状态
 		api.POST("/report/load-speed", h.ReportLoadSpeed)                        // 上报加载速度
@@ -157,6 +159,9 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		// 搜索数据管理
 		admin.GET("/data", h.AdminData)             // 搜索数据管理
 		admin.POST("/data/clean", h.AdminDataClean) // 清理非活跃数据
+
+		// 月度报告手动生成（测试/纠错用）
+		admin.POST("/monthly-report/generate", h.AdminGenerateMonthlyReport)
 
 		// 版权限制管理
 		admin.GET("/copyright", h.AdminCopyright)              // 版权限制页面

@@ -193,30 +193,45 @@ func (s *DoubanSyncScheduler) runDailySync(ctx context.Context) {
 	}
 }
 
-// generateMonthlyReports 为已绑定用户生成上月报告
+// generateMonthlyReports 为本月有观影记录的用户生成上月报告
+// 两阶段生成：
+//  1. 先一次性查出上月全站所有用户的观影数分布，用于计算"超越XX%用户"的百分位
+//     （不能在下面的逐用户循环里各自查一次全站数据，否则用户一多这批处理会非常慢）
+//  2. 再逐个用户生成报告，直接从第一步的分布里取百分位
+//
+// 不再要求用户绑定豆瓣账号——站内直接标记"看过"也会产生 user_movies 记录，
+// 这些用户理应也能拿到月度报告
 func (s *DoubanSyncScheduler) generateMonthlyReports(ctx context.Context) {
 	lastMonth := time.Now().AddDate(0, -1, 0).Format("2006-01")
 	log.Printf("[DoubanSyncScheduler] 开始生成月度报告 (%s)...", lastMonth)
 
-	users, err := s.repos.User.ListAll()
+	start := time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.Local).AddDate(0, -1, 0)
+	end := start.AddDate(0, 1, 0)
+
+	// 阶段一：全站分布（同时也是"这个月有观影记录的用户"名单）
+	allCounts, err := s.repos.UserMovie.CountWatchedByAllUsersInRange(start, end)
 	if err != nil {
-		log.Printf("[DoubanSyncScheduler] 获取用户列表失败: %v", err)
+		log.Printf("[DoubanSyncScheduler] 获取全站月度观影分布失败: %v", err)
+		return
+	}
+	if len(allCounts) == 0 {
+		log.Printf("[DoubanSyncScheduler] %s 没有任何用户产生观影记录，跳过月报生成", lastMonth)
 		return
 	}
 
-	for _, user := range users {
+	// 阶段二：逐用户生成
+	for userID := range allCounts {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		if user.DoubanUserID == "" {
-			continue
-		}
-		if err := s.monthlyReportSvc.GenerateReport(user.ID, lastMonth); err != nil {
-			log.Printf("[DoubanSyncScheduler] 生成用户 %d 月度报告失败: %v", user.ID, err)
+		if err := s.monthlyReportSvc.GenerateReport(userID, lastMonth, allCounts); err != nil {
+			log.Printf("[DoubanSyncScheduler] 生成用户 %d 月度报告失败: %v", userID, err)
 		}
 	}
+
+	log.Printf("[DoubanSyncScheduler] 月度报告生成完成 (%s)，共 %d 位用户", lastMonth, len(allCounts))
 }
 
 // executeJob 执行单个同步任务

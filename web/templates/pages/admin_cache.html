@@ -32,6 +32,31 @@
         </div>
     </div>
 
+    <!-- 月度报告手动生成 -->
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3>月度观影小记</h3>
+        </div>
+        <div class="admin-card-body">
+            <p class="description">正常情况下每月 1 日会自动为上月有观影记录的用户批量生成小记，生成后数据即冻结不再变化。这里可以手动生成/重新生成指定用户某月的小记，用于测试卡片效果或修正数据。</p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="mrUserID">用户ID</label>
+                    <input type="number" id="mrUserID" placeholder="如: 1">
+                </div>
+                <div class="form-group">
+                    <label for="mrYearMonth">月份</label>
+                    <input type="text" id="mrYearMonth" placeholder="2026-07（留空为上月）">
+                </div>
+                <button class="btn btn-primary" onclick="generateMonthlyReport()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    生成 / 重新生成
+                </button>
+            </div>
+            <div id="mrResult" class="result-message"></div>
+        </div>
+    </div>
+
     <!-- 存储策略说明 -->
     <div class="admin-card">
         <div class="admin-card-header">
@@ -72,6 +97,44 @@ async function cleanInactiveData() {
             resultDiv.className = 'result-message success';
         } else {
             resultDiv.textContent = '✗ 清理失败: ' + data.message;
+            resultDiv.className = 'result-message error';
+        }
+    } catch (err) {
+        resultDiv.textContent = '✗ 请求失败: ' + err.message;
+        resultDiv.className = 'result-message error';
+    }
+}
+
+async function generateMonthlyReport() {
+    const resultDiv = document.getElementById('mrResult');
+    const userID = document.getElementById('mrUserID').value.trim();
+    const yearMonth = document.getElementById('mrYearMonth').value.trim();
+
+    if (!userID) {
+        resultDiv.textContent = '✗ 请先输入用户ID';
+        resultDiv.className = 'result-message error';
+        return;
+    }
+
+    resultDiv.textContent = '正在生成...';
+    resultDiv.className = 'result-message loading';
+
+    try {
+        const body = new URLSearchParams();
+        body.set('user_id', userID);
+        if (yearMonth) body.set('year_month', yearMonth);
+
+        const resp = await fetch('/admin/monthly-report/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body
+        });
+        const data = await resp.json();
+        if (data.success) {
+            resultDiv.innerHTML = '✓ 生成成功，<a href="' + data.data.url + '" target="_blank">点击查看</a>';
+            resultDiv.className = 'result-message success';
+        } else {
+            resultDiv.textContent = '✗ 生成失败: ' + data.message;
             resultDiv.className = 'result-message error';
         }
     } catch (err) {

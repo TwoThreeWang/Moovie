@@ -62,10 +62,47 @@ func (r *UserMovieRepository) ListByUserAndDateRange(userID int, status string, 
 	return records, err
 }
 
+// CountWatchedByAllUsersInRange 统计 [start, end) 区间内，所有有观影记录的用户各自的观影数
+// 一次查询返回全站分布，供月度报告批量生成时计算"超越XX%用户"的百分位，
+// 避免给每个用户都单独跑一次全站聚合查询
+func (r *UserMovieRepository) CountWatchedByAllUsersInRange(start, end time.Time) (map[int]int, error) {
+	var rows []struct {
+		UserID int
+		Cnt    int
+	}
+	err := r.db.Model(&model.UserMovie{}).
+		Select("user_id, COUNT(*) as cnt").
+		Where("status = ? AND created_at >= ? AND created_at < ?", "watched", start, end).
+		Group("user_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int]int, len(rows))
+	for _, row := range rows {
+		result[row.UserID] = row.Cnt
+	}
+	return result, nil
+}
+
 func (r *UserMovieRepository) CountByUser(userID int, status string) (int, error) {
 	var count int64
 	err := r.db.Model(&model.UserMovie{}).Where("user_id = ? AND status = ?", userID, status).Count(&count).Error
 	return int(count), err
+}
+
+// AvgRatingByUser 统计某用户"已看"记录里已评分部分的平均分与评分数量
+// 用 SQL 聚合直接算，不需要像分页前那样把全部已看记录拉到内存里再逐条累加
+func (r *UserMovieRepository) AvgRatingByUser(userID int) (float64, int, error) {
+	var result struct {
+		Avg   float64
+		Count int
+	}
+	err := r.db.Model(&model.UserMovie{}).
+		Select("COALESCE(AVG(rating), 0) as avg, COUNT(*) as count").
+		Where("user_id = ? AND status = ? AND rating > 0", userID, "watched").
+		Scan(&result).Error
+	return result.Avg, result.Count, err
 }
 
 func (r *UserMovieRepository) IsMarked(userID int, movieID string, status string) (bool, error) {

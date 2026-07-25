@@ -119,26 +119,41 @@ const (
 
 // MonthlyReport 月度观影小记
 type MonthlyReport struct {
-	ID                    int                 `json:"id" db:"id"`
-	UserID                int                 `json:"user_id" db:"user_id" gorm:"uniqueIndex:idx_user_month"`
-	YearMonth             string              `json:"year_month" db:"year_month" gorm:"uniqueIndex:idx_user_month"` // 格式 2026-06
-	WatchedCount          int                 `json:"watched_count" db:"watched_count"`
-	TotalDurationMinutes  int                 `json:"total_duration_minutes" db:"total_duration_minutes"`
-	AvgRating             float64             `json:"avg_rating" db:"avg_rating"`
-	GenreStats            string              `json:"genre_stats" db:"genre_stats"` // JSON
-	TopMovieID            string              `json:"top_movie_id" db:"top_movie_id"`
-	TopMovieTitle         string              `json:"top_movie_title" db:"top_movie_title"`
-	TopMoviePoster        string              `json:"top_movie_poster" db:"top_movie_poster"`
-	TopMovieRating        int                 `json:"top_movie_rating" db:"top_movie_rating"`
-	ContinuousDays        int                 `json:"continuous_days" db:"continuous_days"`
-	Status                MonthlyReportStatus `json:"status" db:"status" gorm:"default:'pending'"`
-	GeneratedAt           *time.Time          `json:"generated_at" db:"generated_at"`
-	CreatedAt             time.Time           `json:"created_at" db:"created_at"`
-	UpdatedAt             time.Time           `json:"updated_at" db:"updated_at"`
+	ID                   int                 `json:"id" db:"id"`
+	UserID               int                 `json:"user_id" db:"user_id" gorm:"uniqueIndex:idx_user_month"`
+	YearMonth            string              `json:"year_month" db:"year_month" gorm:"uniqueIndex:idx_user_month"` // 格式 2026-06
+	WatchedCount         int                 `json:"watched_count" db:"watched_count"`
+	TotalDurationMinutes int                 `json:"total_duration_minutes" db:"total_duration_minutes"`
+	AvgRating            float64             `json:"avg_rating" db:"avg_rating"`
+	GenreStats           string              `json:"genre_stats" db:"genre_stats"` // JSON
+	TopMovieID           string              `json:"top_movie_id" db:"top_movie_id"`
+	TopMovieTitle        string              `json:"top_movie_title" db:"top_movie_title"`
+	TopMoviePoster       string              `json:"top_movie_poster" db:"top_movie_poster"`
+	TopMovieRating       int                 `json:"top_movie_rating" db:"top_movie_rating"`
+	ContinuousDays       int                 `json:"continuous_days" db:"continuous_days"`
+
+	// 分享卡片相关字段：生成时一次性算好并冻结，前端渲染时直接读，不再重新计算
+	PersonaTitle    string `json:"persona_title" db:"persona_title"`               // 本月观影人设标题，如"深夜悬疑侦探"
+	PersonaLine     string `json:"persona_line" db:"persona_line"`                 // 人设判词，已拼好具体数字的完整句子
+	PercentileRank  int    `json:"percentile_rank" db:"percentile_rank"`           // 本月观影量超过全站百分之多少的用户，0 表示样本不足未计算
+	FeaturedQuote   string `json:"featured_quote" db:"featured_quote"`             // 精选短评摘录
+	PosterWall      string `json:"poster_wall" db:"poster_wall" gorm:"type:text"`  // JSON 数组，海报墙抽样结果，见 PosterWallItem
+
+	Status       MonthlyReportStatus `json:"status" db:"status" gorm:"default:'pending'"`
+	GeneratedAt  *time.Time          `json:"generated_at" db:"generated_at"`
+	CreatedAt    time.Time           `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at" db:"updated_at"`
 
 	User User `gorm:"foreignKey:UserID;references:ID"`
 }
 
 func (MonthlyReport) TableName() string {
 	return "monthly_reports"
+}
+
+// PosterWallItem 月度海报墙单张海报的数据
+type PosterWallItem struct {
+	MovieID string `json:"movie_id"`
+	Title   string `json:"title"`
+	Poster  string `json:"poster"`
 }

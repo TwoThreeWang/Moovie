@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/user/moovie/internal/middleware"
@@ -166,6 +169,46 @@ func (h *Handler) AdminDataClean(c *gin.Context) {
 	utils.Success(c, gin.H{
 		"affected": affected,
 		"message":  "清理完成",
+	})
+}
+
+// AdminGenerateMonthlyReport 手动生成/重新生成指定用户某月的观影小记
+// 用于管理员验证卡片效果或修正数据；设计上月报生成后即冻结，不对普通用户开放"随时重算"，
+// 只保留这一个后台入口作为纠错/测试手段
+func (h *Handler) AdminGenerateMonthlyReport(c *gin.Context) {
+	userID, err := strconv.Atoi(c.PostForm("user_id"))
+	if err != nil || userID <= 0 {
+		utils.BadRequest(c, "请输入有效的用户ID")
+		return
+	}
+
+	yearMonth := strings.TrimSpace(c.PostForm("year_month"))
+	if yearMonth == "" {
+		yearMonth = time.Now().AddDate(0, -1, 0).Format("2006-01")
+	}
+	start, err := time.Parse("2006-01", yearMonth)
+	if err != nil {
+		utils.BadRequest(c, "月份格式应为 2026-07")
+		return
+	}
+	end := start.AddDate(0, 1, 0)
+
+	// 统计该月全站分布，用于计算"超越XX%用户"
+	allCounts, err := h.Repos.UserMovie.CountWatchedByAllUsersInRange(start, end)
+	if err != nil {
+		utils.InternalServerError(c, "统计全站分布失败")
+		return
+	}
+
+	if err := h.MonthlyReportService.GenerateReport(userID, yearMonth, allCounts); err != nil {
+		utils.InternalServerError(c, "生成失败: "+err.Error())
+		return
+	}
+
+	utils.Success(c, gin.H{
+		"user_id":    userID,
+		"year_month": yearMonth,
+		"url":        fmt.Sprintf("/user/%d/monthly/%s", userID, yearMonth),
 	})
 }
 

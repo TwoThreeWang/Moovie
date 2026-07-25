@@ -8,86 +8,104 @@
         </a>
     </div>
 
-    <!-- ====== 可分享卡片 ====== -->
+    <div class="monthly-layout">
+    <div class="monthly-card-col">
+    <!-- ====== 可分享卡片：电影票根 ====== -->
     <div class="mc-card-wrap" id="month-card">
         <div class="mc-card">
-            <div class="mc-inner">
-                <!-- 顶部：品牌 + 用户信息 -->
-                <div class="mc-top">
-                    <div class="mc-brand"><span>Moovie</span> 影牛</div>
-                    <div class="mc-who">
-                        {{ .User.Username }}<br>
-                        <small>@{{ .User.Username }}</small>
-                    </div>
+
+            <!-- 正片区：人设 + 拼贴海报墙 -->
+            <div class="mc-feature">
+                <div class="mc-feature-top">
+                    <span class="mc-feature-brand">MOOVIE 影牛</span>
+                    <span class="mc-feature-top-right">
+                        <span class="mc-feature-user">@{{ .User.Username }}</span>
+                        <span class="mc-feature-issue">NO. {{ .Report.YearMonth }}</span>
+                    </span>
                 </div>
 
-                <!-- 月份 -->
-                <div class="mc-month">
-                    {{ slice .Report.YearMonth 0 4 }} · {{ slice .Report.YearMonth 5 7 }}月
-                    <small>{{ if eq (slice .Report.YearMonth 5 7) "01" }}J A N U A R Y{{ else if eq (slice .Report.YearMonth 5 7) "02" }}F E B R U A R Y{{ else if eq (slice .Report.YearMonth 5 7) "03" }}M A R C H{{ else if eq (slice .Report.YearMonth 5 7) "04" }}A P R I L{{ else if eq (slice .Report.YearMonth 5 7) "05" }}M A Y{{ else if eq (slice .Report.YearMonth 5 7) "06" }}J U N E{{ else if eq (slice .Report.YearMonth 5 7) "07" }}J U L Y{{ else if eq (slice .Report.YearMonth 5 7) "08" }}A U G U S T{{ else if eq (slice .Report.YearMonth 5 7) "09" }}S E P T E M B E R{{ else if eq (slice .Report.YearMonth 5 7) "10" }}O C T O B E R{{ else if eq (slice .Report.YearMonth 5 7) "11" }}N O V E M B E R{{ else if eq (slice .Report.YearMonth 5 7) "12" }}D E C E M B E R{{ end }}</small>
+                <div class="mc-persona">
+                    <div class="mc-persona-label">本月你的观影人格是</div>
+                    <div class="mc-persona-title">{{ .Report.PersonaTitle }}</div>
+                    {{ if .Report.PersonaLine }}
+                    <div class="mc-persona-line">{{ .Report.PersonaLine }}</div>
+                    {{ end }}
                 </div>
 
-                <!-- 统计数字 -->
-                <div class="mc-stat">
-                    <div>
-                        <div class="mc-stat-v">{{ .Report.WatchedCount }}<small> 部</small></div>
-                        <div class="mc-stat-k">本月看过</div>
+                {{ if .PosterWall }}
+                <div class="mc-filmstrip">
+                    {{ range $i, $p := .PosterWall }}
+                    <div class="mc-filmstrip-item">
+                        <img src="{{ proxyImg $p.Poster }}" alt="{{ $p.Title }}" referrerpolicy="no-referrer" onerror="this.style.display='none'">
+                        <span class="mc-filmstrip-cap">{{ $p.Title }}</span>
+                        {{ if and (eq (add $i 1) (len $.PosterWall)) (gt $.PosterWallExtra 0) }}
+                        <div class="mc-filmstrip-more">+{{ $.PosterWallExtra }}</div>
+                        {{ end }}
                     </div>
-                    {{ if .Report.TotalDurationMinutes }}
+                    {{ end }}
+                </div>
+                {{ end }}
+            </div>
+
+            <!-- 撕票口 -->
+            <div class="mc-perf"></div>
+
+            <!-- 票根区：数据字段 + 本月最佳 + 短评 + 条码 -->
+            <div class="mc-stub">
+                <div class="mc-fields">
                     <div>
-                        <div class="mc-stat-v">{{ printf "%.1f" (divf .Report.TotalDurationMinutes 60) }}<small> h</small></div>
-                        <div class="mc-stat-k">沉浸时长</div>
+                        <div class="mc-field-label">SCREENED 观影</div>
+                        <div class="mc-field-value">{{ .Report.WatchedCount }} 部</div>
+                    </div>
+                    {{ if ge .Report.ContinuousDays 2 }}
+                    <div>
+                        <div class="mc-field-label">STREAK 连刷</div>
+                        <div class="mc-field-value">{{ .Report.ContinuousDays }} 天</div>
                     </div>
                     {{ end }}
                     {{ if .Report.AvgRating }}
                     <div>
-                        <div class="mc-stat-v">{{ printf "%.1f" .Report.AvgRating }}<small> 分</small></div>
-                        <div class="mc-stat-k">平均评分</div>
+                        <div class="mc-field-label">SCORE 均分</div>
+                        <div class="mc-field-value">{{ printf "%.1f" .Report.AvgRating }}</div>
+                    </div>
+                    {{ end }}
+                    {{ if gt .Report.PercentileRank 0 }}
+                    <div>
+                        <div class="mc-field-label">TOP 超越</div>
+                        <div class="mc-field-value">{{ .Report.PercentileRank }}%</div>
                     </div>
                     {{ end }}
                 </div>
 
-                <!-- 本月最佳 -->
                 {{ if .Report.TopMovieTitle }}
-                <div class="mc-best">
-                    本月最佳　<b>《{{ .Report.TopMovieTitle }}》</b>
+                <div class="mc-featured">
+                    <img class="mc-featured-poster" src="{{ proxyImg .Report.TopMoviePoster }}" alt="{{ .Report.TopMovieTitle }}" referrerpolicy="no-referrer" onerror="this.style.display='none'">
+                    <div class="mc-featured-body">
+                        <div class="mc-featured-label">特别放映 FEATURED</div>
+                        <div class="mc-featured-title">《{{ .Report.TopMovieTitle }}》</div>
+                    </div>
                     {{ if .Report.TopMovieRating }}
-                    <span class="mc-star">★{{ printf "%.1f" (tof .Report.TopMovieRating) }}</span>
+                    <div class="mc-featured-rating">★{{ printf "%.1f" (tof .Report.TopMovieRating) }}</div>
                     {{ end }}
                 </div>
                 {{ end }}
 
-                <!-- 海报网格（最多显示9张：6张正常 + 3张缩小渐变） -->
-                {{ if .MonthlyMovies }}
-                <div class="mc-grid-wrap">
-                    <div class="mc-grid">
-                        {{ range firstN 9 .MonthlyMovies }}
-                        <div class="mc-pc">
-                            <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">
-                            <span>{{ .Title }}</span>
-                        </div>
-                        {{ end }}
-                    </div>
-                    {{ if gt (len .MonthlyMovies) 9 }}
-                    <div class="mc-grid-fade"></div>
-                    {{ end }}
-                </div>
+                {{ if .Report.FeaturedQuote }}
+                <div class="mc-quote">&ldquo;{{ .Report.FeaturedQuote }}&rdquo;</div>
                 {{ end }}
 
-                <!-- 本期影评 -->
-                <div class="mc-review">
-                    <div class="mc-review-lab">本 期 影 评</div>
-                    <div class="mc-review-txt">
-                        {{ if .GenreStats }}「{{ (index .GenreStats 0).Genre }}为主，{{ if gt .Report.WatchedCount 10 }}高产{{ else }}轻松{{ end }}的一个月。」{{ else }}「记录每一帧光影，收藏每一份感动。」{{ end }}
+                <div class="mc-stub-footer">
+                    <div class="mc-barcode">
+                        {{ range seq 1 24 }}<span></span>{{ end }}
                     </div>
-                </div>
-
-                <!-- 底部水印 + 二维码 -->
-                <div class="mc-bottom">
-                    <div class="mc-wm">Moovie · 观影月记</div>
                     <div class="mc-qr" id="mc-qr"></div>
                 </div>
+                <div class="mc-stub-hint">扫码查看 {{ .User.Username }} 的观影主页</div>
+                {{ if .SiteDomain }}
+                <div class="mc-stub-domain">{{ .SiteDomain }}</div>
+                {{ end }}
             </div>
+
         </div>
     </div>
 
@@ -100,27 +118,68 @@
     </div>
 
     <p class="monthly-bottom-note">每月观影小记由 Moovie 自动生成</p>
+    </div>
+
+    <!-- ====== 本月完整片单（与卡片左右并排，不影响卡片本身固定的海报墙） ====== -->
+    {{ if .MonthlyMovies }}
+    <div class="monthly-list-col">
+    <div class="monthly-full-list">
+        <div class="monthly-list-title">本月完整片单</div>
+        <div class="monthly-movie-list">
+            {{ range .MonthlyMovies }}
+            <div class="monthly-movie-item">
+                <div class="monthly-movie-poster">
+                    <a href="/movie/{{ .MovieID }}?title={{ .Title }}">
+                        <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    </a>
+                </div>
+                <div class="monthly-movie-body">
+                    <a href="/movie/{{ .MovieID }}?title={{ .Title }}" class="monthly-movie-title">{{ .Title }}</a>
+                    <div class="monthly-movie-meta">
+                        {{ if .Rating }}
+                        <span class="monthly-movie-stars">
+                            {{ if eq .Rating 1 }}★☆☆☆☆
+                            {{ else if eq .Rating 2 }}★★☆☆☆
+                            {{ else if eq .Rating 3 }}★★★☆☆
+                            {{ else if eq .Rating 4 }}★★★★☆
+                            {{ else if eq .Rating 5 }}★★★★★
+                            {{ end }}
+                        </span>
+                        <span class="monthly-movie-score">{{ .Rating }}.0</span>
+                        {{ end }}
+                        <time>{{ .UpdatedAt.Format "01-02" }}</time>
+                    </div>
+                    {{ if .Comment }}
+                    <p class="monthly-movie-comment">{{ .Comment }}</p>
+                    {{ end }}
+                </div>
+            </div>
+            {{ end }}
+        </div>
+    </div>
+    </div>
+    {{ end }}
+    </div>
 </div>
+
+<input type="hidden" id="pub-share-url" value="{{ .Canonical }}">
+<input type="hidden" id="pub-profile-url" value="{{ .ProfileURL }}">
 
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
 // 前端生成二维码
 (function() {
-    var shareURL = window.location.href;
+    var profileInput = document.getElementById('pub-profile-url');
+    var profileURL = (profileInput && profileInput.value) ? profileInput.value : window.location.origin;
     var qrContainer = document.getElementById('mc-qr');
     if (qrContainer && typeof qrcode !== 'undefined') {
         try {
             var qr = qrcode(0, 'M');
-            qr.addData(shareURL);
+            qr.addData(profileURL);
             qr.make();
             var img = document.createElement('img');
             img.src = qr.createDataURL(4, 0);
-            img.style.borderRadius = '4px';
-            img.style.background = '#fff';
-            img.style.padding = '2px';
-            img.style.width = '48px';
-            img.style.height = '48px';
             qrContainer.appendChild(img);
         } catch(e) {
             console.error('QR code error:', e);

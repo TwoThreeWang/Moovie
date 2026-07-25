@@ -42,6 +42,7 @@ type Handler struct {
 	TMDBService           *service.TMDBService
 	SearchService         *service.SearchService
 	RecommendationService *service.RecommendationService
+	MonthlyReportService  *service.MonthlyReportService
 	SearchCache           *utils.SearchCache[service.SearchResult]
 }
 
@@ -65,6 +66,9 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 	// 创建推荐服务
 	recommendationService := service.NewRecommendationService(repos.Movie)
 
+	// 创建月度报告服务（供管理员手动生成/重新生成月报使用）
+	monthlyReportService := service.NewMonthlyReportService(repos)
+
 	// 创建搜索缓存（容量1000条，TTL 3小时）
 	searchCache := utils.NewSearchCache[service.SearchResult](500, 3*time.Hour)
 
@@ -76,6 +80,7 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 		TMDBService:           tmdbService,
 		SearchService:         searchService,
 		RecommendationService: recommendationService,
+		MonthlyReportService:  monthlyReportService,
 		SearchCache:           searchCache,
 	}
 }
@@ -1200,36 +1205,38 @@ func (h *Handler) PublicProfile(c *gin.Context) {
 		return
 	}
 
-	wishList, _ := h.Repos.UserMovie.ListByUser(userID, "wish", 1000, 0)
-	watchedList, _ := h.Repos.UserMovie.ListByUser(userID, "watched", 1000, 0)
+	// 公开主页只取第一页（与仪表盘想看/已看的分页逻辑保持一致），避免一次性拉回全部记录；
+	// 后续页通过 PublicWishHTMX / PublicWatchedHTMX 的"加载更多"按钮增量获取
+	wishList, _ := h.Repos.UserMovie.ListByUser(userID, "wish", dashboardGridPageSize, 0)
+	watchedList, _ := h.Repos.UserMovie.ListByUser(userID, "watched", dashboardGridPageSize, 0)
 	wishCount, _ := h.Repos.UserMovie.CountByUser(userID, "wish")
 	watchedCount, _ := h.Repos.UserMovie.CountByUser(userID, "watched")
 	monthlyReports, _ := h.Repos.MonthlyReport.ListByUser(userID, 6, 0)
 
-	// 计算平均评分
-	var totalRating, ratedCount int
-	for _, m := range watchedList {
-		if m.Rating > 0 {
-			totalRating += m.Rating
-			ratedCount++
-		}
-	}
-	var avgRating float64
-	if ratedCount > 0 {
-		avgRating = float64(totalRating) / float64(ratedCount)
+	// 平均评分改用 SQL 聚合直接算，不再依赖把全部已看记录都拉进内存来累加
+	avgRating, ratedCount, err := h.Repos.UserMovie.AvgRatingByUser(userID)
+	if err != nil {
+		log.Printf("[PublicProfile] 计算平均评分失败 user=%d err=%v", userID, err)
 	}
 
+	wishHasMore := wishCount > len(wishList)
+	watchedHasMore := watchedCount > len(watchedList)
+
 	c.HTML(http.StatusOK, "share.html", h.RenderData(c, gin.H{
-		"Title":           user.Username + " 的观影记录 - " + h.Config.SiteName,
-		"User":            user,
-		"WishList":        wishList,
-		"WatchedList":     watchedList,
-		"WishCount":       wishCount,
-		"WatchedCount":    watchedCount,
-		"AvgRating":       avgRating,
-		"RatedCount":      ratedCount,
-		"MonthlyReports":  monthlyReports,
-		"Canonical":       fmt.Sprintf("%s/user/%d", h.Config.SiteUrl, user.ID),
+		"Title":          user.Username + " 的观影记录 - " + h.Config.SiteName,
+		"User":           user,
+		"WishList":       wishList,
+		"WatchedList":    watchedList,
+		"WishCount":      wishCount,
+		"WatchedCount":   watchedCount,
+		"WishHasMore":    wishHasMore,
+		"WishNextPage":   2,
+		"WatchedHasMore": watchedHasMore,
+		"WatchedNextPage": 2,
+		"AvgRating":      avgRating,
+		"RatedCount":     ratedCount,
+		"MonthlyReports": monthlyReports,
+		"Canonical":      fmt.Sprintf("%s/user/%d", h.Config.SiteUrl, user.ID),
 	}))
 }
 
@@ -1274,7 +1281,18 @@ func (h *Handler) PublicMonthly(c *gin.Context) {
 		_ = json.Unmarshal([]byte(report.GenreStats), &genreStats)
 	}
 
-	// 查询本月已看电影列表（直接下推到 SQL WHERE 条件按月过滤，避免拉取用户全部观影记录再在内存里比对日期）
+	// 解析分享卡片的海报墙（生成时已抽样冻结好的固定几张，不是本月全部）
+	var posterWall []model.PosterWallItem
+	if report.PosterWall != "" {
+		_ = json.Unmarshal([]byte(report.PosterWall), &posterWall)
+	}
+	// 卡片上未展示的部分，用于海报墙末尾的"+N"角标
+	posterWallExtra := report.WatchedCount - len(posterWall)
+	if posterWallExtra < 0 {
+		posterWallExtra = 0
+	}
+
+	// 查询本月完整已看片单（用于卡片下方"完整片单"区块，不影响卡片本身的固定海报墙）
 	startTime, _ := time.Parse("2006-01", yearMonth)
 	endTime := startTime.AddDate(0, 1, 0)
 	monthlyMovies, err := h.Repos.UserMovie.ListByUserAndDateRange(userID, "watched", startTime, endTime)
@@ -1283,14 +1301,24 @@ func (h *Handler) PublicMonthly(c *gin.Context) {
 	}
 
 	shareURL := fmt.Sprintf("%s/user/%d/monthly/%s", h.Config.SiteUrl, user.ID, yearMonth)
+	// 二维码指向用户的公开主页（而不是这一页本身），扫码的人能看到完整的观影记录，
+	// 而不只是这一个月的静态截图
+	profileURL := fmt.Sprintf("%s/user/%d", h.Config.SiteUrl, user.ID)
+	// 展示用的站点域名，去掉协议前缀，如 "moovie.c2v2.com"
+	siteDomain := strings.TrimPrefix(strings.TrimPrefix(h.Config.SiteUrl, "https://"), "http://")
+	siteDomain = strings.TrimSuffix(siteDomain, "/")
 
 	c.HTML(http.StatusOK, "share_monthly.html", h.RenderData(c, gin.H{
-		"Title":         user.Username + " " + yearMonth + " 月度观影小记 - " + h.Config.SiteName,
-		"User":          user,
-		"Report":        report,
-		"GenreStats":    genreStats,
-		"MonthlyMovies": monthlyMovies,
-		"Canonical":     shareURL,
+		"Title":           user.Username + " " + yearMonth + " 月度观影小记 - " + h.Config.SiteName,
+		"User":            user,
+		"Report":          report,
+		"GenreStats":      genreStats,
+		"PosterWall":      posterWall,
+		"PosterWallExtra": posterWallExtra,
+		"MonthlyMovies":   monthlyMovies,
+		"Canonical":       shareURL,
+		"ProfileURL":      profileURL,
+		"SiteDomain":      siteDomain,
 	}))
 }
 
