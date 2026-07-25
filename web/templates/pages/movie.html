@@ -117,6 +117,13 @@
             </div>            <div class="movie-actions">
                 {{ template "user_movie_buttons.html" (dict "DoubanID" .Movie.DoubanID "Title" .Movie.Title "Poster" .Movie.Poster "Year" .Movie.Year "IsWish" .IsWish "IsWatched" .IsWatched) }}
             </div>
+            {{ if or (gt .WatchedByCount 0) (gt .WishByCount 0) }}
+            <div class="movie-social-stats">
+                {{ if gt .WatchedByCount 0 }}<span>{{ .WatchedByCount }} 人看过</span>{{ end }}
+                {{ if and (gt .WatchedByCount 0) (gt .WishByCount 0) }}<span class="movie-social-dot">·</span>{{ end }}
+                {{ if gt .WishByCount 0 }}<span>{{ .WishByCount }} 人想看</span>{{ end }}
+            </div>
+            {{ end }}
         </div>
     </div>
 

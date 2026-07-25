@@ -1,0 +1,32 @@
+{{ define "square_grid.html" }}
+{{ range .Activities }}
+<div class="square-item">
+    <div class="square-row">
+        <a href="/user/{{ .UserID }}" class="square-user">
+            <span class="square-avatar">{{ default "🎬" .User.Avatar }}</span>
+            <span class="square-username">{{ .User.Username }}</span>
+        </a>
+        <span class="square-verb">看过</span>
+        <a href="/movie/{{ .MovieID }}?title={{ .Title }}" class="square-movie">
+            <img class="square-poster" src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            <div class="square-movie-info">
+                <span class="square-movie-title">{{ .Title }}</span>
+                {{ if .Rating }}<span class="square-movie-rating">★ {{ .Rating }}.0</span>{{ end }}
+            </div>
+        </a>
+        <time class="square-time">{{ .UpdatedAt.Format "01-02 15:04" }}</time>
+    </div>
+    {{ if .Comment }}<p class="square-comment">{{ .Comment }}</p>{{ end }}
+</div>
+{{ end }}
+{{ if .HasMore }}
+<div id="square-load-more" class="load-more-container" style="display: flex; justify-content: center; padding: 20px 0;">
+    <button class="btn btn-outline"
+            hx-get="/api/htmx/square/activity?page={{ .NextPage }}"
+            hx-target="#square-load-more"
+            hx-swap="outerHTML">
+        加载更多
+    </button>
+</div>
+{{ end }}
+{{ end }}

@@ -919,8 +919,163 @@ func (h *Handler) MovieCommentsHTMX(c *gin.Context) {
 	if err != nil {
 		log.Printf("[MovieCommentsHTMX] 获取评论失败: %v", err)
 	}
+
+	// 批量取点赞数/回复数/当前用户点赞状态，避免每条短评单独查一次（N+1）
+	ids := make([]int, 0, len(records))
+	for _, rec := range records {
+		ids = append(ids, rec.ID)
+	}
+	likeCounts, err := h.Repos.CommentLike.CountByUserMovies(ids)
+	if err != nil {
+		log.Printf("[MovieCommentsHTMX] 获取点赞数失败: %v", err)
+	}
+	replyCounts, err := h.Repos.CommentReply.CountByUserMovies(ids)
+	if err != nil {
+		log.Printf("[MovieCommentsHTMX] 获取回复数失败: %v", err)
+	}
+	currentUserID := middleware.GetUserID(c)
+	liked, err := h.Repos.CommentLike.LikedByUser(ids, currentUserID)
+	if err != nil {
+		log.Printf("[MovieCommentsHTMX] 获取点赞状态失败: %v", err)
+	}
+
 	c.HTML(http.StatusOK, "partials/movie_user_comments.html", gin.H{
-		"Comments": records,
+		"Comments":      records,
+		"LikeCounts":    likeCounts,
+		"ReplyCounts":   replyCounts,
+		"Liked":         liked,
+		"CurrentUserID": currentUserID,
+	})
+}
+
+// ToggleCommentLikeHTMX 短评点赞/取消点赞（同一用户重复点击即取消）
+func (h *Handler) ToggleCommentLikeHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusUnauthorized, "")
+		return
+	}
+	userMovieID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || userMovieID <= 0 {
+		c.String(http.StatusBadRequest, "")
+		return
+	}
+	count, liked, err := h.Repos.CommentLike.Toggle(userMovieID, userID)
+	if err != nil {
+		log.Printf("[ToggleCommentLikeHTMX] 点赞操作失败: %v", err)
+		c.String(http.StatusInternalServerError, "")
+		return
+	}
+	c.HTML(http.StatusOK, "partials/comment_like_button.html", gin.H{
+		"UserMovieID": userMovieID,
+		"LikeCount":   count,
+		"Liked":       liked,
+	})
+}
+
+// CommentRepliesHTMX 加载某条短评下的回复列表 + 回复表单（点击"回复"时懒加载）
+func (h *Handler) CommentRepliesHTMX(c *gin.Context) {
+	userMovieID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || userMovieID <= 0 {
+		c.String(http.StatusBadRequest, "")
+		return
+	}
+	replies, err := h.Repos.CommentReply.ListByUserMovie(userMovieID)
+	if err != nil {
+		log.Printf("[CommentRepliesHTMX] 获取回复列表失败: %v", err)
+	}
+	c.HTML(http.StatusOK, "partials/comment_replies.html", gin.H{
+		"UserMovieID":   userMovieID,
+		"Replies":       replies,
+		"CurrentUserID": middleware.GetUserID(c),
+	})
+}
+
+// CreateCommentReplyHTMX 提交一条短评回复
+func (h *Handler) CreateCommentReplyHTMX(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == 0 {
+		c.String(http.StatusUnauthorized, "")
+		return
+	}
+	userMovieID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || userMovieID <= 0 {
+		c.String(http.StatusBadRequest, "")
+		return
+	}
+	content := strings.TrimSpace(c.PostForm("content"))
+	if content == "" {
+		c.String(http.StatusBadRequest, "回复内容不能为空")
+		return
+	}
+	if len([]rune(content)) > 300 {
+		content = string([]rune(content)[:300])
+	}
+	if _, err := h.Repos.CommentReply.Create(userMovieID, userID, content); err != nil {
+		log.Printf("[CreateCommentReplyHTMX] 创建回复失败: %v", err)
+		c.String(http.StatusInternalServerError, "回复失败")
+		return
+	}
+	replies, err := h.Repos.CommentReply.ListByUserMovie(userMovieID)
+	if err != nil {
+		log.Printf("[CreateCommentReplyHTMX] 获取回复列表失败: %v", err)
+	}
+	c.HTML(http.StatusOK, "partials/comment_replies.html", gin.H{
+		"UserMovieID":   userMovieID,
+		"Replies":       replies,
+		"CurrentUserID": userID,
+	})
+}
+
+// squarePageSize 广场动态流每页条数
+const squarePageSize = 20
+
+// SquareActivityHTMX 广场"动态"tab：所有公开用户最近的观影动态，支持分页加载更多
+func (h *Handler) SquareActivityHTMX(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * squarePageSize
+
+	activities, err := h.Repos.UserMovie.ListRecentPublicActivity(squarePageSize, offset)
+	if err != nil {
+		log.Printf("[SquareActivityHTMX] 获取广场动态失败: %v", err)
+	}
+	total, _ := h.Repos.UserMovie.CountRecentPublicActivity()
+	hasMore := offset+len(activities) < total
+
+	data := gin.H{
+		"Activities":  activities,
+		"HasMore":     hasMore,
+		"NextPage":    page + 1,
+		"IsFirstPage": page == 1,
+	}
+
+	if page > 1 {
+		c.HTML(http.StatusOK, "partials/square_grid.html", data)
+		return
+	}
+	c.HTML(http.StatusOK, "partials/square_activity.html", data)
+}
+
+// SquareLeaderboardHTMX 广场"排行榜"tab：本周活跃榜 + 历史总榜（只看开启了公开分享的用户）
+func (h *Handler) SquareLeaderboardHTMX(c *gin.Context) {
+	const leaderboardSize = 20
+	weekAgo := time.Now().AddDate(0, 0, -7)
+
+	weeklyTop, err := h.Repos.UserMovie.TopActiveUsersSince(weekAgo, leaderboardSize)
+	if err != nil {
+		log.Printf("[SquareLeaderboardHTMX] 获取本周活跃榜失败: %v", err)
+	}
+	allTimeTop, err := h.Repos.UserMovie.TopActiveUsersAllTime(leaderboardSize)
+	if err != nil {
+		log.Printf("[SquareLeaderboardHTMX] 获取总榜失败: %v", err)
+	}
+
+	c.HTML(http.StatusOK, "partials/square_leaderboard.html", gin.H{
+		"WeeklyTop":  weeklyTop,
+		"AllTimeTop": allTimeTop,
 	})
 }
 

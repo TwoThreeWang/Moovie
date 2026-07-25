@@ -154,6 +154,8 @@ func (h *Handler) getActiveMenu(c *gin.Context) string {
 		return "trends"
 	case "/foryou":
 		return "foryou"
+	case "/square":
+		return "square"
 	case "/player":
 		return "player"
 	case "/iptv":
@@ -259,6 +261,10 @@ func (h *Handler) Movie(c *gin.Context) {
 		}
 	}
 
+	// 全站有多少人看过/想看这部电影，作为详情页的社交信号，让访客感觉到"这里还有别的真实用户"
+	watchedByCount, _ := h.Repos.UserMovie.CountByMovie(movie.DoubanID, "watched")
+	wishByCount, _ := h.Repos.UserMovie.CountByMovie(movie.DoubanID, "wish")
+
 	// 构建 SEO 关键词
 	var keywords []string
 	keywords = append(keywords, movie.Title)
@@ -328,12 +334,14 @@ func (h *Handler) Movie(c *gin.Context) {
 		"Keywords":      strings.Join(keywords, ","),
 		"Cover":         utils.EncodeProxyImageURL(movie.Poster),
 		"Canonical":     fmt.Sprintf("%s/movie/%s", h.Config.SiteUrl, movie.DoubanID),
-		"Movie":         movie,
-		"IsWish":        isWish,
-		"IsWatched":     isWatched,
-		"DirectorList":  directorList,
-		"SearchTitle":   title,
-		"SimilarMovies": movies,
+		"Movie":          movie,
+		"IsWish":         isWish,
+		"IsWatched":      isWatched,
+		"WatchedByCount": watchedByCount,
+		"WishByCount":    wishByCount,
+		"DirectorList":   directorList,
+		"SearchTitle":    title,
+		"SimilarMovies":  movies,
 	}))
 }
 
@@ -628,6 +636,14 @@ func (h *Handler) Trends(c *gin.Context) {
 func (h *Handler) ForYou(c *gin.Context) {
 	c.HTML(http.StatusOK, "foryou.html", h.RenderData(c, gin.H{
 		"Title": "为你推荐 - " + h.Config.SiteName,
+	}))
+}
+
+// Square 广场页外壳：动态流 / 排行榜的具体内容都通过 htmx 懒加载，
+// 页面本身只负责渲染 tab 结构，和 dashboard/foryou 的加载方式保持一致
+func (h *Handler) Square(c *gin.Context) {
+	c.HTML(http.StatusOK, "square.html", h.RenderData(c, gin.H{
+		"Title": "广场 - " + h.Config.SiteName,
 	}))
 }
 
@@ -1308,6 +1324,19 @@ func (h *Handler) PublicMonthly(c *gin.Context) {
 	siteDomain := strings.TrimPrefix(strings.TrimPrefix(h.Config.SiteUrl, "https://"), "http://")
 	siteDomain = strings.TrimSuffix(siteDomain, "/")
 
+	// 如果来看小记的是另一个登录用户（不是本人），顺手算一下两人观影重合数，
+	// 把"对外晒"的页面变成一个能把人带回站内、和别人产生连接的入口
+	var overlapCount int
+	showOverlap := false
+	if viewerID := middleware.GetUserID(c); viewerID > 0 && viewerID != userID {
+		overlapCount, err = h.Repos.UserMovie.CountOverlapWatched(viewerID, userID)
+		if err != nil {
+			log.Printf("[PublicMonthly] 计算观影重合数失败 viewer=%d user=%d err=%v", viewerID, userID, err)
+		} else {
+			showOverlap = true
+		}
+	}
+
 	c.HTML(http.StatusOK, "share_monthly.html", h.RenderData(c, gin.H{
 		"Title":           user.Username + " " + yearMonth + " 月度观影小记 - " + h.Config.SiteName,
 		"User":            user,
@@ -1319,6 +1348,8 @@ func (h *Handler) PublicMonthly(c *gin.Context) {
 		"Canonical":       shareURL,
 		"ProfileURL":      profileURL,
 		"SiteDomain":      siteDomain,
+		"ShowOverlap":     showOverlap,
+		"OverlapCount":    overlapCount,
 	}))
 }
 

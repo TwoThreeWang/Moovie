@@ -3,12 +3,17 @@
     {{ range .Comments }}
     <div class="user-comment-item">
         <div class="user-comment-meta">
+            {{ if .User.IsPublic }}
+            <a class="comment-user comment-user-link" href="/user/{{ .User.ID }}" title="查看 {{ .User.Username }} 的主页">
+                <span class="comment-user-avatar">{{ default "🎬" .User.Avatar }}</span>
+                {{ default "匿名用户" .User.Username }}
+            </a>
+            {{ else }}
             <span class="comment-user">
-                <svg class="user-icon" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path>
-                </svg>
+                <span class="comment-user-avatar">{{ default "🎬" .User.Avatar }}</span>
                 {{ default "匿名用户" .User.Username }}
             </span>
+            {{ end }}
             {{ if gt .Rating 0 }}
             <span class="comment-stars">
                 {{ $rating := .Rating }}
@@ -22,6 +27,17 @@
         <div class="user-comment-content">
             <span class="comment-text">{{ .Comment }}</span>
         </div>
+        <div class="user-comment-actions">
+            {{ template "comment_like_button.html" (dict "UserMovieID" .ID "LikeCount" (index $.LikeCounts .ID) "Liked" (index $.Liked .ID)) }}
+            <button type="button"
+                    class="comment-reply-toggle"
+                    hx-get="/api/comments/{{ .ID }}/replies"
+                    hx-target="#comment-replies-{{ .ID }}"
+                    hx-swap="innerHTML">
+                {{ $rc := index $.ReplyCounts .ID }}回复{{ if gt $rc 0 }}（{{ $rc }}）{{ end }}
+            </button>
+        </div>
+        <div class="comment-replies-container" id="comment-replies-{{ .ID }}"></div>
     </div>
     {{ end }}
 </div>
@@ -81,11 +97,20 @@
     text-overflow: ellipsis;
 }
 
-.user-icon {
-    width: 17px;
-    height: 17px;
+.comment-user-link {
+    color: inherit;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+.comment-user-link:hover {
+    color: var(--primary, #4f8cff);
+}
+
+.comment-user-avatar {
+    font-size: 14px;
+    line-height: 1;
     flex-shrink: 0;
-    opacity: 0.8;
 }
 
 .comment-stars {
@@ -107,6 +132,135 @@
     color: var(--text-muted, #888);
     padding: 1.5rem;
     font-size: 0.875rem;
+}
+
+/* -- 点赞 / 回复 -- */
+.user-comment-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 2px;
+}
+
+.comment-like-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text-muted, #888);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.comment-like-btn:hover {
+    color: #ff5c7a;
+}
+
+.comment-like-btn.liked {
+    color: #ff5c7a;
+}
+
+.comment-like-count {
+    min-width: 8px;
+}
+
+.comment-reply-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text-muted, #888);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.comment-reply-toggle:hover {
+    color: var(--primary, #4f8cff);
+}
+
+.comment-replies-container:empty {
+    display: none;
+}
+
+.comment-replies-container {
+    width: 100%;
+    margin-top: 6px;
+    padding-left: 12px;
+    border-left: 2px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.comment-reply-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.comment-reply-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 0.78rem;
+}
+
+.comment-reply-user {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--text-muted, #888);
+    flex-shrink: 0;
+}
+
+.comment-reply-avatar {
+    font-size: 12px;
+    line-height: 1;
+}
+
+.comment-reply-text {
+    color: var(--text-secondary, #e0e0e0);
+    word-break: break-all;
+}
+
+.comment-reply-time {
+    color: var(--text-muted, #888);
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.comment-reply-form {
+    display: flex;
+    gap: 6px;
+}
+
+.comment-reply-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    border: 1px solid var(--border, rgba(255,255,255,0.15));
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text, inherit);
+}
+
+.comment-reply-submit {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.comment-reply-login-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted, #888);
+    margin: 0;
+}
+
+.comment-reply-login-hint a {
+    color: var(--primary, #4f8cff);
 }
 
 @media (max-width: 768px) {

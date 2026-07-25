@@ -1,0 +1,43 @@
+{{ define "content" }}
+<div class="square-page">
+    <div class="square-header">
+        <h1 class="page-title">🎪 广场</h1>
+        <p class="page-desc">看看大家最近在看什么、聊什么</p>
+    </div>
+
+    <div class="tab-nav">
+        <button class="tab-btn active"
+                hx-get="/api/htmx/square/activity"
+                hx-target="#square-tab-content"
+                hx-trigger="click, load"
+                data-tab="activity">
+            动态
+        </button>
+        <button class="tab-btn"
+                hx-get="/api/htmx/square/leaderboard"
+                hx-target="#square-tab-content"
+                hx-trigger="click"
+                data-tab="leaderboard">
+            排行榜
+        </button>
+    </div>
+
+    <div class="tab-content" id="square-tab-content">
+        <div class="loading-state" style="text-align: center; padding: 2rem;">
+            <span class="loading-spinner"></span> 正在加载...
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var tabBtns = document.querySelectorAll('.square-page .tab-btn');
+    tabBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            tabBtns.forEach(function(b) { b.classList.remove('active'); });
+            this.classList.add('active');
+        });
+    });
+});
+</script>
+{{ end }}

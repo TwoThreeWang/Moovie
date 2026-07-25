@@ -55,6 +55,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		optional.GET("/discover/:type", h.Discover)                // 发现页
 		optional.GET("/foryou", h.ForYou)                          // 为你推荐
 		optional.GET("/recommend", h.ForYou)                       // 为你推荐
+		optional.GET("/square", h.Square)                          // 广场（动态流 + 排行榜）
 		optional.GET("/similar/:douban_id", h.RecommendationsPage)          // 相似电影推荐
 		optional.GET("/user/:user_id", h.PublicProfile)                   // 公开观影记录分享页
 		optional.GET("/user/:user_id/monthly/:year_month", h.PublicMonthly) // 公开月度小记
@@ -115,6 +116,9 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/foryou", h.ForYouHTMX)                                    // 为你推荐
 		api.GET("/htmx/reviews", h.ReviewsHTMX)                                  // 豆瓣短评
 		api.GET("/htmx/movie-comments", h.MovieCommentsHTMX)                     // 电影短评列表
+		api.POST("/comments/:id/like", h.ToggleCommentLikeHTMX)                  // 短评点赞/取消点赞
+		api.GET("/comments/:id/replies", h.CommentRepliesHTMX)                   // 短评回复列表（懒加载）
+		api.POST("/comments/:id/replies", h.CreateCommentReplyHTMX)              // 发表短评回复
 		api.GET("/htmx/movie-backdrops", h.MovieBackdropsHTMX)                   // 电影剧照列表
 		api.GET("/htmx/user-movie/edit", h.UserMovieEditFormHTMX)                // 编辑表单片段
 		api.GET("/htmx/user-movie/mark-watched", h.UserMovieMarkWatchedFormHTMX) // 标记已看过前的表单
@@ -126,6 +130,8 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/dashboard/feedback", h.DashboardFeedbackHTMX)             // 仪表盘我的反馈
 		api.GET("/htmx/public/:user_id/wish", h.PublicWishHTMX)                  // 公开主页想看（加载更多）
 		api.GET("/htmx/public/:user_id/watched", h.PublicWatchedHTMX)            // 公开主页已看（加载更多）
+		api.GET("/htmx/square/activity", h.SquareActivityHTMX)                   // 广场动态流
+		api.GET("/htmx/square/leaderboard", h.SquareLeaderboardHTMX)             // 广场排行榜
 		api.GET("/htmx/douban-card", h.DoubanCardHTMX)                           // 搜索页豆瓣电影卡片
 		api.GET("/htmx/douban-sync-status", h.DoubanSyncStatusHTMX)              // 豆瓣同步状态
 		api.POST("/report/load-speed", h.ReportLoadSpeed)                        // 上报加载速度
@@ -336,7 +342,7 @@ func LoadTemplates(templatesDir string) multitemplate.Renderer {
 	// 注册所有页面模板
 	pages := []string{
 		"home", "search", "movie", "play", "player", "player_embed", "iptv",
-		"discover", "trends", "foryou", "feedback",
+		"discover", "trends", "foryou", "square", "feedback",
 		"about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "tvbox", "404",
 		"login", "register", "recommendations",
 		"dashboard", "settings", "share", "share_monthly", "fetching",

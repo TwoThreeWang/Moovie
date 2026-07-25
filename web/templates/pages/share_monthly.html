@@ -117,6 +117,17 @@
         </button>
     </div>
 
+    <!-- 登录访客查看他人小记时，顺手告诉TA两人观影重合了多少部，把"对外晒"变成一个连接点 -->
+    {{ if .ShowOverlap }}
+    <div class="monthly-overlap">
+        {{ if gt .OverlapCount 0 }}
+        你和 {{ .User.Username }} 都看过 <strong>{{ .OverlapCount }}</strong> 部电影
+        {{ else }}
+        你和 {{ .User.Username }} 暂时还没有共同看过的电影
+        {{ end }}
+    </div>
+    {{ end }}
+
     <p class="monthly-bottom-note">每月观影小记由 Moovie 自动生成</p>
     </div>
 

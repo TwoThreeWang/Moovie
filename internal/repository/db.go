@@ -52,6 +52,8 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		&model.TrendingKeyword{},
 		&model.DoubanSyncJob{},
 		&model.MonthlyReport{},
+		&model.CommentLike{},
+		&model.CommentReply{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
@@ -86,6 +88,11 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		fmt.Printf("警告: 创建 user_movies comments 索引失败: %v\n", err)
 	}
 
+	// 短评回复按短评分组查询的索引（点赞表已经靠联合唯一索引兜底了查询效率）
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_comment_replies_lookup ON comment_replies (user_movie_id, created_at ASC);").Error; err != nil {
+		fmt.Printf("警告: 创建 comment_replies 索引失败: %v\n", err)
+	}
+
 	// 迁移 favorites 到 user_movies 作为 wish
 	if err := db.Exec(`
 		INSERT INTO user_movies (user_id, movie_id, title, poster, year, status, created_at, updated_at)
@@ -115,6 +122,8 @@ type Repositories struct {
 	CategoryFilter    *CategoryFilterRepository
 	DoubanSyncJob     *DoubanSyncJobRepository
 	MonthlyReport     *MonthlyReportRepository
+	CommentLike       *CommentLikeRepository
+	CommentReply      *CommentReplyRepository
 }
 
 // NewRepositories 创建仓库集合
@@ -133,5 +142,7 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		CategoryFilter:    NewCategoryFilterRepository(db),
 		DoubanSyncJob:     NewDoubanSyncJobRepository(db),
 		MonthlyReport:     NewMonthlyReportRepository(db),
+		CommentLike:       NewCommentLikeRepository(db),
+		CommentReply:      NewCommentReplyRepository(db),
 	}
 }

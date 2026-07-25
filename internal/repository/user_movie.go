@@ -91,6 +91,14 @@ func (r *UserMovieRepository) CountByUser(userID int, status string) (int, error
 	return int(count), err
 }
 
+// CountByMovie 统计某部电影被多少用户标记为"看过"/"想看"，用于电影详情页展示的社交信号
+// （"XX人看过 / XX人想看"），只是一个计数查询，不区分标记者是否公开主页
+func (r *UserMovieRepository) CountByMovie(movieID string, status string) (int, error) {
+	var count int64
+	err := r.db.Model(&model.UserMovie{}).Where("movie_id = ? AND status = ?", movieID, status).Count(&count).Error
+	return int(count), err
+}
+
 // AvgRatingByUser 统计某用户"已看"记录里已评分部分的平均分与评分数量
 // 用 SQL 聚合直接算，不需要像分页前那样把全部已看记录拉到内存里再逐条累加
 func (r *UserMovieRepository) AvgRatingByUser(userID int) (float64, int, error) {
@@ -155,4 +163,80 @@ func (r *UserMovieRepository) ListCommentsByMovie(movieID string, limit int) ([]
 		Find(&records).Error
 
 	return records, err
+}
+
+// ==================== 广场（活动流 / 排行榜） ====================
+// 只展示开启了"公开分享"的用户的数据，逻辑上和公开主页 PublicProfile 的可见性规则保持一致
+
+// ListRecentPublicActivity 广场活动流：所有公开用户最近的"已看"记录，按更新时间倒序分页
+func (r *UserMovieRepository) ListRecentPublicActivity(limit, offset int) ([]*model.UserMovie, error) {
+	var records []*model.UserMovie
+	err := r.db.Preload("User").
+		Joins("JOIN users ON users.id = user_movies.user_id").
+		Where("user_movies.status = ? AND users.is_public = ?", "watched", true).
+		Order("user_movies.updated_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&records).Error
+	return records, err
+}
+
+// CountRecentPublicActivity 广场活动流总数，配合分页判断是否还有更多
+func (r *UserMovieRepository) CountRecentPublicActivity() (int, error) {
+	var count int64
+	err := r.db.Table("user_movies").
+		Joins("JOIN users ON users.id = user_movies.user_id").
+		Where("user_movies.status = ? AND users.is_public = ?", "watched", true).
+		Count(&count).Error
+	return int(count), err
+}
+
+// LeaderboardEntry 排行榜一行：某个公开用户在统计窗口内的观影数
+type LeaderboardEntry struct {
+	UserID   int
+	Username string
+	Avatar   string
+	Count    int
+}
+
+// TopActiveUsersSince 统计公开用户里，从 since 到现在观影数最多的前 limit 名，用于广场"本周活跃"榜
+func (r *UserMovieRepository) TopActiveUsersSince(since time.Time, limit int) ([]LeaderboardEntry, error) {
+	var rows []LeaderboardEntry
+	err := r.db.Table("user_movies").
+		Select("user_movies.user_id as user_id, users.username as username, users.avatar as avatar, COUNT(*) as count").
+		Joins("JOIN users ON users.id = user_movies.user_id").
+		Where("user_movies.status = ? AND users.is_public = ? AND user_movies.created_at >= ?", "watched", true, since).
+		Group("user_movies.user_id, users.username, users.avatar").
+		Order("count DESC").
+		Limit(limit).
+		Scan(&rows).Error
+	return rows, err
+}
+
+// TopActiveUsersAllTime 统计公开用户的历史观影总榜前 limit 名
+func (r *UserMovieRepository) TopActiveUsersAllTime(limit int) ([]LeaderboardEntry, error) {
+	var rows []LeaderboardEntry
+	err := r.db.Table("user_movies").
+		Select("user_movies.user_id as user_id, users.username as username, users.avatar as avatar, COUNT(*) as count").
+		Joins("JOIN users ON users.id = user_movies.user_id").
+		Where("user_movies.status = ? AND users.is_public = ?", "watched", true).
+		Group("user_movies.user_id, users.username, users.avatar").
+		Order("count DESC").
+		Limit(limit).
+		Scan(&rows).Error
+	return rows, err
+}
+
+// CountOverlapWatched 统计两个用户"都看过"的电影数量，用于月度小记页给登录访客看的
+// "你和TA共同看过 X 部电影"——只是个巧妙的连接点，不是严格意义上的推荐算法
+func (r *UserMovieRepository) CountOverlapWatched(userA, userB int) (int, error) {
+	if userA == userB {
+		return 0, nil
+	}
+	var count int64
+	err := r.db.Table("user_movies AS a").
+		Joins("JOIN user_movies AS b ON a.movie_id = b.movie_id AND b.user_id = ? AND b.status = ?", userB, "watched").
+		Where("a.user_id = ? AND a.status = ?", userA, "watched").
+		Count(&count).Error
+	return int(count), err
 }
