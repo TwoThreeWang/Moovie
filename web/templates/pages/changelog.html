@@ -4,6 +4,64 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v3.3.1 -->
+    <section class="changelog-item">
+      <div class="version-badge">v3.3.1 <small>2026-07-25</small></div>
+      <div class="changelog-details">
+        <h3>✨ 新增 (Added)</h3>
+        <ul>
+          <li>
+            <strong>全站广场</strong>：新增广场页面，展示公开用户观影动态流，支持分页加载；同时提供本周及历史用户活跃度排行榜，发现更多同好。
+          </li>
+          <li>
+            <strong>短评互动</strong>：完整实现短评点赞/取消点赞、回复列表懒加载与回复提交功能，观影讨论更具社交感。
+          </li>
+          <li>
+            <strong>电影社交统计</strong>：电影详情页新增「XX 人看过 / XX 人想看」展示，快速感知影片热度。
+          </li>
+          <li>
+            <strong>观影重合数</strong>：月度观影小记页新增登录访客与目标用户的观影重合数计算，看看你们有多少共同看过的电影。
+          </li>
+          <li>
+            <strong>用户中心分页加载</strong>：为用户想看、已看、观影历史页面添加分页加载与「加载更多」交互，告别长列表卡顿。
+          </li>
+          <li>
+            <strong>公开主页分页加载</strong>：公开用户主页的想看、已看列表支持加载更多，与仪表盘分页逻辑保持一致。
+          </li>
+          <li>
+            <strong>月度报告后台管理</strong>：管理员后台新增手动生成 / 重新生成月度观影报告功能，支持前端配置与后端 API。
+          </li>
+          <li>
+            <strong>月度报告内容增强</strong>：月度观影报告新增观影人设生成、海报墙抽样、精选短评提取，让每月小结更丰富有趣。
+          </li>
+        </ul>
+        <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+        <ul>
+          <li>
+            <strong>月度报告生成重构</strong>：预统计全站月度观影分布以高效计算用户百分位排名；生成范围不再仅限绑定豆瓣账号的用户，所有产生观影记录的用户均可生成月报。
+          </li>
+          <li>
+            <strong>月度报告查询性能优化</strong>：新增按日期范围查询观影记录，避免全量拉取数据；使用 SQL 聚合计算平均评分替代内存遍历，显著提升大数据量下的渲染性能。
+          </li>
+          <li>
+            <strong>相似电影查询优化</strong>：修复 pgvector 相似电影查询无法命中 HNSW 索引的问题，相似影片推荐速度更快。
+          </li>
+          <li>
+            <strong>图片代理 SSRF 防护</strong>：为图片代理新增 Host 白名单校验，仅允许豆瓣与 TMDB 源站图片访问，防止服务端请求伪造攻击。
+          </li>
+          <li>
+            <strong>异步任务管理统一</strong>：替换手动 goroutine 超时处理逻辑，统一异步任务调度与生命周期管理。
+          </li>
+          <li>
+            <strong>公开主页与月度分享页渲染优化</strong>：抽离重复模板代码进行复用，减少冗余并提升可维护性。
+          </li>
+          <li>
+            <strong>UI 样式调整</strong>：优化月度分享卡片、广场页面及相关组件的样式展示，提升视觉一致性。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v3.2.13 -->
     <section class="changelog-item">
       <div class="version-badge">v3.2.13 <small>2026-07-14</small></div>
