@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/pgvector/pgvector-go"
 	"github.com/user/moovie/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -67,18 +68,38 @@ func (r *MovieRepository) Upsert(movie *model.Movie) error {
 }
 
 // FindSimilar 根据向量相似度查找相似电影
+// 实现说明：先单独查出目标电影的 embedding 向量，再用这个具体向量值做 ORDER BY，
+// 这样 Postgres 规划器才能命中 movies_embedding_idx (HNSW) 索引；
+// 之前"列 <-> 列"（m1.embedding <-> m2.embedding）的写法无法确保走索引，
+// 数据量大时会退化成对全表做暴力向量计算。
 func (r *MovieRepository) FindSimilar(doubanID string, limit int) ([]model.Movie, error) {
+	// 1. 取目标电影的 embedding（单行，走 douban_id 索引）
+	var target struct {
+		Embedding *pgvector.Vector
+	}
+	err := r.DB.Table("movies").
+		Select("embedding").
+		Where("douban_id = ? AND embedding IS NOT NULL", doubanID).
+		Take(&target).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if target.Embedding == nil {
+		return nil, nil
+	}
+
+	// 2. 用具体向量值查询最相似的电影，排除自身
 	var movies []model.Movie
-	// 使用 pgvector 的 <-> 操作符计算 L2 距离，距离越小越相似
-	err := r.DB.Raw(`
-		SELECT m2.* FROM movies m1
-		JOIN movies m2 ON m1.id != m2.id
-		WHERE m1.douban_id = ?
-		  AND m1.embedding IS NOT NULL
-		  AND m2.embedding IS NOT NULL
-		ORDER BY m1.embedding <-> m2.embedding
+	err = r.DB.Raw(`
+		SELECT * FROM movies
+		WHERE douban_id != ?
+		  AND embedding IS NOT NULL
+		ORDER BY embedding <-> ?
 		LIMIT ?
-	`, doubanID, limit).Scan(&movies).Error
+	`, doubanID, *target.Embedding, limit).Scan(&movies).Error
 	return movies, err
 }
 

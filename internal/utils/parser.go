@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -160,4 +161,34 @@ func DecodeProxyImageURL(proxyParam string) (string, error) {
 	}
 
 	return "", fmt.Errorf("failed to decode base64: %v", err)
+}
+
+// allowedImageProxyHosts 图片代理允许访问的目标域名（含其子域名）
+// 目前项目中会被代理的图片均来自豆瓣 CDN（imgN.doubanio.com）和 TMDB（image.tmdb.org）
+// 新增图片来源时请同步在此处补充，切勿直接放开为通配，避免服务器被当作 SSRF 跳板
+var allowedImageProxyHosts = []string{
+	"doubanio.com",
+	"image.tmdb.org",
+}
+
+// IsAllowedImageProxyHost 校验目标 URL 的 host 是否在图片代理白名单内，防止 SSRF
+func IsAllowedImageProxyHost(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	// 仅允许 http/https，防止 file://、gopher:// 等协议被滥用
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return false
+	}
+	for _, allowed := range allowedImageProxyHosts {
+		if host == allowed || strings.HasSuffix(host, "."+allowed) {
+			return true
+		}
+	}
+	return false
 }

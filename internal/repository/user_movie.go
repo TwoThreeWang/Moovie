@@ -52,6 +52,16 @@ func (r *UserMovieRepository) ListByUser(userID int, status string, limit, offse
 	return records, err
 }
 
+// ListByUserAndDateRange 获取指定状态且创建时间落在 [start, end) 区间内的记录
+// 用于月度报告等按月统计场景，避免像之前那样把用户全部记录（可能上万条）取回内存再逐条比对日期
+func (r *UserMovieRepository) ListByUserAndDateRange(userID int, status string, start, end time.Time) ([]*model.UserMovie, error) {
+	var records []*model.UserMovie
+	err := r.db.Where("user_id = ? AND status = ? AND created_at >= ? AND created_at < ?", userID, status, start, end).
+		Order("updated_at DESC").
+		Find(&records).Error
+	return records, err
+}
+
 func (r *UserMovieRepository) CountByUser(userID int, status string) (int, error) {
 	var count int64
 	err := r.db.Model(&model.UserMovie{}).Where("user_id = ? AND status = ?", userID, status).Count(&count).Error

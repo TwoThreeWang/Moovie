@@ -1274,15 +1274,12 @@ func (h *Handler) PublicMonthly(c *gin.Context) {
 		_ = json.Unmarshal([]byte(report.GenreStats), &genreStats)
 	}
 
-	// 查询本月已看电影列表
+	// 查询本月已看电影列表（直接下推到 SQL WHERE 条件按月过滤，避免拉取用户全部观影记录再在内存里比对日期）
 	startTime, _ := time.Parse("2006-01", yearMonth)
 	endTime := startTime.AddDate(0, 1, 0)
-	allWatched, _ := h.Repos.UserMovie.ListByUser(userID, "watched", 10000, 0)
-	var monthlyMovies []*model.UserMovie
-	for _, m := range allWatched {
-		if m.CreatedAt.After(startTime) && m.CreatedAt.Before(endTime) {
-			monthlyMovies = append(monthlyMovies, m)
-		}
+	monthlyMovies, err := h.Repos.UserMovie.ListByUserAndDateRange(userID, "watched", startTime, endTime)
+	if err != nil {
+		log.Printf("[PublicMonthly] 查询月度已看列表失败 user=%d month=%s err=%v", userID, yearMonth, err)
 	}
 
 	shareURL := fmt.Sprintf("%s/user/%d/monthly/%s", h.Config.SiteUrl, user.ID, yearMonth)

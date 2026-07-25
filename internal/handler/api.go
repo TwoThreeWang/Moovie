@@ -486,6 +486,13 @@ func (h *Handler) ProxyImage(c *gin.Context) {
 		utils.BadRequest(c, "非法的图片代理链接")
 		return
 	}
+
+	// 3. 目标域名白名单校验，防止 SSRF（服务器被诱导请求任意内外网地址）
+	if !utils.IsAllowedImageProxyHost(targetURL) {
+		c.Status(http.StatusForbidden)
+		return
+	}
+
 	// 豆瓣图片的img9替换为img3
 	targetURL = strings.ReplaceAll(targetURL, "img9", "img3")
 
@@ -757,21 +764,43 @@ func (h *Handler) FeedbackListHTMX(c *gin.Context) {
 	})
 }
 
+// dashboardGridPageSize 用户中心「想看/已看/历史」网格每页条数
+const dashboardGridPageSize = 24
+
 func (h *Handler) DashboardWishHTMX(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == 0 {
 		c.String(http.StatusOK, "未登录")
 		return
 	}
-	records, err := h.Repos.UserMovie.ListByUser(userID, "wish", 10000, 0)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * dashboardGridPageSize
+
+	records, err := h.Repos.UserMovie.ListByUser(userID, "wish", dashboardGridPageSize, offset)
 	if err != nil {
 		log.Printf("[DashboardWishHTMX] 获取想看失败: %v", err)
 	}
 	count, _ := h.Repos.UserMovie.CountByUser(userID, "wish")
-	c.HTML(http.StatusOK, "partials/dashboard_wish.html", gin.H{
-		"Wish":      records,
-		"WishCount": count,
-	})
+	hasMore := offset+len(records) < count
+
+	data := gin.H{
+		"Wish":        records,
+		"WishCount":   count,
+		"HasMore":     hasMore,
+		"NextPage":    page + 1,
+		"IsFirstPage": page == 1,
+	}
+
+	// 翻页请求只返回新增的卡片片段 + 新的"加载更多"触发器，避免重复拉取/渲染已加载的数据
+	if page > 1 {
+		c.HTML(http.StatusOK, "partials/dashboard_wish_grid.html", data)
+		return
+	}
+	c.HTML(http.StatusOK, "partials/dashboard_wish.html", data)
 }
 
 func (h *Handler) DashboardWatchedHTMX(c *gin.Context) {
@@ -780,15 +809,33 @@ func (h *Handler) DashboardWatchedHTMX(c *gin.Context) {
 		c.String(http.StatusOK, "未登录")
 		return
 	}
-	records, err := h.Repos.UserMovie.ListByUser(userID, "watched", 10000, 0)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * dashboardGridPageSize
+
+	records, err := h.Repos.UserMovie.ListByUser(userID, "watched", dashboardGridPageSize, offset)
 	if err != nil {
 		log.Printf("[DashboardWatchedHTMX] 获取已看过失败: %v", err)
 	}
 	count, _ := h.Repos.UserMovie.CountByUser(userID, "watched")
-	c.HTML(http.StatusOK, "partials/dashboard_watched.html", gin.H{
+	hasMore := offset+len(records) < count
+
+	data := gin.H{
 		"Watched":      records,
 		"WatchedCount": count,
-	})
+		"HasMore":      hasMore,
+		"NextPage":     page + 1,
+		"IsFirstPage":  page == 1,
+	}
+
+	if page > 1 {
+		c.HTML(http.StatusOK, "partials/dashboard_watched_grid.html", data)
+		return
+	}
+	c.HTML(http.StatusOK, "partials/dashboard_watched.html", data)
 }
 
 func (h *Handler) MovieCommentsHTMX(c *gin.Context) {
@@ -892,15 +939,31 @@ func (h *Handler) DashboardHistoryHTMX(c *gin.Context) {
 		return
 	}
 
-	// 使用 ListByUser
-	histories, err := h.Repos.History.ListByUser(userID, 10000, 0)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * dashboardGridPageSize
+
+	histories, err := h.Repos.History.ListByUser(userID, dashboardGridPageSize, offset)
 	if err != nil {
 		log.Printf("[DashboardHistoryHTMX] 获取历史失败: %v", err)
 	}
+	count, _ := h.Repos.History.CountByUser(userID)
+	hasMore := offset+len(histories) < count
 
-	c.HTML(http.StatusOK, "partials/dashboard_history.html", gin.H{
-		"History": histories,
-	})
+	data := gin.H{
+		"History":     histories,
+		"HasMore":     hasMore,
+		"NextPage":    page + 1,
+		"IsFirstPage": page == 1,
+	}
+
+	if page > 1 {
+		c.HTML(http.StatusOK, "partials/dashboard_history_grid.html", data)
+		return
+	}
+	c.HTML(http.StatusOK, "partials/dashboard_history.html", data)
 }
 
 // DashboardFeedbackHTMX 用户中心 - 我的反馈
@@ -1504,16 +1567,14 @@ func (h *Handler) RefreshMovie(c *gin.Context) {
 		return
 	}
 
-	// 异步执行强制抓取
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
+	// 异步执行强制抓取（使用 GoSafe 统一管理：panic 恢复 + 优雅停机等待 + 超时控制）
+	utils.GoSafe(60*time.Second, func(ctx context.Context) {
 		if err := h.DoubanCrawler.CrawlForce(ctx, doubanID); err != nil {
 			log.Printf("[RefreshMovie] 强制刷新失败 (豆瓣ID: %s): %v", doubanID, err)
 		} else {
 			log.Printf("[RefreshMovie] 强制刷新成功 (豆瓣ID: %s)", doubanID)
 		}
-	}()
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "已开始刷新，请稍后刷新页面查看"})
 }
