@@ -55,6 +55,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		&model.CommentLike{},
 		&model.CommentReply{},
 		&model.SiteStat{},
+		&model.Danmaku{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
@@ -126,6 +127,7 @@ type Repositories struct {
 	CommentLike       *CommentLikeRepository
 	CommentReply      *CommentReplyRepository
 	SiteStat          *SiteStatRepository
+	Danmaku           *DanmakuRepository
 }
 
 // NewRepositories 创建仓库集合
@@ -147,5 +149,6 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		CommentLike:       NewCommentLikeRepository(db),
 		CommentReply:      NewCommentReplyRepository(db),
 		SiteStat:          NewSiteStatRepository(db),
+		Danmaku:           NewDanmakuRepository(db),
 	}
 }

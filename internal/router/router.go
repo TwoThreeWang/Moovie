@@ -134,9 +134,18 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/square/leaderboard", h.SquareLeaderboardHTMX)             // 广场排行榜
 		api.GET("/htmx/douban-card", h.DoubanCardHTMX)                           // 搜索页豆瓣电影卡片
 		api.GET("/htmx/douban-sync-status", h.DoubanSyncStatusHTMX)              // 豆瓣同步状态
-		api.GET("/danmaku", h.Danmaku)                                           // 弹幕代理（外部弹幕源）
+		api.GET("/danmaku", h.Danmaku)                                           // 弹幕拉取（外部源 + 站内）
 		api.POST("/report/load-speed", h.ReportLoadSpeed)                        // 上报加载速度
 		api.GET("/stats/load-speed", h.GetLoadStats)                             // 获取加载统计
+	}
+
+	// ==================== 需要登录的 API ====================
+	// 发弹幕必须登录：公开可发的弹幕框等于开放留言板，
+	// 绑定到用户才能在出问题时直接封号，而不是玩 IP 封禁的猫鼠游戏
+	authAPI := r.Group("/api")
+	authAPI.Use(middleware.RequireAuth(h.Config.AppSecret))
+	{
+		authAPI.POST("/danmaku", h.PostDanmaku) // 发送弹幕
 	}
 
 	// ==================== 管理后台 ====================

@@ -277,12 +277,49 @@ function buildDanmakuPlugin(options) {
         antiOverlap: true,
         synchronousPlayback: true,   // 倍速播放时弹幕同步变速
         heatmap: true,               // 进度条上的弹幕密度热力图
-        emitter: false,              // 关闭发射器：弹幕来自外部源，站内暂不支持发送
+        // 插件的配置校验要求 emitter 必须是 boolean，不能传对象
+        emitter: !!options.canSendDanmaku,
+        maxLength: 50,
         visible: localStorage.getItem(DANMAKU_VISIBLE_KEY) !== 'false',
         filter: function(danmu) {
             return danmu.text && danmu.text.length <= 60;
+        },
+        // 发送前先落库，后端拒绝就不上屏，避免用户以为发出去了其实没有
+        beforeEmit: function(danmu) {
+            return fetch('/api/danmaku', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    title: options.vodName,
+                    episode: options.episode || '',
+                    text: danmu.text,
+                    time: danmu.time,
+                    mode: danmu.mode,
+                    color: danmu.color
+                })
+            }).then(function(r) {
+                if (r.ok) return true;
+                return r.json().catch(function() { return {}; }).then(function(body) {
+                    showDanmakuError(body.error || '弹幕发送失败');
+                    return false;
+                });
+            }).catch(function() {
+                showDanmakuError('网络异常，弹幕发送失败');
+                return false;
+            });
         }
     });
+}
+
+// 弹幕发送失败提示。挂在播放器的 notice 上，没有播放器实例时退回 console
+var currentArt = null;
+function showDanmakuError(msg) {
+    if (currentArt && currentArt.notice) {
+        currentArt.notice.show = msg;
+    } else {
+        console.warn('[Player] ' + msg);
+    }
 }
 
 // 初始化播放器
@@ -504,6 +541,7 @@ function initPlayer(containerId, url, options) {
 
     try {
         var art = new Artplayer(config);
+        currentArt = art;
 
         if (danmakuPlugin) {
             art.on('artplayerPluginDanmuku:loaded', function(queue) {
@@ -628,6 +666,9 @@ function initPlayer(containerId, url, options) {
             }
             if (autoPlayState) {
                 autoPlayState.destroy();
+            }
+            if (currentArt === art) {
+                currentArt = null;
             }
         });
 

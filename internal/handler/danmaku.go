@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/user/moovie/internal/middleware"
+	"github.com/user/moovie/internal/model"
 	"github.com/user/moovie/internal/utils"
 	"golang.org/x/sync/singleflight"
 )
@@ -38,6 +41,13 @@ const (
 	danmakuMaxBodyBytes    = 24 << 20         // 上游响应体上限 24MB，防御性限制
 	danmakuIPLimit         = 20               // 单 IP 每分钟最多触发多少次回源
 	danmakuIPWindow        = time.Minute
+
+	// 站内弹幕
+	danmakuOwnMaxItems   = 2000            // 单集最多返回多少条站内弹幕
+	danmakuMaxTextLen    = 50              // 单条弹幕最大字数
+	danmakuSendPerWindow = 10              // 每个用户每窗口最多发多少条
+	danmakuSendWindow    = time.Minute     // 频率限制窗口
+	danmakuDupWindow     = 5 * time.Minute // 同一集内重复内容的判定窗口
 )
 
 // DanmakuItem Artplayer 弹幕插件要求的数据结构
@@ -76,17 +86,20 @@ var (
 	danmakuLimiter   = newIPLimiter(danmakuIPLimit, danmakuIPWindow)
 )
 
+// buildVodKey 把片名+季+集归一化成一个标识，外部源缓存和站内弹幕归属都用它。
+// 刻意不带 source_key：同一集常常同时存在于多个采集源，
+// 按片名维度归属才能让弹幕在不同线路之间共享。
+func buildVodKey(title string, season, episode int) string {
+	return fmt.Sprintf("%s|S%02d|E%03d", strings.ToLower(title), season, episode)
+}
+
 // Danmaku GET /api/danmaku?title=庆余年第二季&episode=第3集
 //
-// 无论成功与否都返回 JSON 数组，失败时是空数组。
+// 返回「外部聚合源 + 站内用户弹幕」的合集。
+// 无论成功与否都返回 JSON 数组，失败时是空数组，
 // 这样前端永远不会因为弹幕挂掉而影响正片播放。
 func (h *Handler) Danmaku(c *gin.Context) {
 	empty := []DanmakuItem{}
-
-	if h.Config.DanmakuAPIBase == "" {
-		c.JSON(http.StatusOK, empty)
-		return
-	}
 
 	rawTitle := strings.TrimSpace(c.Query("title"))
 	if rawTitle == "" || len([]rune(rawTitle)) > 100 {
@@ -96,22 +109,49 @@ func (h *Handler) Danmaku(c *gin.Context) {
 
 	season, title := splitSeason(rawTitle)
 	episode := parseEpisodeNumber(c.Query("episode"))
-	key := fmt.Sprintf("dm|%s|S%02d|E%03d", strings.ToLower(title), season, episode)
+	vodKey := buildVodKey(title, season, episode)
+
+	external := h.externalDanmaku(c, vodKey, title, season, episode)
+	// 站内弹幕每次实时查库，不能跟着外部源一起进 12 小时缓存，
+	// 否则用户发完刷新看不到自己刚发的那条
+	own := h.ownDanmaku(vodKey)
+
+	if len(external) == 0 && len(own) == 0 {
+		c.JSON(http.StatusOK, empty)
+		return
+	}
+
+	// 必须复制到新切片再合并：external 可能直接来自缓存，
+	// 缓存里的切片 cap 往往大于 len，直接 append 会写进缓存的底层数组，
+	// 并发请求之间会互相踩数据
+	merged := make([]DanmakuItem, 0, len(external)+len(own))
+	merged = append(merged, external...)
+	merged = append(merged, own...)
+
+	// 不需要按时间排序：插件是按时间窗口从队列里筛选的，与顺序无关
+	c.JSON(http.StatusOK, merged)
+}
+
+// externalDanmaku 取外部聚合源的弹幕，带缓存、负缓存、限流和 singleflight。
+// 任何失败都返回空切片，不往上抛错。
+func (h *Handler) externalDanmaku(c *gin.Context, vodKey, title string, season, episode int) []DanmakuItem {
+	if h.Config.DanmakuAPIBase == "" {
+		return nil
+	}
+
+	key := "dm:" + vodKey
 
 	// 1. 命中缓存
 	if items, ok := danmakuHitCache.Get(key); ok {
-		c.JSON(http.StatusOK, items)
-		return
+		return items
 	}
 	// 2. 负缓存：上次没匹配到，短时间内不再回源
 	if _, ok := danmakuMissCache.Get(key); ok {
-		c.JSON(http.StatusOK, empty)
-		return
+		return nil
 	}
 	// 3. 需要回源，此时才计入限流
 	if !danmakuLimiter.Allow(c.ClientIP()) {
-		c.JSON(http.StatusOK, empty)
-		return
+		return nil
 	}
 
 	// singleflight：同一集被多人同时打开时只回源一次
@@ -133,16 +173,139 @@ func (h *Handler) Danmaku(c *gin.Context) {
 	})
 
 	if err != nil {
-		log.Printf("[Danmaku] 获取失败 title=%q season=%d ep=%d err=%v", title, season, episode, err)
-		c.JSON(http.StatusOK, empty)
-		return
+		log.Printf("[Danmaku] 外部源获取失败 title=%q season=%d ep=%d err=%v", title, season, episode, err)
+		return nil
 	}
 
 	items, _ := v.([]DanmakuItem)
-	if items == nil {
-		items = empty
+	return items
+}
+
+// ownDanmaku 取站内用户发的弹幕
+func (h *Handler) ownDanmaku(vodKey string) []DanmakuItem {
+	if h.Repos == nil || h.Repos.Danmaku == nil {
+		return nil
 	}
-	c.JSON(http.StatusOK, items)
+	rows, err := h.Repos.Danmaku.ListByVodKey(vodKey, danmakuOwnMaxItems)
+	if err != nil {
+		log.Printf("[Danmaku] 查询站内弹幕失败 key=%q err=%v", vodKey, err)
+		return nil
+	}
+	items := make([]DanmakuItem, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, DanmakuItem{
+			Text:  r.Text,
+			Time:  r.Time,
+			Mode:  r.Mode,
+			Color: r.Color,
+		})
+	}
+	return items
+}
+
+// PostDanmaku POST /api/danmaku 发送一条站内弹幕（需要登录）
+func (h *Handler) PostDanmaku(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录后再发送弹幕"})
+		return
+	}
+
+	var req struct {
+		Title   string  `json:"title"`
+		Episode string  `json:"episode"`
+		Text    string  `json:"text"`
+		Time    float64 `json:"time"`
+		Mode    int     `json:"mode"`
+		Color   string  `json:"color"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	rawTitle := strings.TrimSpace(req.Title)
+	if rawTitle == "" || len([]rune(rawTitle)) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	text := sanitizeDanmakuText(req.Text)
+	n := len([]rune(text))
+	if n == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "弹幕内容不能为空"})
+		return
+	}
+	if n > danmakuMaxTextLen {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("弹幕最多 %d 个字", danmakuMaxTextLen)})
+		return
+	}
+
+	// 模式和颜色都做白名单，不信任前端传什么
+	mode := req.Mode
+	if mode != 0 && mode != 1 && mode != 2 {
+		mode = 0
+	}
+	color := strings.ToUpper(strings.TrimSpace(req.Color))
+	if !reHexColor.MatchString(color) {
+		color = "#FFFFFF"
+	}
+	t := req.Time
+	if t < 0 || math.IsNaN(t) || math.IsInf(t, 0) {
+		t = 0
+	}
+
+	season, title := splitSeason(rawTitle)
+	episode := parseEpisodeNumber(req.Episode)
+	vodKey := buildVodKey(title, season, episode)
+
+	// 频率限制
+	since := time.Now().Add(-danmakuSendWindow)
+	if cnt, err := h.Repos.Danmaku.CountByUserSince(userID, since); err == nil && cnt >= danmakuSendPerWindow {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "发送太频繁了，歇一会儿再发"})
+		return
+	}
+	// 短时间内同一集重复内容，直接当成手抖/刷屏拦掉
+	if dup, err := h.Repos.Danmaku.ExistsDuplicate(userID, vodKey, text, time.Now().Add(-danmakuDupWindow)); err == nil && dup {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "刚发过一样的内容了"})
+		return
+	}
+
+	d := &model.Danmaku{
+		VodKey: vodKey,
+		Time:   t,
+		Text:   text,
+		Mode:   mode,
+		Color:  color,
+		UserID: userID,
+	}
+	if err := h.Repos.Danmaku.Create(d); err != nil {
+		log.Printf("[Danmaku] 保存失败 user=%d key=%q err=%v", userID, vodKey, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "发送失败，请稍后重试"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+var (
+	reHexColor       = regexp.MustCompile(`^#[0-9A-F]{6}$`)
+	reDanmakuControl = regexp.MustCompile(`[\x00-\x1F\x7F]`) // 控制字符，含换行回车
+	reDanmakuFormat  = regexp.MustCompile(`\p{Cf}`)          // 零宽字符、方向控制符等不可见字符
+)
+
+// sanitizeDanmakuText 清洗弹幕文本。
+//
+// 两类字符处理方式不同，不能合成一个正则：
+//   - 控制字符（换行、回车等）替换成空格，否则 "换行\n注入" 会被粘成 "换行注入"；
+//   - 零宽字符直接删除，它本身就不该占位。
+//
+// 零宽字符尤其要清：插在敏感词中间能绕过关键词过滤，
+// 单独发一串还能伪造出"空白弹幕"，而 U+202E 能让整条弹幕反向渲染。
+func sanitizeDanmakuText(s string) string {
+	s = reDanmakuControl.ReplaceAllString(s, " ")
+	s = reDanmakuFormat.ReplaceAllString(s, "")
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // fetchDanmaku 两步回源：match 拿 episodeId → comment 取弹幕

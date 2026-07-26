@@ -105,6 +105,55 @@ func TestSampleDanmaku(t *testing.T) {
 	}
 }
 
+func TestBuildVodKey(t *testing.T) {
+	// 不同写法的同一集必须落到同一个 key，否则站内弹幕会被切成好几堆
+	a := func(raw, ep string) string {
+		season, title := splitSeason(raw)
+		return buildVodKey(title, season, parseEpisodeNumber(ep))
+	}
+	if a("庆余年第二季", "第3集") != a("庆余年 第2季", "03") {
+		t.Error("同一集的不同写法应归一到同一个 vodKey")
+	}
+	if a("庆余年第二季", "第3集") == a("庆余年第一季", "第3集") {
+		t.Error("不同季不应共用 vodKey")
+	}
+}
+
+func TestSanitizeDanmakuText(t *testing.T) {
+	// 用显式转义写测试数据，避免源码里混进看不见的字符
+	cases := map[string]string{
+		"正常弹幕":                        "正常弹幕",
+		"  前后空格  ":                    "前后空格",
+		"多   个    空格":                 "多 个 空格",
+		"换行\n注入\r回车":                 "换行 注入 回车",
+		"零宽\u200b字符\u200d绕过":          "零宽字符绕过", // 零宽字符是绕关键词过滤的常用手法
+		"\u202e方向控制符":                 "方向控制符",  // RLO 能让弹幕反向渲染
+		"\x00\x1f控制字符":                "控制字符",
+		"   ":                         "",
+		"\u200b\u200d\u200c":           "", // 纯零宽字符等于空弹幕，清空后会被上层挡掉
+	}
+	for in, want := range cases {
+		if got := sanitizeDanmakuText(in); got != want {
+			t.Errorf("sanitizeDanmakuText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestHexColorPattern(t *testing.T) {
+	ok := []string{"#FFFFFF", "#000000", "#FF0000", "#1A2B3C"}
+	bad := []string{"#fff", "FFFFFF", "#GGGGGG", "red", "", "#FFFFFF;background:url(x)"}
+	for _, s := range ok {
+		if !reHexColor.MatchString(s) {
+			t.Errorf("%q 应通过颜色校验", s)
+		}
+	}
+	for _, s := range bad {
+		if reHexColor.MatchString(s) {
+			t.Errorf("%q 不应通过颜色校验", s)
+		}
+	}
+}
+
 func TestIPLimiter(t *testing.T) {
 	l := newIPLimiter(3, time.Minute)
 	for i := 0; i < 3; i++ {
