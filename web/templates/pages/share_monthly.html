@@ -1,3 +1,12 @@
+{{/* 月度小记的标题、引言等用思源宋体，只在本页加载。
+     走 Google 官方的中国镜像域名（gstatic.cn 由 Google 上海注册），
+     国内可直连；只取实际用到的 400 / 700 两个字重 */}}
+{{ define "extra_head" }}
+    <link rel="preconnect" href="https://fonts.googleapis.cn">
+    <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin>
+    <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+{{ end }}
+
 {{ define "content" }}
 <div class="monthly-page">
     <!-- 返回链接 -->

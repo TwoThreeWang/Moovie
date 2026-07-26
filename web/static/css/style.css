@@ -85,6 +85,17 @@
 [data-theme='dark'] img:hover {
     filter: brightness(1);
 }
+/* Logo 是深色牛头，再压暗会糊在深色背景里，排除在滤镜之外 */
+[data-theme='dark'] .logo-icon,
+[data-theme='dark'] .mobile-logo-icon,
+[data-theme='dark'] .auth-logo-icon,
+[data-theme='dark'] .hero-logo,
+[data-theme='dark'] .logo-icon:hover,
+[data-theme='dark'] .mobile-logo-icon:hover,
+[data-theme='dark'] .auth-logo-icon:hover,
+[data-theme='dark'] .hero-logo:hover {
+    filter: none;
+}
 /* ==================== 重置 ==================== */
 *, *::before, *::after {
     box-sizing: border-box;
@@ -193,7 +204,9 @@ img {
 }
 
 .logo-icon {
-    font-size: 1.8rem;
+    height: 32px;
+    width: auto;
+    flex-shrink: 0;
 }
 
 .logo-subtitle {
@@ -409,9 +422,18 @@ img {
 }
 
 .mobile-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 1.2rem;
     font-weight: 700;
     color: var(--primary);
+}
+
+.mobile-logo-icon {
+    height: 26px;
+    width: auto;
+    flex-shrink: 0;
 }
 
 .mobile-header-actions {
@@ -447,8 +469,13 @@ img {
     margin-bottom: 8px;
 }
 
-.home-hero h1 .icon {
-    font-size: 2.2rem;
+.home-hero h1 .hero-logo {
+    /* 全局 img 规则是 display:block，在 h1 里会独占一行、脱离文字居中，
+       这里必须改回行内元素才能和标题文字排在同一行 */
+    display: inline-block;
+    height: 48px;
+    width: auto;
+    vertical-align: middle;
 }
 
 .hero-subtitle {
@@ -1332,6 +1359,10 @@ img {
         font-size: 1.8rem;
     }
 
+    .home-hero h1 .hero-logo {
+        height: 34px;
+    }
+
     .movie-grid {
         grid-template-columns: repeat(3, 1fr);
         gap: 12px;
@@ -1742,7 +1773,9 @@ img {
 }
 
 .auth-logo-icon {
-    font-size: 2rem;
+    height: 38px;
+    width: auto;
+    flex-shrink: 0;
 }
 
 /* 认证卡片 */
@@ -1910,7 +1943,7 @@ img {
     }
 
     .auth-logo-icon {
-        font-size: 1.7rem;
+        height: 32px;
     }
 }
 

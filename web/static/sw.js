@@ -1,10 +1,11 @@
-const CACHE_NAME = 'moovie-v13';
+const CACHE_NAME = 'moovie-v14';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/css/style.css',
   '/static/js/app.js',
   '/static/js/htmx.min.js',
-  '/static/img/moovie-app.png'
+  '/static/img/moovie-app.png',
+  '/static/img/logo.png'
 ];
 
 // 安装 Service Worker
