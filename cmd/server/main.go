@@ -99,6 +99,9 @@ func main() {
 	doubanSyncScheduler.Start()
 	h.DoubanSyncScheduler = doubanSyncScheduler
 
+	// 启动采集健康度统计的定时落库
+	h.SiteHealth.Start()
+
 	// 启动定时清理任务
 	cleanupSvc := service.NewCleanupService(repos)
 	cleanupSvc.Start()
@@ -115,8 +118,10 @@ func main() {
 	srv := &http.Server{
 		Addr:           ":" + port,
 		Handler:        r,
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
+		ReadTimeout: 10 * time.Second,
+		// 必须显著大于采集侧的超时预算（单站 10s / 整轮 30s），
+		// 否则冷门词首次搜索会在响应写完前被 Server 截断，用户看到的是连接中断
+		WriteTimeout:   cfg.WriteTimeout,
 		MaxHeaderBytes: 1 << 20,
 	}
 
@@ -149,6 +154,7 @@ func main() {
 	utils.Cache.Stop()
 	cleanupSvc.Stop()
 	doubanSyncScheduler.Stop()
+	h.SiteHealth.Stop() // 内部会把内存里未落库的计数 flush 掉
 	utils.WaitAsync(10 * time.Second)
 
 	log.Println("服务器已退出")

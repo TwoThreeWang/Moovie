@@ -29,6 +29,11 @@
         </div>
     </section>
 
+    <!-- 免责条：紧贴播放器下方，全程可见 -->
+    {{ if .PlayURL }}
+    {{ template "play_disclaimer.html" . }}
+    {{ end }}
+
     <!-- 广告横幅位：300x60 响应式居中换行 -->
     <div class="m-banner-row">
         <!-- <div class="ad-item" style="width: 300px; height: 60px; flex-shrink: 0; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden;">

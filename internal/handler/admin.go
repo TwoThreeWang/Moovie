@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -52,9 +53,30 @@ func (h *Handler) AdminSites(c *gin.Context) {
 		sites = []*model.Site{}
 	}
 
+	// 近 24 小时采集健康度，按 site key 索引供模板直接查
+	stats, err := h.Repos.SiteStat.SummarySince(time.Now().Add(-24 * time.Hour))
+	if err != nil {
+		log.Printf("[AdminSites] 获取采集统计失败: %v", err)
+		stats = map[string]*model.SiteStatSummary{}
+	}
+
+	// 补上内存中的熔断状态（不在数据库里）
+	for _, site := range sites {
+		summary := stats[site.Key]
+		if summary == nil {
+			summary = &model.SiteStatSummary{SiteKey: site.Key}
+			stats[site.Key] = summary
+		}
+		if until := h.SiteHealth.TrippedUntil(site.Key); !until.IsZero() {
+			summary.Tripped = true
+			summary.TrippedUntil = until
+		}
+	}
+
 	c.HTML(http.StatusOK, "admin_sites.html", h.RenderData(c, gin.H{
 		"Title": "资源网管理 - Moovie影牛",
 		"Sites": sites,
+		"Stats": stats,
 	}))
 }
 

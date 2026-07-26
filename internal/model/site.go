@@ -15,6 +15,115 @@ type Site struct {
 	UpdatedAt int64  `json:"updated_at" db:"updated_at"`
 }
 
+// SiteCallOutcome 一次采集调用的结果分类
+type SiteCallOutcome string
+
+const (
+	// SiteCallOK 返回了至少一条结果
+	SiteCallOK SiteCallOutcome = "ok"
+	// SiteCallEmpty 请求与解析都成功，但返回 0 条。
+	// 单独区分是因为采集站改字段名时 HTTP 200 且 JSON 可解析，
+	// 只看成功率完全发现不了，只有空返回率能暴露这种静默失效。
+	SiteCallEmpty SiteCallOutcome = "empty"
+	// SiteCallTimeout 请求超时
+	SiteCallTimeout SiteCallOutcome = "timeout"
+	// SiteCallError 网络错误 / 非 200 / JSON 解析失败
+	SiteCallError SiteCallOutcome = "error"
+)
+
+// SiteStat 采集站点健康度统计，按「站点 + 小时」分桶累加。
+// 写入不在请求路径上：内存累加，由后台 goroutine 定时 flush。
+type SiteStat struct {
+	ID           uint      `json:"id" gorm:"primaryKey"`
+	SiteKey      string    `json:"site_key" db:"site_key" gorm:"uniqueIndex:idx_site_stats_bucket"`
+	Bucket       time.Time `json:"bucket" db:"bucket" gorm:"uniqueIndex:idx_site_stats_bucket;index"` // 截断到整点
+	OKCount      int       `json:"ok_count" db:"ok_count"`
+	EmptyCount   int       `json:"empty_count" db:"empty_count"`
+	TimeoutCount int       `json:"timeout_count" db:"timeout_count"`
+	ErrorCount   int       `json:"error_count" db:"error_count"`
+	TotalMs      int64     `json:"total_ms" db:"total_ms"` // 累计耗时，除以 Total() 得均值
+}
+
+func (SiteStat) TableName() string {
+	return "site_stats"
+}
+
+// Total 总调用次数
+func (s *SiteStat) Total() int {
+	return s.OKCount + s.EmptyCount + s.TimeoutCount + s.ErrorCount
+}
+
+// SiteStatSummary 某站点一段时间内的汇总，用于后台展示
+type SiteStatSummary struct {
+	SiteKey      string `json:"site_key" gorm:"column:site_key"`
+	OKCount      int    `json:"ok_count" gorm:"column:ok_count"`
+	EmptyCount   int    `json:"empty_count" gorm:"column:empty_count"`
+	TimeoutCount int    `json:"timeout_count" gorm:"column:timeout_count"`
+	ErrorCount   int    `json:"error_count" gorm:"column:error_count"`
+	TotalMs      int64  `json:"total_ms" gorm:"column:total_ms"`
+
+	// Tripped / TrippedUntil 由内存中的熔断器填充，不来自数据库
+	Tripped      bool      `json:"tripped" gorm:"-"`
+	TrippedUntil time.Time `json:"tripped_until" gorm:"-"`
+}
+
+// Total 总调用次数
+func (s *SiteStatSummary) Total() int {
+	return s.OKCount + s.EmptyCount + s.TimeoutCount + s.ErrorCount
+}
+
+// HasData 是否有采样数据
+func (s *SiteStatSummary) HasData() bool {
+	return s.Total() > 0
+}
+
+// OKRate 成功率（返回到结果的比例），0-100
+func (s *SiteStatSummary) OKRate() float64 {
+	if s.Total() == 0 {
+		return 0
+	}
+	return float64(s.OKCount) * 100 / float64(s.Total())
+}
+
+// EmptyRate 空返回率，0-100。持续偏高说明站点接口结构可能已变更
+func (s *SiteStatSummary) EmptyRate() float64 {
+	if s.Total() == 0 {
+		return 0
+	}
+	return float64(s.EmptyCount) * 100 / float64(s.Total())
+}
+
+// FailRate 失败率（超时 + 错误），0-100
+func (s *SiteStatSummary) FailRate() float64 {
+	if s.Total() == 0 {
+		return 0
+	}
+	return float64(s.TimeoutCount+s.ErrorCount) * 100 / float64(s.Total())
+}
+
+// AvgMs 平均耗时（毫秒）
+func (s *SiteStatSummary) AvgMs() int {
+	if s.Total() == 0 {
+		return 0
+	}
+	return int(s.TotalMs / int64(s.Total()))
+}
+
+// Level 健康等级：good / warn / bad，供模板直接当 CSS 类名用
+func (s *SiteStatSummary) Level() string {
+	if !s.HasData() {
+		return "none"
+	}
+	switch {
+	case s.OKRate() < 50 || s.EmptyRate() > 90:
+		return "bad"
+	case s.OKRate() < 80 || s.FailRate() > 20:
+		return "warn"
+	default:
+		return "good"
+	}
+}
+
 // VodItem 资源网视频数据（所有字段统一为 string）
 type VodItem struct {
 	SourceKey     string    `json:"source_key" db:"source_key" gorm:"uniqueIndex:idx_source_vod"` // 来源站点Key

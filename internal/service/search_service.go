@@ -23,6 +23,12 @@ type SearchService struct {
 	crawler       SourceCrawler
 	maxTimeout    time.Duration // 单站点最大超时时间
 	sf            singleflight.Group
+	health        *SiteHealth // 采集健康度统计 + 熔断；可为 nil
+}
+
+// SetHealth 注入健康度服务。为 nil 时所有统计与熔断逻辑自动跳过。
+func (s *SearchService) SetHealth(h *SiteHealth) {
+	s.health = h
 }
 
 // NewSearchService 创建搜索服务
@@ -47,6 +53,13 @@ func NewSearchService(
 // GetSearchCrawler 获取搜素爬虫
 func (s *SearchService) GetSearchCrawler() SourceCrawler {
 	return s.crawler
+}
+
+// siteProbe 单个站点一次采集调用的结果，用于批量上报健康度
+type siteProbe struct {
+	key     string
+	outcome model.SiteCallOutcome
+	elapsed time.Duration
 }
 
 // SearchResult 搜索结果
@@ -160,7 +173,21 @@ func (s *SearchService) fetchAndSaveDetail(ctx context.Context, sourceKey, vodId
 	}
 
 	// 2. 从爬虫获取详情
+	//
+	// 注意：这里只统计、不熔断。GetDetail 是用户点击某个具体站点的播放链接后的
+	// 定向请求，一旦因熔断被跳过，播放页会直接打不开。熔断只适用于搜索扇出。
+	start := time.Now()
 	detail, err := s.crawler.GetDetail(ctx, site.BaseUrl, vodId, sourceKey)
+	elapsed := time.Since(start)
+
+	if s.health != nil {
+		itemCount := 0
+		if detail != nil {
+			itemCount = 1
+		}
+		s.health.Record(sourceKey, ClassifyError(ctx, err, itemCount), elapsed)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -187,10 +214,21 @@ func (s *SearchService) fetchFromSources(ctx context.Context, keyword string) ([
 		return []model.VodItem{}, nil
 	}
 
+	// 剔除处于熔断中的站点，避免每次搜索都在挂掉的站上白等一个超时。
+	// FilterAvailable 内部保证结果不为空（全熔断时兜底放行全部）。
+	sites, skipped := s.health.FilterAvailable(sites)
+	if len(skipped) > 0 {
+		log.Printf("[SearchService] 熔断跳过站点: %v", skipped)
+	}
+
+	// 分类过滤关键词只取一次，不必每个站点各查一遍
+	categories, _ := s.categoryRepo.GetAllKeywords()
+
 	// 并发获取
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var allItems []model.VodItem
+	outcomes := make([]siteProbe, 0, len(sites))
 
 	for _, site := range sites {
 		wg.Add(1)
@@ -201,25 +239,49 @@ func (s *SearchService) fetchFromSources(ctx context.Context, keyword string) ([
 			reqCtx, cancel := context.WithTimeout(ctx, s.maxTimeout)
 			defer cancel()
 
-			// 获取分类过滤关键词
-			categories, _ := s.categoryRepo.GetAllKeywords()
-
+			start := time.Now()
 			items, err := s.crawler.Search(reqCtx, site.BaseUrl, keyword, site.Key, categories)
-			if err != nil {
-				log.Printf("[SearchService] 站点 %s 搜索失败: %v", site.Key, err)
-				return
-			}
+			elapsed := time.Since(start)
+			outcome := ClassifyError(reqCtx, err, len(items))
 
 			mu.Lock()
-			allItems = append(allItems, items...)
+			outcomes = append(outcomes, siteProbe{key: site.Key, outcome: outcome, elapsed: elapsed})
+			if err == nil {
+				allItems = append(allItems, items...)
+			}
 			mu.Unlock()
 
-			log.Printf("[SearchService] 站点 %s 返回 %d 条结果", site.Key, len(items))
+			if err != nil {
+				log.Printf("[SearchService] 站点 %s 搜索失败(%s, 耗时 %v): %v", site.Key, outcome, elapsed.Round(time.Millisecond), err)
+				return
+			}
+			log.Printf("[SearchService] 站点 %s 返回 %d 条结果 (耗时 %v)", site.Key, len(items), elapsed.Round(time.Millisecond))
 		}(site)
 	}
 
 	wg.Wait()
+
+	s.recordOutcomes(outcomes, len(allItems) > 0)
+
 	return allItems, nil
+}
+
+// recordOutcomes 上报本轮各站点的采集结果。
+//
+// anyHit 表示本轮是否至少有一个站点返回了结果。若全部站点都空手而归，
+// 说明大概率是关键词本身冷门，而不是站点坏了 —— 此时丢弃所有 empty 采样，
+// 否则空返回率会被冷门词严重污染，失去"发现接口静默失效"的作用。
+// 超时和错误是真实故障，无论如何都记录。
+func (s *SearchService) recordOutcomes(outcomes []siteProbe, anyHit bool) {
+	if s.health == nil {
+		return
+	}
+	for _, o := range outcomes {
+		if o.outcome == model.SiteCallEmpty && !anyHit {
+			continue
+		}
+		s.health.Record(o.key, o.outcome, o.elapsed)
+	}
 }
 
 // fetchAndSave 从资源网获取并更新数据库，返回结果供同步调用

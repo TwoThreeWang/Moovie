@@ -52,11 +52,15 @@
                         <th>Key</th>
                         <th>API 地址</th>
                         <th>状态</th>
+                        <th title="近 24 小时返回到结果的比例">成功率</th>
+                        <th title="请求成功但返回 0 条的比例。持续偏高说明对方接口结构可能已变更">空返回</th>
+                        <th title="近 24 小时平均耗时">耗时</th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody id="sitesTable">
                     {{ range .Sites }}
+                    {{ $stat := index $.Stats .Key }}
                     <tr data-id="{{ .ID }}">
                         <td><span class="id-badge">{{ .ID }}</span></td>
                         <td><code class="key-badge">{{ .Key }}</code></td>
@@ -65,7 +69,26 @@
                             <span class="status-badge {{ if .Enabled }}status-active{{ else }}status-inactive{{ end }}">
                                 {{ if .Enabled }}启用{{ else }}禁用{{ end }}
                             </span>
+                            {{ if and $stat $stat.Tripped }}
+                            <span class="status-badge health-bad" title="连续失败已触发熔断，暂不参与搜索，{{ $stat.TrippedUntil.Format "15:04:05" }} 后自动恢复">熔断中</span>
+                            {{ end }}
                         </td>
+                        {{ if and $stat $stat.HasData }}
+                        <td>
+                            <span class="health-dot health-{{ $stat.Level }}"></span>
+                            {{ printf "%.0f%%" $stat.OKRate }}
+                            <span class="health-sub">{{ $stat.Total }} 次</span>
+                        </td>
+                        <td>
+                            {{ printf "%.0f%%" $stat.EmptyRate }}
+                            {{ if gt $stat.EmptyRate 90.0 }}<span class="health-dot health-bad" title="接口结构可能已变更"></span>{{ end }}
+                        </td>
+                        <td>{{ $stat.AvgMs }}ms</td>
+                        {{ else }}
+                        <td class="health-none">暂无数据</td>
+                        <td class="health-none">—</td>
+                        <td class="health-none">—</td>
+                        {{ end }}
                         <td class="actions-cell">
                             <button class="btn btn-primary btn-sm" onclick="editSite({{ .ID }}, '{{ .Key }}', '{{ .BaseUrl }}', {{ .Enabled }})">编辑</button>
                             <button class="btn btn-secondary btn-sm" onclick="testSite({{ .ID }}, '{{ .Key }}')">测试</button>
@@ -77,7 +100,7 @@
                     </tr>
                     {{ else }}
                     <tr>
-                        <td colspan="5" class="empty-cell">暂无资源网配置</td>
+                        <td colspan="8" class="empty-cell">暂无资源网配置</td>
                     </tr>
                     {{ end }}
                 </tbody>

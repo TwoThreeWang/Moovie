@@ -54,6 +54,7 @@ func InitDB(databaseURL string) (*gorm.DB, error) {
 		&model.MonthlyReport{},
 		&model.CommentLike{},
 		&model.CommentReply{},
+		&model.SiteStat{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("数据库迁移失败: %w", err)
@@ -124,6 +125,7 @@ type Repositories struct {
 	MonthlyReport     *MonthlyReportRepository
 	CommentLike       *CommentLikeRepository
 	CommentReply      *CommentReplyRepository
+	SiteStat          *SiteStatRepository
 }
 
 // NewRepositories 创建仓库集合
@@ -144,5 +146,6 @@ func NewRepositories(db *gorm.DB) *Repositories {
 		MonthlyReport:     NewMonthlyReportRepository(db),
 		CommentLike:       NewCommentLikeRepository(db),
 		CommentReply:      NewCommentReplyRepository(db),
+		SiteStat:          NewSiteStatRepository(db),
 	}
 }

@@ -23,6 +23,13 @@ type Config struct {
 	CFGatewayURL string
 	CFAPIToken   string
 	CFAIModel    string
+
+	// SearchBreakerEnabled 采集站点熔断开关。
+	// 关闭时仍然统计健康度，只是不再跳过任何站点。出问题改这个变量重启即可恢复原行为。
+	SearchBreakerEnabled bool
+	// WriteTimeout HTTP 响应写超时。必须显著大于单站点采集超时，
+	// 否则冷门词首次搜索（同步等待各采集站）会被 HTTP Server 直接截断。
+	WriteTimeout time.Duration
 }
 
 // Load 加载配置
@@ -44,6 +51,11 @@ func Load() *Config {
 
 	appSecret := getEnv("APP_SECRET", getEnv("JWT_SECRET", "your-secret-key-change-in-production"))
 
+	writeTimeoutSec, err := strconv.Atoi(getEnv("HTTP_WRITE_TIMEOUT_SECONDS", "30"))
+	if err != nil || writeTimeoutSec <= 0 {
+		writeTimeoutSec = 30
+	}
+
 	if getEnv("APP_ENV", "development") == "production" && appSecret == "your-secret-key-change-in-production" {
 		fmt.Println("【严重警告】生产环境正在使用默认密钥！请立即设置 APP_SECRET 环境变量。")
 	}
@@ -63,6 +75,9 @@ func Load() *Config {
 		CFGatewayURL: getEnv("CF_GATEWAY_URL", ""),
 		CFAPIToken:   getEnv("CF_API_TOKEN", ""),
 		CFAIModel:    getEnv("CF_AI_MODEL", "custom-alibaba-coding/kimi-k2.5"),
+
+		SearchBreakerEnabled: getEnv("SEARCH_BREAKER_ENABLED", "true") != "false",
+		WriteTimeout:         time.Duration(writeTimeoutSec) * time.Second,
 	}
 }
 

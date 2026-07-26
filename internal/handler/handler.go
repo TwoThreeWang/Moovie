@@ -44,6 +44,7 @@ type Handler struct {
 	RecommendationService *service.RecommendationService
 	MonthlyReportService  *service.MonthlyReportService
 	SearchCache           *utils.SearchCache[service.SearchResult]
+	SiteHealth            *service.SiteHealth
 }
 
 // NewHandler 创建处理器
@@ -62,6 +63,10 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 
 	// 创建搜索服务
 	searchService := service.NewSearchService(repos.Site, repos.VodItem, repos.CopyrightFilter, repos.CategoryFilter, sourceCrawler)
+
+	// 采集站点健康度统计 + 熔断（由 main 负责 Start/Stop）
+	siteHealth := service.NewSiteHealth(repos.SiteStat, cfg.SearchBreakerEnabled)
+	searchService.SetHealth(siteHealth)
 
 	// 创建推荐服务
 	recommendationService := service.NewRecommendationService(repos.Movie)
@@ -82,6 +87,7 @@ func NewHandler(repos *repository.Repositories, cfg *config.Config) *Handler {
 		RecommendationService: recommendationService,
 		MonthlyReportService:  monthlyReportService,
 		SearchCache:           searchCache,
+		SiteHealth:            siteHealth,
 	}
 }
 
