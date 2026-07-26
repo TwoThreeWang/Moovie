@@ -9,7 +9,7 @@
 
         <form
             hx-post="/api/user-movies/{{ .DoubanID }}/watched"
-            hx-target="#actions-{{ .DoubanID }}"
+            hx-target="#{{ default (printf "actions-%s" .DoubanID) .TargetID }}"
             hx-swap="outerHTML"
             hx-on::after-request="document.getElementById('mark-watched-modal').remove()"
             class="modal-form"
@@ -17,6 +17,7 @@
             <input type="hidden" name="title" value="{{ .Title }}">
             <input type="hidden" name="poster" value="{{ .Poster }}">
             <input type="hidden" name="year" value="{{ .Year }}">
+            <input type="hidden" name="variant" value="{{ .Variant }}">
             <input type="hidden" name="rating" id="rating-input" value="0">
 
             <div class="form-group">

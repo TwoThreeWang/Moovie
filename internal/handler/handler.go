@@ -427,10 +427,19 @@ func (h *Handler) Play(c *gin.Context) {
 	// 获取视频加载统计信息
 	loadStats, _ := h.Repos.Movie.GetLoadStatsBySource(sourceKey, vodId)
 
+	// 当前用户对该片的「看过」标记状态（用于播放页操作栏）
+	viewerID := middleware.GetUserID(c)
+	isWatched := false
+	if viewerID > 0 && doubanID != "" && doubanID != "0" {
+		isWatched, _ = h.Repos.UserMovie.IsMarked(viewerID, doubanID, "watched")
+	}
+
 	// 准备渲染数据
 	renderData := gin.H{
 		"Title":         pageTitle,
 		"DoubanID":      doubanID,
+		"IsWatched":     isWatched,
+		"LoggedIn":      viewerID > 0,
 		"VodID":         vodId,
 		"SourceKey":     sourceKey,
 		"Detail":        detail,

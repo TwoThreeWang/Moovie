@@ -19,13 +19,13 @@
 
 <!-- 豆瓣电影卡片 -->
 <div id="douban-card-container"
-     hx-get="/api/htmx/douban-card?kw={{ .Keyword }}"
+     hx-get="/api/htmx/douban-card?kw={{ urlquery .Keyword }}"
      hx-trigger="load"
      hx-swap="outerHTML">
 </div>
 
 <div id="search-results-container"
-     hx-get="/api/htmx/search?kw={{ .Keyword }}{{ if .Bypass }}&bypass=1{{ end }}"
+     hx-get="/api/htmx/search?kw={{ urlquery .Keyword }}{{ if .Bypass }}&bypass=1{{ end }}"
      hx-trigger="load"
      hx-indicator="#search-loading">
     <div id="search-loading" class="htmx-indicator search-loading-state">

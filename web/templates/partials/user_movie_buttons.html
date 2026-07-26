@@ -2,12 +2,15 @@
 {{ $title := .Title }}
 {{ $poster := .Poster }}
 {{ $year := .Year }}
+{{/* hx-* 不是 html/template 认识的 URL 属性，不会自动做 URL 编码，
+     这里必须手动 urlquery，否则片名/海报里的 & ? # + 会截断查询串 */}}
+{{ $qs := printf "title=%s&poster=%s&year=%s" (urlquery $title) (urlquery $poster) (urlquery $year) }}
 <div class="movie-actions" id="actions-{{ $douban }}">
     <!-- 1. 想看 (Wish) 按钮：始终排在第一位 -->
     {{ if .IsWish }}
     <button
         class="btn btn-secondary btn-current"
-        hx-delete="/api/user-movies/{{ $douban }}?title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-delete="/api/user-movies/{{ $douban }}?{{ $qs }}"
         hx-confirm="确定取消“想看”吗？"
         hx-target="#actions-{{ $douban }}"
         hx-swap="outerHTML"
@@ -22,7 +25,7 @@
     {{ else }}
     <button
         class="btn btn-secondary"
-        hx-post="/api/user-movies/{{ $douban }}/wish?title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-post="/api/user-movies/{{ $douban }}/wish?{{ $qs }}"
         hx-target="#actions-{{ $douban }}"
         hx-swap="outerHTML"
     >
@@ -39,7 +42,7 @@
     {{ if .IsWatched }}
     <button
         class="btn btn-secondary btn-current"
-        hx-delete="/api/user-movies/{{ $douban }}?title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-delete="/api/user-movies/{{ $douban }}?{{ $qs }}"
         hx-confirm="确定取消“已看过”吗？"
         hx-target="#actions-{{ $douban }}"
         hx-swap="outerHTML"
@@ -54,7 +57,7 @@
     {{ else }}
     <button
         class="btn btn-secondary"
-        hx-get="/api/htmx/user-movie/mark-watched?douban_id={{ $douban }}&title={{ $title }}&poster={{ $poster }}&year={{ $year }}"
+        hx-get="/api/htmx/user-movie/mark-watched?douban_id={{ $douban }}&{{ $qs }}"
         hx-target="body"
         hx-swap="beforeend"
     >

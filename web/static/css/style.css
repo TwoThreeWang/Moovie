@@ -3545,6 +3545,24 @@ img {
     flex-shrink: 0;
 }
 
+/* 操作栏按钮选中态（如「已看过」） */
+.video-action-btn.is-active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+.video-action-btn.is-active:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    opacity: 0.85;
+}
+
+.play-watched-action {
+    display: inline-flex;
+}
+
 /* ==================== 视频播放页面响应式 ==================== */
 @media (max-width: 768px) {
     .watch-page {

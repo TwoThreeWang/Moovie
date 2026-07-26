@@ -18,6 +18,35 @@ import (
 	"github.com/user/moovie/internal/utils"
 )
 
+// userMovieVariant 归一化按钮片段变体。
+// variant=play 表示播放页语境：只渲染「看过」一个按钮。
+func userMovieVariant(c *gin.Context) string {
+	v := c.PostForm("variant")
+	if v == "" {
+		v = c.Query("variant")
+	}
+	if v == "play" {
+		return "play"
+	}
+	return ""
+}
+
+// userMovieButtonTemplate 按变体返回对应的按钮片段模板名
+func userMovieButtonTemplate(variant string) string {
+	if variant == "play" {
+		return "partials/play_watched_button.html"
+	}
+	return "partials/user_movie_buttons.html"
+}
+
+// userMovieActionsTargetID 按变体返回按钮容器的 DOM id（htmx 交换目标）
+func userMovieActionsTargetID(variant, doubanID string) string {
+	if variant == "play" {
+		return "play-actions-" + doubanID
+	}
+	return "actions-" + doubanID
+}
+
 func (h *Handler) MarkWish(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == 0 {
@@ -98,7 +127,7 @@ func (h *Handler) MarkWatched(c *gin.Context) {
 	}
 	isWatched := true
 	isWish, _ := h.Repos.UserMovie.IsMarked(userID, doubanID, "wish")
-	c.HTML(http.StatusOK, "partials/user_movie_buttons.html", gin.H{
+	c.HTML(http.StatusOK, userMovieButtonTemplate(userMovieVariant(c)), gin.H{
 		"DoubanID":  doubanID,
 		"IsWish":    isWish,
 		"IsWatched": isWatched,
@@ -106,6 +135,7 @@ func (h *Handler) MarkWatched(c *gin.Context) {
 		"Poster":    poster,
 		"Year":      year,
 		"Rating":    rating,
+		"LoggedIn":  true,
 	})
 }
 
@@ -120,11 +150,14 @@ func (h *Handler) UserMovieMarkWatchedFormHTMX(c *gin.Context) {
 	title := c.Query("title")
 	poster := c.Query("poster")
 	year := c.Query("year")
+	variant := userMovieVariant(c)
 	c.HTML(http.StatusOK, "partials/user_movie_mark_watched_form.html", gin.H{
 		"DoubanID": doubanID,
 		"Title":    title,
 		"Poster":   poster,
 		"Year":     year,
+		"Variant":  variant,
+		"TargetID": userMovieActionsTargetID(variant, doubanID),
 	})
 }
 
@@ -143,13 +176,15 @@ func (h *Handler) UserMovieButtonsHTMX(c *gin.Context) {
 			isWatched = rec.Status == "watched"
 		}
 	}
-	c.HTML(http.StatusOK, "partials/user_movie_buttons.html", gin.H{
+	c.HTML(http.StatusOK, userMovieButtonTemplate(userMovieVariant(c)), gin.H{
 		"DoubanID":  doubanID,
 		"IsWish":    isWish,
 		"IsWatched": isWatched,
 		"Title":     title,
 		"Poster":    poster,
 		"Year":      year,
+		"LoggedIn":  userID > 0,
+		"Redirect":  c.Query("redirect"),
 	})
 }
 
@@ -175,13 +210,14 @@ func (h *Handler) RemoveUserMovie(c *gin.Context) {
 	}
 
 	// 返回最新的按钮片段（未标记状态）
-	c.HTML(http.StatusOK, "partials/user_movie_buttons.html", gin.H{
+	c.HTML(http.StatusOK, userMovieButtonTemplate(userMovieVariant(c)), gin.H{
 		"DoubanID":  doubanID,
 		"IsWish":    false,
 		"IsWatched": false,
 		"Title":     title,
 		"Poster":    poster,
 		"Year":      year,
+		"LoggedIn":  true,
 	})
 }
 
