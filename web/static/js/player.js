@@ -268,7 +268,7 @@ function buildDanmakuPlugin(options) {
                     return [];
                 });
         },
-        speed: 6,
+        speed: 10,
         opacity: 1,
         fontSize: 22,
         margin: [10, '30%'],
@@ -276,7 +276,7 @@ function buildDanmakuPlugin(options) {
         modes: [0, 1, 2],
         antiOverlap: true,
         synchronousPlayback: true,   // 倍速播放时弹幕同步变速
-        heatmap: true,               // 进度条上的弹幕密度热力图
+        heatmap: false,              // 进度条上的弹幕密度热力图
         // 插件的配置校验要求 emitter 必须是 boolean，不能传对象
         emitter: !!options.canSendDanmaku,
         maxLength: 50,
