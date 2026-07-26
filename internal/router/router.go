@@ -134,6 +134,7 @@ func RegisterRoutes(r *gin.Engine, h *handler.Handler) {
 		api.GET("/htmx/square/leaderboard", h.SquareLeaderboardHTMX)             // 广场排行榜
 		api.GET("/htmx/douban-card", h.DoubanCardHTMX)                           // 搜索页豆瓣电影卡片
 		api.GET("/htmx/douban-sync-status", h.DoubanSyncStatusHTMX)              // 豆瓣同步状态
+		api.GET("/danmaku", h.Danmaku)                                           // 弹幕代理（外部弹幕源）
 		api.POST("/report/load-speed", h.ReportLoadSpeed)                        // 上报加载速度
 		api.GET("/stats/load-speed", h.GetLoadStats)                             // 获取加载统计
 	}

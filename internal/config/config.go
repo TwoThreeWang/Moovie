@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,12 @@ type Config struct {
 	CFGatewayURL string
 	CFAPIToken   string
 	CFAIModel    string
+
+	// DanmakuAPIBase 弹幕聚合服务地址，需包含 token 前缀。
+	// 例如本地开发 https://danmu-api.xxx.workers.dev/moovie，
+	// 生产走 compose 内网 http://danmu-api:9321/{token}。
+	// 留空则弹幕功能整体关闭（接口返回空数组，前端不加载插件）。
+	DanmakuAPIBase string
 
 	// SearchBreakerEnabled 采集站点熔断开关。
 	// 关闭时仍然统计健康度，只是不再跳过任何站点。出问题改这个变量重启即可恢复原行为。
@@ -75,6 +82,8 @@ func Load() *Config {
 		CFGatewayURL: getEnv("CF_GATEWAY_URL", ""),
 		CFAPIToken:   getEnv("CF_API_TOKEN", ""),
 		CFAIModel:    getEnv("CF_AI_MODEL", "custom-alibaba-coding/kimi-k2.5"),
+
+		DanmakuAPIBase: strings.TrimRight(getEnv("DANMU_API_BASE", ""), "/"),
 
 		SearchBreakerEnabled: getEnv("SEARCH_BREAKER_ENABLED", "true") != "false",
 		WriteTimeout:         time.Duration(writeTimeoutSec) * time.Second,

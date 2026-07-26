@@ -243,6 +243,48 @@ function createAutoPlayManager(options) {
     };
 }
 
+// 构建弹幕插件配置
+// 依赖 artplayer-plugin-danmuku，未加载时静默跳过（弹幕永远不能影响正片播放）
+var DANMAKU_VISIBLE_KEY = 'moovie_danmaku_visible';
+
+function buildDanmakuPlugin(options) {
+    if (typeof artplayerPluginDanmuku === 'undefined') return null;
+    // 手动播放和 IPTV 直播没有片名，无从匹配弹幕
+    if (!options.vodName || options.sourceKey === 'iptv' || options.sourceKey === 'manual') return null;
+
+    return artplayerPluginDanmuku({
+        // 传函数而不是 URL 字符串：字符串形式在请求失败时插件会 throw，
+        // 函数形式可以 catch 后返回空数组，静默降级
+        danmuku: function() {
+            var q = '/api/danmaku?title=' + encodeURIComponent(options.vodName);
+            if (options.episode) {
+                q += '&episode=' + encodeURIComponent(options.episode);
+            }
+            return fetch(q)
+                .then(function(r) { return r.ok ? r.json() : []; })
+                .then(function(list) { return Array.isArray(list) ? list : []; })
+                .catch(function(e) {
+                    console.warn('[Player] 弹幕加载失败，已跳过', e);
+                    return [];
+                });
+        },
+        speed: 6,
+        opacity: 1,
+        fontSize: 22,
+        margin: [10, '30%'],
+        mode: 0,
+        modes: [0, 1, 2],
+        antiOverlap: true,
+        synchronousPlayback: true,   // 倍速播放时弹幕同步变速
+        heatmap: true,               // 进度条上的弹幕密度热力图
+        emitter: false,              // 关闭发射器：弹幕来自外部源，站内暂不支持发送
+        visible: localStorage.getItem(DANMAKU_VISIBLE_KEY) !== 'false',
+        filter: function(danmu) {
+            return danmu.text && danmu.text.length <= 60;
+        }
+    });
+}
+
 // 初始化播放器
 function initPlayer(containerId, url, options) {
     options = options || {};
@@ -454,8 +496,32 @@ function initPlayer(containerId, url, options) {
         type: videoType
     };
 
+    // 弹幕插件（可选，加载不到就当没有）
+    var danmakuPlugin = buildDanmakuPlugin(options);
+    if (danmakuPlugin) {
+        config.plugins = [danmakuPlugin];
+    }
+
     try {
         var art = new Artplayer(config);
+
+        if (danmakuPlugin) {
+            art.on('artplayerPluginDanmuku:loaded', function(queue) {
+                if (queue && queue.length) {
+                    console.log('[Player] 弹幕加载完成，共', queue.length, '条');
+                }
+            });
+            art.on('artplayerPluginDanmuku:error', function(e) {
+                console.warn('[Player] 弹幕插件异常', e);
+            });
+            // 记住用户的弹幕开关偏好
+            art.on('artplayerPluginDanmuku:show', function() {
+                localStorage.setItem(DANMAKU_VISIBLE_KEY, 'true');
+            });
+            art.on('artplayerPluginDanmuku:hide', function() {
+                localStorage.setItem(DANMAKU_VISIBLE_KEY, 'false');
+            });
+        }
 
         art.on('ready', function() {
             const video = art.video;

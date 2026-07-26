@@ -15,8 +15,8 @@ services:
       - HTTP_PROXY=socks5://cloudflare-warp:1080
       - HTTPS_PROXY=socks5://cloudflare-warp:1080
       - ALL_PROXY=socks5://cloudflare-warp:1080
-      # 排除本地和内部服务
-      - NO_PROXY=localhost,127.0.0.1,postgres
+      # 排除本地和内部服务（danmu-api 必须排除，否则弹幕请求会绕道 WARP 出国再回来）
+      - NO_PROXY=localhost,127.0.0.1,postgres,danmu-api
     restart: unless-stopped
     networks:
       - postgres_default
@@ -30,6 +30,39 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # 弹幕聚合服务，仅供 app 内网调用，不对外映射端口
+  danmu-api:
+    image: logvar/danmu-api:latest
+    container_name: moovie-danmu-api
+    env_file:
+      - .env
+    environment:
+      # 与 .env 里的 DANMU_API_BASE 路径前缀保持一致
+      - TOKEN=${DANMU_API_TOKEN:-changeme}
+      # 必须为 0：经 app 代理后上游只看得到同一个来源 IP，
+      # 默认的 3次/分钟 会让第 4 个访客开始全部拿不到弹幕。
+      # 真正的限流在 app 侧按访客 IP 做（见 internal/handler/danmaku.go）
+      - RATE_LIMIT_MAX_REQUESTS=0
+      - COMMENT_CACHE_MINUTES=60
+      - SEARCH_CACHE_MINUTES=30
+      - DANMU_LIMIT=5
+      - LIKE_SWITCH=false
+      - LOG_LEVEL=warn
+      - TZ=Asia/Shanghai
+      # WARP 代理配置 - 走 SOCKS5
+      - HTTP_PROXY=socks5://cloudflare-warp:1080
+      - HTTPS_PROXY=socks5://cloudflare-warp:1080
+      - ALL_PROXY=socks5://cloudflare-warp:1080
+    volumes:
+      - ./danmu-cache:/app/.cache
+    restart: unless-stopped
+    networks:
+      - postgres_default
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
 networks:
   postgres_default:
