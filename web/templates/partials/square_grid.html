@@ -1,12 +1,15 @@
 {{ define "square_grid.html" }}
 {{ range .Activities }}
 <div class="square-item">
-    <div class="square-row">
+    <div class="square-meta">
         <a href="/user/{{ .UserID }}" class="square-user">
             <span class="square-avatar">{{ default "🎬" .User.Avatar }}</span>
             <span class="square-username">{{ .User.Username }}</span>
         </a>
         <span class="square-verb">看过</span>
+        <time class="square-time">{{ .UpdatedAt.Format "01-02 15:04" }}</time>
+    </div>
+    <div class="square-body">
         <a href="/movie/{{ .MovieID }}?title={{ .Title }}" class="square-movie">
             <img class="square-poster" src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
             <div class="square-movie-info">
@@ -14,9 +17,8 @@
                 {{ if .Rating }}<span class="square-movie-rating">★ {{ .Rating }}.0</span>{{ end }}
             </div>
         </a>
-        <time class="square-time">{{ .UpdatedAt.Format "01-02 15:04" }}</time>
+        {{ if .Comment }}<p class="square-comment">{{ .Comment }}</p>{{ end }}
     </div>
-    {{ if .Comment }}<p class="square-comment">{{ .Comment }}</p>{{ end }}
 </div>
 {{ end }}
 {{ if .HasMore }}

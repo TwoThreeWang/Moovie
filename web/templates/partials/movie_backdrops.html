@@ -1,56 +1,44 @@
 {{ if .Backdrops }}
+{{ $total := len .Backdrops }}
 <div class="movie-backdrops-section">
-    {{ if gt (len .Backdrops) 4 }}
-    <input type="checkbox" id="toggle-backdrops-check" class="toggle-backdrops-check" style="display: none;">
-    {{ end }}
-
-    <div class="backdrops-grid {{ if gt (len .Backdrops) 4 }}has-more{{ end }}" id="backdropsGrid">
-        {{ range .Backdrops }}
-        <div class="backdrop-item" onclick="openLightbox('{{ . }}')">
-            <img src="{{ proxyImg . }}" loading="lazy" alt="电影剧照">
+    <div class="backdrops-grid" id="backdropsGrid">
+        {{ range $i, $url := .Backdrops }}{{ if lt $i 8 }}
+        <div class="backdrop-item" onclick="openLightbox({{ $i }})">
+            <img src="{{ proxyImg $url }}" loading="lazy" alt="电影剧照">
+            {{ if and (eq $i 7) (gt $total 8) }}<span class="backdrop-more backdrop-more-pc">+{{ sub $total 8 }}</span>{{ end }}
+            {{ if and (eq $i 3) (gt $total 4) }}<span class="backdrop-more backdrop-more-mb">+{{ sub $total 4 }}</span>{{ end }}
         </div>
-        {{ end }}
+        {{ end }}{{ end }}
     </div>
-
-    {{ if gt (len .Backdrops) 4 }}
-    <div class="backdrops-actions">
-        <label for="toggle-backdrops-check" class="btn-show-more-label">
-            <span class="text-expand">展开全部剧照 ({{ len .Backdrops }})</span>
-            <span class="text-collapse">收起剧照</span>
-        </label>
-    </div>
-    {{ end }}
 </div>
 
-<div id="backdropLightbox" class="backdrop-lightbox" onclick="closeLightbox()">
+<div id="backdropLightbox" class="backdrop-lightbox">
+    <button type="button" class="lightbox-nav lightbox-prev" onclick="stepLightbox(-1)" aria-label="上一张">&#8249;</button>
     <img id="lightboxImg" src="" alt="剧照大图">
-    <div class="lightbox-close">&times;</div>
+    <button type="button" class="lightbox-nav lightbox-next" onclick="stepLightbox(1)" aria-label="下一张">&#8250;</button>
+    <div class="lightbox-counter"><span id="lightboxIndex">1</span> / <span id="lightboxTotal">1</span></div>
+    <button type="button" class="lightbox-close" onclick="closeLightbox()" aria-label="关闭">&times;</button>
 </div>
+
+<script>
+var MOOVIE_BACKDROPS = [{{ range $i, $url := .Backdrops }}{{ if $i }},{{ end }}{{ $url }}{{ end }}];
+</script>
 
 <style>
 .movie-backdrops-section {
     margin-top: 1rem;
     margin-bottom: 2rem;
 }
+
+/* 固定 4×2 网格，页面高度恒定，不再有展开/收起 */
 .backdrops-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
-    overflow: hidden;
-    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.backdrops-grid.has-more {
-    max-height: 360px;
-    position: relative;
-}
-
-/* 纯 CSS 展开逻辑 */
-.toggle-backdrops-check:checked ~ .backdrops-grid {
-    max-height: 5000px;
 }
 
 .backdrop-item {
+    position: relative;
     cursor: pointer;
     border-radius: var(--radius-sm, 8px);
     overflow: hidden;
@@ -76,38 +64,27 @@
     transform: scale(1.08);
 }
 
-.backdrops-actions {
-    text-align: center;
-    margin-top: 20px;
-    position: relative;
-    z-index: 10;
+/* 「+N」蒙层：盖在最后一格可见缩略图上 */
+.backdrop-more {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    backdrop-filter: blur(2px);
+    transition: background 0.2s ease;
 }
 
-.btn-show-more-label {
-    display: inline-block;
-    color: var(--text-secondary, #a0a0a0);
-    font-size: 0.85rem;
-    padding: 6px 20px;
-    border: 1px solid var(--border, #333);
-    border-radius: 30px;
-    transition: all 0.2s ease;
-    background: var(--bg-secondary, #1a1c22);
-    cursor: pointer;
-    touch-action: manipulation;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
+.backdrop-item:hover .backdrop-more {
+    background: rgba(0, 0, 0, 0.45);
 }
 
-.btn-show-more-label:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-    background: var(--primary-alpha, rgba(246, 12, 62, 0.1));
-}
-
-/* 按钮文字切换逻辑 */
-.text-collapse { display: none; }
-.toggle-backdrops-check:checked ~ .backdrops-actions .text-expand { display: none; }
-.toggle-backdrops-check:checked ~ .backdrops-actions .text-collapse { display: inline; }
+.backdrop-more-mb { display: none; }
 
 /* Lightbox */
 .backdrop-lightbox {
@@ -121,7 +98,6 @@
     z-index: 10000;
     justify-content: center;
     align-items: center;
-    cursor: zoom-out;
     backdrop-filter: blur(5px);
     opacity: 0;
     transition: opacity 0.3s ease;
@@ -133,28 +109,72 @@
 }
 
 .backdrop-lightbox img {
-    max-width: 95%;
-    max-height: 92%;
+    max-width: 88%;
+    max-height: 90%;
     object-fit: contain;
     border-radius: 4px;
     box-shadow: 0 10px 40px rgba(0,0,0,0.8);
     transform: scale(0.95);
     transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 .backdrop-lightbox.active img {
     transform: scale(1);
 }
 
+.lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 46px;
+    height: 46px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 30px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.lightbox-nav:hover {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.lightbox-prev { left: 20px; }
+.lightbox-next { right: 20px; }
+
+.lightbox-counter {
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.8125rem;
+    letter-spacing: 1px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+
 .lightbox-close {
     position: absolute;
     top: 20px;
     right: 25px;
+    border: none;
+    background: transparent;
     color: #fff;
     font-size: 35px;
     font-weight: 300;
     cursor: pointer;
     line-height: 1;
+    padding: 0;
     text-shadow: 0 2px 10px rgba(0,0,0,0.5);
     transition: transform 0.2s;
 }
@@ -165,48 +185,101 @@
 }
 
 @media (max-width: 768px) {
+    /* 手机端 2×2，多出的缩略图不进视口 */
     .backdrops-grid {
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
     }
-    .backdrops-grid.has-more {
-        max-height: 220px;
-    }
+    .backdrop-item:nth-child(n+5) { display: none; }
+    .backdrop-more-pc { display: none; }
+    .backdrop-more-mb { display: flex; }
+
+    /* 手机端靠滑动翻页，箭头让位给图片 */
+    .lightbox-nav { display: none; }
+    .backdrop-lightbox img { max-width: 96%; }
 }
 </style>
 
 <script>
-function openLightbox(url) {
-    const lightbox = document.getElementById('backdropLightbox');
-    const img = document.getElementById('lightboxImg');
-    img.src = '';
-    const encoded = btoa(url);
-    if (url.includes('tmdb')) {
-        img.src = '/api/proxy/image/r76RqSIVvUryzx' + encoded + '?raw=1';
-    } else {
-        img.src = '/api/proxy/image/r76RqSIVvUryzx' + encoded;
-    }
-    lightbox.classList.add('active');
-    document.body.style.overflow = 'hidden';
-}
+(function () {
+    var idx = 0;
 
-function closeLightbox() {
-    const lightbox = document.getElementById('backdropLightbox');
-    const img = document.getElementById('lightboxImg');
-    lightbox.classList.remove('active');
-    document.body.style.overflow = '';
-    // 关闭时也清空 src
-    setTimeout(() => {
-        if (!lightbox.classList.contains('active')) {
-            img.src = '';
+    function srcFor(url) {
+        // 保持原有的图片代理规则
+        var encoded = btoa(url);
+        return '/api/proxy/image/r76RqSIVvUryzx' + encoded + (url.indexOf('tmdb') !== -1 ? '?raw=1' : '');
+    }
+
+    function preload(i) {
+        if (i < 0 || i >= MOOVIE_BACKDROPS.length) return;
+        var im = new Image();
+        im.src = srcFor(MOOVIE_BACKDROPS[i]);
+    }
+
+    function render() {
+        var img = document.getElementById('lightboxImg');
+        img.src = srcFor(MOOVIE_BACKDROPS[idx]);
+        document.getElementById('lightboxIndex').textContent = idx + 1;
+        document.getElementById('lightboxTotal').textContent = MOOVIE_BACKDROPS.length;
+        preload(idx + 1);
+        preload(idx - 1);
+    }
+
+    window.openLightbox = function (i) {
+        if (!MOOVIE_BACKDROPS.length) return;
+        idx = i || 0;
+        render();
+        document.getElementById('backdropLightbox').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    };
+
+    window.stepLightbox = function (delta) {
+        var n = MOOVIE_BACKDROPS.length;
+        idx = (idx + delta + n) % n; // 首尾循环
+        render();
+    };
+
+    window.closeLightbox = function () {
+        var lightbox = document.getElementById('backdropLightbox');
+        var img = document.getElementById('lightboxImg');
+        lightbox.classList.remove('active');
+        document.body.style.overflow = '';
+        setTimeout(function () {
+            if (!lightbox.classList.contains('active')) img.src = '';
+        }, 300);
+    };
+
+    var lightbox = document.getElementById('backdropLightbox');
+
+    // 点空白处关闭，点图片/箭头不关闭
+    lightbox.addEventListener('click', function (e) {
+        if (e.target === lightbox) closeLightbox();
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (!lightbox.classList.contains('active')) return;
+        if (e.key === 'Escape') closeLightbox();
+        else if (e.key === 'ArrowLeft') stepLightbox(-1);
+        else if (e.key === 'ArrowRight') stepLightbox(1);
+    });
+
+    // 手机端左右滑动翻页
+    var startX = null, startY = null;
+    lightbox.addEventListener('touchstart', function (e) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+    }, { passive: true });
+
+    lightbox.addEventListener('touchend', function (e) {
+        if (startX === null) return;
+        var dx = e.changedTouches[0].clientX - startX;
+        var dy = e.changedTouches[0].clientY - startY;
+        // 横向位移够大且不是竖滑，才算翻页
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+            stepLightbox(dx < 0 ? 1 : -1);
         }
-    }, 300); // 等待淡出动画结束
-}
-
-// 监听 ESC 键关闭大图
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        closeLightbox();
-    }
-});
+        startX = startY = null;
+    }, { passive: true });
+})();
 </script>
 {{ end }}

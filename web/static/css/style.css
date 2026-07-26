@@ -5722,12 +5722,22 @@ span.health-bad {
     border-bottom: 1px solid var(--border);
 }
 
-.square-row {
+/* 第一行：头像 + 用户名 + 动作 + 时间（时间右对齐，位置固定不折行） */
+.square-meta {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 8px 10px;
+    gap: 6px;
     width: 100%;
+    min-width: 0;
+}
+
+/* 第二行起：内容主体，缩进与用户名左边缘对齐 */
+.square-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-left: 22px;
+    min-width: 0;
 }
 
 .square-item:last-child {
@@ -5742,7 +5752,13 @@ span.health-bad {
     text-decoration: none;
     font-weight: 600;
     font-size: 0.9rem;
-    flex-shrink: 0;
+    min-width: 0;
+}
+
+.square-user .square-username {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .square-user:hover {
@@ -5762,8 +5778,10 @@ span.health-bad {
 
 .square-movie {
     display: inline-flex;
+    align-self: flex-start;
     align-items: center;
     gap: 8px;
+    max-width: 100%;
     text-decoration: none;
     color: var(--text);
     min-width: 0;
@@ -5789,7 +5807,7 @@ span.health-bad {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 220px;
+    max-width: 320px;
 }
 
 .square-movie:hover .square-movie-title {
@@ -5803,7 +5821,7 @@ span.health-bad {
 
 .square-comment {
     position: relative;
-    margin: 0 0 0 42px;
+    margin: 0;
     padding: 6px 14px 6px 24px;
     background: var(--bg-secondary);
     border-radius: 10px;
