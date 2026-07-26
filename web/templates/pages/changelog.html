@@ -4,9 +4,55 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
-    <!-- v3.3.1 -->
+    <!-- v3.4.0 -->
     <section class="changelog-item">
-      <div class="version-badge">v3.3.1 <small>2026-07-25</small></div>
+      <div class="version-badge">v3.4.0 <small>2026-07-26</small></div>
+      <div class="changelog-details">
+        <h3>✨ 新增 (Added)</h3>
+        <ul>
+          <li>
+            <strong>站内弹幕系统</strong>：视频播放器完整接入弹幕功能，支持弹幕显示/隐藏开关、发送弹幕、记住用户偏好；后端聚合外部弹弹play源与站内弹幕，支持缓存、IP 限流、防重复校验及登录态发送。
+          </li>
+          <li>
+            <strong>采集站点健康统计与熔断</strong>：新增按小时分桶的站点健康统计，自动跳过连续失败的采集站点，5 分钟后自动恢复探测；后台资源管理页展示成功率、空返回率与平均耗时。
+          </li>
+          <li>
+            <strong>播放页已看过按钮</strong>：播放页面新增已看过状态标记按钮，可直接在播放页完成观影标记。
+          </li>
+          <li>
+            <strong>播放页站内短评展示</strong>：播放页新增展示站内用户短评模块，观影讨论更便捷。
+          </li>
+          <li>
+            <strong>站点健康异常告警</strong>：当采集站点近 1 小时成功率低于 50% 或空返回率高于 90% 时，自动写入后台反馈页面，便于管理员及时发现异常。
+          </li>
+          <li>
+            <strong>播放页免责声明</strong>：新增播放页免责声明，提示用户警惕视频内的广告诈骗风险。
+          </li>
+          <li>
+            <strong>品牌 Logo 升级</strong>：将表情符号 Logo 替换为实际图片 Logo，同步更新 favicon、PWA 缓存及全站页面模板样式。
+          </li>
+        </ul>
+        <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+        <ul>
+          <li>
+            <strong>模板 URL 编码修复</strong>：修复全站模板 URL 参数未编码的问题，避免特殊字符破坏 HTMX 请求。
+          </li>
+          <li>
+            <strong>用户电影操作按钮重构</strong>：抽离并重构用户电影操作按钮模板，支持播放页专用变体与更灵活的 HTMX 目标处理。
+          </li>
+          <li>
+            <strong>HTTP 写超时配置</strong>：新增 HTTP 写超时与熔断开关环境变量，适配长搜索请求场景。
+          </li>
+          <li>
+            <strong>静态资源版本更新</strong>：更新播放器脚本、Service Worker 及全局静态资源缓存版本，确保新功能生效。
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- v3.3.0 -->
+    <section class="changelog-item">
+      <div class="version-badge">v3.3.0 <small>2026-07-25</small></div>
       <div class="changelog-details">
         <h3>✨ 新增 (Added)</h3>
         <ul>
