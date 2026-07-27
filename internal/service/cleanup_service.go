@@ -18,7 +18,7 @@ const (
 	// siteAlertMinSamples 低于这个采样量不告警，避免单次抖动误报
 	siteAlertMinSamples = 5
 	// siteAlertCooldown 同一站点两次告警的最小间隔，避免刷屏
-	siteAlertCooldown = 6 * time.Hour
+	siteAlertCooldown = 24 * time.Hour
 	// SiteAlertFeedbackType 告警写入 feedback 表时使用的类型
 	SiteAlertFeedbackType = "系统告警"
 )
@@ -140,13 +140,13 @@ func (s *CleanupService) checkSiteHealth() {
 
 		var reason string
 		switch {
-		case summary.OKRate() < 50:
-			reason = fmt.Sprintf("成功率仅 %.0f%%（超时 %d 次、错误 %d 次）",
-				summary.OKRate(), summary.TimeoutCount, summary.ErrorCount)
-		case summary.EmptyRate() > 90:
+		case summary.EmptyRate() > 98:
 			// 空返回率畸高通常意味着对方改了接口结构：HTTP 仍是 200、JSON 也能解析，
 			// 但字段名对不上导致解析结果恒为空。只看成功率发现不了这种静默失效。
 			reason = fmt.Sprintf("空返回率高达 %.0f%%，接口结构可能已变更", summary.EmptyRate())
+		case summary.OKRate() == 0:
+			reason = fmt.Sprintf("成功率为 0%%（超时 %d 次、错误 %d 次）",
+				summary.TimeoutCount, summary.ErrorCount)
 		default:
 			continue
 		}
