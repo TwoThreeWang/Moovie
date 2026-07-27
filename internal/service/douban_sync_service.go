@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/user/moovie/internal/model"
@@ -20,9 +21,9 @@ import (
 
 // DoubanSyncService 豆瓣观影记录同步服务
 type DoubanSyncService struct {
-	repos    *repository.Repositories
-	crawler  *DoubanCrawler
-	client   *http.Client
+	repos   *repository.Repositories
+	crawler *DoubanCrawler
+	client  *http.Client
 }
 
 // NewDoubanSyncService 创建同步服务
@@ -99,10 +100,11 @@ func (s *DoubanSyncService) SyncFull(ctx context.Context, userID int, doubanUser
 				log.Printf("[DoubanSync] 获取 type=%s status=%s start=%d 返回 %d 条 (user=%d, job=%d)", itemType, status, start, len(items), userID, jobID)
 
 				for _, item := range items {
-					if err := s.upsertInterest(userID, item); err != nil {
+					saved, err := s.syncInterest(userID, item)
+					if err != nil {
 						log.Printf("[DoubanSync] 保存兴趣失败 (user=%d, subject=%s): %v", userID, item.Subject.ID.String(), err)
 						failed++
-					} else {
+					} else if saved {
 						processed++
 					}
 				}
@@ -172,10 +174,11 @@ func (s *DoubanSyncService) SyncIncremental(ctx context.Context, userID int, dou
 						break
 					}
 					if subjectSet[item.Subject.ID.String()] {
-						if err := s.upsertInterest(userID, item); err != nil {
+						saved, err := s.syncInterest(userID, item)
+						if err != nil {
 							log.Printf("[DoubanSync] 保存兴趣失败 (user=%d, subject=%s): %v", userID, item.Subject.ID.String(), err)
 							failed++
-						} else {
+						} else if saved {
 							processed++
 						}
 					}
@@ -224,6 +227,32 @@ func (s *DoubanSyncService) fetchInterestsPage(ctx context.Context, url string) 
 	return result.Interests, result.Total, nil
 }
 
+func (s *DoubanSyncService) syncInterest(userID int, item rexxarInterest) (bool, error) {
+	if !isAllowedDoubanSyncSubject(item.Subject) {
+		log.Printf("[DoubanSync] 跳过非影视兴趣 (user=%d, subject=%s, type=%s, subtype=%s, title=%s)",
+			userID, item.Subject.ID.String(), item.Subject.Type, item.Subject.Subtype, item.Subject.Title)
+		return false, nil
+	}
+
+	if err := s.upsertInterest(userID, item); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func isAllowedDoubanSyncSubject(subject rexxarSubject) bool {
+	return isAllowedDoubanSyncKind(subject.Type) || isAllowedDoubanSyncKind(subject.Subtype)
+}
+
+func isAllowedDoubanSyncKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "movie", "tv", "show":
+		return true
+	default:
+		return false
+	}
+}
+
 // upsertInterest 将单个兴趣保存到 user_movies
 func (s *DoubanSyncService) upsertInterest(userID int, item rexxarInterest) error {
 	status := "wish"
@@ -259,14 +288,14 @@ func (s *DoubanSyncService) upsertInterest(userID int, item rexxarInterest) erro
 	}
 
 	record := &model.UserMovie{
-		UserID:  userID,
-		MovieID: subjectID,
-		Title:   item.Subject.Title,
-		Poster:  item.Subject.CoverURL,
-		Year:    item.Subject.Year,
-		Status:  status,
-		Rating:  rating,
-		Comment: item.Comment,
+		UserID:    userID,
+		MovieID:   subjectID,
+		Title:     item.Subject.Title,
+		Poster:    item.Subject.CoverURL,
+		Year:      item.Subject.Year,
+		Status:    status,
+		Rating:    rating,
+		Comment:   item.Comment,
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
 	}
@@ -363,21 +392,21 @@ func extractSubjectID(link string) string {
 
 // rexxarInterestsResponse Rexxar 用户兴趣列表响应
 type rexxarInterestsResponse struct {
-	Start     int               `json:"start"`
-	Count     int               `json:"count"`
-	Total     int               `json:"total"`
-	Interests []rexxarInterest  `json:"interests"`
+	Start     int              `json:"start"`
+	Count     int              `json:"count"`
+	Total     int              `json:"total"`
+	Interests []rexxarInterest `json:"interests"`
 }
 
 type rexxarInterest struct {
-	ID        json.Number       `json:"id"`
-	Status    string            `json:"status"`
-	Comment   string            `json:"comment"`
-	Rating    *struct {
+	ID      json.Number `json:"id"`
+	Status  string      `json:"status"`
+	Comment string      `json:"comment"`
+	Rating  *struct {
 		Value float64 `json:"value"`
-	}                 `json:"rating"`
-	CreateTime string           `json:"create_time"`
-	Subject   rexxarSubject     `json:"subject"`
+	} `json:"rating"`
+	CreateTime string        `json:"create_time"`
+	Subject    rexxarSubject `json:"subject"`
 }
 
 type rexxarSubject struct {
