@@ -1,0 +1,380 @@
+{{/* 沉浸式个性化推荐页面 */}}
+{{ if .NeedLogin }}
+<div class="foryou-empty">
+    <div class="empty-icon">🔒</div>
+    <h3>开启你的个性化影院</h3>
+    <p>登录后，我们将根据你的口味精准推荐好片</p>
+    <a href="/auth/login?redirect=/foryou" class="btn btn-primary btn-lg">立即登录</a>
+</div>
+{{ else if .NoData }}
+<div class="foryou-empty">
+    <div class="empty-icon">📺</div>
+    <h3>还没准备好？</h3>
+    <p>多看几部电影并收藏，我就能更好地了解你的口味啦！</p>
+    <a href="/discover" class="btn btn-secondary">先去随便逛逛</a>
+</div>
+{{ else }}
+
+    {{ if .HeroMovie }}
+    <div class="foryou-hero">
+        <div class="hero-backdrop" style="background-image: url('{{ proxyImg .HeroMovie.Poster }}')"></div>
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+            <div class="hero-poster-wrapper">
+                <img src="{{ proxyImg .HeroMovie.Poster }}" alt="{{ .HeroMovie.Title }}" class="hero-poster" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                {{ if .HeroMovie.Rating }}
+                <div class="hero-rating">⭐ {{ .HeroMovie.Rating }}</div>
+                {{ end }}
+            </div>
+            <div class="hero-info">
+                <div class="hero-badge">✨ 深度契合你的口味</div>
+                <h2 class="hero-title">{{ .HeroMovie.Title }}</h2>
+                <div class="hero-meta">
+                    <span>{{ .HeroMovie.Year }}</span>
+                    <span>{{ .HeroMovie.Genres }}</span>
+                    <span>{{ .HeroMovie.Countries }}</span>
+                </div>
+                <p class="hero-summary">{{ .HeroMovie.Summary }}</p>
+                <div class="hero-actions">
+                    <a href="/movie/{{ .HeroMovie.DoubanID }}" class="btn btn-primary btn-lg">查看详情</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {{ end }}
+
+    {{ if .Personalized }}
+    <section class="foryou-section">
+        <div class="section-header">
+            <h3 class="section-title">🎯 猜你喜欢</h3>
+            <span class="section-subtitle">基于你的观影习惯精选</span>
+        </div>
+        <div class="movie-slider-container">
+            <div id="personalized-grid" class="movie-slider">
+                {{ template "foryou_movies_grid.html" . }}
+            </div>
+            <div id="foryou-loading" class="htmx-indicator" style="text-align: center; padding: 20px;">
+                <span class="foryou-loading-spinner"></span> 正在发现更多好片...
+            </div>
+        </div>
+    </section>
+    {{ end }}
+
+    {{ if .SimilarToLast }}
+    <section class="foryou-section">
+        <div class="section-header">
+            <h3 class="section-title">🎬 关联推荐</h3>
+            <span class="section-subtitle">最近你看了《{{ .LastMovieTitle }}》</span>
+        </div>
+        <div class="movie-slider-container">
+            <div class="movie-slider">
+                {{ range .SimilarToLast }}
+                <div class="movie-card">
+                    <a href="/movie/{{ .DoubanID }}">
+                        <div class="movie-poster">
+                            <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                            {{ if .Rating }}<span class="movie-rating">{{ .Rating }}</span>{{ end }}
+                        </div>
+                        <div class="movie-info">
+                            <span class="movie-title">{{ .Title }}</span>
+                            <span class="movie-meta">{{ .Year }} / {{ .Genres }}</span>
+                        </div>
+                    </a>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+    </section>
+    {{ end }}
+
+    {{ if .ReliveClassics }}
+    <section class="foryou-section">
+        <div class="section-header">
+            <h3 class="section-title">回味经典</h3>
+            <span class="section-subtitle">也许你还想再看一遍这些好片</span>
+        </div>
+        <div class="movie-slider-container">
+            <div class="movie-slider">
+                {{ range .ReliveClassics }}
+                <div class="movie-card">
+                    <a href="/movie/{{ .DoubanID }}">
+                        <div class="movie-poster">
+                            <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                            {{ if .Rating }}<span class="movie-rating">{{ .Rating }}</span>{{ end }}
+                        </div>
+                        <div class="movie-info">
+                            <span class="movie-title">{{ .Title }}</span>
+                            <span class="movie-meta">{{ .Year }} / {{ .Genres }}</span>
+                        </div>
+                    </a>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+    </section>
+    {{ end }}
+
+    {{ if .NoPersonalData }}
+    <div class="foryou-hint">
+        <p>💡 想获得更精准的推荐？尝试收藏更多你喜欢的电影吧！</p>
+    </div>
+    {{ end }}
+{{ end }}
+
+<style>
+/* Hero Section */
+.foryou-hero {
+    position: relative;
+    border-radius: 20px;
+    overflow: hidden;
+    margin-bottom: 40px;
+    background: #000;
+    min-height: 400px;
+    display: flex;
+    align-items: center;
+}
+
+.hero-backdrop {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-size: cover;
+    background-position: center;
+    filter: blur(40px) brightness(0.4);
+    transform: scale(1.1);
+}
+
+.hero-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(90deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.7) 100%);
+}
+
+.hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    padding: 40px;
+    gap: 40px;
+    align-items: center;
+    width: 100%;
+}
+
+.hero-poster-wrapper {
+    flex-shrink: 0;
+    position: relative;
+    width: 200px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.hero-poster {
+    width: 100%;
+    display: block;
+}
+
+.hero-rating {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: rgba(255, 193, 7, 0.9);
+    color: #000;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.hero-info {
+    flex: 1;
+    color: white;
+}
+
+.hero-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: var(--primary);
+    color: white;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.hero-title {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin-bottom: 12px;
+    line-height: 1.2;
+}
+
+.hero-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 0.95rem;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 20px;
+}
+
+.hero-summary {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.8);
+    margin-bottom: 24px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Sections & Sliders */
+.foryou-section {
+    margin-bottom: 48px;
+}
+
+.foryou-section .section-header {
+    margin-bottom: 20px;
+}
+
+.foryou-section .section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--text);
+}
+
+.foryou-section .section-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.movie-slider-container {
+    position: relative;
+}
+
+.movie-slider {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 20px;
+    padding-bottom: 8px;
+}
+
+.movie-slider .movie-card {
+    width: 100%;
+    transition: transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.movie-slider .movie-card:hover {
+    transform: translateY(-8px);
+}
+
+.foryou-page .movie-card .movie-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: block;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Empty States */
+.foryou-empty {
+    text-align: center;
+    padding: 80px 20px;
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    border: 1px dashed var(--border);
+}
+
+.foryou-empty .empty-icon {
+    font-size: 4rem;
+    margin-bottom: 24px;
+}
+
+.foryou-empty h3 {
+    font-size: 1.5rem;
+    margin-bottom: 12px;
+}
+
+/* Loading & Buttons */
+.foryou-page .htmx-indicator {
+    display: none;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+.foryou-page .htmx-request .htmx-indicator {
+    display: block;
+}
+.foryou-page .htmx-request.htmx-indicator {
+    display: block;
+}
+
+.foryou-loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--primary-alpha);
+    border-radius: 50%;
+    border-top-color: var(--primary);
+    animation: spin 1s ease-in-out infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+.foryou-page .btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 30px;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.foryou-page .btn-outline:hover {
+    background: var(--bg-secondary);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.foryou-empty p {
+    color: var(--text-muted);
+    margin-bottom: 32px;
+}
+
+.foryou-hint {
+    text-align: center;
+    padding: 24px;
+    background: var(--primary-alpha);
+    border-radius: 12px;
+    color: var(--primary);
+    font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+    .hero-content {
+        flex-direction: column;
+        text-align: center;
+        padding: 30px 20px;
+    }
+    .hero-poster-wrapper {
+        width: 140px;
+    }
+    .hero-title {
+        font-size: 1.75rem;
+    }
+    .hero-summary {
+        -webkit-line-clamp: 2;
+    }
+    .hero-meta {
+        justify-content: center;
+    }
+
+    /* 移动端改为 2 列网格布局 */
+    .movie-slider {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+}
+</style>

@@ -1,0 +1,45 @@
+{{/*
+    追剧更新时间。调用方传入 mediaidentity.AirScheduleView。
+
+    Show 为 false 时整块不渲染，包括外壳——已完结剧、电影、
+    以及 TMDB 尚未给出播出日期的剧集都不该在页面上留一个空标题。
+    调用方无需自己判断，直接 {{ template "air_schedule.html" .AirSchedule }} 即可。
+*/}}
+{{ if .Show }}
+<div class="air-schedule">
+    <div class="air-schedule-main">
+        <svg class="air-schedule-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+        <span class="air-schedule-label">下一集</span>
+        <span class="air-schedule-ep">{{ .Next.EpisodeLabel }}</span>
+        <span class="air-schedule-dot">·</span>
+        <time class="air-schedule-date" datetime="{{ .Next.AirDateISO }}">
+            {{ .Next.AirDateText }}（{{ .Next.WeekdayText }}）更新
+        </time>
+        <span class="air-schedule-relative{{ if le .Next.DaysUntil 1 }} air-schedule-relative-soon{{ end }}">{{ .Next.RelativeText }}</span>
+    </div>
+
+    {{/* 只有确实存在后续集次时才渲染折叠区，避免出现点开是空的展开按钮。 */}}
+    {{ if gt (len .Upcoming) 1 }}
+    <details class="air-schedule-more">
+        <summary>后续安排</summary>
+        <ul class="air-schedule-list">
+            {{ range $index, $episode := .Upcoming }}
+            {{ if gt $index 0 }}
+            <li>
+                <span class="air-schedule-list-ep">{{ $episode.EpisodeLabel }}</span>
+                <time datetime="{{ $episode.AirDateISO }}">{{ $episode.AirDateText }}（{{ $episode.WeekdayText }}）</time>
+                <span class="air-schedule-list-relative">{{ $episode.RelativeText }}</span>
+            </li>
+            {{ end }}
+            {{ end }}
+        </ul>
+    </details>
+    {{ end }}
+</div>
+{{ end }}

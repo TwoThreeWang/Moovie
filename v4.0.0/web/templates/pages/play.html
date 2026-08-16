@@ -1,0 +1,347 @@
+
+{{ define "content" }}
+<div class="watch-page">
+    <!-- 面包屑导航 -->
+    <nav class="watch-breadcrumb">
+        <a href="/">首页</a>
+        <span class="breadcrumb-sep">/</span>
+        {{ if .DoubanID }}
+        <a href="/movie/{{ .DoubanID }}?title={{ .View.Title }}" title="{{ .View.Title }}影片详情">{{ .View.Title }}</a>
+        {{ else }}
+        <a href="/search?kw={{ .View.Title }}" title="{{ .View.Title }}搜索结果">{{ .View.Title }}</a>
+        {{ end }}
+        {{ if .Episode }}
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current">{{ .Episode }} 在线观看</span>
+        {{ end }}
+    </nav>
+
+    <!-- 视频区域 - 第一屏，全宽播放器 -->
+    <section class="video-section">
+        <div class="video-container" id="player-container">
+            {{ if .PlayURL }}
+            <div id="artplayer-app"></div>
+            {{ else }}
+            <div class="video-loading">
+                <span>暂无可用播放链接</span>
+            </div>
+            {{ end }}
+        </div>
+    </section>
+
+    <!-- 免责条：紧贴播放器下方，全程可见 -->
+    {{ if .PlayURL }}
+    {{ template "play_disclaimer.html" . }}
+    {{ end }}
+
+    <!-- 广告横幅位：300x60 响应式居中换行 -->
+    <div class="m-banner-row">
+        <div data-monoo-slot="1"></div>
+        <div data-monoo-slot="2"></div>
+        <div data-monoo-slot="3"></div>
+        <div data-monoo-slot="4"></div>
+    </div>
+    <style>
+.m-banner-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.2rem;
+}
+
+/* 平板：一行2个 */
+@media (max-width: 1024px) {
+  .m-banner-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 手机：一行1个 */
+@media (max-width: 576px) {
+  .m-banner-row {
+    grid-template-columns: 1fr;
+  }
+}
+    </style>
+    <script src="https://monoo.c2v2.com/loader.js?v=0.2" async></script>
+    <!-- 视频信息区域 -->
+    <section class="video-info-section">
+        <!-- 电影信息卡片：统一视图，无条件分支 -->
+        <div class="video-detail-card">
+            <div class="detail-poster">
+                <img src="{{ proxyImg .View.Poster }}" alt="{{ .View.Title }}" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
+            </div>
+            <div class="detail-info">
+                <h1 class="detail-title">
+                    {{ .View.Title }}
+                    {{ if .Episode }}<span class="current-ep">{{ .Episode }}</span>{{ end }}
+                    {{ if gt .View.Rating 0.0 }}<span style="color:#e09015;font-weight:600;font-size:0.85em;margin-left:8px">⭐ {{ printf "%.1f" .View.Rating }}</span>{{ end }}
+                </h1>
+
+                <!-- 标签行 -->
+                <div class="detail-tags">
+                    {{ if .Type }}<span class="tag-item type">{{ .Type }}</span>{{ end }}
+                    {{ range .View.Genres }}{{ if . }}<span class="tag-item">{{ . }}</span>{{ end }}{{ end }}
+                    {{ range .View.Countries }}{{ if . }}<span class="tag-item">{{ . }}</span>{{ end }}{{ end }}
+                    {{ if .View.Year }}<span class="tag-item">{{ .View.Year }}</span>{{ end }}
+                </div>
+
+                <!-- 信息行 -->
+                <div class="detail-meta">
+                    {{ if .View.Directors }}
+                    <div class="meta-row">
+                        <span class="meta-label">导演：</span>
+                        <span class="meta-value">{{ .View.Directors }}</span>
+                    </div>
+                    {{ end }}
+                    {{ if .View.Actors }}
+                    <div class="meta-row">
+                        <span class="meta-label">主演：</span>
+                        <span class="meta-value">{{ .View.Actors }}</span>
+                    </div>
+                    {{ end }}
+                    {{ if .LoadStats }}
+                    <div class="meta-row">
+                        <span class="meta-label">统计：</span>
+                        <span class="meta-value">
+                            {{ if gt .LoadStats.SampleCount 0 }}
+                                {{ $loadTime := divf .LoadStats.AvgSpeedMs 1000 }}
+                                <span class="speed-indicator {{ if lt $loadTime 1.0 }}fast{{ else if lt $loadTime 3.0 }}normal{{ else }}slow{{ end }}"></span>
+                                {{ if lt $loadTime 1.0 }}极速{{ else if lt $loadTime 3.0 }}正常{{ else }}较慢{{ end }}
+                                {{ printf "%.1f" $loadTime }}秒
+                                ({{ printf "%.0f" .LoadStats.SuccessRate }}%成功率{{ if gt .LoadStats.SampleCount 0 }} · {{ .LoadStats.SampleCount }}次播放{{ end }})
+                            {{ else }}
+                                暂无统计数据
+                            {{ end }}
+                        </span>
+                    </div>
+                    {{ end }}
+                    {{ if .Detail.VodTime }}
+                    <div class="meta-row">
+                        <span class="meta-label">更新：</span>
+                        <span class="meta-value">{{ .Detail.VodTime }}</span>
+                    </div>
+                    {{ end }}
+                </div>
+            </div>
+        </div>
+
+        <!-- 剧情简介 -->
+        {{ if .View.Summary }}
+        <div class="video-summary">
+            <p>{{ .View.Summary }}</p>
+        </div>
+        {{ end }}
+
+        <!-- 操作区域 -->
+        <div class="video-actions-bar">
+            {{ if .DoubanID }}
+                {{ if ne .DoubanID "0" }}
+                {{ template "play_watched_button.html" (dict
+                    "DoubanID" .DoubanID
+                    "Title" .View.Title
+                    "Poster" .View.Poster
+                    "Year" .View.Year
+                    "IsWatched" .IsWatched
+                    "LoggedIn" .LoggedIn
+                    "Redirect" .FullPath) }}
+                <a href="/movie/{{ .DoubanID }}?title={{ .View.Title }}" class="video-action-btn" title="查看《{{ .View.Title }}》完整剧情、演职员及影评">
+                    <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>《{{ .View.Title }}》详情、演职员及短评</span>
+                </a>
+                {{ end }}
+            {{ end }}
+            <button class="video-action-btn"
+                    hx-post="/api/feedback"
+                    hx-vals='{"type":"播放失败反馈","content":"《{{ .View.Title }}》播放失败","movie_url":"{{.FullPath}}"}'
+                    hx-swap="outerHTML"
+                    hx-disabled-elt="this"
+                    hx-indicator="this">
+                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                <span>播放失败反馈</span>
+            </button>
+        </div>
+
+        {{/* 追剧更新时间：放在选集区之上，是用户在播放页最想确认的信息 */}}
+        {{ with .AirSchedule }}{{ template "air_schedule.html" . }}{{ end }}
+
+        <!-- 选集播放 -->
+        {{ if .Episodes }}
+        <div class="video-episodes-section">
+            <div class="episodes-header">
+                <svg class="episodes-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>选集播放</span>
+                {{ if .Sources }}
+                <div class="source-selector">
+                    {{ range $i, $source := .Sources }}
+                    <a href="/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $source.Name }}{{ if $.Episode }}&ep={{ $.Episode }}{{ end }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}"
+                       class="source-btn {{ if eq $source.Name $.Source }}active{{ end }}">
+                        {{ $.SourceKey }}{{$source.Name}}
+                    </a>
+                    {{ end }}
+                </div>
+                {{ end }}
+            </div>
+            <div class="episodes-list">
+                {{ range .Episodes }}
+                <a href="/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $.Source }}&ep={{ .Title }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}"
+                   class="ep-btn {{ if eq .Title $.Episode }}active{{ end }}">
+                    {{ .Title }}
+                </a>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
+
+        <!-- 选集下载 -->
+        {{ if .Episodes }}
+        <div class="video-episodes-section">
+            <div class="episodes-header">
+                <svg class="episodes-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>选集下载</span>
+            </div>
+            <div class="episodes-list">
+                {{ range .Episodes }}
+                <a href="https://www.zngg.net/tool/detail/M3U8V2Pro?url={{ .URL }}" target="_blank" rel="noopener nofollow"
+                   class="ep-btn">
+                    {{ .Title }}
+                </a>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
+
+        <!-- 其他来源（同集跨源线路） -->
+        {{ if .EpisodeSources }}
+        <div class="video-episodes-section">
+            <div class="episodes-header">
+                <svg class="episodes-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 11a9 9 0 0 1 9 9"></path>
+                    <path d="M4 4a16 16 0 0 1 16 16"></path>
+                    <circle cx="5" cy="19" r="1"></circle>
+                </svg>
+                <span>其他来源</span>
+            </div>
+            <div class="alt-sources-list">
+                {{ range .EpisodeSources }}
+                <a href="{{ .PlayLink }}" class="alt-source-item {{ if .IsCurrent }}active{{ end }}">
+                    <span class="alt-source-name">{{ .SourceLabel }}</span>
+                    <span class="alt-source-quality {{ .QualityClass }}">{{ .QualityLabel }}</span>
+                    {{ if .SpeedLabel }}<span class="alt-source-speed {{ .SpeedClass }}">{{ .SpeedLabel }}</span>{{ end }}
+                </a>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
+
+        <!-- 站内用户短评 -->
+        {{ if .DoubanID }}
+        {{ if ne .DoubanID "0" }}
+        <div class="movie-section" style="margin-top: 40px;">
+            <h2 class="section-title">站内用户短评</h2>
+            <div id="user-comments"
+                 hx-get="/api/htmx/movie-comments?douban_id={{ .DoubanID }}"
+                 hx-trigger="load"
+                 hx-indicator="#user-comments-loading">
+                <div id="user-comments-loading" class="htmx-indicator movie-search-loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>正在加载短评...</p>
+                </div>
+            </div>
+        </div>
+        {{ end }}
+        {{ end }}
+
+        <!-- 更多资源 -->
+        <div class="movie-section" style="margin-top: 40px;">
+            <h2 class="section-title">更多资源</h2>
+            <div id="movie-search-results"
+                 hx-get="/api/htmx/search?q={{ urlquery .View.Title }}&year={{ urlquery .View.Year }}&exclude={{ urlquery .SourceKey }}:{{ urlquery .VodID }}"
+                 hx-trigger="load"
+                 hx-indicator="#movie-search-loading">
+                <div id="movie-search-loading" class="htmx-indicator movie-search-loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>正在搜索全网资源，请稍候...</p>
+                </div>
+            </div>
+        </div>
+
+        {{ if .DoubanID }}
+        {{ if ne .DoubanID "0" }}
+        <!-- 相似电影推荐 -->
+        <div class="movie-section" style="margin-top: 40px;">
+            <h2 class="section-title">喜欢这部剧集的人也喜欢</h2>
+            <div id="similar-movies"
+                 hx-get="/api/htmx/similar?douban_id={{ .DoubanID }}"
+                 hx-trigger="load"
+                 hx-indicator="#similar-loading">
+                <div id="similar-loading" class="htmx-indicator movie-search-loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>正在加载相似电影...</p>
+                </div>
+            </div>
+        </div>
+        {{ end }}
+        {{ end }}
+
+        <div class="ad-slot">
+        <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>
+        <ins class="eas6a97888e20" data-zoneid="5863824"></ins>
+        <script>(AdProvider = window.AdProvider || []).push({"serve": {}});</script>
+        </div>
+    </section>
+</div>
+
+<!-- 播放器依赖库 -->
+<script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/artplayer-plugin-danmuku/dist/artplayer-plugin-danmuku.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
+<!-- 播放器初始化 -->
+	<script src="/static/js/player.js?v=0.11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 构建剧集列表（供自动播放下一集使用）
+        var episodeList = [
+            {{ range $i, $ep := .Episodes }}
+            {{ if $i }},{{ end }}
+            { "title": "{{ $ep.Title }}", "url": "/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $.Source }}&ep={{ $ep.Title }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}" }
+            {{ end }}
+        ];
+
+        // 初始化播放器
+        initPlayer('artplayer-app', '{{ .PlayURL }}', {
+            title: '{{ .View.Title }}{{ if .Episode }} - {{ .Episode }}{{ end }}',
+            poster: '{{ proxyImg .View.Poster }}',
+            douban_id: '{{ .DoubanID }}',
+            media_id: {{ .MediaID }},
+            media_unit_id: {{ .MediaUnitID }},
+            candidate_id: {{ .CandidateID }},
+            candidate_session_id: '{{ .CandidateSessionID }}',
+			season_number: {{ .SeasonNumber }},
+			episode_key: '{{ .EpisodeKey }}',
+			entryPage: 'play',
+			auto_failover: {{ if .AutoFailoverEnabled }}true{{ else }}false{{ end }},
+            sourceKey: '{{ .SourceKey }}',
+            vodId: '{{ .VodID }}',
+            episode: '{{ .Episode }}',
+            episodes: episodeList,
+            vodName: '{{ .Detail.VodName }}',
+            canSendDanmaku: {{ if .LoggedIn }}true{{ else }}false{{ end }}
+        });
+    });
+</script>
+{{ end }}

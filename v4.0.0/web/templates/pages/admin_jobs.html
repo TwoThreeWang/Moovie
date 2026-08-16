@@ -1,0 +1,73 @@
+{{ define "content" }}
+<div class="admin-page">
+    <div class="admin-header">
+        <h1 class="admin-title">任务队列</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab">用户</a>
+            <a href="/admin/feedback" class="admin-tab">反馈</a>
+            <a href="/admin/sites" class="admin-tab">资源网</a>
+            <a href="/admin/data" class="admin-tab">数据管理</a>
+            <a href="/admin/jobs" class="admin-tab active">任务队列</a>
+            <a href="/admin/matches" class="admin-tab">匹配复核</a>
+            <a href="/admin/copyright" class="admin-tab">版权限制</a>
+            <a href="/admin/category" class="admin-tab">分类过滤</a>
+        </nav>
+    </div>
+
+    <div class="admin-filter">
+        <span class="filter-label">状态筛选：</span>
+        <a href="/admin/jobs" class="filter-btn {{ if eq .Status "all" }}active{{ end }}">全部</a>
+        <a href="/admin/jobs?status=pending" class="filter-btn {{ if eq .Status "pending" }}active{{ end }}">等待中</a>
+        <a href="/admin/jobs?status=running" class="filter-btn {{ if eq .Status "running" }}active{{ end }}">执行中</a>
+        <a href="/admin/jobs?status=failed" class="filter-btn {{ if eq .Status "failed" }}active{{ end }}">失败</a>
+        <a href="/admin/jobs?status=completed" class="filter-btn {{ if eq .Status "completed" }}active{{ end }}">已完成</a>
+    </div>
+
+    <div class="queue-summary-grid">
+        <div class="admin-card queue-summary-card">
+            <div class="queue-summary-title">统一 Worker 队列</div>
+            <div class="queue-summary-counts">
+                <span>等待 <strong>{{ .Queue.Counts.Pending }}</strong></span>
+                <span>执行 <strong>{{ .Queue.Counts.Running }}</strong></span>
+                <span>失败 <strong>{{ .Queue.Counts.Failed }}</strong></span>
+                <span>完成 <strong>{{ .Queue.Counts.Completed }}</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="admin-card">
+        <div class="admin-card-header"><h3>全部任务</h3><span class="badge">显示 {{ len .Queue.Jobs }} 条</span></div>
+        <div class="admin-table-wrapper">
+            <table class="admin-table queue-table">
+                <thead><tr><th>任务</th><th>类型与原因</th><th>状态</th><th>进度/执行器</th><th>时间</th><th>错误</th></tr></thead>
+                <tbody>
+                    {{ range .Queue.Jobs }}
+                    <tr>
+                        <td><strong>#{{ .ID }}</strong><div class="match-detail">对象 {{ .SubjectKey }}</div></td>
+                        <td>
+                            <strong>{{ if eq .TaskType "douban_metadata" }}豆瓣主资料{{ else if eq .TaskType "douban_reviews" }}豆瓣精彩短评{{ else if eq .TaskType "tmdb" }}TMDB 资料与剧照{{ else if eq .TaskType "embedding" }}向量补全{{ else if eq .TaskType "douban_sync" }}豆瓣账号同步{{ else if eq .TaskType "popularity_refresh" }}热门榜单刷新{{ else if eq .TaskType "metadata_schedule" }}资料刷新调度{{ else if eq .TaskType "douban_daily" }}每日豆瓣同步调度{{ else if eq .TaskType "operations_cleanup" }}数据清理{{ else if eq .TaskType "site_health_check" }}站点健康检查{{ else }}{{ .TaskType }}{{ end }}</strong>
+                            <div class="match-detail">{{ .Reason }}</div>
+                        </td>
+                        <td><span class="status-badge status-{{ .Status }}">{{ if eq .Status "pending" }}等待中{{ else if eq .Status "running" }}执行中{{ else if eq .Status "completed" }}已完成{{ else }}失败{{ end }}</span><div class="match-detail">尝试 {{ .AttemptCount }}/{{ .MaxAttempts }}</div></td>
+                        <td>
+                            {{ if .ProgressTotal }}<strong>{{ .ProgressDone }}/{{ .ProgressTotal }}</strong>{{ if .ProgressFailed }}<div class="match-detail">失败 {{ .ProgressFailed }} 项</div>{{ end }}{{ else if .LockedBy }}<strong>Worker {{ .LockedBy }}</strong>{{ else }}—{{ end }}
+                            {{ if .LockedUntil }}<div class="match-detail">租约至 {{ .LockedUntil.Format "01-02 15:04:05" }}</div>{{ end }}
+                        </td>
+                        <td><span>{{ .CreatedAt.Format "01-02 15:04:05" }}</span><div class="match-detail">更新 {{ .UpdatedAt.Format "01-02 15:04:05" }}</div>{{ if .StartedAt }}<div class="match-detail">开始 {{ .StartedAt.Format "01-02 15:04:05" }}</div>{{ end }}{{ if .FinishedAt }}<div class="match-detail">结束 {{ .FinishedAt.Format "01-02 15:04:05" }}</div>{{ end }}</td>
+                        <td class="queue-error">{{ if .ErrorMessage }}{{ .ErrorMessage }}{{ else }}—{{ end }}</td>
+                    </tr>
+                    {{ else }}<tr><td colspan="6" class="empty-cell">当前筛选条件下没有任务</td></tr>{{ end }}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {{ if or .Queue.Page.HasPrevious .Queue.Page.HasNext }}
+    <nav class="queue-pagination" aria-label="任务队列分页">
+        {{ if .Queue.Page.HasPrevious }}<a class="btn btn-secondary" href="/admin/jobs?status={{ .Status }}&amp;direction=prev&amp;cursor={{ .Queue.Page.PreviousCursor }}">上一页</a>{{ else }}<span></span>{{ end }}
+        {{ if .Queue.Page.HasNext }}<a class="btn btn-secondary" href="/admin/jobs?status={{ .Status }}&amp;direction=next&amp;cursor={{ .Queue.Page.NextCursor }}">下一页</a>{{ end }}
+    </nav>
+    {{ end }}
+</div>
+{{ end }}

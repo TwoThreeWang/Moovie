@@ -1,0 +1,30 @@
+{{ if .Subjects }}
+<div class="movie-grid discover-grid">
+    {{ range .Subjects }}
+    <div class="movie-card">
+        <a href="/search?kw={{ .Title }}&doubanId={{ .ID }}">
+            <div class="movie-poster">
+                <img src="{{ .Cover }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                {{ if .HasRating }}
+                <span class="movie-rating">{{ .Rate }}</span>
+                {{ end }}
+                {{ if .EpisodesInfo }}
+                <span class="card-badge discover-episodes-badge">{{ .EpisodesInfo }}</span>
+                {{ end }}
+            </div>
+            <div class="movie-info">
+                <h3 class="movie-title" title="{{ .Title }}">{{ .Title }}</h3>
+                {{ if .IsNew }}
+                <span class="discover-new-badge">NEW</span>
+                {{ end }}
+            </div>
+        </a>
+    </div>
+    {{ end }}
+</div>
+{{ else }}
+<div class="empty-state">
+    <p>😕 暂时没有发现热门内容</p>
+    <p>请稍后再试或查看其他分类</p>
+</div>
+{{ end }}

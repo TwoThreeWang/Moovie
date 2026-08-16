@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <script>
+        (function() {
+            const theme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+            document.documentElement.classList.add('no-transition');
+        })();
+        window.onload = () => {
+            setTimeout(() => {
+                document.documentElement.classList.remove('no-transition');
+            }, 100);
+        };
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="max-age=7200" />
+    {{/* 页面级 head 扩展点：只有需要额外资源的页面才 define，其余页面渲染为空 */}}
+    {{ block "extra_head" . }}{{ end }}
+    <title>{{ .Title }}</title>
+    <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
+    <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}Moovie, 影牛, 影视搜索, 电影搜索, 电视剧搜索, 在线看电影, 聚合搜索, 全网视频, 豆瓣热门{{ end }}">
+    <meta name="robots" content="{{ if .Robots }}{{ .Robots }}{{ else }}index, follow{{ end }}">
+    {{ if .Canonical }}<link rel="canonical" href="{{ .Canonical }}">{{ end }}
+    <link rel="icon" type="image/png" href="/static/img/moovie-app.png">
+
+    <!-- PWA -->
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#f60c3e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Moovie影牛">
+    <link rel="apple-touch-icon" href="/static/img/moovie-app.png">
+    <!-- Open Graph -->
+    <meta property="og:title" content="{{ .Title }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Moovie影牛">
+    <meta property="og:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
+    {{ if .Cover }}<meta property="og:image" content="{{ .Cover }}">{{ end }}
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ .Title }}">
+    <meta name="twitter:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
+    {{ if .Cover }}<meta name="twitter:image" content="{{ .Cover }}">{{ end }}
+    {{ range .JSONLD }}<script type="application/ld+json">{{ . }}</script>{{ end }}
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="/static/css/style.css?v=3.2">
+
+    <!-- htmx -->
+    <script src="/static/js/htmx.min.js?v=0.1" defer></script>
+    <!-- csrf-runtime:start -->
+    <script src="/static/js/csrf.js?v=0.1"></script>
+    <!-- csrf-runtime:end -->
+
+    <!-- 统计 -->
+    <script async defer src="https://pingoo.c2v2.com/pingoo.js" site-id="4"></script>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CGYQX86P0P"></script>
+    <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-CGYQX86P0P');
+
+    // HTMX: 取其 200ms 的延迟，确保切换时立即清空内容并显示 loading
+    document.addEventListener('DOMContentLoaded', () => {
+        if (typeof htmx !== 'undefined') {
+            htmx.config.indicatorDelay = 0;
+        }
+        // 进度条
+        var progressBar = document.getElementById('htmx-progress');
+        if (progressBar) {
+            document.body.addEventListener('htmx:beforeRequest', function() {
+                progressBar.classList.remove('done');
+                progressBar.classList.add('active');
+            });
+            document.body.addEventListener('htmx:afterSwap', function() {
+                progressBar.classList.add('done');
+                setTimeout(function() {
+                    progressBar.classList.remove('active', 'done');
+                }, 300);
+            });
+            document.body.addEventListener('htmx:responseError', function() {
+                progressBar.classList.add('done');
+                setTimeout(function() {
+                    progressBar.classList.remove('active', 'done');
+                }, 300);
+            });
+        }
+    });
+    </script>
+</head>
+<body hx-ext="preload" data-user-id="{{ if .UserInfo }}{{ .UserInfo.ID }}{{ end }}">
+    <!-- htmx 进度条 -->
+    <div class="htmx-progress" id="htmx-progress">
+        <div class="htmx-progress-bar"></div>
+    </div>
+    <!-- 固定边框层 -->
+    <div class="app-frame"></div>
+
+    <!-- 主容器 -->
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <a href="/" class="logo">
+                    <img src="/static/img/logo.png" alt="" class="logo-icon" width="224" height="227" decoding="async" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    <span class="logo-text">Moovie</span>
+                </a>
+                <p class="logo-subtitle">发现你的下一部电影</p>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="/" class="nav-item {{ if eq .ActiveMenu "home" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                    </svg>
+                    <span>首页</span>
+                </a>
+                <a href="/discover" class="nav-item {{ if eq .ActiveMenu "discover" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+                        <polyline points="17 2 12 7 7 2"></polyline>
+                    </svg>
+                    <span>热门好片</span>
+                </a>
+                <a href="/trends" class="nav-item {{ if eq .ActiveMenu "trends" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                        <polyline points="17 6 23 6 23 12"></polyline>
+                    </svg>
+                    <span>搜索趋势</span>
+                </a>
+                <a href="/foryou" class="nav-item {{ if eq .ActiveMenu "foryou" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg>
+                    <span>为你推荐</span>
+                </a>
+                <a href="/cinema" class="nav-item {{ if eq .ActiveMenu "cinema" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                    <span>片场</span>
+                </a>
+                <a href="/player" class="nav-item {{ if eq .ActiveMenu "player" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                    </svg>
+                    <span>M3U8 播放器</span>
+                </a>
+                <a href="/iptv" class="nav-item {{ if eq .ActiveMenu "iptv" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+                        <polyline points="17 2 12 7 7 2"></polyline>
+                    </svg>
+                    <span>IPTV 直播</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-section">
+                <div class="section-label">More</div>
+                <a href="/feedback" class="nav-item {{ if eq .ActiveMenu "feedback" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span>建议反馈</span>
+                </a>
+                <a href="/tvbox" class="nav-item {{ if eq .ActiveMenu "tvbox" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                    <span>TVBox 配置</span>
+                </a>
+                <a href="/about" class="nav-item {{ if eq .ActiveMenu "about" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <span>关于本站</span>
+                </a>
+                <a href="/advertise" class="nav-item {{ if eq .ActiveMenu "advertise" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <circle cx="12" cy="12" r="6"></circle>
+                        <circle cx="12" cy="12" r="2"></circle>
+                    </svg>
+                    <span>广告合作</span>
+                </a>
+                <button type="button" class="nav-item theme-toggle" onclick="toggleTheme()" title="切换主题" aria-label="切换外观" style="width: 100%; text-align: left;">
+                    <svg class="nav-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg class="nav-icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <span>切换外观</span>
+                </button>
+                {{ if and .UserInfo (eq .UserInfo.Role "admin") }}
+                <a href="/admin" class="nav-item {{ if eq .ActiveMenu "admin" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    <span>管理后台</span>
+                </a>
+                {{ end }}
+            </div>
+
+            <div class="sidebar-footer">
+                {{ if .UserInfo }}
+                <a href="/dashboard" class="nav-item {{ if eq .ActiveMenu "user" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span>{{ .UserInfo.Username }}</span>
+                </a>
+                {{ else }}
+                <a href="/auth/login" class="nav-item">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                        <polyline points="10 17 15 12 10 7"></polyline>
+                        <line x1="15" y1="12" x2="3" y2="12"></line>
+                    </svg>
+                    <span>登录 / 注册</span>
+                </a>
+                {{ end }}
+            </div>
+        </aside>
+
+        <!-- 遮罩层（移动端） -->
+        <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar(false)" aria-hidden="true"></div>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 移动端顶栏 -->
+            <header class="mobile-header">
+                <button type="button" class="hamburger" id="mobile-menu-button" onclick="toggleSidebar()" aria-label="打开导航菜单" aria-controls="sidebar" aria-expanded="false">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+                <a href="/" class="mobile-logo">
+                    <img src="/static/img/logo.png" alt="" class="mobile-logo-icon" width="224" height="227" decoding="async" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    <span>Moovie 影牛</span>
+                </a>
+                <div class="mobile-header-actions">
+                    {{ if .UserInfo }}
+                    <a href="/dashboard" class="mobile-user" title="{{ .UserInfo.Username }}" aria-label="进入 {{ .UserInfo.Username }} 的个人中心">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </a>
+                    {{ else }}
+                    <a href="/auth/login" class="mobile-user" aria-label="登录或注册">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                            <polyline points="10 17 15 12 10 7"></polyline>
+                            <line x1="15" y1="12" x2="3" y2="12"></line>
+                        </svg>
+                    </a>
+                    {{ end }}
+                    <button type="button" class="mobile-theme-toggle theme-toggle" onclick="toggleTheme()" aria-label="切换外观">
+                        <svg class="sun-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                        <svg class="moon-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                    </button>
+                </div>
+            </header>
+
+            <div class="content-wrapper {{ .ContentClass }}">
+                {{ template "content" . }}
+            </div>
+
+            <!-- Footer -->
+            <footer class="main-footer">
+                <div class="footer-content">
+                    <div class="footer-links">
+                        <a href="/about">关于我们</a>
+                        <a href="/advertise">广告合作</a>
+                        <a href="/feedback">反馈建议</a>
+                        <a href="/changelog">更新记录</a>
+                        <a href="/dmca">DMCA</a>
+                        <a href="/privacy">隐私政策</a>
+                        <a href="/terms">服务协议</a>
+                        <a href="/sitemap.xml">网站地图</a>
+                    </div>
+                    <p class="footer-copyright">
+                        © 2026 Moovie 影牛(v4.0.0). 本站不存储任何视频文件，仅提供搜索服务。
+                    </p>
+                    <p class="footer-also">
+                        除了这个项目，我还在做一些方向相近的实验：<a href="https://zhulink.vip/" target="_blank" rel="noopener">竹林</a>（去算法社区）· <a href="https://pockoo.app/" target="_blank" rel="noopener">Pockoo</a>（智能导航）
+                    </p>
+        </main>
+    </div>
+
+    <!-- 应用脚本 -->
+    <script src="/static/js/app.js?v=0.6" defer></script>
+    <script>
+        function toggleSidebar(forceOpen) {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const menuButton = document.getElementById('mobile-menu-button');
+            const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !sidebar.classList.contains('open');
+            sidebar.classList.toggle('open', shouldOpen);
+            overlay.classList.toggle('open', shouldOpen);
+            document.body.classList.toggle('sidebar-open', shouldOpen);
+            menuButton.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+            menuButton.setAttribute('aria-label', shouldOpen ? '关闭导航菜单' : '打开导航菜单');
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcons();
+        }
+
+        function updateThemeIcons() {
+            const theme = document.documentElement.getAttribute('data-theme');
+            const suns = document.querySelectorAll('.sun-icon');
+            const moons = document.querySelectorAll('.moon-icon');
+
+            if (theme === 'dark') {
+                suns.forEach(s => s.style.display = 'none');
+                moons.forEach(m => m.style.display = 'block');
+            } else {
+                suns.forEach(s => s.style.display = 'block');
+                moons.forEach(m => m.style.display = 'none');
+            }
+            document.querySelectorAll('.theme-toggle').forEach(button => {
+                button.setAttribute('aria-label', theme === 'dark' ? '切换为浅色外观' : '切换为深色外观');
+                button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+            });
+        }
+
+        // 初始化图标状态
+        updateThemeIcons();
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && document.getElementById('sidebar').classList.contains('open')) {
+                toggleSidebar(false);
+                document.getElementById('mobile-menu-button').focus();
+            }
+        });
+
+        // 注册 Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then(reg => console.log('Service Worker 注册成功:', reg.scope))
+                    .catch(err => console.log('Service Worker 注册失败:', err));
+            });
+        }
+    </script>
+</body>
+</html>

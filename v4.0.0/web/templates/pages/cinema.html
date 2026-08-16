@@ -1,0 +1,142 @@
+{{ define "content" }}
+<div class="cinema-page">
+    <header class="cinema-masthead">
+        <div>
+            <p class="cinema-kicker">MOOVIE 片友共同放映</p>
+            <h1>片场</h1>
+            <p class="cinema-intro">从一条短评，遇见下一部电影。</p>
+        </div>
+        <div class="cinema-week" aria-label="本周放映日期">
+            <span>本周</span>
+            <strong>{{ .WeekStart.Format "01.02" }}—{{ .WeekEnd.Format "01.02" }}</strong>
+        </div>
+    </header>
+
+    <section class="cinema-section cinema-program-section" aria-labelledby="weekly-program-title">
+        <div class="cinema-section-heading">
+            <span class="cinema-section-number">01</span>
+            <div>
+                <h2 id="weekly-program-title">本周放映单</h2>
+                <p>这一周，片友真正看过的电影。</p>
+            </div>
+        </div>
+
+        {{ if .WeeklyFilms }}
+        <div class="cinema-program">
+            {{ range $index, $film := .WeeklyFilms }}
+            <article class="cinema-program-item{{ if eq $index 0 }} cinema-program-feature{{ end }}">
+                <a class="cinema-program-poster" href="/movie/{{ $film.MovieID }}?title={{ urlquery $film.Title }}">
+                    <img src="{{ proxyImg $film.Poster }}" alt="{{ $film.Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                </a>
+                <div class="cinema-program-copy">
+                    <p class="cinema-program-seen">{{ $film.ViewerCount }} 位片友看过</p>
+                    <h3><a href="/movie/{{ $film.MovieID }}?title={{ urlquery $film.Title }}">{{ $film.Title }}</a></h3>
+                    <div class="cinema-program-meta">
+                        {{ if $film.Year }}<span>{{ $film.Year }}</span>{{ end }}
+                        {{ if $film.AverageRating }}<span class="cinema-rating">★ {{ printf "%.1f" $film.AverageRating }}</span>{{ end }}
+                        {{ if gt $film.CommentCount 0 }}<span>{{ $film.CommentCount }} 条短评</span>{{ end }}
+                    </div>
+                </div>
+            </article>
+            {{ end }}
+        </div>
+        {{ else }}
+        <div class="cinema-quiet-state">
+            <p>这周的放映机还没转起来。</p>
+            <a href="/discover">先挑一部值得看的 →</a>
+        </div>
+        {{ end }}
+    </section>
+
+    <div class="cinema-columns">
+        <section class="cinema-section cinema-comments-section" aria-labelledby="featured-comments-title">
+            <div class="cinema-section-heading">
+                <span class="cinema-section-number">02</span>
+                <div>
+                    <h2 id="featured-comments-title">值得停一下的短评</h2>
+                    <p>不追求长篇，只留下看完后的那句话。</p>
+                </div>
+            </div>
+
+            {{ if .FeaturedComments }}
+            <div class="cinema-comment-list">
+                {{ range .FeaturedComments }}
+                <article class="cinema-comment">
+                    <a class="cinema-comment-poster" href="/movie/{{ .MovieID }}?title={{ urlquery .Title }}">
+                        <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    </a>
+                    <div class="cinema-comment-body">
+                        <div class="cinema-comment-meta">
+                            <a href="/user/{{ .UserID }}"><span>{{ default "🎬" .User.Avatar }}</span>{{ default "匿名片友" .User.Username }}</a>
+                            <span>写给</span>
+                            <a href="/movie/{{ .MovieID }}?title={{ urlquery .Title }}">{{ .Title }}</a>
+                        </div>
+                        <blockquote>{{ .Comment }}</blockquote>
+                        <div class="cinema-comment-footer">
+                            <div class="cinema-comment-rating">
+                                {{ if gt .Rating 0 }}{{ $rating := .Rating }}{{ range $star := seq 1 5 }}<span class="{{ if le $star $rating }}is-filled{{ end }}">★</span>{{ end }}{{ else }}未评分{{ end }}
+                            </div>
+                            <time>{{ .UpdatedAt.Format "2006-01-02" }}</time>
+                            <div class="cinema-comment-actions">
+                                {{ if $.CurrentUserID }}
+                                {{ template "comment_like_button.html" (dict "UserMovieID" .ID "LikeCount" (index $.LikeCounts .ID) "Liked" (index $.Liked .ID)) }}
+                                {{ else }}
+                                <a class="cinema-login-action" href="/auth/login">赞{{ $likes := index $.LikeCounts .ID }}{{ if gt $likes 0 }} {{ $likes }}{{ end }}</a>
+                                {{ end }}
+                                <button type="button" class="comment-reply-toggle" hx-get="/api/comments/{{ .ID }}/replies" hx-target="#comment-replies-{{ .ID }}" hx-swap="innerHTML">
+                                    {{ $replies := index $.ReplyCounts .ID }}回复{{ if gt $replies 0 }} {{ $replies }}{{ end }}
+                                </button>
+                            </div>
+                        </div>
+                        <div class="comment-replies-container" id="comment-replies-{{ .ID }}"></div>
+                    </div>
+                </article>
+                {{ end }}
+            </div>
+            {{ else }}
+            <div class="cinema-quiet-state">
+                <p>暂时还没有人留下散场后的那句话。</p>
+                {{ if .CurrentUserID }}<a href="/dashboard">从你的已看里写一条 →</a>{{ else }}<a href="/auth/login">登录后留下第一条 →</a>{{ end }}
+            </div>
+            {{ end }}
+        </section>
+
+        <aside class="cinema-section cinema-radar" aria-labelledby="film-friends-title">
+            <div class="cinema-section-heading">
+                <span class="cinema-section-number">03</span>
+                <div>
+                    <h2 id="film-friends-title">片友雷达</h2>
+                    <p>{{ if .CurrentUserID }}优先找到和你看过同一部电影的人。{{ else }}看看谁正在认真记录自己的电影生活。{{ end }}</p>
+                </div>
+            </div>
+
+            {{ if .FilmFriends }}
+            <ol class="cinema-friend-list">
+                {{ range .FilmFriends }}
+                <li>
+                    <a href="/user/{{ .UserID }}" class="cinema-friend">
+                        <span class="cinema-friend-avatar">{{ default "🎬" .Avatar }}</span>
+                        <span class="cinema-friend-copy">
+                            <strong>{{ default "匿名片友" .Username }}</strong>
+                            <small>
+                                {{ if and $.CurrentUserID (gt .SharedCount 0) }}与你共同看过 {{ .SharedCount }} 部
+                                {{ else if gt .CommentCount 0 }}留下 {{ .CommentCount }} 条短评
+                                {{ else }}记录了 {{ .WatchedCount }} 部电影{{ end }}
+                            </small>
+                        </span>
+                        <span class="cinema-friend-arrow" aria-hidden="true">↗</span>
+                    </a>
+                </li>
+                {{ end }}
+            </ol>
+            {{ else }}
+            <div class="cinema-radar-empty">
+                <span class="cinema-radar-sweep" aria-hidden="true"></span>
+                <p>雷达暂时没有发现新的片友。</p>
+                {{ if not .CurrentUserID }}<a href="/auth/login">登录并点亮你的坐标</a>{{ end }}
+            </div>
+            {{ end }}
+        </aside>
+    </div>
+</div>
+{{ end }}

@@ -1,0 +1,7 @@
+.env
+.git
+bin
+datamigrate
+coverage.out
+*.log
+.migration-reports

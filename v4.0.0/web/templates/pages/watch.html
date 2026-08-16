@@ -1,0 +1,229 @@
+
+{{ define "content" }}
+<div class="watch-page">
+
+    <!-- 信息条（播放器上方） -->
+    <div class="watch-now-bar-wrap">
+        <div class="watch-now-bar">
+            <span class="watch-now-title">{{ .View.Title }}</span>
+            {{ if .Episode }}<span class="watch-now-ep">{{ .Episode }}</span>{{ end }}
+            {{ if gt .View.Rating 0.0 }}
+            <span class="watch-now-rating">
+                <svg class="w-icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none"></polygon></svg>
+                {{ printf "%.1f" .View.Rating }}
+            </span>
+            {{ end }}
+            <div class="watch-now-source" onclick="toggleSourcePanel()" title="点击切换线路">
+                <span class="w-source-dot {{ if .EpisodeSources }}{{ (index .EpisodeSources 0).QualityClass }}{{ end }}"></span>
+                <span id="currentSourceLabel">{{ .SourceLabel }}</span>
+                <svg class="w-icon" viewBox="0 0 24 24" style="width:12px;height:12px"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- 播放器 -->
+    <section class="video-section">
+        <div class="video-container" id="player-container">
+            {{ if .PlayURL }}
+            <div id="artplayer-app"></div>
+            {{ else }}
+            <div class="video-loading">
+                <span>暂无可用播放链接</span>
+            </div>
+            {{ end }}
+        </div>
+    </section>
+
+    {{ if .PlayURL }}
+    {{ template "play_disclaimer.html" . }}
+    {{ end }}
+
+    <div class="watch-content">
+
+        <!-- 信息卡片（全宽横排） -->
+        <div class="watch-info-card">
+            <div class="watch-poster-wrap">
+                <img class="watch-poster" src="{{ proxyImg .View.Poster }}" alt="{{ .View.Title }}" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
+            </div>
+            <div class="watch-info-body">
+                <div class="watch-info-title">{{ .View.Title }}</div>
+                <div class="watch-info-tags">
+                    {{ range .View.Genres }}{{ if . }}<span class="watch-tag">{{ . }}</span>{{ end }}{{ end }}
+                    {{ range .View.Countries }}{{ if . }}<span class="watch-tag">{{ . }}</span>{{ end }}{{ end }}
+                    {{ if .View.Year }}<span class="watch-tag">{{ .View.Year }}</span>{{ end }}
+                </div>
+                <div class="watch-info-meta">
+                    {{ if .View.Directors }}<div class="watch-meta-line"><span class="watch-meta-label">导演：</span>{{ .View.Directors }}</div>{{ end }}
+                    {{ if .View.Actors }}<div class="watch-meta-line"><span class="watch-meta-label">主演：</span>{{ .View.Actors }}</div>{{ end }}
+                </div>
+                {{ if .View.Summary }}
+                <div class="watch-summary" onclick="this.classList.toggle('expanded')">{{ .View.Summary }}</div>
+                {{ end }}
+                {{ if .DoubanID }}{{ if ne .DoubanID "0" }}
+                <a href="/movie/{{ .DoubanID }}?title={{ .View.Title }}" class="watch-detail-link">
+                    查看完整详情、演职员及影评
+                    <svg class="w-icon" viewBox="0 0 24 24" style="width:14px;height:14px"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </a>
+                {{ end }}{{ end }}
+            </div>
+        </div>
+
+        {{/* 追剧更新时间：已完结或无已知播出日期时 partial 自身不渲染任何内容 */}}
+        {{ with .AirSchedule }}{{ template "air_schedule.html" . }}{{ end }}
+
+        <!-- 集数网格 -->
+        {{ if .EpisodeGrid }}
+        <div class="watch-section">
+            <div class="episodes-list" id="episodesGrid">
+                {{ range .EpisodeGrid }}
+                <div class="ep-btn {{ if .IsPlaying }}active{{ end }}"
+                     data-ep-key="{{ .EpisodeKey }}" data-ep-label="{{ .EpisodeLabel }}"
+                     onclick="switchEpisode(this)">
+                    {{ .EpisodeLabel }}
+                </div>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
+
+        <!-- 线路切换（默认收起） -->
+        {{ if .EpisodeSources }}
+        <div class="watch-source-panel" id="sourcePanel">
+            <div class="watch-source-header" onclick="toggleSourcePanel()">
+                <span>线路切换 · 当前集共 {{ len .EpisodeSources }} 个来源</span>
+                <span class="watch-arrow">
+                    <svg class="w-icon" viewBox="0 0 24 24" style="width:14px;height:14px"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </span>
+            </div>
+            <div class="watch-source-body" id="sourcePanelBody">
+                {{ range .EpisodeSources }}
+                <div class="watch-source-chip {{ if .IsCurrent }}active{{ end }}"
+                     data-source-key="{{ .SourceKey }}" data-vod-id="{{ .VodID }}"
+                     onclick="switchSource(this)">
+                    <span class="w-source-dot {{ .QualityClass }}"></span>
+                    {{ .SourceLabel }}
+                    <span class="watch-quality-tag {{ .QualityClass }}">{{ .QualityLabel }}</span>
+                    {{ if .SpeedLabel }}<span class="watch-speed">{{ .SpeedLabel }}</span>{{ end }}
+                </div>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
+
+        <!-- 操作行 -->
+        <div class="watch-action-row">
+            {{ if .DoubanID }}{{ if ne .DoubanID "0" }}
+            {{ template "play_watched_button.html" (dict
+                "DoubanID" .DoubanID
+                "Title" .View.Title
+                "Poster" .View.Poster
+                "Year" .View.Year
+                "IsWatched" .IsWatched
+                "LoggedIn" .LoggedIn
+                "Redirect" .FullPath) }}
+            {{ end }}{{ end }}
+            <button class="watch-action-btn"
+                    hx-post="/api/feedback"
+                    hx-vals='{"type":"播放失败反馈","content":"《{{ .View.Title }}》播放失败","movie_url":"{{.FullPath}}"}'
+                    hx-swap="outerHTML" hx-disabled-elt="this" hx-indicator="this">
+                <svg class="w-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                <span>播放失败反馈</span>
+            </button>
+        </div>
+
+        <!-- 短评 -->
+        {{ if .DoubanID }}{{ if ne .DoubanID "0" }}
+        <div class="watch-section" style="margin-top:16px">
+            <div class="watch-section-title">短评</div>
+            <div id="user-comments"
+                 hx-get="/api/htmx/movie-comments?douban_id={{ .DoubanID }}"
+                 hx-trigger="load"
+                 hx-indicator="#user-comments-loading">
+                <div id="user-comments-loading" class="htmx-indicator movie-search-loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>正在加载短评...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 推荐 -->
+        <div class="watch-section">
+            <div class="watch-section-title">喜欢这部剧的人也喜欢</div>
+            <div id="similar-movies"
+                 hx-get="/api/htmx/similar?douban_id={{ .DoubanID }}"
+                 hx-trigger="load"
+                 hx-indicator="#similar-loading">
+                <div id="similar-loading" class="htmx-indicator movie-search-loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>正在加载推荐...</p>
+                </div>
+            </div>
+        </div>
+        {{ end }}{{ end }}
+
+    </div>
+</div>
+
+<!-- 播放器依赖库 -->
+<script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/artplayer-plugin-danmuku/dist/artplayer-plugin-danmuku.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
+<script src="/static/js/player.js?v=0.11"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var doubanID = '{{ .DoubanID }}';
+    var episode = '{{ .Episode }}';
+
+    // --- Player init ---
+    var art = null;
+    if (document.getElementById('artplayer-app')) {
+        art = initPlayer('artplayer-app', '{{ .PlayURL }}', {
+            title: '{{ .View.Title }}{{ if .Episode }} - {{ .Episode }}{{ end }}',
+            poster: '{{ proxyImg .View.Poster }}',
+            douban_id: doubanID,
+            media_id: {{ .MediaID }},
+            media_unit_id: {{ .MediaUnitID }},
+            candidate_id: {{ .CandidateID }},
+            candidate_session_id: '{{ .CandidateSessionID }}',
+			season_number: {{ .SeasonNumber }},
+			episode_key: '{{ .EpisodeKey }}',
+			entryPage: 'watch',
+			auto_failover: {{ if .AutoFailoverEnabled }}true{{ else }}false{{ end }},
+            sourceKey: '{{ .SourceKey }}',
+            vodId: '{{ .VodID }}',
+            episode: episode,
+            episodes: [],
+            vodName: '{{ .View.Title }}',
+            canSendDanmaku: {{ if .LoggedIn }}true{{ else }}false{{ end }}
+        });
+    }
+
+    // --- Episode switching (page reload) ---
+    window.switchEpisode = function(el) {
+        var epLabel = el.getAttribute('data-ep-label');
+        window.location.href = '/watch/' + doubanID + '?ep=' + encodeURIComponent(epLabel);
+    };
+
+    // --- Source switching (page reload, stay on watch page) ---
+    window.switchSource = function(el) {
+        if (el.classList.contains('active')) return;
+        var sk = el.getAttribute('data-source-key');
+        var vid = el.getAttribute('data-vod-id');
+        var url = '/watch/' + doubanID + '?source_key=' + encodeURIComponent(sk) + '&vod_id=' + encodeURIComponent(vid);
+        if (episode) url += '&ep=' + encodeURIComponent(episode);
+        window.location.href = url;
+    };
+
+    // --- Source panel toggle ---
+    window.toggleSourcePanel = function() {
+        var panel = document.getElementById('sourcePanel');
+        if (!panel) return;
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) {
+            setTimeout(function() { panel.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 50);
+        }
+    };
+});
+</script>
+{{ end }}

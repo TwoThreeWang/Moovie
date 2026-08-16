@@ -1,0 +1,239 @@
+{{/* 月度小记的标题、引言等用思源宋体，只在本页加载。
+     走 Google 官方的中国镜像域名（gstatic.cn 由 Google 上海注册），
+     国内可直连；只取实际用到的 400 / 700 两个字重 */}}
+{{ define "extra_head" }}
+    <link rel="preconnect" href="https://fonts.googleapis.cn">
+    <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin>
+    <link href="https://fonts.googleapis.cn/css2?family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+{{ end }}
+
+{{ define "content" }}
+<div class="monthly-page">
+    <!-- 返回链接 -->
+    <div class="monthly-top-bar">
+        <a href="/user/{{ .User.ID }}" class="back-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            返回 {{ .User.Username }} 的主页
+        </a>
+    </div>
+
+    <div class="monthly-layout">
+    <div class="monthly-card-col">
+    <!-- ====== 可分享卡片：电影票根 ====== -->
+    <div class="mc-card-wrap" id="month-card">
+        <div class="mc-card">
+
+            <!-- 正片区：人设 + 拼贴海报墙 -->
+            <div class="mc-feature">
+                <div class="mc-feature-top">
+                    <span class="mc-feature-brand">MOOVIE 影牛</span>
+                    <span class="mc-feature-top-right">
+                        <span class="mc-feature-user">@{{ .User.Username }}</span>
+                        <span class="mc-feature-issue">NO. {{ .Report.YearMonth }}</span>
+                    </span>
+                </div>
+
+                <div class="mc-persona">
+                    <div class="mc-persona-label">本月你的观影人格是</div>
+                    <div class="mc-persona-title">{{ .Report.PersonaTitle }}</div>
+                    {{ if .Report.PersonaLine }}
+                    <div class="mc-persona-line">{{ .Report.PersonaLine }}</div>
+                    {{ end }}
+                </div>
+
+                {{ if .PosterWall }}
+                <div class="mc-filmstrip">
+                    {{ range $i, $p := .PosterWall }}
+                    <div class="mc-filmstrip-item">
+                        <img src="{{ proxyImg $p.Poster }}" alt="{{ $p.Title }}" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                        <span class="mc-filmstrip-cap">{{ $p.Title }}</span>
+                        {{ if and (eq (add $i 1) (len $.PosterWall)) (gt $.PosterWallExtra 0) }}
+                        <div class="mc-filmstrip-more">+{{ $.PosterWallExtra }}</div>
+                        {{ end }}
+                    </div>
+                    {{ end }}
+                </div>
+                {{ end }}
+            </div>
+
+            <!-- 撕票口 -->
+            <div class="mc-perf"></div>
+
+            <!-- 票根区：数据字段 + 本月最佳 + 短评 + 条码 -->
+            <div class="mc-stub">
+                <div class="mc-fields">
+                    <div>
+                        <div class="mc-field-label">SCREENED 观影</div>
+                        <div class="mc-field-value">{{ .Report.WatchedCount }} 部</div>
+                    </div>
+                    {{ if ge .Report.ContinuousDays 2 }}
+                    <div>
+                        <div class="mc-field-label">STREAK 连刷</div>
+                        <div class="mc-field-value">{{ .Report.ContinuousDays }} 天</div>
+                    </div>
+                    {{ end }}
+                    {{ if .Report.AvgRating }}
+                    <div>
+                        <div class="mc-field-label">SCORE 均分</div>
+                        <div class="mc-field-value">{{ printf "%.1f" .Report.AvgRating }}</div>
+                    </div>
+                    {{ end }}
+                    {{ if gt .Report.PercentileRank 0 }}
+                    <div>
+                        <div class="mc-field-label">TOP 超越</div>
+                        <div class="mc-field-value">{{ .Report.PercentileRank }}%</div>
+                    </div>
+                    {{ end }}
+                </div>
+
+                {{ if .Report.TopMovieTitle }}
+                <div class="mc-featured">
+                    <img class="mc-featured-poster" src="{{ proxyImg .Report.TopMoviePoster }}" alt="{{ .Report.TopMovieTitle }}" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    <div class="mc-featured-body">
+                        <div class="mc-featured-label">特别放映 FEATURED</div>
+                        <div class="mc-featured-title">《{{ .Report.TopMovieTitle }}》</div>
+                    </div>
+                    {{ if .Report.TopMovieRating }}
+                    <div class="mc-featured-rating">★{{ printf "%.1f" (tof .Report.TopMovieRating) }}</div>
+                    {{ end }}
+                </div>
+                {{ end }}
+
+                {{ if .Report.FeaturedQuote }}
+                <div class="mc-quote">&ldquo;{{ .Report.FeaturedQuote }}&rdquo;</div>
+                {{ end }}
+
+                <div class="mc-stub-footer">
+                    <div class="mc-barcode">
+                        {{ range seq 1 24 }}<span></span>{{ end }}
+                    </div>
+                    <div class="mc-qr" id="mc-qr"></div>
+                </div>
+                <div class="mc-stub-hint">扫码查看 {{ .User.Username }} 的观影主页</div>
+                {{ if .SiteDomain }}
+                <div class="mc-stub-domain">{{ .SiteDomain }}</div>
+                {{ end }}
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 分享按钮 -->
+    <div class="monthly-actions">
+        <button class="mc-share-btn" onclick="saveAsImage()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            保存为图片分享
+        </button>
+    </div>
+
+    <!-- 登录访客查看他人小记时，顺手告诉TA两人观影重合了多少部，把"对外晒"变成一个连接点 -->
+    {{ if .ShowOverlap }}
+    <div class="monthly-overlap">
+        {{ if gt .OverlapCount 0 }}
+        你和 {{ .User.Username }} 都看过 <strong>{{ .OverlapCount }}</strong> 部电影
+        {{ else }}
+        你和 {{ .User.Username }} 暂时还没有共同看过的电影
+        {{ end }}
+    </div>
+    {{ end }}
+
+    <p class="monthly-bottom-note">每月观影小记由 Moovie 自动生成</p>
+    </div>
+
+    <!-- ====== 本月完整片单（与卡片左右并排，不影响卡片本身固定的海报墙） ====== -->
+    {{ if .MonthlyMovies }}
+    <div class="monthly-list-col">
+    <div class="monthly-full-list">
+        <div class="monthly-list-title">本月完整片单</div>
+        <div class="monthly-movie-list">
+            {{ range .MonthlyMovies }}
+            <div class="monthly-movie-item">
+                <div class="monthly-movie-poster">
+                    <a href="/movie/{{ .MovieID }}?title={{ .Title }}">
+                        <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    </a>
+                </div>
+                <div class="monthly-movie-body">
+                    <a href="/movie/{{ .MovieID }}?title={{ .Title }}" class="monthly-movie-title">{{ .Title }}</a>
+                    <div class="monthly-movie-meta">
+                        {{ if .Rating }}
+                        <span class="monthly-movie-stars">
+                            {{ if eq .Rating 1 }}★☆☆☆☆
+                            {{ else if eq .Rating 2 }}★★☆☆☆
+                            {{ else if eq .Rating 3 }}★★★☆☆
+                            {{ else if eq .Rating 4 }}★★★★☆
+                            {{ else if eq .Rating 5 }}★★★★★
+                            {{ end }}
+                        </span>
+                        <span class="monthly-movie-score">{{ .Rating }}.0</span>
+                        {{ end }}
+                        <time>{{ .UpdatedAt.Format "01-02" }}</time>
+                    </div>
+                    {{ if .Comment }}
+                    <p class="monthly-movie-comment">{{ .Comment }}</p>
+                    {{ end }}
+                </div>
+            </div>
+            {{ end }}
+        </div>
+    </div>
+    </div>
+    {{ end }}
+    </div>
+</div>
+
+<input type="hidden" id="pub-share-url" value="{{ .Canonical }}">
+<input type="hidden" id="pub-profile-url" value="{{ .ProfileURL }}">
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script>
+// 前端生成二维码
+(function() {
+    var profileInput = document.getElementById('pub-profile-url');
+    var profileURL = (profileInput && profileInput.value) ? profileInput.value : window.location.origin;
+    var qrContainer = document.getElementById('mc-qr');
+    if (qrContainer && typeof qrcode !== 'undefined') {
+        try {
+            var qr = qrcode(0, 'M');
+            qr.addData(profileURL);
+            qr.make();
+            var img = document.createElement('img');
+            img.onerror = function() { this.onerror = null; this.src = '/static/img/placeholder.svg'; };
+            img.src = qr.createDataURL(4, 0);
+            qrContainer.appendChild(img);
+        } catch(e) {
+            console.error('QR code error:', e);
+        }
+    }
+})();
+
+// 保存图片
+async function saveAsImage() {
+    var btn = document.querySelector('.mc-share-btn');
+    var originalHTML = btn.innerHTML;
+    btn.innerHTML = '<span>生成中...</span>';
+    btn.disabled = true;
+    try {
+        var node = document.getElementById('month-card');
+        var canvas = await html2canvas(node, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: null,
+            logging: false
+        });
+        var link = document.createElement('a');
+        link.download = '{{ .User.Username }}_{{ .Report.YearMonth }}_观影月记.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    } catch (err) {
+        console.error('生成图片失败:', err);
+        alert('生成图片失败，请重试');
+    } finally {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+    }
+}
+</script>
+{{ end }}

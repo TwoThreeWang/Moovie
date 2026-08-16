@@ -1,0 +1,298 @@
+{{ define "content" }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Movie",
+  "name": "{{ .Movie.Title }}",
+  "image": "{{ .Movie.Poster }}",
+  "datePublished": "{{ .Movie.Year }}",
+  {{ if .DirectorList }}
+  "director": [
+    {{ range $index, $d := .DirectorList }}
+      {{ if $index }},{{ end }}
+      {
+        "@type": "Person",
+        "name": "{{ $d.Name | js }}"
+      }
+    {{ end }}
+  ],
+  {{ end }}
+  {{ if .Movie.Rating }}
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "{{ .Movie.Rating }}",
+    "bestRating": "10",
+    "ratingCount": "100"
+  },
+  {{ end }}
+  "description": "{{ .Movie.Summary | js }}"
+}
+</script>
+
+<div class="movie-page">
+    <!-- 主要内容区：左海报+右信息 -->
+    <div class="movie-header">
+        <!-- 海报 -->
+        <div class="movie-poster-col">
+            <img src="{{ proxyImg .Movie.Poster }}" alt="{{ .Movie.Title }}" class="movie-poster-img" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+        </div>
+
+        <!-- 信息列 -->
+        <div class="movie-info-col">
+            <h1 class="movie-name">{{ .Movie.Title }}{{ if .Movie.Year }} <span class="movie-year-text">({{ .Movie.Year }})</span>{{ end }}</h1>
+
+            {{ if .Movie.OriginalTitle }}
+            <div class="movie-alt-name">{{ .Movie.OriginalTitle }}</div>
+            {{ end }}
+
+            <!-- 详细信息列表 -->
+            <div class="movie-attrs">
+                {{ if .Movie.Directors }}
+                <div class="attr-row">
+                    <span class="attr-label">导演:</span>
+                    <span class="attr-value">{{ range $i, $d := (jsonUnmarshal .Movie.Directors) }}{{ if $i }} / {{ end }}{{ $d.name }}{{ end }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.Actors }}
+                {{ $actors := jsonUnmarshal .Movie.Actors }}
+                <div class="attr-row attr-row-cast">
+                    <span class="attr-label">主演:</span>
+                    {{ if gt (len $actors) 6 }}
+                    <details class="movie-cast-details">
+                        <summary>
+                            <span class="movie-cast-preview">{{ range $i, $a := $actors }}{{ if lt $i 6 }}{{ if $i }} / {{ end }}{{ $a.name }}{{ end }}{{ end }}…</span>
+                            <span class="movie-cast-toggle"><span class="when-closed">展开</span><span class="when-open">收起</span></span>
+                        </summary>
+                        <div class="movie-cast-full">{{ range $i, $a := $actors }}{{ if $i }} / {{ end }}{{ $a.name }}{{ end }}</div>
+                    </details>
+                    {{ else }}
+                    <span class="attr-value">{{ range $i, $a := $actors }}{{ if $i }} / {{ end }}{{ $a.name }}{{ end }}</span>
+                    {{ end }}
+                </div>
+                {{ end }}
+
+                {{ if .Movie.Genres }}
+                <div class="attr-row">
+                    <span class="attr-label">类型:</span>
+                    <span class="attr-value">{{ .Movie.Genres }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.Countries }}
+                <div class="attr-row">
+                    <span class="attr-label">地区:</span>
+                    <span class="attr-value">{{ .Movie.Countries }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.Duration }}
+                <div class="attr-row">
+                    <span class="attr-label">片长:</span>
+                    <span class="attr-value">{{ .Movie.Duration }}</span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.DoubanID }}
+                <div class="attr-row">
+                    <span class="attr-label">豆瓣:</span>
+                    <span class="attr-value"><a class="external-id-link external-id-link-douban" href="https://movie.douban.com/subject/{{ .Movie.DoubanID }}" target="_blank" rel="noopener nofollow">{{ .Movie.DoubanID }}</a></span>
+                </div>
+                {{ end }}
+
+                {{ if .Movie.IMDbID }}
+                <div class="attr-row">
+                    <span class="attr-label">IMDb:</span>
+                    <span class="attr-value"><a class="external-id-link external-id-link-imdb" href="https://www.imdb.com/title/{{ .Movie.IMDbID }}" target="_blank" rel="noopener nofollow">{{ .Movie.IMDbID }}</a></span>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+
+        <!-- 评分与操作 -->
+        <div class="movie-rating-col">
+            <div class="rating-block">
+                <div class="rating-title">豆瓣评分</div>
+                {{ if .Movie.Rating }}
+                <div class="rating-num">{{ .Movie.Rating }}</div>
+                <div class="rating-stars">
+                    ★★★★★
+                </div>
+                {{ else }}
+                <button type="button" class="rating-num rating-num-refresh"
+                        hx-post="/api/v2/media/{{ .Movie.ID }}/refresh"
+                        hx-swap="none"
+                        hx-confirm="确定要重新抓取豆瓣评分吗？"
+                        aria-label="暂无评分，重新抓取豆瓣评分"
+                        title="点击重新抓取豆瓣评分">暂无</button>
+                {{ end }}
+            </div>
+            <div class="movie-primary-actions">
+                {{ if .HasPlayableResource }}
+                <a href="/watch/{{ .Movie.DoubanID }}" class="btn btn-primary movie-play-btn">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
+                        <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.2-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z"/>
+                    </svg>
+                    <span>立即播放</span>
+                </a>
+                {{ end }}
+                {{ template "user_movie_buttons.html" (dict "DoubanID" .Movie.DoubanID "Title" .Movie.Title "Poster" .Movie.Poster "Year" .Movie.Year "IsWish" .IsWish "IsWatched" .IsWatched) }}
+            </div>
+            {{ if or (gt .WatchedByCount 0) (gt .WishByCount 0) }}
+            <div class="movie-social-stats">
+                {{ if gt .WatchedByCount 0 }}<span>{{ .WatchedByCount }} 人看过</span>{{ end }}
+                {{ if and (gt .WatchedByCount 0) (gt .WishByCount 0) }}<span class="movie-social-dot">·</span>{{ end }}
+                {{ if gt .WishByCount 0 }}<span>{{ .WishByCount }} 人想看</span>{{ end }}
+            </div>
+            {{ end }}
+        </div>
+    </div>
+
+    {{ if .SeriesSeasons }}
+    <nav class="movie-series-nav" aria-label="本剧季度">
+        <div class="movie-series-heading">
+            <span class="movie-series-title">本剧系列</span>
+            <span class="movie-series-count">共 {{ len .SeriesSeasons }} 季</span>
+        </div>
+        <div class="movie-series-track">
+            {{ range .SeriesSeasons }}
+            {{ if .Current }}
+            <span class="movie-series-season is-current" aria-current="page">
+                <strong>第{{ .SeasonNumber }}季</strong>
+                {{ if or .Year .Rating }}<small>{{ .Year }}{{ if .Rating }} · {{ .Rating }}{{ end }}</small>{{ end }}
+                <em>当前</em>
+            </span>
+            {{ else }}
+            <a class="movie-series-season" href="/movie/{{ .DoubanID }}" aria-label="查看{{ .Title }}">
+                <strong>第{{ .SeasonNumber }}季</strong>
+                {{ if or .Year .Rating }}<small>{{ .Year }}{{ if .Rating }} · {{ .Rating }}{{ end }}</small>{{ end }}
+            </a>
+            {{ end }}
+            {{ end }}
+        </div>
+    </nav>
+    <script>
+    (() => {
+        const current = document.querySelector('.movie-series-season[aria-current="page"]');
+        const track = current && current.parentElement;
+        if (track && track.scrollWidth > track.clientWidth) {
+            track.scrollLeft = current.offsetLeft - (track.clientWidth - current.offsetWidth) / 2;
+        }
+    })();
+    </script>
+    {{ end }}
+
+    {{/* 追剧更新时间：已完结或无已知播出日期时 partial 自身不渲染任何内容。
+         外层 with 只是防御未设置该键的调用路径——nil 传进 partial 会导致渲染报错。 */}}
+    {{ with .AirSchedule }}{{ template "air_schedule.html" . }}{{ end }}
+
+    <!-- 剧情简介 -->
+    {{ if .Movie.Summary }}
+    <div class="movie-section">
+        <h2 class="section-title">剧情简介</h2>
+        <p class="movie-summary">{{ .Movie.Summary }}</p>
+    </div>
+    {{ end }}
+
+    <!-- 剧照展示 -->
+    <div class="movie-section">
+        <h2 class="section-title">剧照</h2>
+        <div id="movie-backdrops"
+             hx-get="/api/htmx/movie-backdrops?douban_id={{ .Movie.DoubanID }}"
+             hx-trigger="load"
+             hx-indicator="#backdrops-loading">
+            <div id="backdrops-loading" class="htmx-indicator movie-search-loading-state">
+                <div class="loading-spinner"></div>
+                <p>正在加载剧照...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 豆瓣短评 -->
+    {{ if .Movie.DoubanID }}
+    <div class="movie-section">
+        <h2 class="section-title">豆瓣短评</h2>
+        <div id="movie-reviews"
+             hx-get="/api/htmx/reviews?douban_id={{ .Movie.DoubanID }}"
+             hx-trigger="load"
+             hx-indicator="#reviews-loading">
+            <div id="reviews-loading" class="htmx-indicator movie-search-loading-state">
+                <div class="loading-spinner"></div>
+                <p>正在加载短评...</p>
+            </div>
+        </div>
+    </div>
+    {{ end }}
+
+    <div class="movie-section">
+        <h2 class="section-title">站内用户短评</h2>
+        <div id="user-comments"
+             hx-get="/api/htmx/movie-comments?douban_id={{ .Movie.DoubanID }}"
+             hx-trigger="load"
+             hx-indicator="#user-comments-loading">
+            <div id="user-comments-loading" class="htmx-indicator movie-search-loading-state">
+                <div class="loading-spinner"></div>
+                <p>正在加载短评...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 在线资源：已有可播放候选时不再重复执行全网搜索。 -->
+    <div class="movie-section">
+        {{ if .HasPlayableResource }}
+        <h2 class="section-title">选集与线路</h2>
+        <div class="movie-resource-ready">
+            <div>
+                <strong>已找到可播放线路</strong>
+                <p>进入播放页选择选集，并可随时切换来源。</p>
+            </div>
+            <a href="/watch/{{ .Movie.DoubanID }}" class="movie-resource-link">查看选集与线路 →</a>
+        </div>
+        {{ else }}
+        <h2 class="section-title">查找在线播放资源</h2>
+        <div id="movie-search-results"
+             hx-get="/api/htmx/search?q={{if .SearchTitle }}{{ urlquery .SearchTitle }}{{else}}{{ urlquery .Movie.Title }}{{end}}&year={{ urlquery .Movie.Year }}"
+             hx-trigger="load"
+             hx-indicator="#movie-search-loading">
+            <div id="movie-search-loading" class="htmx-indicator movie-search-loading-state">
+                <div class="loading-spinner"></div>
+                <p>正在搜索全网资源，请稍候...</p>
+            </div>
+        </div>
+        {{ end }}
+    </div>
+
+    <!-- 相似电影推荐 -->
+    <div class="movie-section">
+        <h2 class="section-title">喜欢这部剧集的人也喜欢</h2>
+        {{ if .SimilarMovies }}
+        <div class="similar-movies-grid">
+            {{ range .SimilarMovies }}
+            <a href="/movie/{{ .DoubanID }}" class="similar-movie-card">
+                <div class="similar-movie-poster">
+                    <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    {{ if .Rating }}
+                    <span class="similar-movie-rating">{{ .Rating }}</span>
+                    {{ end }}
+                </div>
+                <span class="similar-movie-title">{{ .Title }}</span>
+            </a>
+            {{ end }}
+        </div>
+        <div class="similar-movies-more">
+            <a href="/similar/{{ .Movie.DoubanID }}">查看更多类似《{{ .Movie.Title }}》的电影 ></a>
+        </div>
+        {{ else }}
+        <div class="similar-movies-empty">
+            <p>暂无相似电影推荐</p>
+        </div>
+        {{ end }}
+    </div>
+
+    <div class="ad-slot">
+    <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>
+    <ins class="eas6a97888e20" data-zoneid="5863824"></ins>
+    <script>(AdProvider = window.AdProvider || []).push({"serve": {}});</script>
+    </div>
+</div>
+{{ end }}

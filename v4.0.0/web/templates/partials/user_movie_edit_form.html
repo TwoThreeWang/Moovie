@@ -1,0 +1,69 @@
+<div class="action-modal-overlay" id="edit-watched-modal" onclick="if(event.target==this) this.remove()" onkeydown="if(event.key==='Escape') this.remove()">
+    <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="edit-watched-title">
+        <button type="button" class="modal-close-btn" aria-label="关闭修改窗口" onclick="document.getElementById('edit-watched-modal').remove()" autofocus>×</button>
+
+        <div class="modal-header">
+            <h3 class="modal-title" id="edit-watched-title">修改评分与短评</h3>
+            <p class="modal-subtitle">《{{ .Record.Title }}》</p>
+        </div>
+
+        <form
+            hx-patch="/api/user-movies/{{ .Record.ID }}"
+            hx-target="#watched-{{ .Record.ID }}"
+            hx-swap="outerHTML"
+            hx-on::after-request="if(event.detail.successful) document.getElementById('edit-watched-modal').remove()"
+            class="modal-form"
+        >
+            <input type="hidden" name="rating" id="edit-rating-input" value="{{ .Record.Rating }}">
+
+            <div class="form-group">
+                <span class="form-label" id="edit-rating-label">修改评分</span>
+                <div class="score-chips-group" role="group" aria-labelledby="edit-rating-label">
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 1 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 1 }}true{{ else }}false{{ end }}" onclick="selectEditScore(1, this)">
+                        <span class="chip-label">1分</span>
+                        <span class="chip-desc">很差</span>
+                    </button>
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 2 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 2 }}true{{ else }}false{{ end }}" onclick="selectEditScore(2, this)">
+                        <span class="chip-label">2分</span>
+                        <span class="chip-desc">较差</span>
+                    </button>
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 3 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 3 }}true{{ else }}false{{ end }}" onclick="selectEditScore(3, this)">
+                        <span class="chip-label">3分</span>
+                        <span class="chip-desc">还行</span>
+                    </button>
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 4 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 4 }}true{{ else }}false{{ end }}" onclick="selectEditScore(4, this)">
+                        <span class="chip-label">4分</span>
+                        <span class="chip-desc">推荐</span>
+                    </button>
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 5 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 5 }}true{{ else }}false{{ end }}" onclick="selectEditScore(5, this)">
+                        <span class="chip-label">5分</span>
+                        <span class="chip-desc">力荐</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="edit-comment">修改短评</label>
+                <textarea id="edit-comment" name="comment" rows="3" class="form-textarea" placeholder="写几句感受...">{{ .Record.Comment }}</textarea>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('edit-watched-modal').remove()">取消</button>
+                <button type="submit" class="btn btn-submit">保存修改</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function selectEditScore(score, el) {
+            document.getElementById('edit-rating-input').value = score;
+            const chips = el.parentElement.querySelectorAll('.score-chip');
+            chips.forEach(c => {
+                c.classList.remove('active');
+                c.setAttribute('aria-pressed', 'false');
+            });
+            el.classList.add('active');
+            el.setAttribute('aria-pressed', 'true');
+        }
+    </script>
+</div>

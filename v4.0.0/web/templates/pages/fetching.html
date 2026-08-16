@@ -1,0 +1,106 @@
+{{ define "content" }}
+<div class="loading-spinner" style="margin: 0 auto 30px"></div>
+
+<h2 class="fetching-title">
+  📽️ 正在获取{{ if .Title }}《{{ .Title }}》{{ else }}电影{{ end
+  }}的最新数据，请稍候片刻
+</h2>
+
+<p class="fetching-desc">💡 提示：豆瓣电影数据通常需要 3-10 秒加载</p>
+
+<div class="fetching-actions">
+  <button onclick="window.location.reload()" class="btn btn-primary">
+    🔄 立即刷新
+  </button>
+
+  <a href="/" class="btn btn-secondary"> 🏠 返回首页 </a>
+</div>
+
+{{ if .Title }}
+<div class="alternative-option">
+  <h3>不想等待？</h3>
+  <p>您可以先查看搜索结果，稍后再回来</p>
+  <a href="/search?kw={{ .Title }}" class="btn">
+    🔍 查看《{{ .Title }}》的搜索结果
+  </a>
+</div>
+{{ end }}
+
+<div class="tech-details">
+  <p><strong>豆瓣ID:</strong> {{ .DoubanID }}</p>
+  <p><strong>状态:</strong> 正在从豆瓣API获取数据...</p>
+</div>
+
+<style>
+  .fetching-title {
+    font-size: 1.5rem;
+    margin-bottom: 16px;
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .fetching-desc {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+  }
+
+  .fetching-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin: 32px 0;
+    flex-wrap: wrap;
+  }
+
+  .alternative-option {
+    margin-top: 40px;
+    padding: 24px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+  }
+
+  .alternative-option h3 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  .alternative-option p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+  }
+
+  .tech-details {
+    margin-top: 32px;
+    padding: 16px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  .tech-details p {
+    margin: 4px 0;
+  }
+
+  @media (max-width: 768px) {
+    .fetching-title {
+      font-size: 1.2rem;
+    }
+
+    .fetching-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .fetching-actions .btn {
+      width: 100%;
+    }
+  }
+</style>
+{{ end }} {{ define "title" }}{{ if .Title }}{{ .Title }}{{ else }}电影{{ end }}
+- 正在加载 - {{ .SiteName }}{{ end }}

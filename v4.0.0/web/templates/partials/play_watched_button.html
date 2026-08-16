@@ -1,0 +1,45 @@
+{{/* 播放页专用：仅「看过」按钮，样式与 .video-actions-bar 内其他按钮一致 */}}
+{{ $douban := .DoubanID }}
+{{ $title := .Title }}
+{{ $poster := .Poster }}
+{{ $year := .Year }}
+{{ $qs := printf "title=%s&poster=%s&year=%s" (urlquery $title) (urlquery $poster) (urlquery $year) }}
+<span class="play-watched-action" id="play-actions-{{ $douban }}">
+    {{ if not .LoggedIn }}
+    <a class="video-action-btn"
+       href="/auth/login?redirect={{ urlquery .Redirect }}"
+       title="登录后可标记《{{ $title }}》为已看过">
+        <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
+        <span>看过</span>
+    </a>
+    {{ else if .IsWatched }}
+    <button type="button"
+            class="video-action-btn is-active"
+            hx-delete="/api/user-movies/{{ $douban }}?variant=play&{{ $qs }}"
+            hx-confirm="确定取消《{{ $title }}》的“已看过”标记吗？"
+            hx-target="#play-actions-{{ $douban }}"
+            hx-swap="outerHTML"
+            title="点击取消标记">
+        <svg class="action-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path>
+        </svg>
+        <span>已看过</span>
+    </button>
+    {{ else }}
+    <button type="button"
+            class="video-action-btn"
+            hx-get="/api/htmx/user-movie/mark-watched?variant=play&douban_id={{ $douban }}&{{ $qs }}"
+            hx-target="body"
+            hx-swap="beforeend"
+            title="标记《{{ $title }}》为已看过并评分">
+        <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
+        <span>看过</span>
+    </button>
+    {{ end }}
+</span>

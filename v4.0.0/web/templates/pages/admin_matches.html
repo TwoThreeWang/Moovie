@@ -1,0 +1,112 @@
+{{ define "content" }}
+<div class="admin-page">
+    <div class="admin-header">
+        <h1 class="admin-title">资源匹配复核</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab">用户</a>
+            <a href="/admin/feedback" class="admin-tab">反馈</a>
+            <a href="/admin/sites" class="admin-tab">资源网</a>
+            <a href="/admin/data" class="admin-tab">数据管理</a>
+            <a href="/admin/jobs" class="admin-tab">任务队列</a>
+            <a href="/admin/matches" class="admin-tab active">匹配复核</a>
+            <a href="/admin/copyright" class="admin-tab">版权限制</a>
+            <a href="/admin/category" class="admin-tab">分类过滤</a>
+        </nav>
+    </div>
+
+    <div class="admin-filter">
+        <span class="filter-label">状态筛选：</span>
+        <a href="/admin/matches?status=review" class="filter-btn {{ if eq .Status "review" }}active{{ end }}">待复核</a>
+        <a href="/admin/matches?status=verified" class="filter-btn {{ if eq .Status "verified" }}active{{ end }}">已确认</a>
+        <a href="/admin/matches?status=rejected" class="filter-btn {{ if eq .Status "rejected" }}active{{ end }}">已拒绝</a>
+    </div>
+
+    <div class="admin-card">
+        <div class="admin-card-header">
+            <h3>资源与媒体候选</h3>
+            <span class="badge">{{ len .Candidates }} 条</span>
+        </div>
+        <div class="admin-table-wrapper">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>来源资源</th>
+                        <th>候选媒体</th>
+                        <th>匹配依据</th>
+                        <th>复核</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{ range .Candidates }}
+                    <tr data-source-key="{{ .SourceKey }}" data-vod-id="{{ .VodID }}" data-media-id="{{ .MediaID }}">
+                        <td>
+                            <strong>{{ .ResourceTitle }}</strong><br>
+                            <span class="id-badge">候选 #{{ .ID }}</span>
+                            <span class="id-badge">{{ .SourceKey }} / {{ .VodID }}</span>
+                            {{ if .ResourceYear }}<span class="id-badge">{{ .ResourceYear }}</span>{{ end }}
+                            {{ if .ResourceActors }}<div class="match-detail">演员：{{ .ResourceActors }}</div>{{ end }}
+                            {{ if .ResourceDirector }}<div class="match-detail">导演：{{ .ResourceDirector }}</div>{{ end }}
+                        </td>
+                        <td>
+                            <strong>{{ .MediaTitle }}</strong><br>
+                            <span class="id-badge">媒体 #{{ .MediaID }}</span>
+                            {{ if .MediaYear }}<span class="id-badge">{{ .MediaYear }}</span>{{ end }}
+                            {{ if .MediaType }}<span class="id-badge">{{ .MediaType }}</span>{{ end }}
+                        </td>
+                        <td>
+                            <div>置信度：<strong>{{ printf "%.2f" .Confidence }}</strong></div>
+                            <div class="match-detail">方法：{{ .MatchMethod }}</div>
+                            {{ if .ReasonJSON }}<details class="match-reason"><summary>评分详情</summary><code>{{ .ReasonJSON }}</code></details>{{ end }}
+                        </td>
+                        <td>
+                            {{ if eq .Status "review" }}
+                            <textarea class="form-control match-review-reason" rows="2" maxlength="500" placeholder="填写复核依据（必填）"></textarea>
+                            <div class="match-review-actions">
+                                <button type="button" class="btn btn-success btn-sm" onclick="reviewMatch(this, 'verified')">确认匹配</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="reviewMatch(this, 'rejected')">拒绝</button>
+                            </div>
+                            {{ else if eq .Status "verified" }}
+                            <span class="key-badge">已确认</span>
+                            {{ if and .ResolvedMediaID (ne .ResolvedMediaID .MediaID) }}<div class="match-detail">最终绑定：媒体 #{{ .ResolvedMediaID }}</div>{{ end }}
+                            {{ else }}
+                            <span class="id-badge">已拒绝</span>
+                            {{ end }}
+                        </td>
+                    </tr>
+                    {{ else }}
+                    <tr><td colspan="4" class="empty-cell">当前状态下没有匹配候选</td></tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function reviewMatch(button, decision) {
+    const row = button.closest('tr');
+    const reason = row.querySelector('.match-review-reason').value.trim();
+    if (!reason) {
+        alert('请填写复核依据');
+        return;
+    }
+    const formData = new FormData();
+    formData.append('source_key', row.dataset.sourceKey);
+    formData.append('vod_id', row.dataset.vodId);
+    formData.append('media_id', row.dataset.mediaId);
+    formData.append('decision', decision);
+    formData.append('reason', reason);
+    button.disabled = true;
+    try {
+        const response = await fetch('/admin/matches/decision', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '复核失败');
+        window.location.reload();
+    } catch (error) {
+        alert(error.message);
+        button.disabled = false;
+    }
+}
+</script>
+{{ end }}

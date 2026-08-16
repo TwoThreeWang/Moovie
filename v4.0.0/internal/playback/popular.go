@@ -1,0 +1,387 @@
+package playback
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/doubanpopular"
+	"golang.org/x/sync/singleflight"
+)
+
+type PopularSubject struct {
+	ID                 string         `json:"id"`
+	Title              string         `json:"title"`
+	Rate               string         `json:"rate"`
+	Cover              string         `json:"cover"`
+	URL                string         `json:"url"`
+	IsNew              bool           `json:"is_new"`
+	EpisodesInfo       string         `json:"episodes_info"`
+	Year               string         `json:"year,omitempty"`
+	Score              float64        `json:"score,omitempty"`
+	SourceRanks        map[string]int `json:"source_ranks,omitempty"`
+	PlayableCandidates int            `json:"playable_candidates"`
+	QualityMultiplier  float64        `json:"quality_multiplier,omitempty"`
+	FreshnessBoost     float64        `json:"freshness_boost,omitempty"`
+}
+
+// PopularSource 标识一种热门信号。Provider 契约保持不变，因此可以独立增加豆瓣、
+// TMDB 或站内行为来源，而无需修改发现页、TVBox 或旧 JSON 字段名。
+type PopularSource struct {
+	Name     string
+	Weight   float64
+	Provider PopularProvider
+}
+
+type compositePopularItem struct {
+	subject PopularSubject
+	score   float64
+	seen    int
+}
+
+// CompositePopularProvider 合并多个独立热门流，先按外部 ID、再按规范标题去重。
+// 单个来源故障只造成部分降级，其他成功来源仍可使用；只配置豆瓣时保留旧单来源行为。
+type CompositePopularProvider struct {
+	sources []PopularSource
+	mu      sync.Mutex
+	cache   map[string]popularCacheEntry
+	group   singleflight.Group
+}
+
+func NewCompositePopularProvider(sources ...PopularSource) *CompositePopularProvider {
+	valid := make([]PopularSource, 0, len(sources))
+	for _, source := range sources {
+		if source.Provider == nil {
+			continue
+		}
+		if source.Name == "" {
+			source.Name = "source"
+		}
+		if source.Weight <= 0 {
+			source.Weight = 1
+		}
+		valid = append(valid, source)
+	}
+	return &CompositePopularProvider{sources: valid, cache: make(map[string]popularCacheEntry)}
+}
+
+func (provider *CompositePopularProvider) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
+	value, err, _ := provider.group.Do(mediaType, func() (any, error) {
+		return provider.loadPopular(ctx, mediaType)
+	})
+	if value == nil {
+		return nil, err
+	}
+	return append([]PopularSubject(nil), value.([]PopularSubject)...), err
+}
+
+func (provider *CompositePopularProvider) loadPopular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
+	provider.mu.Lock()
+	cached, found := provider.cache[mediaType]
+	if found && time.Now().Before(cached.expiresAt) {
+		result := append([]PopularSubject(nil), cached.subjects...)
+		provider.mu.Unlock()
+		return result, nil
+	}
+	provider.mu.Unlock()
+
+	merged := make(map[string]*compositePopularItem)
+	var lastErr error
+	for _, source := range provider.sources {
+		subjects, err := source.Provider.Popular(ctx, mediaType)
+		if err != nil {
+			slog.Warn("popularity source unavailable", "source", source.Name, "media_type", mediaType, "error", err)
+			lastErr = fmt.Errorf("%s popularity source: %w", source.Name, err)
+			continue
+		}
+		if len(subjects) == 0 {
+			slog.Warn("popularity source returned no mapped subjects", "source", source.Name, "media_type", mediaType)
+			continue
+		}
+		for rank, subject := range subjects {
+			key := popularIdentity(subject)
+			if key == "" {
+				continue
+			}
+			item := merged[key]
+			if item == nil {
+				item = &compositePopularItem{subject: subject}
+				item.subject.SourceRanks = make(map[string]int)
+				merged[key] = item
+			} else {
+				item.subject = mergePopularSubject(item.subject, subject)
+			}
+			item.subject.SourceRanks[source.Name] = rank + 1
+			item.score += source.Weight / (60 + float64(rank+1))
+			item.seen++
+		}
+	}
+	if len(merged) == 0 {
+		if found && len(cached.subjects) > 0 {
+			return append([]PopularSubject(nil), cached.subjects...), nil
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return []PopularSubject{}, nil
+	}
+	result := make([]PopularSubject, 0, len(merged))
+	for _, item := range merged {
+		item.subject.Score = item.score
+		result = append(result, item.subject)
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Score == result[j].Score {
+			return result[i].Title < result[j].Title
+		}
+		return result[i].Score > result[j].Score
+	})
+	provider.mu.Lock()
+	provider.cache[mediaType] = popularCacheEntry{subjects: append([]PopularSubject(nil), result...), expiresAt: time.Now().Add(15 * time.Minute)}
+	provider.mu.Unlock()
+	return result, nil
+}
+
+func popularIdentity(subject PopularSubject) string {
+	if id := strings.TrimSpace(subject.ID); id != "" {
+		return "id:" + id
+	}
+	title := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(subject.Title)), " "))
+	if title == "" {
+		return ""
+	}
+	return "title:" + title + ":" + strings.TrimSpace(subject.Year)
+}
+
+func mergePopularSubject(current, incoming PopularSubject) PopularSubject {
+	if current.Title == "" {
+		current.Title = incoming.Title
+	}
+	if current.Cover == "" {
+		current.Cover = incoming.Cover
+	}
+	if current.Rate == "" || parsePopularRate(incoming.Rate) > parsePopularRate(current.Rate) {
+		current.Rate = incoming.Rate
+	}
+	if current.URL == "" {
+		current.URL = incoming.URL
+	}
+	if current.EpisodesInfo == "" {
+		current.EpisodesInfo = incoming.EpisodesInfo
+	}
+	if current.Year == "" {
+		current.Year = incoming.Year
+	}
+	return current
+}
+
+func parsePopularRate(value string) float64 {
+	rate, _ := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	return rate
+}
+
+type popularResponse struct {
+	Subjects []PopularSubject `json:"subjects"`
+}
+
+type popularCacheEntry struct {
+	subjects  []PopularSubject
+	expiresAt time.Time
+}
+
+type DoubanPopularProvider struct {
+	client *http.Client
+	mu     sync.RWMutex
+	cache  map[string]popularCacheEntry
+	group  singleflight.Group
+}
+
+type TMDBPopularProvider struct {
+	client   *http.Client
+	token    string
+	resolver PopularIdentityResolver
+	base     string
+}
+
+func NewTMDBPopularProvider(client *http.Client, token string, resolver PopularIdentityResolver) *TMDBPopularProvider {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return &TMDBPopularProvider{client: client, token: strings.TrimSpace(token), resolver: resolver, base: "https://api.themoviedb.org"}
+}
+
+func (provider *TMDBPopularProvider) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
+	if provider.token == "" {
+		return nil, fmt.Errorf("TMDB_API_TOKEN is not configured")
+	}
+	if provider.resolver == nil {
+		return nil, fmt.Errorf("TMDB popular resolver is not configured")
+	}
+	kind := "movie"
+	if mediaType != "movie" {
+		kind = "tv"
+	}
+	endpoint := fmt.Sprintf("%s/3/%s/popular?language=zh-CN&page=1", strings.TrimRight(provider.base, "/"), kind)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Bearer "+provider.token)
+	response, err := provider.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("request TMDB popular: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("TMDB popular returned status %d", response.StatusCode)
+	}
+	var payload struct {
+		Results []struct {
+			ID           int     `json:"id"`
+			Title        string  `json:"title"`
+			Name         string  `json:"name"`
+			PosterPath   string  `json:"poster_path"`
+			VoteAverage  float64 `json:"vote_average"`
+			ReleaseDate  string  `json:"release_date"`
+			FirstAirDate string  `json:"first_air_date"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode TMDB popular: %w", err)
+	}
+	items := make([]PopularSubject, 0, len(payload.Results))
+	for _, item := range payload.Results {
+		media, err := provider.resolver.FindByExternalID(ctx, "tmdb", kind, strconv.Itoa(item.ID))
+		if err != nil || media.DoubanID == "" {
+			continue
+		}
+		title := item.Title
+		if title == "" {
+			title = item.Name
+		}
+		if title == "" {
+			title = media.Title
+		}
+		year := item.ReleaseDate
+		if year == "" {
+			year = item.FirstAirDate
+		}
+		if len(year) > 4 {
+			year = year[:4]
+		}
+		cover := ""
+		if item.PosterPath != "" {
+			cover = proxyImagePath("https://image.tmdb.org/t/p/w500" + item.PosterPath)
+		}
+		items = append(items, PopularSubject{ID: media.DoubanID, Title: title, Year: year, Rate: strconv.FormatFloat(item.VoteAverage, 'f', 1, 64), Cover: cover, URL: "https://www.themoviedb.org/" + url.PathEscape(kind) + "/" + strconv.Itoa(item.ID)})
+	}
+	return items, nil
+}
+
+func NewDoubanPopularProvider(client *http.Client) *DoubanPopularProvider {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return &DoubanPopularProvider{client: client, cache: make(map[string]popularCacheEntry)}
+}
+
+func (provider *DoubanPopularProvider) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
+	value, err, _ := provider.group.Do(mediaType, func() (any, error) {
+		return provider.loadPopular(ctx, mediaType)
+	})
+	if value == nil {
+		return nil, err
+	}
+	return append([]PopularSubject(nil), value.([]PopularSubject)...), err
+}
+
+func (provider *DoubanPopularProvider) loadPopular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
+	target, err := popularURL(mediaType)
+	if err != nil {
+		return nil, err
+	}
+	provider.mu.RLock()
+	cached, found := provider.cache[mediaType]
+	provider.mu.RUnlock()
+	if found && time.Now().Before(cached.expiresAt) {
+		return append([]PopularSubject(nil), cached.subjects...), nil
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create douban popular request: %w", err)
+	}
+	request.Header.Set("User-Agent", providerUserAgent)
+	request.Header.Set("Referer", "https://movie.douban.com/")
+	response, err := provider.client.Do(request)
+	if err != nil {
+		return provider.rexxarOrStale(ctx, mediaType, cached, found, fmt.Errorf("request douban popular: %w", err))
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return provider.rexxarOrStale(ctx, mediaType, cached, found, fmt.Errorf("douban popular returned status %d", response.StatusCode))
+	}
+	var payload popularResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return provider.rexxarOrStale(ctx, mediaType, cached, found, fmt.Errorf("decode douban popular: %w", err))
+	}
+	for index := range payload.Subjects {
+		payload.Subjects[index].Cover = proxyImagePath(payload.Subjects[index].Cover)
+	}
+	provider.mu.Lock()
+	provider.cache[mediaType] = popularCacheEntry{subjects: append([]PopularSubject(nil), payload.Subjects...), expiresAt: time.Now().Add(12 * time.Hour)}
+	provider.mu.Unlock()
+	return payload.Subjects, nil
+}
+
+func (provider *DoubanPopularProvider) rexxarOrStale(ctx context.Context, mediaType string, cached popularCacheEntry, found bool, primaryErr error) ([]PopularSubject, error) {
+	subjects, err := doubanpopular.FetchRexxar(ctx, provider.client, mediaType)
+	if err == nil {
+		mapped := make([]PopularSubject, 0, len(subjects))
+		for _, subject := range subjects {
+			mapped = append(mapped, PopularSubject{ID: subject.ID, Title: subject.Title, Rate: subject.Rate, Cover: proxyImagePath(subject.Cover), URL: subject.URL, EpisodesInfo: subject.EpisodesInfo})
+		}
+		provider.mu.Lock()
+		provider.cache[mediaType] = popularCacheEntry{subjects: append([]PopularSubject(nil), mapped...), expiresAt: time.Now().Add(12 * time.Hour)}
+		provider.mu.Unlock()
+		return mapped, nil
+	}
+	if found {
+		return append([]PopularSubject(nil), cached.subjects...), nil
+	}
+	return nil, fmt.Errorf("primary Douban popular: %v; Rexxar fallback: %w", primaryErr, err)
+}
+
+func popularURL(mediaType string) (string, error) {
+	switch mediaType {
+	case "movie":
+		return "https://movie.douban.com/j/search_subjects?type=movie&tag=热门&page_limit=50&page_start=0", nil
+	case "tv":
+		return "https://movie.douban.com/j/search_subjects?type=tv&tag=热门&page_limit=50&page_start=0", nil
+	case "show":
+		return "https://movie.douban.com/j/search_subjects?type=tv&tag=综艺&page_limit=50&page_start=0", nil
+	case "cartoon":
+		return "https://movie.douban.com/j/search_subjects?type=tv&tag=日本动画&page_limit=50&page_start=0", nil
+	default:
+		return "", fmt.Errorf("unsupported media type %q", mediaType)
+	}
+}
+
+func proxyImagePath(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	return "/api/proxy/image/r76RqSIVvUryzx" + base64.RawURLEncoding.EncodeToString([]byte(rawURL))
+}
+
+const providerUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

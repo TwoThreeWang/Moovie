@@ -1,0 +1,23 @@
+{{/* 相似电影推荐 - 通过向量相似度计算 */}}
+{{ if .Movies }}
+<div class="similar-movies-grid">
+    {{ range .Movies }}
+    <a href="/movie/{{ .DoubanID }}" class="similar-movie-card">
+        <div class="similar-movie-poster">
+            <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            {{ if .Rating }}
+            <span class="similar-movie-rating">{{ .Rating }}</span>
+            {{ end }}
+        </div>
+        <span class="similar-movie-title">{{ .Title }}</span>
+    </a>
+    {{ end }}
+</div>
+<div class="similar-movies-more">
+    <a href="/similar/{{ .doubanID }}">查看更多类似电影 ></a>
+</div>
+{{ else }}
+<div class="similar-movies-empty">
+    <p>暂无相似电影推荐</p>
+</div>
+{{ end }}

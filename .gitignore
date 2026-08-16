@@ -44,4 +44,3 @@ design/
 # Docker
 .docker/
 .env.online
-

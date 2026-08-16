@@ -1,0 +1,6 @@
+.env
+bin/
+/datamigrate
+coverage.out
+*.log
+.migration-reports/
