@@ -72,8 +72,6 @@ services:
     cpus: "${WORKER_CPU_LIMIT:-1.0}"
     pids_limit: 128
     read_only: true
-    healthcheck:
-      disable: true
     tmpfs:
       - /tmp:size=64m,mode=1777
     networks:
