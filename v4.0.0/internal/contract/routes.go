@@ -103,6 +103,7 @@ var Routes = []Route{
 	{Method: "GET", Path: "/api/htmx/dashboard/watched", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/htmx/dashboard/history", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/htmx/history/recent", Surface: SurfaceHTMX},
+	{Method: "GET", Path: "/api/htmx/history/today-updates", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/htmx/dashboard/feedback", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/htmx/public/:user_id/wish", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/htmx/public/:user_id/watched", Surface: SurfaceHTMX},

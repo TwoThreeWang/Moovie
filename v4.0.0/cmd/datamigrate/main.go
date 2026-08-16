@@ -35,6 +35,7 @@ type report struct {
 	SourceDatabase string                   `json:"source_database"`
 	TargetDatabase string                   `json:"target_database"`
 	Schema         string                   `json:"schema"`
+	SkippedTables  []string                 `json:"skipped_tables,omitempty"`
 	Blockers       []string                 `json:"apply_blockers,omitempty"`
 	Inspection     datamigrate.Inspection   `json:"inspection"`
 	ApplyResult    *datamigrate.ApplyResult `json:"apply_result,omitempty"`
@@ -47,6 +48,7 @@ func main() {
 	sourceEnv := flag.String("source-env", "", "包含旧库配置的本地 .env；设置后覆盖 -source")
 	targetEnv := flag.String("target-env", "", "包含新库配置的本地 .env；设置后覆盖 -target")
 	schema := flag.String("schema", "public", "要迁移的数据库 schema")
+	skipTables := flag.String("skip-tables", "", "跳过的表，逗号分隔；这些表应已由 scripts/bulkcopy.sh 流式搬运完成")
 	apply := flag.Bool("apply", false, "写入目标库；默认仅执行只读 dry-run")
 	confirmSource := flag.String("confirm-source", "", "apply 时必须明确填写 moovie")
 	confirmTarget := flag.String("confirm-target", "", "apply 时必须明确填写 moovie_v2")
@@ -134,7 +136,9 @@ func main() {
 		fatalf("另一个 datamigrate 正在使用当前目标库")
 	}
 
-	importer := datamigrate.Importer{Schema: *schema, Source: sourceTx, Target: targetTx, Specs: datamigrate.DefaultTables}
+	skipped := splitTables(*skipTables)
+	importer := datamigrate.Importer{Schema: *schema, Source: sourceTx, Target: targetTx,
+		Specs: datamigrate.TablesExcept(skipped)}
 	inspection, err := importer.Inspect(ctx)
 	if err != nil {
 		fatalf("生成迁移计划失败: %v", err)
@@ -146,6 +150,7 @@ func main() {
 		SourceDatabase: sourceConfig.Database,
 		TargetDatabase: targetConfig.Database,
 		Schema:         schemaName(*schema),
+		SkippedTables:  skipped,
 		Inspection:     inspection,
 	}
 
@@ -271,6 +276,18 @@ func modeName(apply bool) string {
 		return "apply"
 	}
 	return "dry-run"
+}
+
+// splitTables 解析 -skip-tables。返回 nil 而不是空切片，报告里的
+// skipped_tables 才会因 omitempty 被整个省略。
+func splitTables(value string) []string {
+	var names []string
+	for _, name := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	return names
 }
 
 func sameDatabase(first, second *pgx.ConnConfig) bool {

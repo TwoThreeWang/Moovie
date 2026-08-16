@@ -37,6 +37,29 @@ var DefaultTables = []TableSpec{
 	{Table: "danmakus", Keys: []string{"id"}},
 }
 
+// TablesExcept 返回去掉指定表后的迁移清单，用于把超大表分流给
+// scripts/bulkcopy.sh 的流式 COPY 处理。Inspect 会把整表读进内存做 diff，
+// 几百万行的表在小内存机器上必然 OOM；分流后本工具只处理小表和 canonical 回填。
+//
+// 被排除的表仍会被 canonical 回填读取——回填从源库直接取数（见 canonical.go
+// 的 loadSourceResources），不依赖本清单，所以排除不会让回填结果缺失。
+func TablesExcept(excluded []string) []TableSpec {
+	if len(excluded) == 0 {
+		return DefaultTables
+	}
+	skip := make(map[string]bool, len(excluded))
+	for _, name := range excluded {
+		skip[name] = true
+	}
+	kept := make([]TableSpec, 0, len(DefaultTables))
+	for _, spec := range DefaultTables {
+		if !skip[spec.Table] {
+			kept = append(kept, spec)
+		}
+	}
+	return kept
+}
+
 // SequenceTables 列出复制了显式 id 的表。复制后必须把序列推到 MAX(id)，
 // 否则新库后续 INSERT 会撞上已占用的主键。
 var SequenceTables = []string{

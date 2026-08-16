@@ -16,7 +16,7 @@ services:
       - HTTPS_PROXY=socks5://cloudflare-warp:1080
       - ALL_PROXY=socks5://cloudflare-warp:1080
       # 排除本地和内部服务（danmu-api 必须排除，否则弹幕请求会绕道 WARP 出国再回来）
-      - NO_PROXY=localhost,127.0.0.1,postgres,danmu-api
+      - NO_PROXY=localhost,127.0.0.1,postgres,danmu-api,ollama
     restart: unless-stopped
     networks:
       - postgres_default
@@ -54,6 +54,8 @@ services:
       - HTTP_PROXY=socks5://cloudflare-warp:1080
       - HTTPS_PROXY=socks5://cloudflare-warp:1080
       - ALL_PROXY=socks5://cloudflare-warp:1080
+      # 排除本地和内部服务（danmu-api 必须排除，否则弹幕请求会绕道 WARP 出国再回来）
+      - NO_PROXY=localhost,127.0.0.1,postgres,danmu-api,ollama
     volumes:
       - ./danmu-cache:/app/.cache
     restart: unless-stopped

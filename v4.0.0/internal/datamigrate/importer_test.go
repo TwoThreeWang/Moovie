@@ -102,6 +102,24 @@ func TestDefaultTablesExcludeDerivedAndOperationalTables(t *testing.T) {
 	}
 }
 
+func TestTablesExceptRemovesOnlyNamedTables(t *testing.T) {
+	kept := TablesExcept([]string{"vod_items", "search_logs"})
+	if len(kept) != len(DefaultTables)-2 {
+		t.Fatalf("kept = %d, want %d", len(kept), len(DefaultTables)-2)
+	}
+	for _, spec := range kept {
+		if spec.Table == "vod_items" || spec.Table == "search_logs" {
+			t.Fatalf("%s 仍在清单中", spec.Table)
+		}
+	}
+	if len(TablesExcept(nil)) != len(DefaultTables) {
+		t.Fatal("空排除列表必须返回完整清单")
+	}
+	if len(TablesExcept([]string{"not_a_table"})) != len(DefaultTables) {
+		t.Fatal("未知表名不应删除任何条目")
+	}
+}
+
 // 假 Querier，只记录最后一次 Exec 的语句和参数。
 type recordingQuerier struct {
 	statement string

@@ -3,7 +3,7 @@ services:
     build:
       context: .
     image: moovie-v4:local
-    container_name: moovie-web
+    container_name: moovie-new-web
     env_file:
       - .env
     environment:
@@ -17,7 +17,7 @@ services:
       HTTP_PROXY: socks5://cloudflare-warp:1080
       HTTPS_PROXY: socks5://cloudflare-warp:1080
       ALL_PROXY: socks5://cloudflare-warp:1080
-      NO_PROXY: localhost,127.0.0.1,postgres,danmu-api
+      NO_PROXY: localhost,127.0.0.1,postgres,danmu-api,ollama
     ports:
       - "5008:5008"
     restart: unless-stopped
@@ -48,8 +48,11 @@ services:
     build:
       context: .
     image: moovie-v4:local
-    container_name: moovie-worker
+    container_name: moovie-new-worker
     entrypoint: ["./moovie-worker"]
+    # Dockerfile 的 HEALTHCHECK 探测 5008，worker 不监听端口，不关掉会永远 unhealthy。
+    healthcheck:
+      disable: true
     env_file:
       - .env
     environment:
@@ -62,7 +65,7 @@ services:
       HTTP_PROXY: socks5://cloudflare-warp:1080
       HTTPS_PROXY: socks5://cloudflare-warp:1080
       ALL_PROXY: socks5://cloudflare-warp:1080
-      NO_PROXY: localhost,127.0.0.1,postgres,danmu-api
+      NO_PROXY: localhost,127.0.0.1,postgres,danmu-api,ollama
     restart: unless-stopped
     stop_grace_period: 20s
     mem_limit: "${WORKER_MEMORY_LIMIT:-512m}"
@@ -104,6 +107,8 @@ services:
       - HTTP_PROXY=socks5://cloudflare-warp:1080
       - HTTPS_PROXY=socks5://cloudflare-warp:1080
       - ALL_PROXY=socks5://cloudflare-warp:1080
+      - NO_PROXY=localhost,127.0.0.1,postgres,danmu-api,ollama
+
     volumes:
       - ./danmu-cache:/app/.cache
     restart: unless-stopped
