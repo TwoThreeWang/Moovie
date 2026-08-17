@@ -198,8 +198,8 @@ func positiveID(value string) (int, error) {
 }
 
 func validType(value string) bool {
-	// 系统告警只能由 operations 服务创建。即使共享持久化层接受该类型，
-	// 它也不是允许普通用户提交的公开反馈类型。
+	// 系统告警已不再写入反馈，仅保留历史数据。持久化层与 CHECK 约束仍接受该类型，
+	// 但它不是允许提交的公开反馈类型。
 	return value == TypeBug || value == TypeRequest || value == TypeSuggestion || value == TypeDMCA
 }
 

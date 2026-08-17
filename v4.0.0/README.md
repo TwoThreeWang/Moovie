@@ -235,7 +235,7 @@ internal/
   doubanpopular/    豆瓣热门数据 Provider
   report/           月度观影报告和公开报告页
   social/           片场、短评、点赞和回复
-  feedback/         用户反馈和系统告警
+  feedback/         用户反馈
   danmaku/          弹幕读取和发送
   admin/            后台管理页面、匹配复核和数据操作
   operations/       指标和运维检查

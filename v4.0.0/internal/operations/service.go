@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TwoThreeWang/Moovie/new/internal/feedback"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
@@ -20,7 +19,6 @@ const (
 	jobCleanupBatchSize       = 1000
 	siteAlertMinSamples       = 5
 	siteAlertCooldown         = 24 * time.Hour
-	SiteAlertFeedbackType     = feedback.TypeSystemAlert
 	TaskCleanup               = "operations_cleanup"
 	TaskHealthCheck           = "site_health_check"
 )
@@ -35,9 +33,8 @@ type Store interface {
 }
 
 type Service struct {
-	store    Store
-	feedback feedback.Store
-	now      func() time.Time
+	store Store
+	now   func() time.Time
 
 	mu         sync.Mutex
 	lastAlert  map[string]time.Time
@@ -50,9 +47,9 @@ func WithJobQueueCleanup(cleanup func(context.Context, time.Time, time.Time, int
 	return func(service *Service) { service.jobCleanup = cleanup }
 }
 
-func NewService(store Store, feedbackStore feedback.Store, options ...ServiceOption) *Service {
+func NewService(store Store, options ...ServiceOption) *Service {
 	service := &Service{
-		store: store, feedback: feedbackStore, now: time.Now, lastAlert: make(map[string]time.Time),
+		store: store, now: time.Now, lastAlert: make(map[string]time.Time),
 	}
 	for _, option := range options {
 		option(service)
@@ -118,11 +115,12 @@ func (service *Service) HandleHealthCheck(ctx context.Context, _ workqueue.Job) 
 		if !service.shouldAlert(site.Key) {
 			continue
 		}
-		content := fmt.Sprintf("采集站点 %s 最近 1 小时异常：%s。样本 %d 次，平均耗时 %dms。", site.Key, reason, summary.Total(), summary.AvgMs())
-		if _, err := service.feedback.Create(ctx, feedback.Feedback{Type: SiteAlertFeedbackType, Content: content}); err != nil {
-			slog.Error("create site health alert", "site_key", site.Key, "error", err)
-			return err
-		}
+		slog.Warn("site health alert",
+			"site_key", site.Key,
+			"reason", reason,
+			"samples", summary.Total(),
+			"avg_ms", summary.AvgMs(),
+		)
 	}
 	return nil
 }

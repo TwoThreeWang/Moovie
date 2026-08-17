@@ -216,7 +216,7 @@ func main() {
 	if databasePool != nil {
 		metricsStore = operations.NewMetricsStore(databasePool)
 	}
-	operationsService := operations.NewService(operationsStore, feedbackStore,
+	operationsService := operations.NewService(operationsStore,
 		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs))
 	tmdbProvider := catalog.NewTMDBProvider(sourceClient, catalogStore, cfg.Catalog.TMDBToken, tmdbOptions...)
 	embeddingService := catalog.NewEmbeddingService(sourceClient, catalogStore, catalog.EmbeddingConfig{

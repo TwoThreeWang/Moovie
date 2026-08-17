@@ -10,7 +10,6 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 	"github.com/TwoThreeWang/Moovie/new/internal/douban"
-	"github.com/TwoThreeWang/Moovie/new/internal/feedback"
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
@@ -69,7 +68,6 @@ func main() {
 	movies := catalog.NewPostgresStore(pool)
 	mediaStore := mediaidentity.NewPostgresStore(pool)
 	searchStore := search.NewPostgresStore(pool)
-	feedbackStore := feedback.NewPostgresStore(pool)
 	// 外部 Provider 复用同一个有界 Client，防止任务高峰为每个来源无限创建连接。
 	client := outbound.NewClient(cfg.Search.SourceTimeout, cfg.OutboundMaxConnsPerHost)
 	defer client.CloseIdleConnections()
@@ -110,7 +108,7 @@ func main() {
 	syncService := douban.NewService(douban.NewClient(client), libraryStore, jobs)
 	reportService := report.NewService(reports, libraryStore, movies)
 	doubanHandler := douban.NewTaskHandler(jobs, users, syncService, douban.WithMonthlyGenerator(reportService))
-	operationsService := operations.NewService(searchStore, feedbackStore,
+	operationsService := operations.NewService(searchStore,
 		operations.WithJobQueueCleanup(operations.NewMetricsStore(pool).DeleteExpiredJobs))
 	dispatcher := workqueue.NewDispatcher(queueStore, cfg.Worker.Concurrency, cfg.Worker.Poll)
 	for _, taskType := range []string{catalog.RefreshProviderDouban, catalog.RefreshProviderReviews, catalog.RefreshProviderTMDB, catalog.RefreshProviderEmbedding} {

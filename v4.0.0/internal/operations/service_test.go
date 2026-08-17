@@ -1,7 +1,9 @@
 package operations
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +12,15 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
+
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buffer := &bytes.Buffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buffer, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return buffer
+}
 
 func TestHealthAlertsPreserveThresholdPrecedenceAndCooldown(t *testing.T) {
 	store := search.NewMemoryStore()
@@ -21,22 +32,18 @@ func TestHealthAlertsPreserveThresholdPrecedenceAndCooldown(t *testing.T) {
 		{SiteKey: "small", Bucket: now, ErrorCount: 4, TotalMs: 40},
 	})
 	feedbackStore := feedback.NewMemoryStore()
-	service := NewService(store, feedbackStore)
+	logs := captureLogs(t)
+	service := NewService(store)
 	service.now = func() time.Time { return now }
 	_ = service.HandleHealthCheck(context.Background(), workqueue.Job{})
 	_ = service.HandleHealthCheck(context.Background(), workqueue.Job{})
-	records, _ := feedbackStore.ListAdmin(t.Context(), "", 10, 0)
-	if len(records) != 2 {
-		t.Fatalf("alerts = %+v", records)
+	if alerts := strings.Count(logs.String(), "site health alert"); alerts != 2 {
+		t.Fatalf("alerts = %d, logs = %s", alerts, logs.String())
 	}
-	for _, record := range records {
-		if record.Type != feedback.TypeSystemAlert {
-			t.Fatalf("alert type = %q", record.Type)
-		}
-	}
-	contents := records[0].Content + "\n" + records[1].Content
-	if !strings.Contains(contents, "empty 最近 1 小时异常：空返回率高达 99%") || !strings.Contains(contents, "down 最近 1 小时异常：成功率为 0%") || strings.Contains(contents, "small") {
-		t.Fatalf("alert contents = %s", contents)
+	if !strings.Contains(logs.String(), `site_key=empty`) || !strings.Contains(logs.String(), "空返回率高达 99%") ||
+		!strings.Contains(logs.String(), `site_key=down`) || !strings.Contains(logs.String(), "成功率为 0%") ||
+		strings.Contains(logs.String(), `site_key=small`) {
+		t.Fatalf("alert logs = %s", logs.String())
 	}
 	now = now.Add(siteAlertCooldown + time.Second)
 	_ = store.AddHealthStats(t.Context(), []search.HealthStat{
@@ -44,8 +51,11 @@ func TestHealthAlertsPreserveThresholdPrecedenceAndCooldown(t *testing.T) {
 		{SiteKey: "down", Bucket: now, EmptyCount: 98, ErrorCount: 2, TotalMs: 500},
 	})
 	_ = service.HandleHealthCheck(context.Background(), workqueue.Job{})
-	if count, _ := feedbackStore.CountPending(t.Context()); count != 4 {
-		t.Fatalf("alerts after cooldown = %d", count)
+	if alerts := strings.Count(logs.String(), "site health alert"); alerts != 4 {
+		t.Fatalf("alerts after cooldown = %d", alerts)
+	}
+	if count, _ := feedbackStore.CountPending(t.Context()); count != 0 {
+		t.Fatalf("health check must not write feedback, got %d", count)
 	}
 }
 
@@ -53,7 +63,7 @@ func TestCleanupUsesRetentionWindows(t *testing.T) {
 	store := &recordingStore{}
 	var completedBefore, failedBefore time.Time
 	var cleanupLimit int
-	service := NewService(store, feedback.NewMemoryStore(), WithJobQueueCleanup(func(_ context.Context, completed, failed time.Time, limit int) (int, error) {
+	service := NewService(store, WithJobQueueCleanup(func(_ context.Context, completed, failed time.Time, limit int) (int, error) {
 		completedBefore, failedBefore, cleanupLimit = completed, failed, limit
 		return 0, nil
 	}))
