@@ -195,9 +195,11 @@ func main() {
 	searchHealth := search.NewHealthWithStore(cfg.Search.BreakerEnabled, healthStatStore)
 	searchHealth.Start()
 	sourceClient := outbound.NewClient(cfg.Search.SourceTimeout, cfg.OutboundMaxConnsPerHost)
+	// AI Gateway 单独一个 Client：LLM 的响应时间和搜索源不在一个量级，共用超时会让语义改写全部超时。
+	aiClient := outbound.NewClient(cfg.Catalog.AITimeout, 4)
 	sourceCrawler := search.NewAppleCMSCrawler(sourceClient)
 	doubanOptions := []catalog.DoubanOption{}
-	tmdbOptions := []catalog.TMDBOption{}
+	tmdbOptions := []catalog.TMDBOption{catalog.WithTMDBIMDbLookupInterval(cfg.Catalog.IMDbLookupInterval)}
 	if canonicalStore != nil {
 		doubanOptions = append(doubanOptions, catalog.WithDoubanCanonicalWriter(canonicalStore))
 		tmdbOptions = append(tmdbOptions, catalog.WithTMDBCanonicalWriter(canonicalStore))
@@ -221,7 +223,7 @@ func main() {
 		OllamaHost: cfg.Catalog.OllamaHost, OllamaModel: cfg.Catalog.OllamaModel,
 		CFGatewayURL: cfg.Catalog.CFGatewayURL, CFAPIToken: cfg.Catalog.CFAPIToken,
 		CFAIModel: cfg.Catalog.CFAIModel,
-	})
+	}, catalog.WithEmbeddingAIClient(aiClient))
 	var metadataRefreshHandler *catalog.RefreshHandler
 	if metadataRefreshJobs != nil {
 		refreshOptions := []catalog.RefreshHandlerOption{catalog.WithRefreshReviews(doubanProvider)}

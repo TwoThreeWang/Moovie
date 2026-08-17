@@ -28,6 +28,7 @@ type Job struct {
 	Priority       int
 	AttemptCount   int
 	MaxAttempts    int
+	ThrottleCount  int
 	AvailableAt    time.Time
 	LockedBy       string
 	LockedUntil    *time.Time
@@ -57,7 +58,7 @@ type Store interface {
 	Enqueue(ctx context.Context, spec Spec) (int, error)
 	Claim(ctx context.Context, lease time.Duration) (*Job, error)
 	Complete(ctx context.Context, jobID int) error
-	Fail(ctx context.Context, job Job, message string) error
+	Fail(ctx context.Context, job Job, failure Failure) error
 	Recover(ctx context.Context, before time.Time) error
 	UpdateProgress(ctx context.Context, jobID, total, done, failed int, cursor string) error
 	Get(ctx context.Context, jobID int) (*Job, error)
@@ -73,7 +74,7 @@ func NewPostgresStore(executor database.Executor) *PostgresStore {
 }
 
 const jobColumns = `id, task_type, subject_key, payload, reason, COALESCE(requested_by, 0), status,
-priority, attempt_count, max_attempts, available_at, locked_by, locked_until, started_at, finished_at,
+priority, attempt_count, max_attempts, throttle_count, available_at, locked_by, locked_until, started_at, finished_at,
 progress_total, progress_done, progress_failed, progress_cursor, error_message, created_at, updated_at`
 
 func (store *PostgresStore) Enqueue(ctx context.Context, spec Spec) (int, error) {
@@ -147,16 +148,34 @@ WHERE id = $1 AND status = 'running'`, jobID)
 	return err
 }
 
-func (store *PostgresStore) Fail(ctx context.Context, job Job, message string) error {
+// Fail 按失败类型收尾。三条分支的差别是刻意的：
+//   - 终止错误直接判死，不浪费四次退避去重试一个不存在的条目；
+//   - 限流退还本次 attempt（Claim 时已 +1），改用秒级退避，另由 throttle_count 兜底；
+//   - 其余错误维持原来的 15 分钟 / 1 小时 / 6 小时 / 24 小时阶梯。
+//
+// SQL 里 CASE 右侧读到的都是本次 UPDATE 之前的旧值，所以 attempt_count 仍是 Claim 后的计数，
+// 而 throttle_count 需要手动 +1 才是本次的次数。
+func (store *PostgresStore) Fail(ctx context.Context, job Job, failure Failure) error {
+	throttled := failure.Outcome == OutcomeThrottled
+	terminal := failure.Outcome == OutcomeTerminal
 	_, err := store.database.Exec(ctx, `UPDATE worker_jobs SET
-status = CASE WHEN attempt_count >= max_attempts THEN 'failed' ELSE 'pending' END,
-available_at = CASE attempt_count WHEN 1 THEN NOW() + INTERVAL '15 minutes'
-    WHEN 2 THEN NOW() + INTERVAL '1 hour' WHEN 3 THEN NOW() + INTERVAL '6 hours'
+attempt_count = CASE WHEN $3 THEN GREATEST(attempt_count - 1, 0) ELSE attempt_count END,
+throttle_count = CASE WHEN $3 THEN throttle_count + 1 ELSE throttle_count END,
+status = CASE WHEN $4 THEN 'failed'
+    WHEN $3 THEN CASE WHEN throttle_count + 1 >= $6::int THEN 'failed' ELSE 'pending' END
+    WHEN attempt_count >= max_attempts THEN 'failed' ELSE 'pending' END,
+available_at = CASE WHEN $5::double precision > 0 THEN NOW() + INTERVAL '1 second' * $5::double precision
+    WHEN $3 THEN NOW() + INTERVAL '30 seconds'
+    WHEN attempt_count = 1 THEN NOW() + INTERVAL '15 minutes'
+    WHEN attempt_count = 2 THEN NOW() + INTERVAL '1 hour'
+    WHEN attempt_count = 3 THEN NOW() + INTERVAL '6 hours'
     ELSE NOW() + INTERVAL '24 hours' END,
 locked_by = '', locked_until = NULL,
-finished_at = CASE WHEN attempt_count >= max_attempts THEN NOW() ELSE NULL END,
+finished_at = CASE WHEN $4 OR ($3 AND throttle_count + 1 >= $6::int)
+    OR (NOT $3 AND attempt_count >= max_attempts) THEN NOW() ELSE NULL END,
 error_message = $2, updated_at = NOW()
-WHERE id = $1 AND status = 'running'`, job.ID, message)
+WHERE id = $1 AND status = 'running'`,
+		job.ID, failure.Message, throttled, terminal, failure.RetryAfter.Seconds(), maxThrottleAttempts)
 	return err
 }
 
@@ -225,7 +244,8 @@ ORDER BY id ASC LIMIT $4`, taskType, status, nullableTime(before), limit)
 
 func (store *PostgresStore) Reset(ctx context.Context, jobID int) error {
 	_, err := store.database.Exec(ctx, `UPDATE worker_jobs SET status='pending', available_at=NOW(),
-locked_by='', locked_until=NULL, started_at=NULL, finished_at=NULL, error_message='', updated_at=NOW()
+locked_by='', locked_until=NULL, started_at=NULL, finished_at=NULL, error_message='',
+throttle_count=0, updated_at=NOW()
 WHERE id=$1 AND status='failed'`, jobID)
 	return err
 }
@@ -233,7 +253,7 @@ WHERE id=$1 AND status='failed'`, jobID)
 func scanJob(row interface{ Scan(...any) error }) (Job, error) {
 	var job Job
 	err := row.Scan(&job.ID, &job.TaskType, &job.SubjectKey, &job.Payload, &job.Reason, &job.RequestedBy,
-		&job.Status, &job.Priority, &job.AttemptCount, &job.MaxAttempts, &job.AvailableAt, &job.LockedBy,
+		&job.Status, &job.Priority, &job.AttemptCount, &job.MaxAttempts, &job.ThrottleCount, &job.AvailableAt, &job.LockedBy,
 		&job.LockedUntil, &job.StartedAt, &job.FinishedAt, &job.ProgressTotal, &job.ProgressDone,
 		&job.ProgressFailed, &job.ProgressCursor, &job.ErrorMessage, &job.CreatedAt, &job.UpdatedAt)
 	return job, err
@@ -306,12 +326,41 @@ func (store *MemoryStore) Claim(_ context.Context, lease time.Duration) (*Job, e
 func (store *MemoryStore) Complete(_ context.Context, jobID int) error {
 	return store.finish(jobID, StatusCompleted, "")
 }
-func (store *MemoryStore) Fail(_ context.Context, job Job, message string) error {
-	status := StatusPending
-	if job.AttemptCount >= job.MaxAttempts {
-		status = StatusFailed
+func (store *MemoryStore) Fail(_ context.Context, job Job, failure Failure) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	now := time.Now()
+	for index := range store.jobs {
+		target := &store.jobs[index]
+		if target.ID != job.ID {
+			continue
+		}
+		status := StatusPending
+		switch failure.Outcome {
+		case OutcomeTerminal:
+			status = StatusFailed
+		case OutcomeThrottled:
+			// 与 Postgres 实现保持一致：退还 attempt，另用 throttle_count 兜底。
+			target.AttemptCount = max(target.AttemptCount-1, 0)
+			target.ThrottleCount++
+			if target.ThrottleCount >= maxThrottleAttempts {
+				status = StatusFailed
+			}
+		default:
+			if target.AttemptCount >= target.MaxAttempts {
+				status = StatusFailed
+			}
+		}
+		if failure.RetryAfter > 0 {
+			target.AvailableAt = now.Add(failure.RetryAfter)
+		}
+		target.Status, target.ErrorMessage, target.UpdatedAt = status, failure.Message, now
+		if status != StatusPending {
+			target.FinishedAt = &now
+		}
+		return nil
 	}
-	return store.finish(job.ID, status, message)
+	return nil
 }
 func (store *MemoryStore) Recover(_ context.Context, before time.Time) error {
 	store.mu.Lock()
@@ -382,6 +431,7 @@ func (store *MemoryStore) Reset(_ context.Context, jobID int) error {
 			store.jobs[index].Status = StatusPending
 			store.jobs[index].AvailableAt = time.Now()
 			store.jobs[index].ErrorMessage = ""
+			store.jobs[index].ThrottleCount = 0
 		}
 	}
 	return nil

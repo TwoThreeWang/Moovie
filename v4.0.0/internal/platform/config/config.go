@@ -62,6 +62,12 @@ type CatalogConfig struct {
 	CFGatewayURL string
 	CFAPIToken   string
 	CFAIModel    string
+	// AITimeout 单独给 AI Gateway 用。一次非流式 chat completion 动辄几十秒，
+	// 沿用搜索源的秒级超时会让语义改写必然失败。
+	AITimeout time.Duration
+	// IMDbLookupInterval 是 wmdb 豆瓣→IMDb 映射查询的最小发送间隔。
+	// 这是个免费接口，多 worker 并发不配速会被整片 429。
+	IMDbLookupInterval time.Duration
 }
 
 // DanmakuConfig 保存可选弹幕服务地址；为空时弹幕能力安全降级。
@@ -215,6 +221,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	catalogAITimeoutSeconds, err := positiveIntEnv("CATALOG_AI_TIMEOUT_SECONDS", 90)
+	if err != nil {
+		return Config{}, err
+	}
+	imdbLookupIntervalMilliseconds, err := positiveIntEnv("IMDB_LOOKUP_INTERVAL_MS", 1200)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		Env:             appEnv,
@@ -266,6 +280,9 @@ func Load() (Config, error) {
 			CFGatewayURL: strings.TrimRight(env("CF_GATEWAY_URL", ""), "/"),
 			CFAPIToken:   env("CF_API_TOKEN", ""),
 			CFAIModel:    env("CF_AI_MODEL", "custom-alibaba-coding/kimi-k2.5"),
+
+			AITimeout:          time.Duration(catalogAITimeoutSeconds) * time.Second,
+			IMDbLookupInterval: time.Duration(imdbLookupIntervalMilliseconds) * time.Millisecond,
 		},
 		Danmaku: DanmakuConfig{APIBase: strings.TrimRight(env("DANMU_API_BASE", ""), "/")},
 		Database: DatabaseConfig{
@@ -319,6 +336,12 @@ func (c Config) Validate() error {
 	}
 	if c.OutboundMaxConnsPerHost > 128 {
 		return errors.New("OUTBOUND_MAX_CONNS_PER_HOST must not exceed 128")
+	}
+	if c.Catalog.AITimeout > 10*time.Minute {
+		return errors.New("CATALOG_AI_TIMEOUT_SECONDS must not exceed 600")
+	}
+	if c.Catalog.IMDbLookupInterval > time.Minute {
+		return errors.New("IMDB_LOOKUP_INTERVAL_MS must not exceed 60000")
 	}
 	if c.Database.MaxConns > 100 {
 		return errors.New("DB_MAX_CONNS must not exceed 100")

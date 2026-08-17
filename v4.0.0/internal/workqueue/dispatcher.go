@@ -145,7 +145,9 @@ func (dispatcher *Dispatcher) worker(ctx context.Context, workerID int) {
 func (dispatcher *Dispatcher) execute(ctx context.Context, workerID int, job Job) {
 	entry, ok := dispatcher.handlers[job.TaskType]
 	if !ok {
-		entry = handlerEntry{timeout: time.Minute, run: func(context.Context, Job) error { return fmt.Errorf("unsupported task type %q", job.TaskType) }}
+		entry = handlerEntry{timeout: time.Minute, run: func(context.Context, Job) error {
+			return Terminal(fmt.Errorf("unsupported task type %q", job.TaskType))
+		}}
 	}
 	jobCtx, cancel := context.WithTimeout(ctx, entry.timeout)
 	started := time.Now()
@@ -153,10 +155,23 @@ func (dispatcher *Dispatcher) execute(ctx context.Context, workerID int, job Job
 	cancel()
 	terminalCtx := context.WithoutCancel(ctx)
 	if err != nil {
-		if finishErr := dispatcher.store.Fail(terminalCtx, job, err.Error()); finishErr != nil {
+		failure := Classify(err)
+		if failure.Outcome == OutcomeThrottled && failure.RetryAfter <= 0 {
+			failure.RetryAfter = ThrottleBackoff(job.ThrottleCount)
+		}
+		if finishErr := dispatcher.store.Fail(terminalCtx, job, failure); finishErr != nil {
 			dispatcher.logger.Error("fail worker job", "job_id", job.ID, "error", finishErr)
 		}
-		dispatcher.logger.Error("worker job failed", "worker", workerID, "job_id", job.ID, "task_type", job.TaskType, "duration_ms", time.Since(started).Milliseconds(), "error", err)
+		// 限流是上游状态而不是任务缺陷，用 WARN 记录，避免刷掉真正需要排查的 ERROR。
+		if failure.Outcome == OutcomeThrottled {
+			dispatcher.logger.Warn("worker job throttled", "worker", workerID, "job_id", job.ID,
+				"task_type", job.TaskType, "duration_ms", time.Since(started).Milliseconds(),
+				"throttle_count", job.ThrottleCount+1, "retry_in", failure.RetryAfter, "error", err)
+			return
+		}
+		dispatcher.logger.Error("worker job failed", "worker", workerID, "job_id", job.ID,
+			"task_type", job.TaskType, "duration_ms", time.Since(started).Milliseconds(),
+			"terminal", failure.Outcome == OutcomeTerminal, "error", err)
 		return
 	}
 	if err := dispatcher.store.Complete(terminalCtx, job.ID); err != nil {

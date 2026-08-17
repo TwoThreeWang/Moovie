@@ -17,7 +17,7 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		versions = append(versions, migration.version)
 	}
-	if !reflect.DeepEqual(versions, []string{"0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0036", "0037"}) {
+	if !reflect.DeepEqual(versions, []string{"0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0036", "0037", "0038"}) {
 		t.Fatalf("migrations = %+v", migrations)
 	}
 	upperSQL := ""
@@ -34,6 +34,10 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	}
 	if !strings.Contains(upperSQL, "ADD COLUMN ATTEMPT_COUNT") {
 		t.Fatal("Douban job migration does not track claim attempts")
+	}
+	// 限流重试必须独立计数，否则退还 attempt 之后就没有兜底上限了。
+	if !strings.Contains(upperSQL, "ADD COLUMN THROTTLE_COUNT") {
+		t.Fatal("worker queue migration does not track throttled retries separately")
 	}
 	for _, required := range []string{"ADD COLUMN IF NOT EXISTS EXTERNAL_TYPE", "(PROVIDER, EXTERNAL_TYPE, EXTERNAL_ID)", "(MEDIA_ID, PROVIDER, EXTERNAL_TYPE)"} {
 		if !strings.Contains(upperSQL, required) {

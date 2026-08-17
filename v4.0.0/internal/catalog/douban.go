@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/doubanpopular"
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -171,19 +173,19 @@ type rexxarMovie struct {
 
 func (provider *DoubanProvider) Fetch(ctx context.Context, doubanID string, _ bool) error {
 	if !validDoubanID(doubanID) {
-		return fmt.Errorf("invalid Douban ID %q", doubanID)
+		return workqueue.Terminal(fmt.Errorf("invalid Douban ID %q", doubanID))
 	}
 	_, err, _ := provider.group.Do("movie:"+doubanID, func() (any, error) {
-		var lastError error
+		var attempts mediaTypeAttempts
 		for _, mediaType := range []string{"movie", "tv", "show"} {
 			endpoint := fmt.Sprintf("%s/rexxar/api/v2/%s/%s?ck=&for_mobile=1", strings.TrimRight(provider.base, "/"), mediaType, url.PathEscape(doubanID))
 			var response rexxarMovie
 			if err := provider.getJSON(ctx, endpoint, "https://m.douban.com/", &response); err != nil {
-				lastError = err
+				attempts.add(mediaType, err)
 				continue
 			}
 			if response.ID == "" || response.Title == "" {
-				lastError = fmt.Errorf("empty %s response", mediaType)
+				attempts.add(mediaType, errors.New("empty response"))
 				continue
 			}
 			movie := mapRexxarMovie(response)
@@ -205,17 +207,17 @@ func (provider *DoubanProvider) Fetch(ctx context.Context, doubanID string, _ bo
 			}
 			return nil, nil
 		}
-		return nil, fmt.Errorf("fetch Douban movie %s: %w", doubanID, lastError)
+		return nil, attempts.err("fetch Douban movie " + doubanID)
 	})
 	return err
 }
 
 func (provider *DoubanProvider) FetchReviews(ctx context.Context, doubanID string) error {
 	if !validDoubanID(doubanID) {
-		return fmt.Errorf("invalid Douban ID %q", doubanID)
+		return workqueue.Terminal(fmt.Errorf("invalid Douban ID %q", doubanID))
 	}
 	_, err, _ := provider.group.Do("reviews:"+doubanID, func() (any, error) {
-		var lastError error
+		var attempts mediaTypeAttempts
 		for _, mediaType := range []string{"movie", "tv", "show"} {
 			endpoint := fmt.Sprintf("%s/rexxar/api/v2/%s/%s/interests?count=10&order_by=hot&anony=0&start=0&ck=&for_mobile=1", strings.TrimRight(provider.base, "/"), mediaType, url.PathEscape(doubanID))
 			var response struct {
@@ -229,7 +231,7 @@ func (provider *DoubanProvider) FetchReviews(ctx context.Context, doubanID strin
 				} `json:"interests"`
 			}
 			if err := provider.getJSON(ctx, endpoint, fmt.Sprintf("https://m.douban.com/movie/subject/%s/", doubanID), &response); err != nil {
-				lastError = err
+				attempts.add(mediaType, err)
 				continue
 			}
 			reviews := make([]Review, 0, len(response.Interests))
@@ -254,9 +256,45 @@ func (provider *DoubanProvider) FetchReviews(ctx context.Context, doubanID strin
 			}
 			return nil, nil
 		}
-		return nil, fmt.Errorf("fetch Douban reviews %s: %w", doubanID, lastError)
+		return nil, attempts.err("fetch Douban reviews " + doubanID)
 	})
 	return err
+}
+
+// mediaTypeAttempts 汇总 movie / tv / show 三个 rexxar 端点的失败原因。
+// 原来只保留最后一条错误，排查时信息全丢：「movie 404 但 tv 403」和「三个都 404」
+// 是完全不同的两回事，前者是媒体类型判断问题，后者是条目不存在或被风控。
+type mediaTypeAttempts struct {
+	failures []string
+	errors   []error
+}
+
+func (attempts *mediaTypeAttempts) add(mediaType string, err error) {
+	attempts.failures = append(attempts.failures, mediaType+": "+err.Error())
+	attempts.errors = append(attempts.errors, err)
+}
+
+// err 汇总所有端点的失败，并在全部返回 404 时判定为终止错误——
+// 条目在三种媒体类型下都不存在，退避 24 小时再试也不会变出来。
+func (attempts *mediaTypeAttempts) err(action string) error {
+	if len(attempts.errors) == 0 {
+		return fmt.Errorf("%s: no endpoint attempted", action)
+	}
+	combined := fmt.Errorf("%s: %s", action, strings.Join(attempts.failures, "; "))
+	allNotFound := true
+	for _, err := range attempts.errors {
+		if status, ok := upstreamStatus(err); !ok || status != http.StatusNotFound {
+			allNotFound = false
+		}
+		// 任何一个端点报限流，整体就按限流处理：这一轮的结论不可信。
+		if retryAfter, throttled := workqueue.RetryAfter(err); throttled {
+			return workqueue.Throttled(combined, retryAfter)
+		}
+	}
+	if allNotFound {
+		return workqueue.Terminal(combined)
+	}
+	return combined
 }
 
 func (provider *DoubanProvider) Suggest(ctx context.Context, keyword string) ([]Suggestion, error) {
@@ -327,7 +365,7 @@ func (provider *DoubanProvider) getJSON(ctx context.Context, endpoint, referer s
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("Douban returned HTTP %d", response.StatusCode)
+		return classifyUpstreamStatus("Douban", response)
 	}
 	if err := json.NewDecoder(response.Body).Decode(destination); err != nil {
 		return fmt.Errorf("decode Douban response: %w", err)

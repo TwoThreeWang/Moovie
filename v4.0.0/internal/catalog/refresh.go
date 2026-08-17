@@ -24,13 +24,13 @@ type MediaRefreshQueue interface {
 
 func (store *PostgresStore) EnqueueRefresh(ctx context.Context, doubanID, provider, reason string, requestedBy int) (int, error) {
 	if !validDoubanID(doubanID) {
-		return 0, fmt.Errorf("invalid Douban ID %q", doubanID)
+		return 0, workqueue.Terminal(fmt.Errorf("invalid Douban ID %q", doubanID))
 	}
 	if provider == "" {
 		provider = RefreshProviderDouban
 	}
 	if !validRefreshProvider(provider) {
-		return 0, fmt.Errorf("invalid metadata refresh provider %q", provider)
+		return 0, workqueue.Terminal(fmt.Errorf("invalid metadata refresh provider %q", provider))
 	}
 	return workqueue.NewPostgresStore(store.database).Enqueue(ctx, workqueue.Spec{
 		TaskType: provider, SubjectKey: doubanID, Payload: map[string]string{"douban_id": doubanID},
@@ -138,7 +138,7 @@ func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) er
 	switch job.TaskType {
 	case RefreshProviderDouban:
 		if handler.fetcher == nil {
-			return fmt.Errorf("Douban metadata refresher is not configured")
+			return workqueue.Terminal(fmt.Errorf("Douban metadata refresher is not configured"))
 		}
 		if err := handler.fetcher.Fetch(ctx, doubanID, true); err != nil {
 			return err
@@ -156,21 +156,21 @@ func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) er
 		return nil
 	case RefreshProviderReviews:
 		if handler.reviews == nil {
-			return fmt.Errorf("Douban review refresher is not configured")
+			return workqueue.Terminal(fmt.Errorf("Douban review refresher is not configured"))
 		}
 		return handler.reviews.FetchReviews(ctx, doubanID)
 	case RefreshProviderTMDB:
 		if handler.backdrops == nil {
-			return fmt.Errorf("TMDB refresher is not configured")
+			return workqueue.Terminal(fmt.Errorf("TMDB refresher is not configured"))
 		}
 		return handler.backdrops.SyncBackdrops(ctx, doubanID)
 	case RefreshProviderEmbedding:
 		if handler.vectors == nil {
-			return fmt.Errorf("embedding refresher is not configured")
+			return workqueue.Terminal(fmt.Errorf("embedding refresher is not configured"))
 		}
 		return handler.vectors.Enrich(ctx, doubanID)
 	default:
-		return fmt.Errorf("unsupported metadata refresh provider %q", job.TaskType)
+		return workqueue.Terminal(fmt.Errorf("unsupported metadata refresh provider %q", job.TaskType))
 	}
 }
 

@@ -129,7 +129,7 @@ const jobQueueSQL = `WITH counts AS (
     FROM worker_jobs
 ), items AS (
     SELECT id, task_type, subject_key, reason, requested_by, status, priority,
-           attempt_count, max_attempts, available_at, locked_by, locked_until,
+           attempt_count, max_attempts, throttle_count, available_at, locked_by, locked_until,
            started_at, finished_at, progress_total, progress_done, progress_failed,
            error_message, created_at, updated_at
     FROM worker_jobs

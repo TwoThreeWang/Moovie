@@ -33,15 +33,30 @@ type EmbeddingConfig struct {
 
 type EmbeddingService struct {
 	client *http.Client
-	store  Store
-	config EmbeddingConfig
-	group  singleflight.Group
+	// aiClient 专供 AI Gateway。它必须和抓取用的 Client 分开：后者的超时是按搜索源
+	// 配的（默认 10 秒），而一次非流式 chat completion 几乎不可能在 10 秒内返回响应头，
+	// 共用等于让语义改写「必然超时」，重试三次也全是徒劳。
+	aiClient *http.Client
+	store    Store
+	config   EmbeddingConfig
+	group    singleflight.Group
 	// AI Gateway 偶发 429 和超时是常态，退避重试后才退回元数据。
 	// 单独抽成字段是为了让测试能把等待清零，不必真的睡十几秒。
 	retryDelays []time.Duration
 }
 
-func NewEmbeddingService(client *http.Client, store Store, cfg EmbeddingConfig) *EmbeddingService {
+type EmbeddingOption func(*EmbeddingService)
+
+// WithEmbeddingAIClient 指定调用 AI Gateway 的 Client，超时应当按 LLM 的响应时间配置。
+func WithEmbeddingAIClient(client *http.Client) EmbeddingOption {
+	return func(service *EmbeddingService) {
+		if client != nil {
+			service.aiClient = client
+		}
+	}
+}
+
+func NewEmbeddingService(client *http.Client, store Store, cfg EmbeddingConfig, options ...EmbeddingOption) *EmbeddingService {
 	cfg.OllamaHost = strings.TrimRight(cfg.OllamaHost, "/")
 	if cfg.OllamaHost == "" {
 		cfg.OllamaHost = "http://localhost:11434"
@@ -49,8 +64,12 @@ func NewEmbeddingService(client *http.Client, store Store, cfg EmbeddingConfig) 
 	if cfg.OllamaModel == "" {
 		cfg.OllamaModel = "quentinz/bge-base-zh-v1.5"
 	}
-	return &EmbeddingService{client: client, store: store, config: cfg,
+	service := &EmbeddingService{client: client, aiClient: client, store: store, config: cfg,
 		retryDelays: []time.Duration{3 * time.Second, 5 * time.Second, 8 * time.Second}}
+	for _, option := range options {
+		option(service)
+	}
+	return service
 }
 
 func (service *EmbeddingService) Enrich(ctx context.Context, doubanID string) error {
@@ -203,7 +222,7 @@ func (service *EmbeddingService) generateSemanticSummary(ctx context.Context, me
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := service.postJSON(ctx, service.config.CFGatewayURL+"/chat/completions",
+	if err := service.postJSON(ctx, service.aiClient, service.config.CFGatewayURL+"/chat/completions",
 		payload, &response, service.config.CFAPIToken); err != nil {
 		return "", err
 	}
@@ -246,13 +265,13 @@ func (service *EmbeddingService) generateVector(ctx context.Context, content str
 	var response struct {
 		Embedding []float32 `json:"embedding"`
 	}
-	if err := service.postJSON(ctx, service.config.OllamaHost+"/api/embeddings", payload, &response, ""); err != nil {
+	if err := service.postJSON(ctx, service.client, service.config.OllamaHost+"/api/embeddings", payload, &response, ""); err != nil {
 		return nil, fmt.Errorf("generate Ollama embedding: %w", err)
 	}
 	return response.Embedding, nil
 }
 
-func (service *EmbeddingService) postJSON(ctx context.Context, endpoint string, payload, destination any, bearerToken string) error {
+func (service *EmbeddingService) postJSON(ctx context.Context, client *http.Client, endpoint string, payload, destination any, bearerToken string) error {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
@@ -265,13 +284,16 @@ func (service *EmbeddingService) postJSON(ctx context.Context, endpoint string, 
 	if bearerToken != "" {
 		request.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
-	response, err := service.client.Do(request)
+	if client == nil {
+		client = service.client
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("upstream returned HTTP %d", response.StatusCode)
+		return classifyUpstreamStatus("upstream", response)
 	}
 	if err := json.NewDecoder(response.Body).Decode(destination); err != nil {
 		return fmt.Errorf("decode response: %w", err)

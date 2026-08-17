@@ -11,12 +11,17 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/outbound"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 	"golang.org/x/sync/singleflight"
 )
 
 const (
 	defaultWMDBBase = "https://api.wmdb.tv"
 	defaultTMDBBase = "https://api.themoviedb.org"
+	// wmdb 是免费的豆瓣→IMDb 映射服务，限流很紧。多个 worker 同时抢 tmdb 任务时，
+	// 没有配速就会被整片拒绝，所以默认按最小间隔串行发送。
+	defaultIMDbLookupInterval = 1200 * time.Millisecond
 )
 
 var errTMDBResultNotFound = errors.New("TMDB result not found")
@@ -35,6 +40,7 @@ type TMDBProvider struct {
 	group     singleflight.Group
 	canonical CanonicalWriter
 	units     MediaUnitWriter
+	lookup    *outbound.Limiter
 }
 
 type TMDBOption func(*TMDBProvider)
@@ -54,10 +60,16 @@ func WithTMDBBases(wmdbBase, tmdbBase string) TMDBOption {
 	}
 }
 
+// WithTMDBIMDbLookupInterval 覆盖 wmdb 查询的最小发送间隔，传 0 表示不限速（仅测试使用）。
+func WithTMDBIMDbLookupInterval(interval time.Duration) TMDBOption {
+	return func(provider *TMDBProvider) { provider.lookup = outbound.NewLimiter(interval) }
+}
+
 func NewTMDBProvider(client *http.Client, store Store, token string, options ...TMDBOption) *TMDBProvider {
 	provider := &TMDBProvider{
 		client: client, store: store, token: strings.TrimSpace(token),
 		wmdbBase: defaultWMDBBase, tmdbBase: defaultTMDBBase,
+		lookup: outbound.NewLimiter(defaultIMDbLookupInterval),
 	}
 	for _, option := range options {
 		option(provider)
@@ -66,11 +78,12 @@ func NewTMDBProvider(client *http.Client, store Store, token string, options ...
 }
 
 func (provider *TMDBProvider) SyncBackdrops(ctx context.Context, doubanID string) error {
+	// 配置缺失和 ID 非法都不会因为重试而改变，直接判死，别占着重试预算。
 	if provider.token == "" {
-		return fmt.Errorf("TMDB_API_TOKEN is not configured")
+		return workqueue.Terminal(fmt.Errorf("TMDB_API_TOKEN is not configured"))
 	}
 	if !validDoubanID(doubanID) {
-		return fmt.Errorf("invalid Douban ID %q", doubanID)
+		return workqueue.Terminal(fmt.Errorf("invalid Douban ID %q", doubanID))
 	}
 	_, err, _ := provider.group.Do(doubanID, func() (any, error) {
 		return nil, provider.sync(ctx, doubanID)
@@ -84,7 +97,7 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 		return fmt.Errorf("find movie for TMDB sync: %w", err)
 	}
 	if movie == nil {
-		return fmt.Errorf("movie not found: %s", doubanID)
+		return workqueue.Terminal(fmt.Errorf("movie not found: %s", doubanID))
 	}
 	if movie.IMDbID == "" {
 		movie.IMDbID, err = provider.fetchIMDbID(ctx, doubanID)
@@ -93,7 +106,8 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 		}
 	}
 	if movie.IMDbID == "" {
-		return fmt.Errorf("IMDb ID not found for Douban ID %s", doubanID)
+		// 上游返回了 200 但没有映射关系，等于这个条目在 wmdb 里没有 IMDb ID。
+		return workqueue.Terminal(fmt.Errorf("IMDb ID not found for Douban ID %s", doubanID))
 	}
 	targetSeason := mediaidentity.TitleSeasonNumber(movie.Title, movie.OriginalTitle)
 	tmdbID, mediaType, err := provider.findTMDBID(ctx, movie.IMDbID)
@@ -101,6 +115,9 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 		tmdbID, mediaType, err = provider.searchTMDBTV(ctx, mediaidentity.TitleBase(movie.OriginalTitle, movie.Title))
 	}
 	if err != nil {
+		if errors.Is(err, errTMDBResultNotFound) {
+			return workqueue.Terminal(err)
+		}
 		return err
 	}
 	images, imagesErr := provider.fetchImages(ctx, tmdbID, mediaType)
@@ -155,11 +172,26 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 }
 
 func (provider *TMDBProvider) fetchIMDbID(ctx context.Context, doubanID string) (string, error) {
+	if err := provider.lookup.Wait(ctx); err != nil {
+		return "", err
+	}
 	endpoint := provider.wmdbBase + "/movie/api?id=" + url.QueryEscape(doubanID)
 	var response struct {
 		IMDbID string `json:"imdbId"`
 	}
 	if err := provider.getJSON(ctx, endpoint, false, &response); err != nil {
+		// 限流是整个进程共享的状态：一个任务撞上 429，其余任务也必须一起等，
+		// 否则退避只是把同一波请求换个 worker 再打一遍。
+		if retryAfter, throttled := workqueue.RetryAfter(err); throttled {
+			if retryAfter <= 0 {
+				retryAfter = 30 * time.Second
+			}
+			provider.lookup.Pause(retryAfter)
+		}
+		if status, ok := upstreamStatus(err); ok && status == http.StatusNotFound {
+			// wmdb 没收录这个条目，重试四次也不会凭空出现。
+			return "", workqueue.Terminal(err)
+		}
 		return "", err
 	}
 	return strings.TrimSpace(response.IMDbID), nil
@@ -383,7 +415,7 @@ func (provider *TMDBProvider) getJSON(ctx context.Context, endpoint string, auth
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("upstream returned HTTP %d", response.StatusCode)
+		return classifyUpstreamStatus("upstream", response)
 	}
 	if err := json.NewDecoder(response.Body).Decode(destination); err != nil {
 		return fmt.Errorf("decode upstream response: %w", err)

@@ -73,14 +73,18 @@ func main() {
 	// 外部 Provider 复用同一个有界 Client，防止任务高峰为每个来源无限创建连接。
 	client := outbound.NewClient(cfg.Search.SourceTimeout, cfg.OutboundMaxConnsPerHost)
 	defer client.CloseIdleConnections()
+	// AI Gateway 单独一个 Client：LLM 的响应时间和抓取源不在一个量级，共用超时会让语义改写全部超时。
+	aiClient := outbound.NewClient(cfg.Catalog.AITimeout, 4)
+	defer aiClient.CloseIdleConnections()
 	metadataProvider := catalog.NewDoubanProvider(client, movies, catalog.WithDoubanCanonicalWriter(mediaStore))
 	tmdbProvider := catalog.NewTMDBProvider(client, movies, cfg.Catalog.TMDBToken,
-		catalog.WithTMDBCanonicalWriter(mediaStore), catalog.WithTMDBMediaUnitWriter(mediaStore))
+		catalog.WithTMDBCanonicalWriter(mediaStore), catalog.WithTMDBMediaUnitWriter(mediaStore),
+		catalog.WithTMDBIMDbLookupInterval(cfg.Catalog.IMDbLookupInterval))
 	embeddingService := catalog.NewEmbeddingService(client, movies, catalog.EmbeddingConfig{
 		OllamaHost: cfg.Catalog.OllamaHost, OllamaModel: cfg.Catalog.OllamaModel,
 		CFGatewayURL: cfg.Catalog.CFGatewayURL, CFAPIToken: cfg.Catalog.CFAPIToken,
 		CFAIModel: cfg.Catalog.CFAIModel,
-	})
+	}, catalog.WithEmbeddingAIClient(aiClient))
 	refreshOptions := []catalog.RefreshHandlerOption{catalog.WithRefreshReviews(metadataProvider)}
 	if cfg.Catalog.TMDBToken != "" {
 		refreshOptions = append(refreshOptions, catalog.WithRefreshBackdrops(tmdbProvider))
