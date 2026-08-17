@@ -3318,6 +3318,22 @@ span.health-bad {
     color: var(--text);
 }
 
+.queue-retry-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.queue-retry-bar .filter-select {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
 .queue-table .queue-error {
     max-width: 280px;
     color: var(--error);

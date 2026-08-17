@@ -18,10 +18,9 @@ func TestTMDBProviderResolvesIMDbTVAndPersistsLegacyFields(t *testing.T) {
 		calls.Add(1)
 		switch request.URL.Path {
 		case "/movie/api":
-			if request.URL.Query().Get("id") != "1292052" || request.Header.Get("Authorization") != "" {
-				t.Fatalf("WMDB request = %s headers=%v", request.URL.String(), request.Header)
-			}
-			return testJSONResponse(request, http.StatusOK, `{"imdbId":"tt0111161"}`), nil
+			// TMDB 任务不再查任何映射源；映射由 imdb_backfill 提前补好。
+			t.Fatalf("TMDB sync must not call the IMDb mapping service: %s", request.URL.String())
+			return nil, nil
 		case "/3/find/tt0111161":
 			assertTMDBBearer(t, request)
 			return testJSONResponse(request, http.StatusOK, `{"movie_results":[],"tv_results":[{"id":42}]}`), nil
@@ -40,13 +39,13 @@ func TestTMDBProviderResolvesIMDbTVAndPersistsLegacyFields(t *testing.T) {
 	})}
 
 	store := NewMemoryStore()
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "标题", Poster: "old-poster"})
-	provider := NewTMDBProvider(client, store, "tmdb-token", WithTMDBBases("https://wmdb.test", "https://tmdb.test"))
+	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "标题", Poster: "old-poster", IMDbID: "tt0111161"})
+	provider := NewTMDBProvider(client, store, "tmdb-token", WithTMDBBase("https://tmdb.test"))
 	if err := provider.SyncBackdrops(t.Context(), "1292052"); err != nil {
 		t.Fatal(err)
 	}
 	movie, _ := store.FindByDoubanID(t.Context(), "1292052")
-	if calls.Load() != 4 || movie.IMDbID != "tt0111161" || movie.OriginalTitle != "Original" || movie.Summary != "简介" || movie.Year != "2025" || movie.Duration != "45分钟" || movie.Genres != "剧情/悬疑" {
+	if calls.Load() != 3 || movie.IMDbID != "tt0111161" || movie.OriginalTitle != "Original" || movie.Summary != "简介" || movie.Year != "2025" || movie.Duration != "45分钟" || movie.Genres != "剧情/悬疑" {
 		t.Fatalf("calls/movie = %d/%+v", calls.Load(), movie)
 	}
 	if movie.Poster != "old-poster" || movie.Backdrops != "https://image.tmdb.org/t/p/w1280/a.jpg,https://image.tmdb.org/t/p/w1280/b.jpg" {
@@ -93,7 +92,7 @@ func TestTMDBProviderOnlyWritesTheSeasonNamedByDoubanMedia(t *testing.T) {
 	canonical := &canonicalWriterStub{}
 	units := &mediaUnitWriterStub{}
 	provider := NewTMDBProvider(client, store, "tmdb-token",
-		WithTMDBBases("https://wmdb.test", "https://tmdb.test"),
+		WithTMDBBase("https://tmdb.test"),
 		WithTMDBCanonicalWriter(canonical), WithTMDBMediaUnitWriter(units))
 	if err := provider.SyncBackdrops(t.Context(), "35468745"); err != nil {
 		t.Fatal(err)
@@ -145,7 +144,7 @@ func TestTMDBProviderFallsBackToSeriesTitleForSeasonIMDbID(t *testing.T) {
 	canonical := &canonicalWriterStub{}
 	units := &mediaUnitWriterStub{}
 	provider := NewTMDBProvider(client, store, "tmdb-token",
-		WithTMDBBases("https://wmdb.test", "https://tmdb.test"),
+		WithTMDBBase("https://tmdb.test"),
 		WithTMDBCanonicalWriter(canonical), WithTMDBMediaUnitWriter(units))
 	if err := provider.SyncBackdrops(t.Context(), "36857449"); err != nil {
 		t.Fatal(err)

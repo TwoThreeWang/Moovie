@@ -168,8 +168,12 @@ func TestLoadUsesIsolatedDefaults(t *testing.T) {
 	if cfg.Catalog.AITimeout != 90*time.Second || cfg.Catalog.AITimeout <= cfg.Search.SourceTimeout {
 		t.Fatalf("catalog AI timeout = %s (search source timeout %s)", cfg.Catalog.AITimeout, cfg.Search.SourceTimeout)
 	}
-	if cfg.Catalog.IMDbLookupInterval != 1200*time.Millisecond {
-		t.Fatalf("IMDb lookup interval = %s", cfg.Catalog.IMDbLookupInterval)
+	if cfg.Catalog.IMDbLookupInterval != 1200*time.Millisecond || cfg.Catalog.IMDbBackfillBatch != 200 {
+		t.Fatalf("IMDb lookup interval = %s, backfill batch = %d", cfg.Catalog.IMDbLookupInterval, cfg.Catalog.IMDbBackfillBatch)
+	}
+	// SPARQL 批量查询比抓取慢得多，超时必须单独配。
+	if cfg.Catalog.WikidataTimeout != 60*time.Second || cfg.Catalog.WikidataTimeout <= cfg.Search.SourceTimeout {
+		t.Fatalf("Wikidata timeout = %s", cfg.Catalog.WikidataTimeout)
 	}
 	if cfg.Danmaku.APIBase != "" {
 		t.Fatalf("danmaku API base = %q", cfg.Danmaku.APIBase)

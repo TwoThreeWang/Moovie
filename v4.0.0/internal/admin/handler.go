@@ -55,6 +55,14 @@ type FeedbackCounter interface {
 	CountPending(ctx context.Context) (int, error)
 }
 
+// JobRetrier 由 workqueue.PostgresStore 实现。两个方法都返回实际恢复的任务数，
+// 因为「没恢复」是正常结果而不是错误：任务可能已经不是失败状态，
+// 也可能同一对象已经有新任务排在队列里。
+type JobRetrier interface {
+	RetryJob(ctx context.Context, jobID int) (int, error)
+	RetryFailed(ctx context.Context, taskType string, limit int) (int, error)
+}
+
 type Handler struct {
 	config   config.Config
 	users    UserStore
@@ -64,12 +72,17 @@ type Handler struct {
 	crawler  search.SourceCrawler
 	health   CircuitState
 	metrics  operations.MetricsReader
+	jobs     JobRetrier
 }
 
 type HandlerOption func(*Handler)
 
 func WithMetricsReader(reader operations.MetricsReader) HandlerOption {
 	return func(handler *Handler) { handler.metrics = reader }
+}
+
+func WithJobRetrier(retrier JobRetrier) HandlerOption {
+	return func(handler *Handler) { handler.jobs = retrier }
 }
 
 func NewHandler(cfg config.Config, users UserStore, searchStore SearchStore, movies MovieCounter, feedbackStore feedback.Store, crawler search.SourceCrawler, health CircuitState, options ...HandlerOption) *Handler {
@@ -94,6 +107,8 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/admin/sites/:id/test", append(middleware, handler.siteTest)...)
 	router.GET("/admin/data", append(middleware, handler.dataPage)...)
 	router.GET("/admin/jobs", append(middleware, handler.jobQueuePage)...)
+	router.POST("/admin/jobs/retry", append(middleware, handler.jobRetry)...)
+	router.POST("/admin/jobs/retry-failed", append(middleware, handler.jobRetryFailed)...)
 	router.GET("/admin/matches", append(middleware, handler.matchReviewPage)...)
 	router.POST("/admin/matches/decision", append(middleware, handler.matchReviewDecision)...)
 	router.GET("/api/v2/admin/media-matches", append(middleware, handler.matchReviewAPIList)...)
@@ -144,6 +159,59 @@ func (handler *Handler) jobQueuePage(c *gin.Context) {
 	handler.page(c, "admin_jobs.html", "任务队列 - Moovie影牛", gin.H{
 		"Queue": snapshot, "Status": status,
 	})
+}
+
+// jobRetry 重试单个失败任务。任务 ID 走表单而不是路径参数，
+// 是为了避免 /admin/jobs/:id/retry 与 /admin/jobs/retry-failed 在路由树上冲突。
+func (handler *Handler) jobRetry(c *gin.Context) {
+	if handler.jobs == nil {
+		apiError(c, http.StatusServiceUnavailable, "任务队列暂不可用")
+		return
+	}
+	jobID, err := positiveInt(c.PostForm("job_id"))
+	if err != nil {
+		apiError(c, http.StatusBadRequest, "任务 ID 无效")
+		return
+	}
+	retried, err := handler.jobs.RetryJob(c.Request.Context(), jobID)
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, "重试失败")
+		return
+	}
+	if retried == 0 {
+		apiError(c, http.StatusConflict, "该任务已不是失败状态，或同一对象已有任务在队列中")
+		return
+	}
+	apiSuccess(c, gin.H{"job_id": jobID, "retried": retried})
+}
+
+// jobRetryFailed 按类型批量重试。带上限是因为这些任务多半是被同一个上游拒绝的，
+// 一次性全放回去只会再被拒一遍。
+func (handler *Handler) jobRetryFailed(c *gin.Context) {
+	if handler.jobs == nil {
+		apiError(c, http.StatusServiceUnavailable, "任务队列暂不可用")
+		return
+	}
+	taskType := strings.TrimSpace(c.PostForm("task_type"))
+	if taskType != "" && !taskTypePattern.MatchString(taskType) {
+		apiError(c, http.StatusBadRequest, "任务类型无效")
+		return
+	}
+	limit := 500
+	if raw := strings.TrimSpace(c.PostForm("limit")); raw != "" {
+		parsed, err := positiveInt(raw)
+		if err != nil || parsed > 2000 {
+			apiError(c, http.StatusBadRequest, "单次重试上限必须在 1 到 2000 之间")
+			return
+		}
+		limit = parsed
+	}
+	retried, err := handler.jobs.RetryFailed(c.Request.Context(), taskType, limit)
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, "批量重试失败")
+		return
+	}
+	apiSuccess(c, gin.H{"task_type": taskType, "retried": retried, "limit": limit})
 }
 
 func (handler *Handler) metricsSnapshot(c *gin.Context) {
@@ -673,6 +741,8 @@ func positiveUint(value string) (uint, error) {
 }
 
 var siteKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+var taskTypePattern = regexp.MustCompile(`^[a-z_]{1,40}$`)
 
 func validHTTPURL(value string) bool {
 	return outbound.ValidatePublicHTTPURL(value) == nil

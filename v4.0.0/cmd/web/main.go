@@ -199,7 +199,7 @@ func main() {
 	aiClient := outbound.NewClient(cfg.Catalog.AITimeout, 4)
 	sourceCrawler := search.NewAppleCMSCrawler(sourceClient)
 	doubanOptions := []catalog.DoubanOption{}
-	tmdbOptions := []catalog.TMDBOption{catalog.WithTMDBIMDbLookupInterval(cfg.Catalog.IMDbLookupInterval)}
+	tmdbOptions := []catalog.TMDBOption{}
 	if canonicalStore != nil {
 		doubanOptions = append(doubanOptions, catalog.WithDoubanCanonicalWriter(canonicalStore))
 		tmdbOptions = append(tmdbOptions, catalog.WithTMDBCanonicalWriter(canonicalStore))
@@ -299,6 +299,16 @@ func main() {
 				workerDispatcher.Handle(taskType, 10*time.Minute, metadataRefreshHandler.Handle)
 			}
 			workerDispatcher.Handle("metadata_schedule", 2*time.Minute, metadataRefreshHandler.Schedule)
+			// IMDb 映射回填只在接了 Postgres 目录存储时可用；内存存储没有映射表可补。
+			if mappingStore, ok := catalogStore.(catalog.IMDbMappingStore); ok {
+				wikidataClient := outbound.NewClient(cfg.Catalog.WikidataTimeout, 2)
+				imdbBackfill := catalog.NewIMDbBackfillHandler(mappingStore, metadataRefreshJobs,
+					catalog.NewWikidataResolver(wikidataClient, cfg.Catalog.WikidataEndpoint, cfg.Catalog.WikidataUserAgent),
+					catalog.WithIMDbFallback(catalog.NewWMDBResolver(sourceClient, "", cfg.Catalog.IMDbLookupInterval)),
+					catalog.WithIMDbBatchSize(cfg.Catalog.IMDbBackfillBatch))
+				workerDispatcher.Handle(catalog.TaskIMDbBackfill, 5*time.Minute, imdbBackfill.Handle)
+				workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: catalog.TaskIMDbBackfill, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute, InitialDelay: 30 * time.Second})
+			}
 			workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: "metadata_schedule", SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute})
 		}
 		if popularityRefresher != nil {
@@ -380,8 +390,13 @@ func main() {
 	danmakuClient := outbound.NewClient(25*time.Second, cfg.OutboundMaxConnsPerHost)
 	danmakuService := danmaku.NewService(danmakuStore, danmakuClient, cfg.Danmaku.APIBase)
 	danmakuHandler := danmaku.NewHandler(cfg, danmakuService)
+	adminOptions := []admin.HandlerOption{admin.WithMetricsReader(metricsStore)}
+	// 队列未接入时 queueStore 可能为 nil，此时后台不提供重试入口。
+	if retrier, ok := queueStore.(admin.JobRetrier); ok {
+		adminOptions = append(adminOptions, admin.WithJobRetrier(retrier))
+	}
 	adminHandler := admin.NewHandler(cfg, identityStore, adminSearchStore, catalogStore, feedbackStore, sourceCrawler, searchHealth,
-		admin.WithMetricsReader(metricsStore))
+		adminOptions...)
 	// 所有路由在一个位置集中注册；全局中间件由 httpserver.New 先于这些路由安装。
 	server := httpserver.New(cfg, readiness, func(router *gin.Engine) {
 		router.HTMLRender = renderer

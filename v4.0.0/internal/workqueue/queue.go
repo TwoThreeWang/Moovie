@@ -242,12 +242,57 @@ ORDER BY id ASC LIMIT $4`, taskType, status, nullableTime(before), limit)
 	return jobs, rows.Err()
 }
 
+// retryAssignments 归还完整的重试预算。人工重试的意图是「重新跑一遍」，
+// 保留 attempt_count 会让任务被领取后失败一次就立刻回到 failed，按钮等于只按了半下。
+const retryAssignments = `status = 'pending', available_at = NOW(), attempt_count = 0, throttle_count = 0,
+locked_by = '', locked_until = NULL, started_at = NULL, finished_at = NULL,
+error_message = '', updated_at = NOW()`
+
 func (store *PostgresStore) Reset(ctx context.Context, jobID int) error {
-	_, err := store.database.Exec(ctx, `UPDATE worker_jobs SET status='pending', available_at=NOW(),
-locked_by='', locked_until=NULL, started_at=NULL, finished_at=NULL, error_message='',
-throttle_count=0, updated_at=NOW()
-WHERE id=$1 AND status='failed'`, jobID)
+	_, err := store.RetryJob(ctx, jobID)
 	return err
+}
+
+// RetryJob 把单个失败任务放回队列，返回实际恢复的行数。
+// 同一 (task_type, subject_key) 已经有 pending/running 任务时不做任何事：
+// 活跃索引是唯一的，硬改会直接撞约束，而且那份工作本来就已经排上了。
+func (store *PostgresStore) RetryJob(ctx context.Context, jobID int) (int, error) {
+	affected, err := store.database.Exec(ctx, `UPDATE worker_jobs job SET `+retryAssignments+`
+WHERE job.id = $1 AND job.status = 'failed' AND NOT EXISTS (
+    SELECT 1 FROM worker_jobs active
+    WHERE active.task_type = job.task_type AND active.subject_key = job.subject_key
+      AND active.status IN ('pending', 'running'))`, jobID)
+	if err != nil {
+		return 0, fmt.Errorf("retry worker job: %w", err)
+	}
+	return int(affected), nil
+}
+
+// RetryFailed 批量恢复失败任务。taskType 为空表示不限类型；limit 是一次恢复的上限，
+// 免得一次点击就把几千个请求同时甩给刚刚才恢复的上游。
+// DISTINCT ON 是必需的：failed 状态不受活跃唯一索引约束，同一对象可能堆了多行失败记录，
+// 一起转成 pending 会撞唯一索引，这里只恢复最新的那条。
+func (store *PostgresStore) RetryFailed(ctx context.Context, taskType string, limit int) (int, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 500
+	}
+	affected, err := store.database.Exec(ctx, `WITH candidate AS (
+    SELECT DISTINCT ON (job.task_type, job.subject_key) job.id
+    FROM worker_jobs job
+    WHERE job.status = 'failed' AND ($1 = '' OR job.task_type = $1)
+      AND NOT EXISTS (
+        SELECT 1 FROM worker_jobs active
+        WHERE active.task_type = job.task_type AND active.subject_key = job.subject_key
+          AND active.status IN ('pending', 'running'))
+    ORDER BY job.task_type, job.subject_key, job.id DESC
+    LIMIT $2
+)
+UPDATE worker_jobs SET `+retryAssignments+`
+FROM candidate WHERE worker_jobs.id = candidate.id`, taskType, limit)
+	if err != nil {
+		return 0, fmt.Errorf("retry failed worker jobs: %w", err)
+	}
+	return int(affected), nil
 }
 
 func scanJob(row interface{ Scan(...any) error }) (Job, error) {
@@ -423,18 +468,65 @@ func (store *MemoryStore) List(_ context.Context, taskType, status string, befor
 	}
 	return jobs, nil
 }
-func (store *MemoryStore) Reset(_ context.Context, jobID int) error {
+func (store *MemoryStore) Reset(ctx context.Context, jobID int) error {
+	_, err := store.RetryJob(ctx, jobID)
+	return err
+}
+
+func (store *MemoryStore) RetryJob(_ context.Context, jobID int) (int, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	for index := range store.jobs {
-		if store.jobs[index].ID == jobID && store.jobs[index].Status == StatusFailed {
-			store.jobs[index].Status = StatusPending
-			store.jobs[index].AvailableAt = time.Now()
-			store.jobs[index].ErrorMessage = ""
-			store.jobs[index].ThrottleCount = 0
+		job := &store.jobs[index]
+		if job.ID != jobID || job.Status != StatusFailed || store.hasActive(job.TaskType, job.SubjectKey) {
+			continue
+		}
+		store.restore(job)
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func (store *MemoryStore) RetryFailed(_ context.Context, taskType string, limit int) (int, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 500
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	restored := 0
+	for index := range store.jobs {
+		job := &store.jobs[index]
+		if job.Status != StatusFailed || (taskType != "" && job.TaskType != taskType) {
+			continue
+		}
+		if store.hasActive(job.TaskType, job.SubjectKey) {
+			continue
+		}
+		store.restore(job)
+		if restored++; restored >= limit {
+			break
 		}
 	}
-	return nil
+	return restored, nil
+}
+
+func (store *MemoryStore) hasActive(taskType, subjectKey string) bool {
+	for index := range store.jobs {
+		job := &store.jobs[index]
+		if job.TaskType == taskType && job.SubjectKey == subjectKey &&
+			(job.Status == StatusPending || job.Status == StatusRunning) {
+			return true
+		}
+	}
+	return false
+}
+
+func (store *MemoryStore) restore(job *Job) {
+	now := time.Now()
+	job.Status, job.AvailableAt, job.ErrorMessage = StatusPending, now, ""
+	job.AttemptCount, job.ThrottleCount = 0, 0
+	job.LockedBy, job.LockedUntil, job.StartedAt, job.FinishedAt = "", nil, nil, nil
+	job.UpdatedAt = now
 }
 func (store *MemoryStore) finish(jobID int, status, message string) error {
 	store.mu.Lock()

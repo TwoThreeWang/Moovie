@@ -11,18 +11,11 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/outbound"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 	"golang.org/x/sync/singleflight"
 )
 
-const (
-	defaultWMDBBase = "https://api.wmdb.tv"
-	defaultTMDBBase = "https://api.themoviedb.org"
-	// wmdb 是免费的豆瓣→IMDb 映射服务，限流很紧。多个 worker 同时抢 tmdb 任务时，
-	// 没有配速就会被整片拒绝，所以默认按最小间隔串行发送。
-	defaultIMDbLookupInterval = 1200 * time.Millisecond
-)
+const defaultTMDBBase = "https://api.themoviedb.org"
 
 var errTMDBResultNotFound = errors.New("TMDB result not found")
 
@@ -35,12 +28,10 @@ type TMDBProvider struct {
 	client    *http.Client
 	store     Store
 	token     string
-	wmdbBase  string
 	tmdbBase  string
 	group     singleflight.Group
 	canonical CanonicalWriter
 	units     MediaUnitWriter
-	lookup    *outbound.Limiter
 }
 
 type TMDBOption func(*TMDBProvider)
@@ -53,23 +44,14 @@ func WithTMDBMediaUnitWriter(writer MediaUnitWriter) TMDBOption {
 	return func(provider *TMDBProvider) { provider.units = writer }
 }
 
-func WithTMDBBases(wmdbBase, tmdbBase string) TMDBOption {
-	return func(provider *TMDBProvider) {
-		provider.wmdbBase = strings.TrimRight(wmdbBase, "/")
-		provider.tmdbBase = strings.TrimRight(tmdbBase, "/")
-	}
-}
-
-// WithTMDBIMDbLookupInterval 覆盖 wmdb 查询的最小发送间隔，传 0 表示不限速（仅测试使用）。
-func WithTMDBIMDbLookupInterval(interval time.Duration) TMDBOption {
-	return func(provider *TMDBProvider) { provider.lookup = outbound.NewLimiter(interval) }
+func WithTMDBBase(tmdbBase string) TMDBOption {
+	return func(provider *TMDBProvider) { provider.tmdbBase = strings.TrimRight(tmdbBase, "/") }
 }
 
 func NewTMDBProvider(client *http.Client, store Store, token string, options ...TMDBOption) *TMDBProvider {
 	provider := &TMDBProvider{
 		client: client, store: store, token: strings.TrimSpace(token),
-		wmdbBase: defaultWMDBBase, tmdbBase: defaultTMDBBase,
-		lookup: outbound.NewLimiter(defaultIMDbLookupInterval),
+		tmdbBase: defaultTMDBBase,
 	}
 	for _, option := range options {
 		option(provider)
@@ -100,14 +82,10 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 		return workqueue.Terminal(fmt.Errorf("movie not found: %s", doubanID))
 	}
 	if movie.IMDbID == "" {
-		movie.IMDbID, err = provider.fetchIMDbID(ctx, doubanID)
-		if err != nil {
-			return fmt.Errorf("fetch IMDb ID: %w", err)
-		}
-	}
-	if movie.IMDbID == "" {
-		// 上游返回了 200 但没有映射关系，等于这个条目在 wmdb 里没有 IMDb ID。
-		return workqueue.Terminal(fmt.Errorf("IMDb ID not found for Douban ID %s", doubanID))
+		// 这里不再当场去查映射：映射源要么只能批量查，要么限流极严，
+		// 同步等待会让执行槽全部堆在这一步。缺映射的对象交给 imdb_backfill，
+		// 补上之后由回填任务重新入队 TMDB 抓取。
+		return workqueue.Terminal(fmt.Errorf("IMDb 映射缺失，等待回填: %s", doubanID))
 	}
 	targetSeason := mediaidentity.TitleSeasonNumber(movie.Title, movie.OriginalTitle)
 	tmdbID, mediaType, err := provider.findTMDBID(ctx, movie.IMDbID)
@@ -169,32 +147,6 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 		provider.syncTVSeasons(ctx, mediaID, tmdbID, targetSeason, details)
 	}
 	return nil
-}
-
-func (provider *TMDBProvider) fetchIMDbID(ctx context.Context, doubanID string) (string, error) {
-	if err := provider.lookup.Wait(ctx); err != nil {
-		return "", err
-	}
-	endpoint := provider.wmdbBase + "/movie/api?id=" + url.QueryEscape(doubanID)
-	var response struct {
-		IMDbID string `json:"imdbId"`
-	}
-	if err := provider.getJSON(ctx, endpoint, false, &response); err != nil {
-		// 限流是整个进程共享的状态：一个任务撞上 429，其余任务也必须一起等，
-		// 否则退避只是把同一波请求换个 worker 再打一遍。
-		if retryAfter, throttled := workqueue.RetryAfter(err); throttled {
-			if retryAfter <= 0 {
-				retryAfter = 30 * time.Second
-			}
-			provider.lookup.Pause(retryAfter)
-		}
-		if status, ok := upstreamStatus(err); ok && status == http.StatusNotFound {
-			// wmdb 没收录这个条目，重试四次也不会凭空出现。
-			return "", workqueue.Terminal(err)
-		}
-		return "", err
-	}
-	return strings.TrimSpace(response.IMDbID), nil
 }
 
 type tmdbFindResponse struct {

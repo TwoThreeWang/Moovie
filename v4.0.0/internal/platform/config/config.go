@@ -66,8 +66,17 @@ type CatalogConfig struct {
 	// 沿用搜索源的秒级超时会让语义改写必然失败。
 	AITimeout time.Duration
 	// IMDbLookupInterval 是 wmdb 豆瓣→IMDb 映射查询的最小发送间隔。
-	// 这是个免费接口，多 worker 并发不配速会被整片 429。
+	// wmdb 只作为批量回填的兜底，这里配的是它的节流节奏。
 	IMDbLookupInterval time.Duration
+	// WikidataEndpoint 和 WikidataUserAgent 用于批量补齐豆瓣→IMDb 映射。
+	// 维基媒体要求请求带上能说明来源和联系方式的 User-Agent，默认 UA 会被拒绝。
+	WikidataEndpoint  string
+	WikidataUserAgent string
+	// IMDbBackfillBatch 是单轮批量查询的对象数量。SPARQL 查询有 60 秒超时，
+	// 批太大会整批失败，200 是经验上比较稳的规模。
+	IMDbBackfillBatch int
+	// WikidataTimeout 单独给 SPARQL 用：批量查询比普通抓取慢得多。
+	WikidataTimeout time.Duration
 }
 
 // DanmakuConfig 保存可选弹幕服务地址；为空时弹幕能力安全降级。
@@ -229,6 +238,14 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	imdbBackfillBatch, err := positiveIntEnv("IMDB_BACKFILL_BATCH", 200)
+	if err != nil {
+		return Config{}, err
+	}
+	wikidataTimeoutSeconds, err := positiveIntEnv("WIKIDATA_TIMEOUT_SECONDS", 60)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		Env:             appEnv,
@@ -283,6 +300,10 @@ func Load() (Config, error) {
 
 			AITimeout:          time.Duration(catalogAITimeoutSeconds) * time.Second,
 			IMDbLookupInterval: time.Duration(imdbLookupIntervalMilliseconds) * time.Millisecond,
+			WikidataEndpoint:   strings.TrimRight(env("WIKIDATA_SPARQL_URL", ""), "/"),
+			WikidataUserAgent:  env("WIKIDATA_USER_AGENT", ""),
+			IMDbBackfillBatch:  imdbBackfillBatch,
+			WikidataTimeout:    time.Duration(wikidataTimeoutSeconds) * time.Second,
 		},
 		Danmaku: DanmakuConfig{APIBase: strings.TrimRight(env("DANMU_API_BASE", ""), "/")},
 		Database: DatabaseConfig{
@@ -342,6 +363,12 @@ func (c Config) Validate() error {
 	}
 	if c.Catalog.IMDbLookupInterval > time.Minute {
 		return errors.New("IMDB_LOOKUP_INTERVAL_MS must not exceed 60000")
+	}
+	if c.Catalog.IMDbBackfillBatch > 500 {
+		return errors.New("IMDB_BACKFILL_BATCH must not exceed 500")
+	}
+	if c.Catalog.WikidataTimeout > 5*time.Minute {
+		return errors.New("WIKIDATA_TIMEOUT_SECONDS must not exceed 300")
 	}
 	if c.Database.MaxConns > 100 {
 		return errors.New("DB_MAX_CONNS must not exceed 100")

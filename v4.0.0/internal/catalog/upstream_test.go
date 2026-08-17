@@ -33,38 +33,44 @@ func TestParseRetryAfterAcceptsSecondsAndCapsAbsurdValues(t *testing.T) {
 	}
 }
 
-func TestTMDBProviderReportsWMDBRateLimitAsThrottleWithRetryAfter(t *testing.T) {
+func TestWMDBResolverReportsRateLimitAsThrottleAndPausesItself(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return statusResponse(request, http.StatusTooManyRequests, http.Header{"Retry-After": {"12"}}, `{}`), nil
 	})}
-	store := NewMemoryStore()
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "标题"})
-	provider := NewTMDBProvider(client, store, "tmdb-token",
-		WithTMDBBases("https://wmdb.test", "https://tmdb.test"), WithTMDBIMDbLookupInterval(0))
-	err := provider.SyncBackdrops(t.Context(), "1292052")
+	resolver := NewWMDBResolver(client, "https://wmdb.test", time.Millisecond)
+	_, err := resolver.ResolveOne(t.Context(), "1292052")
 	retryAfter, throttled := workqueue.RetryAfter(err)
 	if !throttled || retryAfter != 12*time.Second {
 		t.Fatalf("error = %v (retry_after %s, throttled %t)", err, retryAfter, throttled)
 	}
-	// 限流不该被当成任务缺陷判死，否则一次风暴会把整批任务清成 failed。
-	if workqueue.IsTerminal(err) {
-		t.Fatalf("throttled error must not be terminal: %v", err)
-	}
-	if failure := workqueue.Classify(err); failure.Outcome != workqueue.OutcomeThrottled {
-		t.Fatalf("classified = %+v", failure)
+	// 收到 429 之后整个进程都要退避，而不是换个调用方再打一遍。
+	if resolver.Allow() {
+		t.Fatal("resolver kept issuing requests after a rate limit response")
 	}
 }
 
-func TestTMDBProviderTreatsMissingWMDBMappingAsTerminal(t *testing.T) {
+func TestWMDBResolverTreatsMissingMappingAsAnEmptyResult(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return statusResponse(request, http.StatusNotFound, nil, `{}`), nil
 	})}
+	// 上游没收录这个条目是正常结果，不该当成故障往上抛。
+	imdbID, err := NewWMDBResolver(client, "https://wmdb.test", 0).ResolveOne(t.Context(), "1292052")
+	if err != nil || imdbID != "" {
+		t.Fatalf("resolve = %q/%v", imdbID, err)
+	}
+}
+
+func TestTMDBSyncStopsWhenTheIMDbMappingIsMissing(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		t.Fatalf("TMDB sync must not reach the network without an IMDb ID: %s", request.URL.String())
+		return nil, nil
+	})}
 	store := NewMemoryStore()
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "标题"})
-	provider := NewTMDBProvider(client, store, "tmdb-token",
-		WithTMDBBases("https://wmdb.test", "https://tmdb.test"), WithTMDBIMDbLookupInterval(0))
-	err := provider.SyncBackdrops(t.Context(), "1292052")
-	if !workqueue.IsTerminal(err) || !strings.Contains(err.Error(), "fetch IMDb ID: upstream returned HTTP 404") {
+	err := NewTMDBProvider(client, store, "tmdb-token", WithTMDBBase("https://tmdb.test")).
+		SyncBackdrops(t.Context(), "1292052")
+	// 缺映射不是可重试的失败：等回填补上之后会重新入队。
+	if !workqueue.IsTerminal(err) || !strings.Contains(err.Error(), "IMDb 映射缺失") {
 		t.Fatalf("error = %v", err)
 	}
 }

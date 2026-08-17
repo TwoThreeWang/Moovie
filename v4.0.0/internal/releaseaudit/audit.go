@@ -147,6 +147,8 @@ func baseChecks() []checkSpec {
 			query: `SELECT COUNT(*) FROM resource_media_links link LEFT JOIN vod_items resource ON resource.source_key = link.source_key AND resource.vod_id = link.vod_id LEFT JOIN media ON media.id = link.media_id WHERE resource.source_key IS NULL OR media.id IS NULL`},
 		{name: "linkable_resource_unmapped", severity: "warn", description: "resources with an existing canonical Douban ID should already be linked",
 			query: `SELECT COUNT(*) FROM vod_items resource JOIN media ON media.douban_id = resource.vod_douban_id WHERE resource.vod_douban_id <> '' AND NOT EXISTS (SELECT 1 FROM resource_media_links link WHERE link.source_key = resource.source_key AND link.vod_id = resource.vod_id)`},
+		{name: "linked_candidate_without_media", severity: "fail", description: "episode candidates of a linked resource must carry that media_id, otherwise /watch finds no source and redirects to /search",
+			query: `SELECT COUNT(*) FROM resource_episode_candidates candidate JOIN resource_play_lines line ON line.id = candidate.line_id JOIN resource_media_links link ON link.source_key = line.source_key AND link.vod_id = line.vod_id WHERE candidate.media_id IS NULL AND link.media_id IS NOT NULL`},
 		{name: "candidate_identity_mismatch", severity: "fail", description: "episode candidates and media units must belong to the same media",
 			query: `SELECT COUNT(*) FROM resource_episode_candidates candidate JOIN media_units unit ON unit.id = candidate.media_unit_id WHERE candidate.media_id IS DISTINCT FROM unit.media_id`},
 		{name: "duplicate_active_playback_position", severity: "fail", description: "one user and canonical episode identity must not produce duplicate active cards",

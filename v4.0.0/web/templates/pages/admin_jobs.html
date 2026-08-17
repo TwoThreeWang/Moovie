@@ -36,17 +36,36 @@
         </div>
     </div>
 
+    {{ if .Queue.Counts.Failed }}
+    <div class="admin-card">
+        <div class="admin-card-header"><h3>批量重试</h3><span class="badge">当前失败 {{ .Queue.Counts.Failed }} 条</span></div>
+        <div class="admin-card-body queue-retry-bar">
+            <select id="retry-task-type" class="filter-select">
+                <option value="">全部类型</option>
+                <option value="douban_metadata">豆瓣主资料</option>
+                <option value="tmdb">TMDB 资料与剧照</option>
+                <option value="embedding">向量补全</option>
+                <option value="imdb_backfill">IMDb 映射回填</option>
+                <option value="douban_reviews">豆瓣精彩短评</option>
+                <option value="douban_sync">豆瓣账号同步</option>
+            </select>
+            <button type="button" class="btn btn-secondary" onclick="retryFailedJobs(this)">重试失败任务</button>
+            <span class="match-detail">每次最多恢复 500 条，重试会清零尝试次数；同一对象已有任务在队列中的会跳过。</span>
+        </div>
+    </div>
+    {{ end }}
+
     <div class="admin-card">
         <div class="admin-card-header"><h3>全部任务</h3><span class="badge">显示 {{ len .Queue.Jobs }} 条</span></div>
         <div class="admin-table-wrapper">
             <table class="admin-table queue-table">
-                <thead><tr><th>任务</th><th>类型与原因</th><th>状态</th><th>进度/执行器</th><th>时间</th><th>错误</th></tr></thead>
+                <thead><tr><th>任务</th><th>类型与原因</th><th>状态</th><th>进度/执行器</th><th>时间</th><th>错误</th><th>操作</th></tr></thead>
                 <tbody>
                     {{ range .Queue.Jobs }}
                     <tr>
                         <td><strong>#{{ .ID }}</strong><div class="match-detail">对象 {{ .SubjectKey }}</div></td>
                         <td>
-                            <strong>{{ if eq .TaskType "douban_metadata" }}豆瓣主资料{{ else if eq .TaskType "douban_reviews" }}豆瓣精彩短评{{ else if eq .TaskType "tmdb" }}TMDB 资料与剧照{{ else if eq .TaskType "embedding" }}向量补全{{ else if eq .TaskType "douban_sync" }}豆瓣账号同步{{ else if eq .TaskType "popularity_refresh" }}热门榜单刷新{{ else if eq .TaskType "metadata_schedule" }}资料刷新调度{{ else if eq .TaskType "douban_daily" }}每日豆瓣同步调度{{ else if eq .TaskType "operations_cleanup" }}数据清理{{ else if eq .TaskType "site_health_check" }}站点健康检查{{ else }}{{ .TaskType }}{{ end }}</strong>
+                            <strong>{{ if eq .TaskType "douban_metadata" }}豆瓣主资料{{ else if eq .TaskType "douban_reviews" }}豆瓣精彩短评{{ else if eq .TaskType "tmdb" }}TMDB 资料与剧照{{ else if eq .TaskType "embedding" }}向量补全{{ else if eq .TaskType "douban_sync" }}豆瓣账号同步{{ else if eq .TaskType "popularity_refresh" }}热门榜单刷新{{ else if eq .TaskType "imdb_backfill" }}IMDb 映射回填{{ else if eq .TaskType "metadata_schedule" }}资料刷新调度{{ else if eq .TaskType "douban_daily" }}每日豆瓣同步调度{{ else if eq .TaskType "operations_cleanup" }}数据清理{{ else if eq .TaskType "site_health_check" }}站点健康检查{{ else }}{{ .TaskType }}{{ end }}</strong>
                             <div class="match-detail">{{ .Reason }}</div>
                         </td>
                         <td><span class="status-badge status-{{ .Status }}">{{ if eq .Status "pending" }}等待中{{ else if eq .Status "running" }}执行中{{ else if eq .Status "completed" }}已完成{{ else }}失败{{ end }}</span><div class="match-detail">尝试 {{ .AttemptCount }}/{{ .MaxAttempts }}</div></td>
@@ -56,8 +75,9 @@
                         </td>
                         <td><span>{{ .CreatedAt.Format "01-02 15:04:05" }}</span><div class="match-detail">更新 {{ .UpdatedAt.Format "01-02 15:04:05" }}</div>{{ if .StartedAt }}<div class="match-detail">开始 {{ .StartedAt.Format "01-02 15:04:05" }}</div>{{ end }}{{ if .FinishedAt }}<div class="match-detail">结束 {{ .FinishedAt.Format "01-02 15:04:05" }}</div>{{ end }}</td>
                         <td class="queue-error">{{ if .ErrorMessage }}{{ .ErrorMessage }}{{ else }}—{{ end }}</td>
+                        <td>{{ if eq .Status "failed" }}<button type="button" class="btn btn-secondary btn-sm" onclick="retryJob(this, {{ .ID }})">重试</button>{{ else }}—{{ end }}</td>
                     </tr>
-                    {{ else }}<tr><td colspan="6" class="empty-cell">当前筛选条件下没有任务</td></tr>{{ end }}
+                    {{ else }}<tr><td colspan="7" class="empty-cell">当前筛选条件下没有任务</td></tr>{{ end }}
                 </tbody>
             </table>
         </div>
@@ -70,4 +90,37 @@
     </nav>
     {{ end }}
 </div>
+
+<script>
+async function postRetry(button, url, formData) {
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = '处理中…';
+    try {
+        const response = await fetch(url, { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || '重试失败');
+        window.location.reload();
+    } catch (error) {
+        alert(error.message);
+        button.disabled = false;
+        button.textContent = original;
+    }
+}
+
+function retryJob(button, jobID) {
+    const formData = new FormData();
+    formData.append('job_id', jobID);
+    postRetry(button, '/admin/jobs/retry', formData);
+}
+
+function retryFailedJobs(button) {
+    const taskType = document.getElementById('retry-task-type').value;
+    const label = taskType ? '「' + taskType + '」类型的' : '全部';
+    if (!confirm('确认重试' + label + '失败任务？单次最多恢复 500 条。')) return;
+    const formData = new FormData();
+    formData.append('task_type', taskType);
+    postRetry(button, '/admin/jobs/retry-failed', formData);
+}
+</script>
 {{ end }}

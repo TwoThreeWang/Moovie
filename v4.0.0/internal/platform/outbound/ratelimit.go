@@ -50,6 +50,23 @@ func (limiter *Limiter) Wait(ctx context.Context) error {
 	}
 }
 
+// Allow 是 Wait 的非阻塞版本：能立刻发就占住名额返回 true，否则原样返回 false。
+// 后台任务用它来控制自己占用 worker 的时长——与其在限流器里干等，
+// 不如把剩下的对象留给下一轮，让执行槽先去处理别的任务。
+func (limiter *Limiter) Allow() bool {
+	if limiter == nil {
+		return true
+	}
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	now := time.Now()
+	if limiter.next.After(now) {
+		return false
+	}
+	limiter.next = now.Add(limiter.interval)
+	return true
+}
+
 // Pause 在已有节奏之上追加一段冷却，用于响应 429 或 Retry-After。
 func (limiter *Limiter) Pause(duration time.Duration) {
 	if limiter == nil || duration <= 0 {

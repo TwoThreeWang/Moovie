@@ -134,6 +134,8 @@ var Routes = []Route{
 	{Method: "POST", Path: "/admin/data/retire", Surface: SurfaceAdmin},
 	{Method: "POST", Path: "/admin/data/restore", Surface: SurfaceAdmin},
 	{Method: "GET", Path: "/admin/jobs", Surface: SurfaceAdmin},
+	{Method: "POST", Path: "/admin/jobs/retry", Surface: SurfaceAdmin},
+	{Method: "POST", Path: "/admin/jobs/retry-failed", Surface: SurfaceAdmin},
 	{Method: "GET", Path: "/admin/matches", Surface: SurfaceAdmin},
 	{Method: "POST", Path: "/admin/matches/decision", Surface: SurfaceAdmin},
 	{Method: "GET", Path: "/api/v2/admin/media-matches", Surface: SurfaceAdmin},

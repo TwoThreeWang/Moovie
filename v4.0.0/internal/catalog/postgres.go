@@ -201,6 +201,69 @@ media_id=EXCLUDED.media_id, is_primary=TRUE, verified_at=NOW(), updated_at=NOW()
 	return nil
 }
 
+// PendingIMDbLookups 返回还缺 IMDb 映射的豆瓣 ID。
+// retryAfter 之内查过一次的会被跳过：查不到通常意味着上游确实没有这个条目，
+// 每轮重查只会挤占新条目的名额。NULLS FIRST 保证从没查过的排在最前面。
+func (store *PostgresStore) PendingIMDbLookups(ctx context.Context, limit int, retryAfter time.Duration) ([]string, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if retryAfter <= 0 {
+		retryAfter = 30 * 24 * time.Hour
+	}
+	rows, err := store.database.Query(ctx, `SELECT m.douban_id FROM media m
+WHERE m.douban_id <> ''
+  AND (m.imdb_lookup_at IS NULL OR m.imdb_lookup_at < NOW() - $2 * INTERVAL '1 second')
+  AND NOT EXISTS (SELECT 1 FROM media_external_ids x WHERE x.media_id = m.id AND x.provider = 'imdb')
+ORDER BY m.imdb_lookup_at NULLS FIRST, m.id LIMIT $1`, limit, retryAfter.Seconds())
+	if err != nil {
+		return nil, fmt.Errorf("list pending IMDb lookups: %w", err)
+	}
+	defer rows.Close()
+	doubanIDs := make([]string, 0, limit)
+	for rows.Next() {
+		var doubanID string
+		if err := rows.Scan(&doubanID); err != nil {
+			return nil, fmt.Errorf("scan pending IMDb lookup: %w", err)
+		}
+		doubanIDs = append(doubanIDs, doubanID)
+	}
+	return doubanIDs, rows.Err()
+}
+
+// SaveIMDbID 只写映射关系，不碰媒体主资料。external_type 的取值规则与 Upsert 保持一致：
+// 同一个 IMDb ID 在电影和剧集命名空间下是两条记录。
+func (store *PostgresStore) SaveIMDbID(ctx context.Context, doubanID, imdbID string) error {
+	if doubanID == "" || imdbID == "" {
+		return fmt.Errorf("douban ID and IMDb ID are required")
+	}
+	_, err := store.database.Exec(ctx, `INSERT INTO media_external_ids
+(media_id, provider, external_type, external_id, is_primary, verified_at)
+SELECT m.id, 'imdb',
+    CASE WHEN m.media_type IN ('tv','series','season','show','animation') THEN 'tv' ELSE 'movie' END,
+    $2, TRUE, NOW()
+FROM media m WHERE m.douban_id = $1
+ON CONFLICT (provider, external_type, external_id) DO UPDATE SET
+media_id=EXCLUDED.media_id, is_primary=TRUE, verified_at=NOW(), updated_at=NOW()`, doubanID, imdbID)
+	if err != nil {
+		return fmt.Errorf("save IMDb mapping: %w", err)
+	}
+	return nil
+}
+
+// MarkIMDbLookupAttempt 记录这批豆瓣 ID 刚被查过，无论是否命中。
+func (store *PostgresStore) MarkIMDbLookupAttempt(ctx context.Context, doubanIDs []string) error {
+	if len(doubanIDs) == 0 {
+		return nil
+	}
+	_, err := store.database.Exec(ctx,
+		`UPDATE media SET imdb_lookup_at = NOW() WHERE douban_id = ANY($1)`, doubanIDs)
+	if err != nil {
+		return fmt.Errorf("mark IMDb lookup attempt: %w", err)
+	}
+	return nil
+}
+
 func (store *PostgresStore) DeleteByDoubanID(ctx context.Context, doubanID string) error {
 	if _, err := store.database.Exec(ctx, `DELETE FROM media WHERE douban_id = $1`, doubanID); err != nil {
 		return fmt.Errorf("delete media: %w", err)

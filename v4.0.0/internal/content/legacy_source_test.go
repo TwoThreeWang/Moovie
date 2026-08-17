@@ -69,7 +69,7 @@ func TestEveryPageAndPartialTemplateMatchesLegacySource(t *testing.T) {
 			if isReviewedTemplateDrift(relative) {
 				return nil
 			}
-			legacy := readFile(t, filepath.Join(legacyTemplates, relative))
+			legacy := normalizeReviewedPlaceholder(readFile(t, filepath.Join(legacyTemplates, relative)))
 			refactored := normalizeReviewedPlaceholder(readFile(t, path))
 			if !bytes.Equal(legacy, refactored) {
 				t.Errorf("%s drifted from the frozen legacy source", relative)
@@ -166,7 +166,7 @@ func TestFrozenPublicFilesMatchLegacySource(t *testing.T) {
 			if isReviewedHTMXLoadingFile(relativePath) || isReviewedTemplateDrift(relativePath) {
 				return
 			}
-			legacy := readFile(t, filepath.Join(legacyWebRoot, relativePath))
+			legacy := normalizeReviewedPlaceholder(readFile(t, filepath.Join(legacyWebRoot, relativePath)))
 			refactored := normalizeReviewedPlaceholder(readFile(t, filepath.Join(newWebRoot, relativePath)))
 			if !bytes.Equal(legacy, refactored) {
 				t.Fatalf("%s drifted from the frozen legacy source", relativePath)
@@ -310,6 +310,9 @@ func isReviewedTemplateDrift(relativePath string) bool {
 // normalizeReviewedPlaceholder 把海报加载失败时回退到占位图的增强还原成旧站写法。
 // 旧站是直接隐藏图片，新站显示占位图；这与 base.html 中同源的 onerror 例外是
 // 同一次可访问性审阅的产物，因此在比对前统一抹平而不是逐个文件豁免。
+// normalizeReviewedPlaceholder 把「图片加载失败换占位图」这处已复核的改动折叠掉，
+// 使两种写法都算通过。必须对冻结源和新文件同时调用：占位图写法后来也被回填进了冻结源，
+// 只归一化一边反而会把两个完全相同的文件判成漂移。
 func normalizeReviewedPlaceholder(contents []byte) []byte {
 	normalized := strings.ReplaceAll(string(contents),
 		`onerror="this.onerror=null;this.src='/static/img/placeholder.svg'"`,

@@ -78,8 +78,14 @@ func main() {
 	defer aiClient.CloseIdleConnections()
 	metadataProvider := catalog.NewDoubanProvider(client, movies, catalog.WithDoubanCanonicalWriter(mediaStore))
 	tmdbProvider := catalog.NewTMDBProvider(client, movies, cfg.Catalog.TMDBToken,
-		catalog.WithTMDBCanonicalWriter(mediaStore), catalog.WithTMDBMediaUnitWriter(mediaStore),
-		catalog.WithTMDBIMDbLookupInterval(cfg.Catalog.IMDbLookupInterval))
+		catalog.WithTMDBCanonicalWriter(mediaStore), catalog.WithTMDBMediaUnitWriter(mediaStore))
+	// SPARQL 批量查询比普通抓取慢得多，单独一个 Client，超时按 Wikidata 的查询上限配。
+	wikidataClient := outbound.NewClient(cfg.Catalog.WikidataTimeout, 2)
+	defer wikidataClient.CloseIdleConnections()
+	imdbBackfill := catalog.NewIMDbBackfillHandler(movies, movies,
+		catalog.NewWikidataResolver(wikidataClient, cfg.Catalog.WikidataEndpoint, cfg.Catalog.WikidataUserAgent),
+		catalog.WithIMDbFallback(catalog.NewWMDBResolver(client, "", cfg.Catalog.IMDbLookupInterval)),
+		catalog.WithIMDbBatchSize(cfg.Catalog.IMDbBackfillBatch))
 	embeddingService := catalog.NewEmbeddingService(client, movies, catalog.EmbeddingConfig{
 		OllamaHost: cfg.Catalog.OllamaHost, OllamaModel: cfg.Catalog.OllamaModel,
 		CFGatewayURL: cfg.Catalog.CFGatewayURL, CFAPIToken: cfg.Catalog.CFAPIToken,
@@ -111,12 +117,14 @@ func main() {
 		dispatcher.Handle(taskType, 10*time.Minute, metadataHandler.Handle)
 	}
 	dispatcher.Handle("metadata_schedule", 2*time.Minute, metadataHandler.Schedule)
+	dispatcher.Handle(catalog.TaskIMDbBackfill, 5*time.Minute, imdbBackfill.Handle)
 	dispatcher.Handle(douban.TaskSync, 30*time.Minute, doubanHandler.Handle)
 	dispatcher.Handle(douban.TaskDaily, 30*time.Minute, doubanHandler.HandleDaily)
 	dispatcher.Handle(playback.TaskPopularityRefresh, 15*time.Minute, popularityRefresher.Handle)
 	dispatcher.Handle(operations.TaskCleanup, 30*time.Minute, operationsService.HandleCleanup)
 	dispatcher.Handle(operations.TaskHealthCheck, 5*time.Minute, operationsService.HandleHealthCheck)
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: "metadata_schedule", SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute})
+	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: catalog.TaskIMDbBackfill, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute, InitialDelay: 30 * time.Second})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: douban.TaskDaily, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour, InitialDelay: time.Minute})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: cfg.Popularity.RefreshInterval})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: operations.TaskCleanup, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour})
