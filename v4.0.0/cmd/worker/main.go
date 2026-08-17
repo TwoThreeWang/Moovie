@@ -78,6 +78,8 @@ func main() {
 		catalog.WithTMDBCanonicalWriter(mediaStore), catalog.WithTMDBMediaUnitWriter(mediaStore))
 	embeddingService := catalog.NewEmbeddingService(client, movies, catalog.EmbeddingConfig{
 		OllamaHost: cfg.Catalog.OllamaHost, OllamaModel: cfg.Catalog.OllamaModel,
+		CFGatewayURL: cfg.Catalog.CFGatewayURL, CFAPIToken: cfg.Catalog.CFAPIToken,
+		CFAIModel: cfg.Catalog.CFAIModel,
 	})
 	refreshOptions := []catalog.RefreshHandlerOption{catalog.WithRefreshReviews(metadataProvider)}
 	if cfg.Catalog.TMDBToken != "" {

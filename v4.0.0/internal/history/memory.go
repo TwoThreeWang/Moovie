@@ -79,12 +79,13 @@ func (store *MemoryStore) ListByUser(_ context.Context, userID, limit, offset in
 	return append([]Record(nil), records[offset:end]...), nil
 }
 
+// CountByUser 与 PostgresStore 保持同一口径：只数还在看的，看完的不计入。
 func (store *MemoryStore) CountByUser(_ context.Context, userID int) (int, error) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
 	count := 0
 	for _, record := range store.records {
-		if record.UserID == userID {
+		if record.UserID == userID && record.Progress < 100 {
 			count++
 		}
 	}

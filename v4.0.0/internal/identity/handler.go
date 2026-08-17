@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -152,14 +153,27 @@ func (handler *Handler) dashboard(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/auth/login")
 		return
 	}
+	// 这些计数失败时页面照常渲染，但错误不能静默吞掉：曾经有一个 SQL 少传参数的
+	// bug，因为 err 被丢给 _，仪表盘只是一直显示 0，没有任何线索。
+	countError := func(name string, err error) {
+		if err != nil {
+			slog.Warn("dashboard counter failed", "counter", name, "user_id", user.ID, "error", err)
+		}
+	}
 	historyCount := 0
 	if handler.historyCounter != nil {
-		historyCount, _ = handler.historyCounter.CountByUser(c.Request.Context(), user.ID)
+		count, err := handler.historyCounter.CountByUser(c.Request.Context(), user.ID)
+		countError("history", err)
+		historyCount = count
 	}
 	favoriteCount, watchedCount := 0, 0
 	if handler.libraryCounter != nil {
-		favoriteCount, _ = handler.libraryCounter.CountByUser(c.Request.Context(), user.ID, "wish")
-		watchedCount, _ = handler.libraryCounter.CountByUser(c.Request.Context(), user.ID, "watched")
+		wish, err := handler.libraryCounter.CountByUser(c.Request.Context(), user.ID, "wish")
+		countError("wish", err)
+		favoriteCount = wish
+		watched, err := handler.libraryCounter.CountByUser(c.Request.Context(), user.ID, "watched")
+		countError("watched", err)
+		watchedCount = watched
 	}
 	var monthlyReport any
 	if handler.monthlyReports != nil {

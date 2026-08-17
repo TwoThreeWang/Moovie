@@ -50,10 +50,21 @@ func (store *PostgresStore) ListByUser(ctx context.Context, userID, limit, offse
 ORDER BY position.activity_at DESC LIMIT $2 OFFSET $3`, userID, limit, offset)
 }
 
+// CountByUser 统计「在看」数量，口径与 ListContinue 一致：排除已看完的，
+// 也排除已经在片单里标记为看过的。仪表盘的「部在看」用的就是这个数字，
+// 如果只按 deleted_at 过滤，会把看完的也算进去，和下方列表对不上。
 func (store *PostgresStore) CountByUser(ctx context.Context, userID int) (int, error) {
 	var count int64
-	if err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM playback_positions
-WHERE user_id = $1 AND deleted_at IS NULL`).Scan(&count); err != nil {
+	if err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM playback_positions position
+WHERE position.user_id = $1 AND position.deleted_at IS NULL AND position.completed = FALSE
+AND NOT EXISTS (
+    SELECT 1 FROM user_movies
+    WHERE user_movies.user_id = position.user_id
+      AND user_movies.media_id IS NOT NULL
+      AND user_movies.media_id = position.media_id
+      AND user_movies.status = 'watched'
+      AND user_movies.updated_at >= position.activity_at
+)`, userID).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count playback positions: %w", err)
 	}
 	return int(count), nil

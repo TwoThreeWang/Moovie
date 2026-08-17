@@ -219,6 +219,8 @@ func main() {
 	tmdbProvider := catalog.NewTMDBProvider(sourceClient, catalogStore, cfg.Catalog.TMDBToken, tmdbOptions...)
 	embeddingService := catalog.NewEmbeddingService(sourceClient, catalogStore, catalog.EmbeddingConfig{
 		OllamaHost: cfg.Catalog.OllamaHost, OllamaModel: cfg.Catalog.OllamaModel,
+		CFGatewayURL: cfg.Catalog.CFGatewayURL, CFAPIToken: cfg.Catalog.CFAPIToken,
+		CFAIModel: cfg.Catalog.CFAIModel,
 	})
 	var metadataRefreshHandler *catalog.RefreshHandler
 	if metadataRefreshJobs != nil {
