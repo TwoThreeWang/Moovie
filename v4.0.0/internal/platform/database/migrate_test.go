@@ -17,7 +17,7 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		versions = append(versions, migration.version)
 	}
-	if !reflect.DeepEqual(versions, []string{"0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0036", "0037", "0038", "0039", "0040"}) {
+	if !reflect.DeepEqual(versions, []string{"0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0036", "0037", "0038", "0039", "0040", "0041"}) {
 		t.Fatalf("migrations = %+v", migrations)
 	}
 	upperSQL := ""
@@ -42,6 +42,16 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	// 没有尝试时间，回填任务每轮都会重新捞同一批查不到的条目。
 	if !strings.Contains(upperSQL, "ADD COLUMN IMDB_LOOKUP_AT") {
 		t.Fatal("IMDb backfill migration does not record lookup attempts")
+	}
+	// 批量源和兜底源的成本差三个数量级，必须各记一列：共用一列的话，
+	// 批量源的「查不到」结论无处安放，那批候选就会永远压在队首。
+	if !strings.Contains(upperSQL, "ADD COLUMN IMDB_BATCH_LOOKUP_AT") {
+		t.Fatal("IMDb lookup stage migration does not separate batch attempts from fallback attempts")
+	}
+	for _, required := range []string{"MEDIA_IMDB_BATCH_LOOKUP_IDX", "MEDIA_IMDB_FALLBACK_LOOKUP_IDX", "^[0-9]{6,9}$"} {
+		if !strings.Contains(upperSQL, required) {
+			t.Fatalf("IMDb lookup stage migration missing %q", required)
+		}
 	}
 	for _, required := range []string{"ADD COLUMN IF NOT EXISTS EXTERNAL_TYPE", "(PROVIDER, EXTERNAL_TYPE, EXTERNAL_ID)", "(MEDIA_ID, PROVIDER, EXTERNAL_TYPE)"} {
 		if !strings.Contains(upperSQL, required) {

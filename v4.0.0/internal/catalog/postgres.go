@@ -201,21 +201,48 @@ media_id=EXCLUDED.media_id, is_primary=TRUE, verified_at=NOW(), updated_at=NOW()
 	return nil
 }
 
-// PendingIMDbLookups 返回还缺 IMDb 映射的豆瓣 ID。
-// retryAfter 之内查过一次的会被跳过：查不到通常意味着上游确实没有这个条目，
-// 每轮重查只会挤占新条目的名额。NULLS FIRST 保证从没查过的排在最前面。
-func (store *PostgresStore) PendingIMDbLookups(ctx context.Context, limit int, retryAfter time.Duration) ([]string, error) {
+// imdbCandidatePredicate 是两个阶段共用的候选条件。
+// 豆瓣 ID 的格式约束与 validDoubanID 必须逐字一致：不合规的值在 wikidataQuery 里
+// 会被静默丢掉，留在候选里只会让「查了没命中」和「根本没查」在日志上无法区分。
+// 索引 media_imdb_batch_lookup_idx / media_imdb_fallback_lookup_idx 依赖同一个谓词。
+const imdbCandidatePredicate = `m.douban_id ~ '^[0-9]{6,9}$'
+  AND NOT EXISTS (SELECT 1 FROM media_external_ids x WHERE x.media_id = m.id AND x.provider = 'imdb')`
+
+// PendingIMDbBatchLookups 返回该交给批量源（Wikidata）的豆瓣 ID。
+// 批量查询一次问 200 条只算一个请求，所以这个队列可以扫得又快又频繁；
+// retryAfter 存在的意义是给 Wikidata 后来新增的映射一个被发现的机会。
+func (store *PostgresStore) PendingIMDbBatchLookups(ctx context.Context, limit int, retryAfter time.Duration) ([]string, error) {
 	if limit <= 0 {
 		limit = 200
 	}
 	if retryAfter <= 0 {
+		retryAfter = 7 * 24 * time.Hour
+	}
+	return store.pendingIMDbLookups(ctx, `SELECT m.douban_id FROM media m
+WHERE `+imdbCandidatePredicate+`
+  AND (m.imdb_batch_lookup_at IS NULL OR m.imdb_batch_lookup_at < NOW() - $2 * INTERVAL '1 second')
+ORDER BY m.imdb_batch_lookup_at NULLS FIRST, m.id LIMIT $1`, limit, retryAfter)
+}
+
+// PendingIMDbFallbackLookups 返回该交给逐条兜底源（wmdb）的豆瓣 ID。
+// 只有批量源已经给过结论的条目才有资格进这个队列——兜底源限流极严，
+// 不能把批量源本来就能解决的条目也喂给它。
+func (store *PostgresStore) PendingIMDbFallbackLookups(ctx context.Context, limit int, retryAfter time.Duration) ([]string, error) {
+	if limit <= 0 {
+		limit = 32
+	}
+	if retryAfter <= 0 {
 		retryAfter = 30 * 24 * time.Hour
 	}
-	rows, err := store.database.Query(ctx, `SELECT m.douban_id FROM media m
-WHERE m.douban_id <> ''
+	return store.pendingIMDbLookups(ctx, `SELECT m.douban_id FROM media m
+WHERE `+imdbCandidatePredicate+`
+  AND m.imdb_batch_lookup_at IS NOT NULL
   AND (m.imdb_lookup_at IS NULL OR m.imdb_lookup_at < NOW() - $2 * INTERVAL '1 second')
-  AND NOT EXISTS (SELECT 1 FROM media_external_ids x WHERE x.media_id = m.id AND x.provider = 'imdb')
-ORDER BY m.imdb_lookup_at NULLS FIRST, m.id LIMIT $1`, limit, retryAfter.Seconds())
+ORDER BY m.imdb_lookup_at NULLS FIRST, m.id LIMIT $1`, limit, retryAfter)
+}
+
+func (store *PostgresStore) pendingIMDbLookups(ctx context.Context, query string, limit int, retryAfter time.Duration) ([]string, error) {
+	rows, err := store.database.Query(ctx, query, limit, retryAfter.Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("list pending IMDb lookups: %w", err)
 	}
@@ -251,14 +278,23 @@ media_id=EXCLUDED.media_id, is_primary=TRUE, verified_at=NOW(), updated_at=NOW()
 	return nil
 }
 
-// MarkIMDbLookupAttempt 记录这批豆瓣 ID 刚被查过，无论是否命中。
+// MarkIMDbBatchAttempt 记录这批豆瓣 ID 刚被批量源问过，无论是否命中。
+// SPARQL 返回 200 而某个 ID 没有 binding 是一个确定的结论：Wikidata 上就是没有
+// P4529→P345 的连通路径。把它当成「不确定」而不记账，队首就永远不会往前滚动。
+func (store *PostgresStore) MarkIMDbBatchAttempt(ctx context.Context, doubanIDs []string) error {
+	return store.markIMDbAttempt(ctx, `UPDATE media SET imdb_batch_lookup_at = NOW() WHERE douban_id = ANY($1)`, doubanIDs)
+}
+
+// MarkIMDbLookupAttempt 记录这批豆瓣 ID 刚被兜底源问过，无论是否命中。
 func (store *PostgresStore) MarkIMDbLookupAttempt(ctx context.Context, doubanIDs []string) error {
+	return store.markIMDbAttempt(ctx, `UPDATE media SET imdb_lookup_at = NOW() WHERE douban_id = ANY($1)`, doubanIDs)
+}
+
+func (store *PostgresStore) markIMDbAttempt(ctx context.Context, query string, doubanIDs []string) error {
 	if len(doubanIDs) == 0 {
 		return nil
 	}
-	_, err := store.database.Exec(ctx,
-		`UPDATE media SET imdb_lookup_at = NOW() WHERE douban_id = ANY($1)`, doubanIDs)
-	if err != nil {
+	if _, err := store.database.Exec(ctx, query, doubanIDs); err != nil {
 		return fmt.Errorf("mark IMDb lookup attempt: %w", err)
 	}
 	return nil
