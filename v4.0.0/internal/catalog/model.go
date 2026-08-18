@@ -17,6 +17,7 @@ type Movie struct {
 	Summary               string
 	Duration              string
 	IMDbID                string
+	MediaType             string
 	SeriesStatus          string
 	Backdrops             string
 	EmbeddingContent      string

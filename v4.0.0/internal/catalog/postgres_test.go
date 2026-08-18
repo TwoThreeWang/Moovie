@@ -44,8 +44,9 @@ func TestPostgresStoreFindAndSitemapOrdering(t *testing.T) {
 	updatedAt := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
 	reviewsAt := updatedAt.Add(-time.Hour)
 	nextRefreshAt := updatedAt.Add(24 * time.Hour)
-	// 列顺序与 movieColumns 一致：… reviews_updated_at, metadata_status, completeness_score, next_refresh_at, updated_at, embedding::text。
-	values := []any{1, "1292052", "肖申克", "Original", "1994", "poster", 9.7, "剧情", "美国", "[]", "[]", "简介", "142分钟", "tt0111161", "Ended", "", "推荐语", "semantic-hash", "[]", reviewsAt, "ready", 92, &nextRefreshAt, updatedAt, ""}
+	// 列顺序与 movieColumns 一致：… imdb_id, media_type, series_status, backdrops, embedding_content, semantic_hash, reviews_json,
+	// reviews_updated_at, metadata_status, completeness_score, next_refresh_at, updated_at, embedding::text。
+	values := []any{1, "1292052", "肖申克", "Original", "1994", "poster", 9.7, "剧情", "美国", "[]", "[]", "简介", "142分钟", "tt0111161", "movie", "Ended", "", "推荐语", "semantic-hash", "[]", reviewsAt, "ready", 92, &nextRefreshAt, updatedAt, ""}
 	fake := &catalogFakeDatabase{rows: &catalogFakeRows{values: [][]any{values}}}
 	store := NewPostgresStore(fake)
 	movie, err := store.FindByDoubanID(t.Context(), "1292052")

@@ -27,11 +27,12 @@ func (err *upstreamStatusError) Error() string {
 }
 
 // classifyUpstreamStatus 把非 200 响应翻译成队列能理解的失败类型。
-// 429 和 503 是「稍后再来」，不该按普通错误消耗任务的重试预算。
+// 429 和 503 是「稍后再来」；生产环境里豆瓣对被限流/封禁的 IP 也会用 400 打发，
+// 这种 400 同样是「稍后再来」而不是「请求本身有问题」，不该按普通错误消耗任务的重试预算。
 func classifyUpstreamStatus(source string, response *http.Response) error {
 	statusError := &upstreamStatusError{source: source, status: response.StatusCode}
 	switch response.StatusCode {
-	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
+	case http.StatusBadRequest, http.StatusTooManyRequests, http.StatusServiceUnavailable:
 		return workqueue.Throttled(statusError, parseRetryAfter(response.Header.Get("Retry-After")))
 	default:
 		return statusError

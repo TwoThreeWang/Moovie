@@ -117,7 +117,7 @@ func (provider *DoubanProvider) Popular(ctx context.Context, movieType string) (
 	}
 	fallback := make([]PopularSubject, 0)
 	for _, movie := range local {
-		if inferMovieType(movie.Genres) != movieType {
+		if fallbackMovieType(movie) != movieType {
 			continue
 		}
 		fallback = append(fallback, PopularSubject{ID: movie.DoubanID, Title: movie.Title, Rate: fmt.Sprintf("%.1f", movie.Rating), Cover: proxyImageURL(movie.Poster)})
@@ -410,6 +410,23 @@ func mapRexxarMovie(response rexxarMovie) Movie {
 	actorJSON, _ := json.Marshal(actors)
 	movie.Directors, movie.Actors = string(directorJSON), string(actorJSON)
 	return movie
+}
+
+// fallbackMovieType 是本地数据库兜底专用的分类器。豆瓣真实的 genres 字段
+// 只是「剧情/动作/悬疑」这类内容标签，几乎不会出现「电视剧」「综艺」字样，
+// inferMovieType 在这些词上的匹配对本地库里的真实数据基本不命中——直接拿它给
+// 兜底分组会导致电影和非电影混进同一个池子。这里先用可靠的 media.media_type
+// （电影/非电影二分，写入时来自豆瓣详情端点，比猜内容标签靠谱）做硬隔离，
+// 保证电影绝不会串进剧集/综艺/动漫，反之亦然；非电影桶内部仍用 inferMovieType
+// 按关键词细分剧集/综艺/动漫，但匹配不到时归入剧集而不是电影。
+func fallbackMovieType(movie Movie) string {
+	if movie.MediaType != "tv" {
+		return "movie"
+	}
+	if subType := inferMovieType(movie.Genres); subType != "movie" {
+		return subType
+	}
+	return "tv"
 }
 
 func inferMovieType(genres string) string {
