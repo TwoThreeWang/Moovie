@@ -4,16 +4,24 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
-func TestMemoryStoreAggregatesHealthStatsSinceCutoff(t *testing.T) {
-	store := NewMemoryStore()
+func TestPostgresStoreAggregatesHealthStatsSinceCutoff(t *testing.T) {
+	store := NewPostgresStore(testdb.Pool(t))
 	now := time.Now().Truncate(time.Hour)
+	// 同一批里不能出现两条 (site_key, bucket) 相同的记录：ON CONFLICT DO UPDATE
+	// 不允许在一条语句里更新同一行两次。分两批写入，等价于真实的分次上报。
 	err := store.AddHealthStats(context.Background(), []HealthStat{
 		{SiteKey: "source", Bucket: now.Add(-25 * time.Hour), ErrorCount: 9, TotalMs: 900},
 		{SiteKey: "source", Bucket: now, OKCount: 2, TotalMs: 200},
-		{SiteKey: "source", Bucket: now, EmptyCount: 1, TotalMs: 100},
 	})
+	if err == nil {
+		err = store.AddHealthStats(context.Background(), []HealthStat{
+			{SiteKey: "source", Bucket: now, EmptyCount: 1, TotalMs: 100},
+		})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

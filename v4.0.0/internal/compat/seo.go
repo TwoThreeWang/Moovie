@@ -16,18 +16,11 @@ import (
 
 const maxResponseBytes = 8 << 20
 
+// Case 描述一次页面抓取：Kind 为 "html" 时额外解析 SEO 元数据。
 type Case struct {
-	Name                string   `json:"name"`
-	Path                string   `json:"path"`
-	Kind                string   `json:"kind"`
-	CompareBody         bool     `json:"compare_body,omitempty"`
-	RequiredEnv         []string `json:"required_env,omitempty"`
-	ExpectedDifferences []string `json:"expected_differences,omitempty"`
-	DifferenceReason    string   `json:"difference_reason,omitempty"`
-}
-
-type Manifest struct {
-	Cases []Case `json:"cases"`
+	Path        string
+	Kind        string
+	CompareBody bool
 }
 
 type Snapshot struct {
@@ -52,62 +45,6 @@ type Snapshot struct {
 	Links              []string
 	StructuredData     []string
 	Body               string
-}
-
-func LoadManifest(reader io.Reader) (Manifest, error) {
-	var manifest Manifest
-	decoder := json.NewDecoder(reader)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&manifest); err != nil {
-		return Manifest{}, fmt.Errorf("decode manifest: %w", err)
-	}
-	if len(manifest.Cases) == 0 {
-		return Manifest{}, fmt.Errorf("manifest contains no cases")
-	}
-	for _, testCase := range manifest.Cases {
-		for _, field := range testCase.ExpectedDifferences {
-			if !knownDifferenceField(field) {
-				return Manifest{}, fmt.Errorf("case %q has unsupported expected difference %q", testCase.Name, field)
-			}
-		}
-		if len(testCase.ExpectedDifferences) > 0 && strings.TrimSpace(testCase.DifferenceReason) == "" {
-			return Manifest{}, fmt.Errorf("case %q has expected differences but no difference_reason", testCase.Name)
-		}
-	}
-	return manifest, nil
-}
-
-var differenceFields = map[string]struct{}{
-	"status": {}, "content-type": {}, "location": {}, "title": {}, "description": {}, "keywords": {},
-	"robots": {}, "canonical": {}, "og:title": {}, "og:description": {}, "og:image": {}, "og:type": {},
-	"twitter:card": {}, "twitter:title": {}, "twitter:description": {}, "twitter:image": {}, "h1": {},
-	"indexable-text": {}, "links": {}, "structured-data": {}, "body": {},
-}
-
-func knownDifferenceField(field string) bool {
-	_, ok := differenceFields[strings.TrimSpace(field)]
-	return ok
-}
-
-// FilterExpectedDifferences 只允许清单用例明确声明的字段差异，从而保持严格比较。
-// 任何新出现的字段差异仍会被视为意外变化，并让兼容检查失败。
-func FilterExpectedDifferences(differences, expected []string) (unexpected, explained []string) {
-	allowed := make(map[string]struct{}, len(expected))
-	for _, field := range expected {
-		allowed[strings.TrimSpace(field)] = struct{}{}
-	}
-	for _, difference := range differences {
-		field := difference
-		if index := strings.Index(difference, " differs:"); index >= 0 {
-			field = difference[:index]
-		}
-		if _, ok := allowed[field]; ok {
-			explained = append(explained, difference)
-			continue
-		}
-		unexpected = append(unexpected, difference)
-	}
-	return unexpected, explained
 }
 
 func Fetch(ctx context.Context, client *http.Client, baseURL string, testCase Case) (Snapshot, error) {
@@ -163,44 +100,6 @@ func Fetch(ctx context.Context, client *http.Client, baseURL string, testCase Ca
 		return seo, nil
 	}
 	return snapshot, nil
-}
-
-func Compare(oldSnapshot, newSnapshot Snapshot) []string {
-	checks := []struct {
-		name string
-		old  any
-		new  any
-	}{
-		{"status", oldSnapshot.Status, newSnapshot.Status},
-		{"content-type", oldSnapshot.ContentType, newSnapshot.ContentType},
-		{"location", oldSnapshot.Location, newSnapshot.Location},
-		{"title", oldSnapshot.Title, newSnapshot.Title},
-		{"description", oldSnapshot.Description, newSnapshot.Description},
-		{"keywords", oldSnapshot.Keywords, newSnapshot.Keywords},
-		{"robots", oldSnapshot.Robots, newSnapshot.Robots},
-		{"canonical", oldSnapshot.Canonical, newSnapshot.Canonical},
-		{"og:title", oldSnapshot.OGTitle, newSnapshot.OGTitle},
-		{"og:description", oldSnapshot.OGDescription, newSnapshot.OGDescription},
-		{"og:image", oldSnapshot.OGImage, newSnapshot.OGImage},
-		{"og:type", oldSnapshot.OGType, newSnapshot.OGType},
-		{"twitter:card", oldSnapshot.TwitterCard, newSnapshot.TwitterCard},
-		{"twitter:title", oldSnapshot.TwitterTitle, newSnapshot.TwitterTitle},
-		{"twitter:description", oldSnapshot.TwitterDescription, newSnapshot.TwitterDescription},
-		{"twitter:image", oldSnapshot.TwitterImage, newSnapshot.TwitterImage},
-		{"h1", oldSnapshot.H1, newSnapshot.H1},
-		{"indexable-text", oldSnapshot.IndexableText, newSnapshot.IndexableText},
-		{"links", strings.Join(oldSnapshot.Links, "\n"), strings.Join(newSnapshot.Links, "\n")},
-		{"structured-data", strings.Join(oldSnapshot.StructuredData, "\n"), strings.Join(newSnapshot.StructuredData, "\n")},
-		{"body", oldSnapshot.Body, newSnapshot.Body},
-	}
-
-	differences := make([]string, 0)
-	for _, check := range checks {
-		if fmt.Sprint(check.old) != fmt.Sprint(check.new) {
-			differences = append(differences, fmt.Sprintf("%s differs: old=%q new=%q", check.name, summarize(check.old), summarize(check.new)))
-		}
-	}
-	return differences
 }
 
 func extractHTML(body []byte) (Snapshot, error) {
@@ -336,16 +235,6 @@ func normalizedLink(value string) string {
 	}
 	parsed.Fragment = ""
 	return parsed.String()
-}
-
-func summarize(value any) string {
-	const maximum = 240
-	text := fmt.Sprint(value)
-	runes := []rune(text)
-	if len(runes) <= maximum {
-		return text
-	}
-	return string(runes[:maximum]) + fmt.Sprintf("… (%d chars)", len(runes))
 }
 
 func attribute(node *html.Node, key string) string {

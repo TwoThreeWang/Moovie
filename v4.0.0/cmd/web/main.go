@@ -98,8 +98,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Store 变量先按业务接口声明，再根据 DB_ENABLED 选择 PostgreSQL 或内存实现。
-	// Handler 和 Service 只依赖这些接口，因此不需要知道底层使用哪种存储。
+	// Store 变量按业务接口声明，实现统一来自 PostgreSQL。
+	// Handler 和 Service 只依赖这些接口，因此不需要知道底层表结构。
 	renderer, err := platformweb.LoadRenderer(filepath.Join(cfg.WebRoot, "templates"), contentPages)
 	if err != nil {
 		slog.Error("template loading failed", "error", err)
@@ -129,67 +129,47 @@ func main() {
 	var adminSearchStore admin.SearchStore
 	var operationsStore operations.Store
 	var databasePool *database.Pool
-	if cfg.Database.Enabled {
-		// 数据库连接和 migration 都设置独立超时，防止启动过程无限卡住。
-		connectContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		databasePool, err = database.Connect(connectContext, cfg.Database.DSN(), cfg.Database.MaxConns)
+	// 数据库连接和 migration 都设置独立超时，防止启动过程无限卡住。
+	connectContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	databasePool, err = database.Connect(connectContext, cfg.Database.DSN(), cfg.Database.MaxConns)
+	cancel()
+	if err != nil {
+		slog.Error("database connection failed", "error", err)
+		os.Exit(1)
+	}
+	if cfg.Database.Migrate {
+		migrationContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err = database.Migrate(migrationContext, databasePool)
 		cancel()
 		if err != nil {
-			slog.Error("database connection failed", "error", err)
+			databasePool.Close()
+			slog.Error("database migration failed", "error", err)
 			os.Exit(1)
 		}
-		if cfg.Database.Migrate {
-			migrationContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			err = database.Migrate(migrationContext, databasePool)
-			cancel()
-			if err != nil {
-				databasePool.Close()
-				slog.Error("database migration failed", "error", err)
-				os.Exit(1)
-			}
-		}
-		postgresStore := search.NewPostgresStore(databasePool)
-		itemStore, siteStore, filterStore = postgresStore, postgresStore, postgresStore
-		adminSearchStore = postgresStore
-		operationsStore = postgresStore
-		searchLogStore, healthStatStore = postgresStore, postgresStore
-		historyStore = history.NewPostgresStore(databasePool)
-		mediaStore := mediaidentity.NewPostgresStore(databasePool)
-		mediaIdentityStore = mediaStore
-		canonicalStore = mediaStore
-		mediaIdentitySearch = mediaidentity.SearchAdapter{Store: mediaStore}
-		postgresIdentityStore := identity.NewPostgresStore(databasePool)
-		identityStore, doubanUserStore = postgresIdentityStore, postgresIdentityStore
-		libraryStore = library.NewPostgresStore(databasePool)
-		postgresCatalogStore := catalog.NewPostgresStore(databasePool)
-		catalogStore = postgresCatalogStore
-		metadataRefreshJobs = postgresCatalogStore
-		queueStore = workqueue.NewPostgresStore(databasePool)
-		doubanJobStore = douban.NewQueueJobStore(queueStore)
-		reportStore = report.NewPostgresStore(databasePool)
-		socialStore = social.NewPostgresStore(databasePool)
-		feedbackStore = feedback.NewPostgresStore(databasePool)
-		danmakuStore = danmaku.NewPostgresStore(databasePool)
-		readiness = databasePool.Ping
-	} else {
-		// 内存实现主要用于无数据库的隔离启动和测试，不具备跨进程持久化能力。
-		memoryStore := search.NewMemoryStore()
-		itemStore, siteStore, filterStore = memoryStore, memoryStore, memoryStore
-		adminSearchStore = memoryStore
-		operationsStore = memoryStore
-		searchLogStore, healthStatStore = memoryStore, memoryStore
-		historyStore = history.NewMemoryStore()
-		memoryIdentityStore := identity.NewMemoryStore()
-		identityStore, doubanUserStore = memoryIdentityStore, memoryIdentityStore
-		libraryStore = library.NewMemoryStore()
-		catalogStore = catalog.NewMemoryStore()
-		queueStore = workqueue.NewMemoryStore()
-		doubanJobStore = douban.NewMemoryJobStore(queueStore)
-		reportStore = report.NewMemoryStore()
-		socialStore = social.NewMemoryStore(libraryStore, identityStore)
-		feedbackStore = feedback.NewMemoryStore()
-		danmakuStore = danmaku.NewMemoryStore()
 	}
+	postgresStore := search.NewPostgresStore(databasePool)
+	itemStore, siteStore, filterStore = postgresStore, postgresStore, postgresStore
+	adminSearchStore = postgresStore
+	operationsStore = postgresStore
+	searchLogStore, healthStatStore = postgresStore, postgresStore
+	historyStore = history.NewPostgresStore(databasePool)
+	mediaStore := mediaidentity.NewPostgresStore(databasePool)
+	mediaIdentityStore = mediaStore
+	canonicalStore = mediaStore
+	mediaIdentitySearch = mediaidentity.SearchAdapter{Store: mediaStore}
+	postgresIdentityStore := identity.NewPostgresStore(databasePool)
+	identityStore, doubanUserStore = postgresIdentityStore, postgresIdentityStore
+	libraryStore = library.NewPostgresStore(databasePool)
+	postgresCatalogStore := catalog.NewPostgresStore(databasePool)
+	catalogStore = postgresCatalogStore
+	metadataRefreshJobs = postgresCatalogStore
+	queueStore = workqueue.NewPostgresStore(databasePool)
+	doubanJobStore = douban.NewQueueJobStore(queueStore)
+	reportStore = report.NewPostgresStore(databasePool)
+	socialStore = social.NewPostgresStore(databasePool)
+	feedbackStore = feedback.NewPostgresStore(databasePool)
+	danmakuStore = danmaku.NewPostgresStore(databasePool)
+	readiness = databasePool.Ping
 	// 搜索 Runner、健康状态和出站 Client 都是进程级共享对象；重复创建会绕过并发上限。
 	searchRunner := search.NewGoroutineRunner(cfg.Search.TotalTimeout, cfg.Search.BackgroundMaxConcurrency)
 	searchHealth := search.NewHealthWithStore(cfg.Search.BreakerEnabled, healthStatStore)

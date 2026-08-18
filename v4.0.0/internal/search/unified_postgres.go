@@ -162,7 +162,8 @@ func scanUnifiedResources(rows database.Rows) ([]VodItem, error) {
 			&item.VodSerial, &item.VodArea, &item.VodLang, &item.VodYear,
 			&item.VodDuration, &item.VodTime, &item.VodDoubanId, &item.VodContent,
 			&item.VodPlayUrl, &item.TypeName, &item.LastVisitedAt, &item.AvgSpeedMs,
-			&item.SampleCount, &item.FailedCount,
+			&item.SampleCount, &item.FailedCount, &item.ResourceStatus,
+			&item.MediaID, &item.MediaConfidence, &item.MediaMatch,
 		); err != nil {
 			return nil, fmt.Errorf("scan unified resource: %w", err)
 		}

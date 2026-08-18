@@ -101,7 +101,6 @@ func DatabaseConfigFromDotEnv(path string) (DatabaseConfig, error) {
 		return DatabaseConfig{}, errors.New("DB_NAME must be set in the selected env file")
 	}
 	return DatabaseConfig{
-		Enabled:  value("DB_ENABLED", "false") == "true",
 		Migrate:  value("DB_AUTO_MIGRATE", "true") == "true",
 		Host:     value("DB_HOST", "localhost"),
 		Port:     value("DB_PORT", "5432"),

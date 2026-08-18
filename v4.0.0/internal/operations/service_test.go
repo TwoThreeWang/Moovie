@@ -11,6 +11,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/feedback"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func captureLogs(t *testing.T) *bytes.Buffer {
@@ -23,15 +24,17 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 }
 
 func TestHealthAlertsPreserveThresholdPrecedenceAndCooldown(t *testing.T) {
-	store := search.NewMemoryStore()
-	store.ReplaceSites([]search.Site{{Key: "empty", Enabled: true}, {Key: "down", Enabled: true}, {Key: "small", Enabled: true}})
+	store := search.NewPostgresStore(testdb.Pool(t))
+	for _, site := range []search.Site{{Key: "empty", BaseURL: "", Enabled: true}, {Key: "down", BaseURL: "", Enabled: true}, {Key: "small", BaseURL: "", Enabled: true}} {
+		_, _ = store.CreateSite(t.Context(), site)
+	}
 	now := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
 	_ = store.AddHealthStats(t.Context(), []search.HealthStat{
 		{SiteKey: "empty", Bucket: now, EmptyCount: 99, ErrorCount: 1, TotalMs: 1000},
 		{SiteKey: "down", Bucket: now, EmptyCount: 98, ErrorCount: 2, TotalMs: 500},
 		{SiteKey: "small", Bucket: now, ErrorCount: 4, TotalMs: 40},
 	})
-	feedbackStore := feedback.NewMemoryStore()
+	feedbackStore := feedback.NewPostgresStore(testdb.Pool(t))
 	logs := captureLogs(t)
 	service := NewService(store)
 	service.now = func() time.Time { return now }

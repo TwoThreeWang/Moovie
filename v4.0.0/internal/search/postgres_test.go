@@ -17,7 +17,7 @@ func TestPostgresStoreSearchUsesPlaybackQualityAndPreservesMapping(t *testing.T)
 		"source", "42", "肖申克", "副标题", "Shawshank", "tag", "剧情",
 		"poster", "actor", "director", "blurb", "完结", "1994-01-01",
 		"1", "1", "美国", "英语", "1994", "142分钟", "today", "1292052",
-		"content", "a$m3u8", "电影", visitedAt, int64(800), int64(3), int64(1),
+		"content", "a$m3u8", "电影", visitedAt, int64(800), int64(3), int64(1), "active", int64(0), float64(0), "",
 	}}}}
 	store := NewPostgresStore(database)
 	items, err := store.Search(context.Background(), "肖申克")
@@ -62,7 +62,7 @@ func TestPostgresStoreListsOnlyLinkedNonRemovedResources(t *testing.T) {
 		int64(7), "source", "42", "流浪地球", "副标题", "Wandering Earth", "tag", "科幻",
 		"poster", "actor", "director", "blurb", "完结", "2019-01-01", "1", "1",
 		"中国", "国语", "2019", "125分钟", "today", "26266893", "content", "正片$url",
-		"电影", visitedAt, int64(120), int64(10), int64(1),
+		"电影", visitedAt, int64(120), int64(10), int64(1), "active", int64(7), float64(0), "",
 	}}}}
 	store := NewPostgresStore(database)
 	items, err := store.ListUnifiedResources(t.Context(), []int{7})
@@ -159,7 +159,7 @@ func TestPostgresStoreSupportsPlaybackLookups(t *testing.T) {
 		"source", "42", "肖申克", "副标题", "Shawshank", "tag", "剧情",
 		"poster", "actor", "director", "blurb", "完结", "1994-01-01",
 		"1", "1", "美国", "英语", "1994", "142分钟", "today", "1292052",
-		"content", "a$m3u8", "电影", visitedAt, int64(800), int64(3), int64(1),
+		"content", "a$m3u8", "电影", visitedAt, int64(800), int64(3), int64(1), "active", int64(0), float64(0), "",
 	}
 	database := &fakeSQLDatabase{rows: &fakeSQLRows{values: [][]any{vodRow}}}
 	store := NewPostgresStore(database)

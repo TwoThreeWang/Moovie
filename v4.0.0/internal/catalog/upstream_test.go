@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func statusResponse(request *http.Request, status int, header http.Header, body string) *http.Response {
@@ -65,7 +66,7 @@ func TestTMDBSyncStopsWhenTheIMDbMappingIsMissing(t *testing.T) {
 		t.Fatalf("TMDB sync must not reach the network without an IMDb ID: %s", request.URL.String())
 		return nil, nil
 	})}
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "标题"})
 	err := NewTMDBProvider(client, store, "tmdb-token", WithTMDBBase("https://tmdb.test")).
 		SyncBackdrops(t.Context(), "1292052")
@@ -79,7 +80,7 @@ func TestDoubanFetchReportsEveryEndpointAndMarksAllNotFoundTerminal(t *testing.T
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return statusResponse(request, http.StatusNotFound, nil, `{}`), nil
 	})}
-	provider := NewDoubanProvider(client, NewMemoryStore())
+	provider := NewDoubanProvider(client, NewPostgresStore(testdb.Pool(t)))
 	err := provider.Fetch(t.Context(), "1292052", false)
 	if err == nil {
 		t.Fatal("expected an error")
@@ -102,7 +103,7 @@ func TestDoubanFetchKeepsRetryingWhenOnlySomeEndpointsReturnNotFound(t *testing.
 		}
 		return statusResponse(request, http.StatusNotFound, nil, `{}`), nil
 	})}
-	provider := NewDoubanProvider(client, NewMemoryStore())
+	provider := NewDoubanProvider(client, NewPostgresStore(testdb.Pool(t)))
 	err := provider.Fetch(t.Context(), "1292052", false)
 	if err == nil || workqueue.IsTerminal(err) {
 		t.Fatalf("403 means blocked rather than missing, keep retrying: %v", err)
@@ -119,7 +120,7 @@ func TestDoubanFetchSurfacesRateLimitAsThrottle(t *testing.T) {
 		}
 		return statusResponse(request, http.StatusNotFound, nil, `{}`), nil
 	})}
-	provider := NewDoubanProvider(client, NewMemoryStore())
+	provider := NewDoubanProvider(client, NewPostgresStore(testdb.Pool(t)))
 	err := provider.Fetch(t.Context(), "1292052", false)
 	if !workqueue.IsThrottled(err) || workqueue.IsTerminal(err) {
 		t.Fatalf("error = %v", err)

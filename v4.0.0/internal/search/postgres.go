@@ -22,7 +22,11 @@ const vodItemColumns = `resource.source_key, resource.vod_id, resource.vod_name,
        resource.vod_play_url, resource.type_name, resource.last_visited_at,
        COALESCE(resource_quality.avg_speed_ms, 0)::INTEGER,
        COALESCE(resource_quality.sample_count, 0)::INTEGER,
-       COALESCE(resource_quality.failed_count, 0)::INTEGER`
+       COALESCE(resource_quality.failed_count, 0)::INTEGER,
+       COALESCE(resource.resource_status, 'active'),
+       COALESCE(media_link.media_id, 0),
+       COALESCE(media_link.confidence, 0)::double precision,
+       COALESCE(media_link.matched_by, '')`
 
 // resourceQualityJoin 从唯一的播放质量汇总表读取资源级统计，避免维护第二套计数器。
 const resourceQualityJoin = `LEFT JOIN LATERAL (
@@ -36,6 +40,15 @@ const resourceQualityJoin = `LEFT JOIN LATERAL (
     WHERE line.source_key = resource.source_key AND line.vod_id = resource.vod_id
       AND quality.bucket >= NOW() - INTERVAL '7 days'
 ) resource_quality ON TRUE`
+
+// resourceMediaLinkJoin 把已确认/锁定的规范媒体身份读到资源行上，
+// 这样直接读 vod_items 也能看到人工复核后的关联，不必再走一次服务层匹配。
+const resourceMediaLinkJoin = `LEFT JOIN LATERAL (
+    SELECT media_id, confidence, matched_by
+    FROM resource_media_links link
+    WHERE link.source_key = resource.source_key AND link.vod_id = resource.vod_id
+    LIMIT 1
+) media_link ON TRUE`
 
 func (store *PostgresStore) Log(ctx context.Context, keyword string, userID *int, ipHash string) error {
 	if _, err := store.database.Exec(ctx, `INSERT INTO search_logs (keyword, user_id, ip_hash, created_at) VALUES ($1, $2, $3, NOW())`, keyword, userID, ipHash); err != nil {
@@ -170,7 +183,7 @@ func NewPostgresStore(executor database.Executor) *PostgresStore {
 func (store *PostgresStore) Search(ctx context.Context, keyword string) ([]VodItem, error) {
 	pattern := "%" + keyword + "%"
 	rows, err := store.database.Query(ctx, `SELECT `+vodItemColumns+`
-FROM vod_items resource `+resourceQualityJoin+`
+FROM vod_items resource `+resourceMediaLinkJoin+` `+resourceQualityJoin+`
 WHERE resource.vod_name LIKE $1 OR resource.vod_sub LIKE $1 OR resource.vod_en LIKE $1
 ORDER BY resource.last_visited_at DESC`, pattern)
 	if err != nil {
@@ -180,7 +193,7 @@ ORDER BY resource.last_visited_at DESC`, pattern)
 }
 
 func (store *PostgresStore) FindBySourceID(ctx context.Context, sourceKey, vodID string) (*VodItem, error) {
-	rows, err := store.database.Query(ctx, `SELECT `+vodItemColumns+` FROM vod_items resource `+resourceQualityJoin+`
+	rows, err := store.database.Query(ctx, `SELECT `+vodItemColumns+` FROM vod_items resource `+resourceMediaLinkJoin+` `+resourceQualityJoin+`
 WHERE resource.source_key = $1 AND resource.vod_id = $2 LIMIT 1`, sourceKey, vodID)
 	if err != nil {
 		return nil, fmt.Errorf("find vod item: %w", err)
@@ -193,7 +206,7 @@ WHERE resource.source_key = $1 AND resource.vod_id = $2 LIMIT 1`, sourceKey, vod
 }
 
 func (store *PostgresStore) SearchByDoubanID(ctx context.Context, doubanID string) ([]VodItem, error) {
-	rows, err := store.database.Query(ctx, `SELECT `+vodItemColumns+` FROM vod_items resource `+resourceQualityJoin+`
+	rows, err := store.database.Query(ctx, `SELECT `+vodItemColumns+` FROM vod_items resource `+resourceMediaLinkJoin+` `+resourceQualityJoin+`
 WHERE resource.vod_douban_id = $1 ORDER BY resource.last_visited_at DESC`, doubanID)
 	if err != nil {
 		return nil, fmt.Errorf("search vod items by douban id: %w", err)
@@ -250,7 +263,8 @@ func scanVodItems(rows database.Rows) ([]VodItem, error) {
 			&item.VodSerial, &item.VodArea, &item.VodLang, &item.VodYear,
 			&item.VodDuration, &item.VodTime, &item.VodDoubanId, &item.VodContent,
 			&item.VodPlayUrl, &item.TypeName, &item.LastVisitedAt, &item.AvgSpeedMs,
-			&item.SampleCount, &item.FailedCount,
+			&item.SampleCount, &item.FailedCount, &item.ResourceStatus,
+			&item.MediaID, &item.MediaConfidence, &item.MediaMatch,
 		); err != nil {
 			return nil, fmt.Errorf("scan vod item: %w", err)
 		}

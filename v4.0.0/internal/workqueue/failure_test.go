@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestClassifySeparatesTerminalAndThrottledErrors(t *testing.T) {
@@ -39,8 +41,8 @@ func TestThrottleBackoffGrowsAndStaysUnderFifteenMinutes(t *testing.T) {
 	}
 }
 
-func TestMemoryStoreRefundsThrottledAttemptsButStillGivesUpEventually(t *testing.T) {
-	store := NewMemoryStore()
+func TestPostgresStoreRefundsThrottledAttemptsButStillGivesUpEventually(t *testing.T) {
+	store := NewPostgresStore(testdb.Pool(t))
 	id, err := store.Enqueue(t.Context(), Spec{TaskType: "tmdb", SubjectKey: "1292052", MaxAttempts: 2})
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +60,9 @@ func TestMemoryStoreRefundsThrottledAttemptsButStillGivesUpEventually(t *testing
 		t.Fatalf("after throttle = %+v", stored)
 	}
 	for index := 1; index < maxThrottleAttempts; index++ {
+		// 真库会把限流任务的 available_at 推到 30 秒之后（内存实现没有这个退避）。
+		// 单测不可能真等，直接把它拨回当下，等价于"退避时间已过"。
+		makeAvailableNow(t, store, id)
 		claimed, _ := store.Claim(t.Context(), time.Minute)
 		if claimed == nil {
 			t.Fatalf("claim %d returned nothing", index)
@@ -70,8 +75,8 @@ func TestMemoryStoreRefundsThrottledAttemptsButStillGivesUpEventually(t *testing
 	}
 }
 
-func TestMemoryStoreFailsTerminalErrorsWithoutBurningRetries(t *testing.T) {
-	store := NewMemoryStore()
+func TestPostgresStoreFailsTerminalErrorsWithoutBurningRetries(t *testing.T) {
+	store := NewPostgresStore(testdb.Pool(t))
 	id, _ := store.Enqueue(t.Context(), Spec{TaskType: "douban_metadata", SubjectKey: "1292052", MaxAttempts: 5})
 	job, _ := store.Claim(t.Context(), time.Minute)
 	if err := store.Fail(t.Context(), *job, Failure{Message: "HTTP 404", Outcome: OutcomeTerminal}); err != nil {
@@ -83,5 +88,13 @@ func TestMemoryStoreFailsTerminalErrorsWithoutBurningRetries(t *testing.T) {
 	}
 	if next, _ := store.Claim(t.Context(), time.Minute); next != nil {
 		t.Fatalf("terminal job was reclaimed: %+v", next)
+	}
+}
+
+// makeAvailableNow 把任务的退避时间拨回当下，让测试不必真的等待退避窗口。
+func makeAvailableNow(t *testing.T, store *PostgresStore, jobID int) {
+	t.Helper()
+	if _, err := store.database.Exec(t.Context(), `UPDATE worker_jobs SET available_at = NOW() WHERE id = $1`, jobID); err != nil {
+		t.Fatal(err)
 	}
 }

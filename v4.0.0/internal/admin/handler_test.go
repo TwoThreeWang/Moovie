@@ -14,12 +14,14 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 	"github.com/TwoThreeWang/Moovie/new/internal/feedback"
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 	"github.com/TwoThreeWang/Moovie/new/internal/operations"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestAdminPagesAndMutationsRequireRoleAndPreserveMainFlows(t *testing.T) {
@@ -118,11 +120,20 @@ func TestAdminPagesAndMutationsRequireRoleAndPreserveMainFlows(t *testing.T) {
 
 	_ = searchStore.Upsert(t.Context(), search.VodItem{SourceKey: "demo", VodId: "old", VodName: "旧数据", LastVisitedAt: time.Now().Add(-8 * 24 * time.Hour)})
 	_ = searchStore.Upsert(t.Context(), search.VodItem{SourceKey: "demo", VodId: "new", VodName: "新数据", LastVisitedAt: time.Now()})
+	// Upsert 默认把 last_seen_at 设成 NOW()；清理判断以 last_seen_at 优先，
+	// 必须让测试数据里的 last_seen_at 也落到过期窗口。
+	if _, err := testdb.Pool(t).Exec(t.Context(), `UPDATE vod_items SET last_seen_at = last_visited_at WHERE source_key = 'demo'`); err != nil {
+		t.Fatal(err)
+	}
 	cleaned := request(router, http.MethodPost, "/admin/data/clean", adminToken, false)
 	if cleaned.Code != http.StatusOK || !strings.Contains(cleaned.Body.String(), `"affected":1`) {
 		t.Fatalf("clean = %d/%s", cleaned.Code, cleaned.Body.String())
 	}
 	_ = searchStore.Upsert(t.Context(), search.VodItem{SourceKey: "demo", VodId: "very-old", VodName: "待退役", LastVisitedAt: time.Now().Add(-100 * 24 * time.Hour)})
+	// 退役预览以 last_discovered_at 优先判断「多久没被发现」，需要把三个时间统一设老。
+	if _, err := testdb.Pool(t).Exec(t.Context(), `UPDATE vod_items SET last_seen_at = last_visited_at, last_discovered_at = last_visited_at WHERE source_key = 'demo' AND vod_id = 'very-old'`); err != nil {
+		t.Fatal(err)
+	}
 	_ = request(router, http.MethodPost, "/admin/data/clean", adminToken, false)
 	preview := request(router, http.MethodGet, "/admin/data/retire-preview?days=90", adminToken, false)
 	if preview.Code != http.StatusOK || !strings.Contains(preview.Body.String(), `"dry_run":true`) || !strings.Contains(preview.Body.String(), `"eligible":1`) {
@@ -150,12 +161,13 @@ func TestAdminPagesAndMutationsRequireRoleAndPreserveMainFlows(t *testing.T) {
 }
 
 func TestAdminMatchReviewRequiresReasonAndRecordsOneDecision(t *testing.T) {
+	testdb.Media(t, testdb.Pool(t), 7, 8)
 	router, _, searchStore, _, token, userToken := adminTestRouter(t)
 	item := search.VodItem{SourceKey: "demo", VodId: "review-1", VodName: "待复核资源", VodYear: "2026"}
 	if err := searchStore.Upsert(t.Context(), item); err != nil {
 		t.Fatal(err)
 	}
-	if err := searchStore.RecordMatchCandidate(t.Context(), "demo", "review-1", 7, 0.72, "title_year"); err != nil {
+	if err := mediaidentity.NewPostgresStore(testdb.Pool(t)).RecordMatchCandidate(t.Context(), "demo", "review-1", 7, 0.72, "title_year"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -193,7 +205,7 @@ func TestAdminMatchReviewRequiresReasonAndRecordsOneDecision(t *testing.T) {
 	}
 
 	_ = searchStore.Upsert(t.Context(), search.VodItem{SourceKey: "demo", VodId: "review-2", VodName: "API 待复核资源"})
-	_ = searchStore.RecordDetailedMatchCandidate(t.Context(), "demo", "review-2", 8, 0.74, "weighted_features", search.MatchStatusReview, `{"features":{"title":{"score":0.4}}}`)
+	_ = mediaidentity.NewPostgresStore(testdb.Pool(t)).RecordDetailedMatchCandidate(t.Context(), "demo", "review-2", 8, 0.74, "weighted_features", search.MatchStatusReview, `{"features":{"title":{"score":0.4}}}`)
 	forbiddenAPI := request(router, http.MethodGet, "/api/v2/admin/media-matches", userToken, false)
 	if forbiddenAPI.Code != http.StatusForbidden {
 		t.Fatalf("match API user access = %d/%s", forbiddenAPI.Code, forbiddenAPI.Body.String())
@@ -212,7 +224,14 @@ func TestAdminMatchReviewRequiresReasonAndRecordsOneDecision(t *testing.T) {
 	}
 	resolvedItem, _ := searchStore.FindBySourceID(t.Context(), "demo", "review-2")
 	resolvedCandidates, _ := searchStore.ListMatchCandidates(t.Context(), search.MatchStatusVerified, 10)
-	if resolvedItem == nil || resolvedItem.MediaID != 9 || len(resolvedCandidates) != 2 || resolvedCandidates[1].ResolvedMediaID != 9 {
+	resolved := false
+	for _, candidate := range resolvedCandidates {
+		if candidate.ResolvedMediaID == 9 {
+			resolved = true
+			break
+		}
+	}
+	if resolvedItem == nil || resolvedItem.MediaID != 9 || len(resolvedCandidates) != 2 || !resolved {
 		t.Fatalf("alternative media resolution = item:%+v candidates:%+v", resolvedItem, resolvedCandidates)
 	}
 }
@@ -235,16 +254,17 @@ func TestAdminRejectsUnsafeSiteAndKeywordInputs(t *testing.T) {
 	}
 }
 
-func adminTestRouter(t *testing.T) (*gin.Engine, *identity.MemoryStore, *search.MemoryStore, *feedback.MemoryStore, string, string) {
+func adminTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *search.PostgresStore, *feedback.PostgresStore, string, string) {
+	testdb.Media(t, testdb.Pool(t), 7, 8, 9)
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	users := identity.NewMemoryStore()
+	users := identity.NewPostgresStore(testdb.Pool(t))
 	_, _ = users.Create(t.Context(), identity.User{Email: "admin@example.com", Username: "admin", Role: "admin", CreatedAt: time.Now()})
 	_, _ = users.Create(t.Context(), identity.User{Email: "user@example.com", Username: "user", Role: "user", CreatedAt: time.Now()})
-	searchStore := search.NewMemoryStore()
-	movies := catalog.NewMemoryStore()
+	searchStore := search.NewPostgresStore(testdb.Pool(t))
+	movies := catalog.NewPostgresStore(testdb.Pool(t))
 	_ = movies.Upsert(t.Context(), catalog.Movie{DoubanID: "1292052", Title: "电影"})
-	feedbackStore := feedback.NewMemoryStore()
+	feedbackStore := feedback.NewPostgresStore(testdb.Pool(t))
 	_, _ = feedbackStore.Create(t.Context(), feedback.Feedback{Type: "bug", Content: "问题"})
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
 	pages := []string{"admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_copyright", "admin_category", "admin_matches", "admin_jobs"}

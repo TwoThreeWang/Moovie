@@ -15,11 +15,11 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestMoviePagePreservesIndexedSEOJSONLDAndUserSignals(t *testing.T) {
-	store := NewMemoryStore()
-	store.now = func() time.Time { return time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC) }
+	store := NewPostgresStore(testdb.Pool(t))
 	summary := strings.Repeat("剧", 151)
 	if err := store.Upsert(t.Context(), Movie{
 		DoubanID: "1292052", Title: "肖申克的救赎", OriginalTitle: "The Shawshank Redemption",
@@ -30,7 +30,8 @@ func TestMoviePagePreservesIndexedSEOJSONLDAndUserSignals(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	userMovies := library.NewMemoryStore()
+	userMovies := library.NewPostgresStore(testdb.Pool(t))
+	testdb.User(t, testdb.Pool(t), 7, 8)
 	_ = userMovies.Upsert(t.Context(), library.Record{UserID: 7, MovieID: "1292052", Status: library.StatusWatched})
 	_ = userMovies.Upsert(t.Context(), library.Record{UserID: 8, MovieID: "1292052", Status: library.StatusWish})
 	router := catalogTestRouter(t, store, userMovies)
@@ -63,7 +64,7 @@ func TestMoviePagePreservesIndexedSEOJSONLDAndUserSignals(t *testing.T) {
 }
 
 func TestMoviePageOnlyShowsDirectPlayForIndexedPlayableResources(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克", Year: "1994", EmbeddingContent: "ready"})
 	resources := &staticResourceLister{playable: true}
 	router := catalogTestRouterWithOptions(t, store, nil, WithResourceLister(resources))
@@ -88,7 +89,7 @@ func TestMoviePageOnlyShowsDirectPlayForIndexedPlayableResources(t *testing.T) {
 }
 
 func TestDoubanCardCombinesSeasonsAndQueuesMissingMetadata(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "first", Title: "末日地堡 第一季", Year: "2023", Rating: 0})
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "second", Title: "末日地堡 第二季", Year: "2024", Rating: 7.5})
 	queue := &recordingRefreshQueue{jobID: 43}
@@ -108,7 +109,7 @@ func TestDoubanCardCombinesSeasonsAndQueuesMissingMetadata(t *testing.T) {
 }
 
 func TestMoviePageRendersSixRelatedMoviesFromRecommendationPort(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "源电影", Year: "2026"})
 	router := catalogTestRouterWithOptions(t, store, nil, WithSimilarFinder(staticSimilarFinder{{DoubanID: "target", Title: "相关推荐", Poster: "poster"}}))
 	recorder := httptest.NewRecorder()
@@ -120,7 +121,7 @@ func TestMoviePageRendersSixRelatedMoviesFromRecommendationPort(t *testing.T) {
 
 func TestMoviePageRendersSeriesNavigationAndExcludesSeasonsFromRecommendations(t *testing.T) {
 	store := &seriesStoreStub{
-		Store: NewMemoryStore(),
+		Store: NewPostgresStore(testdb.Pool(t)),
 		seasons: []SeriesSeason{
 			{DoubanID: "35468745", Title: "末日地堡 第一季", Year: "2023", Rating: 7.8, SeasonNumber: 1},
 			{DoubanID: "36444323", Title: "末日地堡 第二季", Year: "2024", Rating: 7.6, SeasonNumber: 2},
@@ -161,7 +162,7 @@ func TestSimilarRecommendationsCoalesceAndCache(t *testing.T) {
 }
 
 func TestMoviePageQueuesMissingEmbeddingOnce(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "源电影", Year: "2026"})
 	runner := &queuedRunner{}
 	enricher := &recordingVectorEnricher{}
@@ -183,7 +184,7 @@ func TestMoviePageQueuesMissingEmbeddingOnce(t *testing.T) {
 }
 
 func TestMoviePageQueuesDuePartialMetadataThroughWorker(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{
 		DoubanID: "1292052", Title: "只有标题", MetadataStatus: "partial",
 		CompletenessScore: 15, EmbeddingContent: "already-enriched",
@@ -223,7 +224,7 @@ func TestMetadataRefreshRespectsCompletenessAndNextRefresh(t *testing.T) {
 }
 
 func TestMissingAndDirtyMovieKeepFetchingPageAndDeduplicateWork(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "dirty", Title: ""})
 	runner := &queuedRunner{}
 	fetcher := &recordingFetcher{}
@@ -253,7 +254,7 @@ func TestMissingAndDirtyMovieKeepFetchingPageAndDeduplicateWork(t *testing.T) {
 }
 
 func TestReviewsAndBackdropsUseStoredDataAndQueueStaleRefresh(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	reviewsJSON := `[{"title":"值得一看","author":"用户甲","link":"https://movie.douban.com/review/1","published":"2026-07-01","summary":"摘要"}]`
 	_ = store.Upsert(t.Context(), Movie{
 		DoubanID: "1292052", Title: "肖申克", ReviewsJSON: reviewsJSON,
@@ -282,7 +283,7 @@ func TestReviewsAndBackdropsUseStoredDataAndQueueStaleRefresh(t *testing.T) {
 }
 
 func TestReviewsAndBackdropsPreserveEmptyAndCollectingResponses(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克"})
 	runner := &queuedRunner{}
 	backdropSyncer := &recordingBackdropSyncer{}
@@ -305,8 +306,14 @@ func TestReviewsAndBackdropsPreserveEmptyAndCollectingResponses(t *testing.T) {
 }
 
 func TestPageTriggeredCatalogWorkUsesPersistentRefreshQueue(t *testing.T) {
-	store := NewMemoryStore()
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克", MetadataStatus: "ready", CompletenessScore: 70})
+	store := NewPostgresStore(testdb.Pool(t))
+	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克"})
+	// metadata_status/completeness_score 由刷新流水线维护，Upsert 不写；
+	// 直接落库到「已就绪」状态，否则详情页会认为元数据不全而重复排队 douban_metadata。
+	if _, err := testdb.Pool(t).Exec(t.Context(),
+		`UPDATE media SET metadata_status = 'ready', completeness_score = 70 WHERE douban_id = '1292052'`); err != nil {
+		t.Fatal(err)
+	}
 	queue := &recordingRefreshQueue{jobID: 43}
 	runner := &queuedRunner{}
 	router := catalogTestRouterWithOptions(t, store, nil,
@@ -333,7 +340,7 @@ func TestPageTriggeredCatalogWorkUsesPersistentRefreshQueue(t *testing.T) {
 }
 
 func TestShedBackgroundTaskReturnsBusyAndClearsDeduplicationKey(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克"})
 	runner := &rejectingRunner{}
 	router := catalogTestRouterWithOptions(t, store, nil,
@@ -353,7 +360,7 @@ func TestShedBackgroundTaskReturnsBusyAndClearsDeduplicationKey(t *testing.T) {
 
 func TestRefreshMediaQueuesCanonicalID(t *testing.T) {
 	queue := &recordingRefreshQueue{jobID: 43}
-	router := catalogTestRouterWithOptions(t, NewMemoryStore(), nil, WithRefreshQueue(queue))
+	router := catalogTestRouterWithOptions(t, NewPostgresStore(testdb.Pool(t)), nil, WithRefreshQueue(queue))
 	request := httptest.NewRequest(http.MethodPost, "/api/v2/media/9/refresh", nil)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -363,7 +370,7 @@ func TestRefreshMediaQueuesCanonicalID(t *testing.T) {
 }
 
 func TestMediaSuggestPreservesAPIEnvelopeAndValidation(t *testing.T) {
-	router := catalogTestRouterWithOptions(t, NewMemoryStore(), nil, WithSuggester(staticSuggester{{ID: "1292052", Title: "肖申克"}}))
+	router := catalogTestRouterWithOptions(t, NewPostgresStore(testdb.Pool(t)), nil, WithSuggester(staticSuggester{{ID: "1292052", Title: "肖申克"}}))
 	missing := httptest.NewRecorder()
 	router.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/api/v2/media/suggest", nil))
 	if missing.Code != http.StatusBadRequest || !strings.Contains(missing.Body.String(), "搜索关键词不能为空") {

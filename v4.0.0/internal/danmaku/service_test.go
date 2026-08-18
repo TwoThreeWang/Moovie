@@ -11,6 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestNormalizationAndExternalConversionMatchLegacyFormats(t *testing.T) {
@@ -62,7 +65,9 @@ func TestListMergesCachedExternalAndFreshLocalWithoutSharingSources(t *testing.T
 			return jsonResponse(http.StatusNotFound, `{}`), nil
 		}
 	})}
-	store := NewMemoryStore()
+	pool := testdb.Pool(t)
+	seedUsers(t, pool, 1, 2)
+	store := NewPostgresStore(pool)
 	now := time.Now()
 	_, _ = store.CreateGuarded(t.Context(), Record{VodKey: "庆余年|S02|E003", Time: 4, Text: "站内", Mode: 0, Color: "#FFFFFF", UserID: 1, CreatedAt: now}, now.Add(-time.Minute), now.Add(-time.Minute), 10)
 	service := NewService(store, client, "https://danmaku.example")
@@ -78,7 +83,9 @@ func TestListMergesCachedExternalAndFreshLocalWithoutSharingSources(t *testing.T
 }
 
 func TestSendSanitizesDefaultsRejectsDuplicatesAndAtomicallyLimitsConcurrentTraffic(t *testing.T) {
-	store := NewMemoryStore()
+	pool := testdb.Pool(t)
+	seedUsers(t, pool, 7, 8, 9)
+	store := NewPostgresStore(pool)
 	service := NewService(store, nil, "")
 	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
@@ -129,7 +136,7 @@ func TestExternalOriginRateLimitOnlyAppliesToCacheMisses(t *testing.T) {
 		}
 		return jsonResponse(http.StatusNotFound, `{}`), nil
 	})}
-	service := NewService(NewMemoryStore(), client, "https://danmaku.example")
+	service := NewService(NewPostgresStore(testdb.Pool(t)), client, "https://danmaku.example")
 	for index := 0; index < 25; index++ {
 		service.List(t.Context(), fmt.Sprintf("不同影片%d", index), "", "203.0.113.7")
 	}
@@ -154,4 +161,15 @@ func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, 
 
 func jsonResponse(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}
+}
+
+// seedUsers 满足 danmakus.user_id 的外键。
+func seedUsers(t *testing.T, pool *database.Pool, ids ...int) {
+	t.Helper()
+	for _, id := range ids {
+		if _, err := pool.Exec(t.Context(), `INSERT INTO users (id,email,username,password_hash)
+VALUES ($1,$2,$3,'x') ON CONFLICT (id) DO NOTHING`, id, fmt.Sprintf("u%d@test.local", id), fmt.Sprintf("u%d", id)); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

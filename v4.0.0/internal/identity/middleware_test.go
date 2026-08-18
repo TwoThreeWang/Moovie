@@ -8,11 +8,12 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestLoadUserRestoresPublicPageUserContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	user, _ := store.Create(t.Context(), User{Email: "user@example.com", Username: "viewer", Role: "user"})
 	token, _ := auth.Sign(auth.Claims{UserID: user.ID, Email: user.Email, Role: user.Role, Issued: time.Now().Unix(), Expiry: time.Now().Add(time.Hour).Unix()}, "secret")
 	router := gin.New()
@@ -37,7 +38,7 @@ func TestLoadUserRestoresPublicPageUserContext(t *testing.T) {
 func TestLoadUserLeavesInvalidAndDeletedTokensAnonymous(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(auth.Optional("secret"), LoadUser(NewMemoryStore(), "secret", false))
+	router.Use(auth.Optional("secret"), LoadUser(NewPostgresStore(testdb.Pool(t)), "secret", false))
 	router.GET("/", func(c *gin.Context) {
 		if _, exists := c.Get(UserInfoContextKey); exists {
 			c.Status(http.StatusInternalServerError)
@@ -56,7 +57,7 @@ func TestLoadUserLeavesInvalidAndDeletedTokensAnonymous(t *testing.T) {
 
 func TestLoadUserMakesCurrentDatabaseRoleAuthoritative(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	user, _ := store.Create(t.Context(), User{Email: "admin@example.com", Username: "admin", Role: "admin"})
 	now := time.Now()
 	token, _ := auth.Sign(auth.Claims{UserID: user.ID, Email: user.Email, Role: "admin", Issued: now.Add(-40 * time.Minute).Unix(), Expiry: now.Add(20 * time.Minute).Unix()}, "secret")
@@ -124,7 +125,7 @@ func signAged(t *testing.T, user *User, age, lifetime time.Duration) string {
 }
 
 func TestLoadUserRenewsSessionOnOptionalOnlyBrowsingPaths(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	user, _ := store.Create(t.Context(), User{Email: "viewer@example.com", Username: "viewer", Role: "user"})
 	// 72 小时寿命、已过 40 小时：超过半程，应当续期。
 	token := signAged(t, user, 40*time.Hour, 72*time.Hour)
@@ -149,7 +150,7 @@ func TestLoadUserRenewsSessionOnOptionalOnlyBrowsingPaths(t *testing.T) {
 }
 
 func TestLoadUserDoesNotRenewBeforeHalfLife(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	user, _ := store.Create(t.Context(), User{Email: "fresh@example.com", Username: "fresh", Role: "user"})
 	token := signAged(t, user, time.Hour, 72*time.Hour)
 
@@ -159,7 +160,7 @@ func TestLoadUserDoesNotRenewBeforeHalfLife(t *testing.T) {
 }
 
 func TestLoadUserSkipsRenewalForStaticAndImageProxyPaths(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	user, _ := store.Create(t.Context(), User{Email: "viewer@example.com", Username: "viewer", Role: "user"})
 	token := signAged(t, user, 40*time.Hour, 72*time.Hour)
 	router := browsingRouter(store)
@@ -173,7 +174,7 @@ func TestLoadUserSkipsRenewalForStaticAndImageProxyPaths(t *testing.T) {
 }
 
 func TestLoadUserRenewsAtMostOncePerRequest(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	user, _ := store.Create(t.Context(), User{Email: "member@example.com", Username: "member", Role: "user"})
 	token := signAged(t, user, 40*time.Hour, 72*time.Hour)
 
@@ -184,7 +185,7 @@ func TestLoadUserRenewsAtMostOncePerRequest(t *testing.T) {
 }
 
 func TestLoadUserDoesNotRenewDeletedUserSession(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	user, _ := store.Create(t.Context(), User{Email: "gone@example.com", Username: "gone", Role: "user"})
 	token := signAged(t, user, 40*time.Hour, 72*time.Hour)
 	_ = store.Delete(t.Context(), user.ID)
@@ -196,7 +197,7 @@ func TestLoadUserDoesNotRenewDeletedUserSession(t *testing.T) {
 
 func TestLoadUserPreventsDeletedUserTokenFromBeingRestored(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	user, _ := store.Create(t.Context(), User{Email: "gone@example.com", Username: "gone", Role: "admin"})
 	token, _ := auth.Sign(auth.Claims{UserID: user.ID, Email: user.Email, Role: user.Role, Issued: time.Now().Unix(), Expiry: time.Now().Add(time.Hour).Unix()}, "secret")
 	_ = store.Delete(t.Context(), user.ID)

@@ -17,6 +17,7 @@ import (
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 type staticPopularProvider struct {
@@ -126,7 +127,8 @@ func (function playbackEventWriterFunc) RecordPlaybackEvent(ctx context.Context,
 }
 
 func TestPlayerPagesPreserveStandaloneEmbedAndMetadata(t *testing.T) {
-	router, cfg := playbackTestRouter(t, search.NewMemoryStore(), staticPopularProvider{})
+	testdb.User(t, testdb.Pool(t), 7)
+	router, cfg := playbackTestRouter(t, search.NewPostgresStore(testdb.Pool(t)), staticPopularProvider{})
 
 	normal := performRequest(router, "/player?url=https%3A%2F%2Fvideo.example%2Fa.m3u8", nil)
 	if normal.Code != http.StatusOK || !strings.Contains(normal.Body.String(), "M3U8在线播放器 - HLS直播流测试工具") {
@@ -146,7 +148,8 @@ func TestPlayerPagesPreserveStandaloneEmbedAndMetadata(t *testing.T) {
 }
 
 func TestTVBoxConfigUsesRequestHostAndForwardedScheme(t *testing.T) {
-	router, _ := playbackTestRouter(t, search.NewMemoryStore(), staticPopularProvider{})
+	testdb.User(t, testdb.Pool(t), 7)
+	router, _ := playbackTestRouter(t, search.NewPostgresStore(testdb.Pool(t)), staticPopularProvider{})
 	recorder := performRequest(router, "/api/tvbox.json", map[string]string{"Host": "tv.example", "X-Forwarded-Proto": "https"})
 	payload := decodeJSON(t, recorder)
 	sites := payload["sites"].([]any)
@@ -159,7 +162,8 @@ func TestTVBoxConfigUsesRequestHostAndForwardedScheme(t *testing.T) {
 }
 
 func TestTVBoxVODPreservesParameterPrecedenceAndSearchPagination(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	for index := 0; index < 21; index++ {
 		_ = store.Upsert(context.Background(), search.VodItem{
 			SourceKey: "source", VodId: string(rune('a' + index)), VodName: "测试影片",
@@ -184,7 +188,8 @@ func TestTVBoxVODPreservesParameterPrecedenceAndSearchPagination(t *testing.T) {
 }
 
 func TestTVBoxHomeAndDetailKeepPublicShapes(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), search.VodItem{
 		SourceKey: "source", VodId: "42", VodName: "测试影片", TypeName: "电影",
 		VodPlayUrl: "第01集$https://video.example/a.m3u8",
@@ -213,7 +218,8 @@ func TestTVBoxHomeAndDetailKeepPublicShapes(t *testing.T) {
 }
 
 func TestPlayPageSelectsDefaultSourceEpisodeAndPreservesSEO(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), search.VodItem{
 		SourceKey: "source", VodId: "42", VodName: "测试影片", VodPic: "https://img.example/poster.webp",
 		VodDoubanId: "1292052", VodClass: "剧情, 犯罪", VodDirector: "导演甲,导演乙", VodActor: "演员甲,演员乙",
@@ -241,7 +247,8 @@ func TestPlayPageSelectsDefaultSourceEpisodeAndPreservesSEO(t *testing.T) {
 }
 
 func TestConfirmedResourceUsesCanonicalDisplayOnPlayAndTVBox(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), search.VodItem{
 		SourceKey: "source", VodId: "42", VodName: "资源标题", VodPic: "resource-poster", VodYear: "2020",
 		VodContent: "资源简介", VodPlayUrl: "正片$https://video.example/main.m3u8",
@@ -268,7 +275,8 @@ func TestConfirmedResourceUsesCanonicalDisplayOnPlayAndTVBox(t *testing.T) {
 }
 
 func TestPlayPageUsesOptionalIdentityForWatchedButton(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), search.VodItem{
 		SourceKey: "source", VodId: "42", VodName: "测试影片", VodDoubanId: "1292052",
 		VodPlayUrl: "第01集$https://video.example/1.m3u8",
@@ -297,7 +305,8 @@ func TestPlayPageUsesOptionalIdentityForWatchedButton(t *testing.T) {
 }
 
 func TestWatchPageUsesFirstStoredEpisodeWhenQueryIsEmpty(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), search.VodItem{
 		SourceKey: "source", VodId: "42", VodName: "测试影片", VodDoubanId: "1292052",
 		VodPlayUrl: "正片$https://video.example/main.m3u8",
@@ -329,7 +338,8 @@ func TestWatchPageUsesFirstStoredEpisodeWhenQueryIsEmpty(t *testing.T) {
 }
 
 func TestPlayPagePreservesNotFoundInvalidEpisodeAndCopyrightStatuses(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), search.VodItem{SourceKey: "source", VodId: "42", VodName: "受限影片", VodPlayUrl: "第01集$https://video.example/1.m3u8"})
 	router, _ := playbackTestRouter(t, store, staticPopularProvider{})
 
@@ -352,7 +362,8 @@ func TestPlayPagePreservesNotFoundInvalidEpisodeAndCopyrightStatuses(t *testing.
 }
 
 func TestLegacyLoadSpeedEndpointsAreRemoved(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), search.VodItem{SourceKey: "source", VodId: "42", VodName: "影片"})
 	router, _ := playbackTestRouter(t, store, staticPopularProvider{})
 
@@ -369,6 +380,7 @@ func TestLegacyLoadSpeedEndpointsAreRemoved(t *testing.T) {
 }
 
 func TestResourceEndpointRanksOnlyRequestedCanonicalEpisode(t *testing.T) {
+	testdb.User(t, testdb.Pool(t), 7)
 	reader := episodeReaderFunc(func(_ context.Context, mediaID, season int, episodeKey string) ([]mediaidentity.ResourceCandidate, error) {
 		if mediaID != 7 || season != 1 || episodeKey != "S01E03" {
 			t.Fatalf("lookup = %d/%d/%s", mediaID, season, episodeKey)
@@ -378,7 +390,7 @@ func TestResourceEndpointRanksOnlyRequestedCanonicalEpisode(t *testing.T) {
 			{Episode: mediaidentity.Episode{SourceKey: "wrong", VodID: "b", MediaID: 7, SeasonNumber: 1, EpisodeKey: "S01E01", PlayURL: "wrong-1"}, SuccessCount: 100},
 		}, nil
 	})
-	router, _ := playbackTestRouter(t, search.NewMemoryStore(), staticPopularProvider{}, WithEpisodeReader(reader))
+	router, _ := playbackTestRouter(t, search.NewPostgresStore(testdb.Pool(t)), staticPopularProvider{}, WithEpisodeReader(reader))
 	payload := decodeJSON(t, performRequest(router, "/api/v2/media/7/resources?ep=%E7%AC%AC3%E9%9B%86", nil))
 	resources := payload["resources"].([]any)
 	if payload["episode_key"] != "S01E03" || len(resources) != 1 || resources[0].(map[string]any)["play_url"] != "fast-3" {
@@ -387,6 +399,7 @@ func TestResourceEndpointRanksOnlyRequestedCanonicalEpisode(t *testing.T) {
 }
 
 func TestPlaybackCandidatesV2KeepsExactUnitAndRankedOrder(t *testing.T) {
+	testdb.User(t, testdb.Pool(t), 7)
 	reader := combinedEpisodeReader{byUnit: func(_ context.Context, unitID int) ([]mediaidentity.ResourceCandidate, error) {
 		if unitID != 51 {
 			t.Fatalf("unit lookup = %d", unitID)
@@ -397,7 +410,7 @@ func TestPlaybackCandidatesV2KeepsExactUnitAndRankedOrder(t *testing.T) {
 			{Episode: mediaidentity.Episode{CandidateID: 73, MediaID: 7, MediaUnitID: 99, PlayURL: "wrong-unit"}},
 		}, nil
 	}}
-	router, _ := playbackTestRouter(t, search.NewMemoryStore(), staticPopularProvider{}, WithEpisodeReader(reader))
+	router, _ := playbackTestRouter(t, search.NewPostgresStore(testdb.Pool(t)), staticPopularProvider{}, WithEpisodeReader(reader))
 	payload := decodeJSON(t, performRequest(router, "/api/v2/media-units/51/playback-candidates", nil))
 	candidates := payload["candidates"].([]any)
 	// 排序已固定启用：健康度更高的 72 必须排在 71 之前，且不同单元的 73 仍被排除。
@@ -407,12 +420,13 @@ func TestPlaybackCandidatesV2KeepsExactUnitAndRankedOrder(t *testing.T) {
 }
 
 func TestPlaybackEventV2ForwardsIdempotentAttemptIdentity(t *testing.T) {
+	testdb.User(t, testdb.Pool(t), 7)
 	var recorded mediaidentity.PlaybackAttemptEvent
 	writer := playbackEventWriterFunc(func(_ context.Context, event mediaidentity.PlaybackAttemptEvent) (bool, error) {
 		recorded = event
 		return true, nil
 	})
-	router, _ := playbackTestRouter(t, search.NewMemoryStore(), staticPopularProvider{}, WithPlaybackEventWriter(writer))
+	router, _ := playbackTestRouter(t, search.NewPostgresStore(testdb.Pool(t)), staticPopularProvider{}, WithPlaybackEventWriter(writer))
 	request := httptest.NewRequest(http.MethodPost, "/api/v2/playback/events", bytes.NewBufferString(`{"attempt_id":"attempt-123456","candidate_session_id":"session-123456","event_type":"played_10s","candidate_id":71,"media_unit_id":51,"source_key":"source","vod_id":"42","elapsed_ms":10000}`))
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
@@ -422,7 +436,7 @@ func TestPlaybackEventV2ForwardsIdempotentAttemptIdentity(t *testing.T) {
 	}
 }
 
-func playbackTestRouter(t *testing.T, store *search.MemoryStore, popular PopularProvider, options ...HandlerOption) (*gin.Engine, config.Config) {
+func playbackTestRouter(t *testing.T, store *search.PostgresStore, popular PopularProvider, options ...HandlerOption) (*gin.Engine, config.Config) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	cfg := config.Config{SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}

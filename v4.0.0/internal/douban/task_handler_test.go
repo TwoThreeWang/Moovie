@@ -8,12 +8,13 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestTaskHandlerRunsThroughUnifiedDispatcher(t *testing.T) {
-	queue := workqueue.NewMemoryStore()
-	jobs := NewMemoryJobStore(queue)
-	users := identity.NewMemoryStore()
+	queue := workqueue.NewPostgresStore(testdb.Pool(t))
+	jobs := NewQueueJobStore(queue)
+	users := identity.NewPostgresStore(testdb.Pool(t))
 	user, _ := users.Create(t.Context(), identity.User{Email: "person@example.com", Username: "person", PasswordHash: "hash"})
 	_ = users.UpdateDoubanUserID(t.Context(), user.ID, "198878447")
 	executor := &recordingExecutor{called: make(chan struct{}, 1)}
@@ -42,8 +43,8 @@ func TestTaskHandlerRunsThroughUnifiedDispatcher(t *testing.T) {
 }
 
 func TestDailyTaskGeneratesMonthlyReportOnFirstDay(t *testing.T) {
-	queue := workqueue.NewMemoryStore()
-	handler := NewTaskHandler(NewMemoryJobStore(queue), identity.NewMemoryStore(), &recordingExecutor{}, WithMonthlyGenerator(&recordingMonthlyGenerator{}))
+	queue := workqueue.NewPostgresStore(testdb.Pool(t))
+	handler := NewTaskHandler(NewQueueJobStore(queue), identity.NewPostgresStore(testdb.Pool(t)), &recordingExecutor{}, WithMonthlyGenerator(&recordingMonthlyGenerator{}))
 	generator := &recordingMonthlyGenerator{}
 	handler.monthly = generator
 	handler.now = func() time.Time { return time.Date(2026, time.August, 1, 3, 0, 0, 0, time.Local) }

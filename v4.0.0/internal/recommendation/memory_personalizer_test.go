@@ -7,18 +7,21 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 	"github.com/TwoThreeWang/Moovie/new/internal/history"
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestMemoryPersonalizerUsesWishWatchedAndHistoryWithoutRepeatingThem(t *testing.T) {
-	catalogStore := catalog.NewMemoryStore()
-	libraryStore := library.NewMemoryStore()
-	historyStore := history.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	catalogStore := catalog.NewPostgresStore(testdb.Pool(t))
+	libraryStore := library.NewPostgresStore(testdb.Pool(t))
+	historyStore := history.NewPostgresStore(testdb.Pool(t))
 	for _, movie := range []catalog.Movie{
 		{DoubanID: "wish", Title: "想看源", Genres: "科幻", Rating: 9}, {DoubanID: "watched", Title: "看过源", Genres: "剧情", Rating: 9},
 		{DoubanID: "history", Title: "历史源", Genres: "悬疑", Rating: 8}, {DoubanID: "science", Title: "科幻候选", Genres: "科幻", Rating: 8.8},
 		{DoubanID: "drama", Title: "剧情候选", Genres: "剧情", Rating: 8.7}, {DoubanID: "mystery", Title: "悬疑候选", Genres: "悬疑", Rating: 8.6},
 	} {
 		_ = catalogStore.Upsert(t.Context(), movie)
+		seedEmbedding(t, catalogStore, movie.DoubanID)
 	}
 	_ = libraryStore.Upsert(t.Context(), library.Record{UserID: 7, MovieID: "wish", Status: library.StatusWish, Title: "想看源"})
 	_ = libraryStore.Upsert(t.Context(), library.Record{UserID: 7, MovieID: "watched", Status: library.StatusWatched, Title: "看过源"})
@@ -49,9 +52,10 @@ func TestMemoryPersonalizerUsesWishWatchedAndHistoryWithoutRepeatingThem(t *test
 }
 
 func TestMemoryPersonalizerReliveUsesThirtyDayAndCatalogRatingRules(t *testing.T) {
-	catalogStore := catalog.NewMemoryStore()
-	libraryStore := library.NewMemoryStore()
-	historyStore := history.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	catalogStore := catalog.NewPostgresStore(testdb.Pool(t))
+	libraryStore := library.NewPostgresStore(testdb.Pool(t))
+	historyStore := history.NewPostgresStore(testdb.Pool(t))
 	_ = catalogStore.Upsert(t.Context(), catalog.Movie{DoubanID: "classic", Title: "经典", Rating: 9})
 	_ = libraryStore.Upsert(t.Context(), library.Record{UserID: 7, MovieID: "classic", Status: library.StatusWatched})
 	records, _ := libraryStore.ListByUser(t.Context(), 7, library.StatusWatched, 1, 0)

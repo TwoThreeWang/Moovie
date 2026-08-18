@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestGenerateReasonPreservesPriorityAndSimilarityDimensions(t *testing.T) {
@@ -23,9 +24,12 @@ func TestGenerateReasonPreservesPriorityAndSimilarityDimensions(t *testing.T) {
 }
 
 func TestServiceReturnsSourceAndReasonedMovies(t *testing.T) {
-	store := catalog.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := catalog.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), catalog.Movie{DoubanID: "source", Title: "源电影", Genres: "剧情", Rating: 9})
 	_ = store.Upsert(t.Context(), catalog.Movie{DoubanID: "target", Title: "目标电影", Genres: "剧情", Rating: 8.8})
+	seedEmbedding(t, store, "source")
+	seedEmbedding(t, store, "target")
 	result, source, err := NewService(store).FindSimilarWithReasons(t.Context(), "source", 8)
 	if err != nil || source == nil || source.Title != "源电影" || len(result) != 1 || result[0].Movie.DoubanID != "target" || result[0].Reason == "" {
 		t.Fatalf("result/source/error = %+v/%+v/%v", result, source, err)

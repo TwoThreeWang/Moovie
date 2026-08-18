@@ -48,8 +48,8 @@ func upsertPlaybackPosition(ctx context.Context, executor database.Executor, use
 	if mediaUnitID > 0 {
 		_, err = executor.Exec(ctx, `INSERT INTO playback_positions
 (user_id, media_id, media_unit_id, position_seconds, duration_seconds, progress_percent, completed,
- last_source_key, last_vod_id, title, poster, episode, season_number, episode_key, activity_at, deleted_at, entry_page)
-VALUES ($1,$2,$17,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+ last_source_key, last_vod_id, title, poster, episode, season_number, episode_key, activity_at, deleted_at, entry_page, updated_at)
+VALUES ($1,$2,$17,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$18)
 ON CONFLICT (user_id, media_unit_id) WHERE media_unit_id IS NOT NULL DO UPDATE SET
 media_id = COALESCE(EXCLUDED.media_id, playback_positions.media_id),
 position_seconds = CASE WHEN EXCLUDED.deleted_at IS NULL THEN EXCLUDED.position_seconds ELSE playback_positions.position_seconds END,
@@ -64,14 +64,14 @@ episode = CASE WHEN EXCLUDED.episode <> '' THEN EXCLUDED.episode ELSE playback_p
 season_number = EXCLUDED.season_number, episode_key = EXCLUDED.episode_key,
 entry_page = CASE WHEN EXCLUDED.deleted_at IS NULL THEN EXCLUDED.entry_page ELSE playback_positions.entry_page END,
 activity_at = EXCLUDED.activity_at, deleted_at = EXCLUDED.deleted_at,
-server_version = nextval('playback_position_version_seq'), updated_at = NOW()
-WHERE EXCLUDED.activity_at >= playback_positions.activity_at`, append(arguments, mediaUnitID)...)
+server_version = nextval('playback_position_version_seq'), updated_at = EXCLUDED.updated_at
+WHERE EXCLUDED.activity_at >= playback_positions.activity_at`, append(arguments, mediaUnitID, activityAt)...)
 	} else {
 		conflictTarget := playbackPositionConflictTarget(operation.MediaID)
 		_, err = executor.Exec(ctx, `INSERT INTO playback_positions
 (user_id, media_id, position_seconds, duration_seconds, progress_percent, completed,
- last_source_key, last_vod_id, title, poster, episode, season_number, episode_key, activity_at, deleted_at, entry_page)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+ last_source_key, last_vod_id, title, poster, episode, season_number, episode_key, activity_at, deleted_at, entry_page, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 ON CONFLICT `+conflictTarget+` DO UPDATE SET
 media_id = COALESCE(EXCLUDED.media_id, playback_positions.media_id),
 position_seconds = CASE WHEN EXCLUDED.deleted_at IS NULL THEN EXCLUDED.position_seconds ELSE playback_positions.position_seconds END,
@@ -86,8 +86,8 @@ episode = CASE WHEN EXCLUDED.episode <> '' THEN EXCLUDED.episode ELSE playback_p
 season_number = EXCLUDED.season_number, episode_key = EXCLUDED.episode_key,
 entry_page = CASE WHEN EXCLUDED.deleted_at IS NULL THEN EXCLUDED.entry_page ELSE playback_positions.entry_page END,
 activity_at = EXCLUDED.activity_at, deleted_at = EXCLUDED.deleted_at,
-server_version = nextval('playback_position_version_seq'), updated_at = NOW()
-WHERE EXCLUDED.activity_at >= playback_positions.activity_at`, arguments...)
+server_version = nextval('playback_position_version_seq'), updated_at = EXCLUDED.updated_at
+WHERE EXCLUDED.activity_at >= playback_positions.activity_at`, append(arguments, activityAt)...)
 	}
 	if err != nil {
 		return fmt.Errorf("upsert playback position: %w", err)

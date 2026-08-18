@@ -17,6 +17,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestPublicProfileMonthlyAndPrivacyPreserveRoutesAndCanonical(t *testing.T) {
@@ -76,15 +77,15 @@ func TestAdminMonthlyGenerationRequiresAdminAndPreservesEnvelope(t *testing.T) {
 	}
 }
 
-func reportTestRouter(t *testing.T) (*gin.Engine, *identity.MemoryStore, *library.MemoryStore, *MemoryStore, *identity.User, string) {
+func reportTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *library.PostgresStore, *PostgresStore, *identity.User, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	users := identity.NewMemoryStore()
+	users := identity.NewPostgresStore(testdb.Pool(t))
 	publicUser, _ := users.Create(t.Context(), identity.User{Email: "public@example.com", Username: "公开用户", PasswordHash: "hash", Role: "user", Avatar: "🎬", IsPublic: true, CreatedAt: time.Now().Add(-24 * time.Hour)})
 	viewer, _ := users.Create(t.Context(), identity.User{Email: "viewer@example.com", Username: "viewer", PasswordHash: "hash", Role: "user", CreatedAt: time.Now()})
-	libraryStore := library.NewMemoryStore()
-	reports := NewMemoryStore()
-	service := NewService(reports, libraryStore, catalog.NewMemoryStore())
+	libraryStore := library.NewPostgresStore(testdb.Pool(t))
+	reports := NewPostgresStore(testdb.Pool(t))
+	service := NewService(reports, libraryStore, catalog.NewPostgresStore(testdb.Pool(t)))
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"share", "share_monthly", "404"})
 	if err != nil {

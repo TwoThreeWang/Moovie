@@ -86,7 +86,6 @@ type DanmakuConfig struct {
 
 // DatabaseConfig 保存隔离新库连接信息和连接池上限。
 type DatabaseConfig struct {
-	Enabled  bool
 	Migrate  bool
 	Host     string
 	Port     string
@@ -307,7 +306,6 @@ func Load() (Config, error) {
 		},
 		Danmaku: DanmakuConfig{APIBase: strings.TrimRight(env("DANMU_API_BASE", ""), "/")},
 		Database: DatabaseConfig{
-			Enabled:  env("DB_ENABLED", "false") == "true",
 			Migrate:  env("DB_AUTO_MIGRATE", "true") == "true",
 			Host:     env("DB_HOST", "localhost"),
 			Port:     env("DB_PORT", "5432"),
@@ -382,9 +380,6 @@ func (c Config) Validate() error {
 	if strings.EqualFold(c.Database.Name, "moovie") {
 		return errors.New("refusing to use legacy database name moovie during isolated refactor")
 	}
-	if !c.Database.Enabled && !c.JobsInWeb {
-		return errors.New("JOBS_IN_WEB=false requires DB_ENABLED=true and a separate worker")
-	}
 	if c.Search.MediaAutoMatchThreshold > 0 || c.Search.MediaReviewMatchThreshold > 0 {
 		if c.Search.MediaAutoMatchThreshold <= 0 || c.Search.MediaAutoMatchThreshold > 1 ||
 			c.Search.MediaReviewMatchThreshold <= 0 || c.Search.MediaReviewMatchThreshold >= c.Search.MediaAutoMatchThreshold {
@@ -392,9 +387,6 @@ func (c Config) Validate() error {
 		}
 	}
 	if c.Env == "production" {
-		if !c.Database.Enabled {
-			return errors.New("DB_ENABLED=true is required in production")
-		}
 		if parsedSiteURL.Scheme != "https" {
 			return errors.New("SITE_URL must use https in production")
 		}

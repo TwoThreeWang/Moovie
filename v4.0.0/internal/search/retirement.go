@@ -44,15 +44,15 @@ func (store *PostgresStore) PreviewCooling(ctx context.Context, days int) (Resou
                        WHERE position.deleted_at IS NULL
                          AND position.last_source_key = v.source_key AND position.last_vod_id = v.vod_id
            ) AS has_history,
-           CASE WHEN COALESCE(v.media_id, link.media_id) IS NULL THEN FALSE ELSE NOT EXISTS (
-               SELECT 1
-               FROM resource_media_links alternative_link
-               JOIN vod_items alternative
-                 ON alternative.source_key = alternative_link.source_key AND alternative.vod_id = alternative_link.vod_id
-               WHERE alternative_link.media_id = COALESCE(v.media_id, link.media_id)
-                 AND (alternative.source_key, alternative.vod_id) <> (v.source_key, v.vod_id)
-                 AND COALESCE(alternative.resource_status, 'active') IN ('active', 'stale', 'cold')
-           ) END AS is_unique,
+            CASE WHEN link.media_id IS NULL THEN FALSE ELSE NOT EXISTS (
+                SELECT 1
+                FROM resource_media_links alternative_link
+                JOIN vod_items alternative
+                  ON alternative.source_key = alternative_link.source_key AND alternative.vod_id = alternative_link.vod_id
+                WHERE alternative_link.media_id = link.media_id
+                  AND (alternative.source_key, alternative.vod_id) <> (v.source_key, v.vod_id)
+                  AND COALESCE(alternative.resource_status, 'active') IN ('active', 'stale', 'cold')
+            ) END AS is_unique,
            OCTET_LENGTH(COALESCE(v.vod_content, '')) + OCTET_LENGTH(COALESCE(v.vod_play_url, '')) AS estimated_bytes
     FROM vod_items v
     LEFT JOIN resource_media_links link ON link.source_key = v.source_key AND link.vod_id = v.vod_id
@@ -159,73 +159,5 @@ type memoryCoolingBatch struct {
 	applied   bool
 }
 
-func (store *MemoryStore) PreviewCooling(_ context.Context, days int) (ResourceCoolingPreview, error) {
-	if days < 30 {
-		return ResourceCoolingPreview{}, fmt.Errorf("cooling observation window must be at least 30 days")
-	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	cutoff := time.Now().AddDate(0, 0, -days)
-	items := make([][2]string, 0)
-	sources := make(map[string]int)
-	statuses := make(map[string]int)
-	samples := make([]map[string]any, 0)
-	for _, item := range store.items {
-		if item.ResourceStatus != "stale" || !item.LastVisitedAt.Before(cutoff) {
-			continue
-		}
-		items = append(items, [2]string{item.SourceKey, item.VodId})
-		sources[item.SourceKey]++
-		statuses[item.ResourceStatus]++
-		if len(samples) < 20 {
-			samples = append(samples, map[string]any{"source_key": item.SourceKey, "vod_id": item.VodId, "status": item.ResourceStatus})
-		}
-	}
-	batchID := store.nextCoolingBatchID
-	store.nextCoolingBatchID++
-	expiresAt := time.Now().Add(24 * time.Hour)
-	store.coolingBatches[batchID] = memoryCoolingBatch{items: items, expiresAt: expiresAt}
-	return ResourceCoolingPreview{BatchID: batchID, Eligible: len(items), SourceDistribution: sources,
-		StatusDistribution: statuses, Samples: samples, ExpiresAt: expiresAt}, nil
-}
 
-func (store *MemoryStore) ApplyCooling(_ context.Context, batchID int64, confirmed bool) (int, error) {
-	if !confirmed {
-		return 0, errors.New("resource cooling requires explicit confirmation")
-	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	batch, found := store.coolingBatches[batchID]
-	if !found || batch.applied || time.Now().After(batch.expiresAt) {
-		return 0, errors.New("dry-run batch is missing, expired, or already applied")
-	}
-	affected := 0
-	for _, key := range batch.items {
-		for index := range store.items {
-			item := &store.items[index]
-			if item.SourceKey == key[0] && item.VodId == key[1] && item.ResourceStatus == "stale" {
-				item.ResourceStatus = "cold"
-				affected++
-			}
-		}
-	}
-	batch.applied = true
-	store.coolingBatches[batchID] = batch
-	return affected, nil
-}
 
-func (store *MemoryStore) RestoreCold(_ context.Context, sourceKey, vodID string) (int, error) {
-	if sourceKey == "" || vodID == "" {
-		return 0, errors.New("source key and vod id are required")
-	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	for index := range store.items {
-		item := &store.items[index]
-		if item.SourceKey == sourceKey && item.VodId == vodID && item.ResourceStatus == "cold" {
-			item.ResourceStatus = "active"
-			return 1, nil
-		}
-	}
-	return 0, nil
-}

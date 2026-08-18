@@ -1,7 +1,6 @@
 package compat
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -45,44 +44,6 @@ func TestExtractHTML(t *testing.T) {
 	}
 }
 
-func TestCompareReportsSEOChanges(t *testing.T) {
-	oldSnapshot := Snapshot{Status: 200, Title: "Old", Canonical: "https://example.com/a", IndexableText: "old copy", Links: []string{"/a"}}
-	newSnapshot := Snapshot{Status: 200, Title: "New", Canonical: "https://example.com/b", IndexableText: "new copy", Links: []string{"/b"}}
-	differences := Compare(oldSnapshot, newSnapshot)
-	if len(differences) != 4 {
-		t.Fatalf("differences = %#v, want 4", differences)
-	}
-}
-
-func TestFilterExpectedDifferencesKeepsUnexpectedFields(t *testing.T) {
-	differences := []string{
-		`title differs: old="old" new="new"`,
-		`indexable-text differs: old="old copy" new="new copy"`,
-	}
-	unexpected, explained := FilterExpectedDifferences(differences, []string{"indexable-text"})
-	if len(unexpected) != 1 || unexpected[0] != differences[0] {
-		t.Fatalf("unexpected = %#v", unexpected)
-	}
-	if len(explained) != 1 || explained[0] != differences[1] {
-		t.Fatalf("explained = %#v", explained)
-	}
-}
-
-func TestLoadManifestRejectsUnsupportedExpectedDifference(t *testing.T) {
-	_, err := LoadManifest(strings.NewReader(`{"cases":[{"name":"home","path":"/","kind":"html","expected_differences":["title"],"difference_reason":"test"}]}`))
-	if err != nil {
-		t.Fatalf("supported expected difference rejected: %v", err)
-	}
-	_, err = LoadManifest(strings.NewReader(`{"cases":[{"name":"home","path":"/","kind":"html","expected_differences":["not-a-field"],"difference_reason":"test"}]}`))
-	if err == nil {
-		t.Fatal("unsupported expected difference was accepted")
-	}
-	_, err = LoadManifest(strings.NewReader(`{"cases":[{"name":"home","path":"/","kind":"html","expected_differences":["title"]}]}`))
-	if err == nil {
-		t.Fatal("missing expected difference reason was accepted")
-	}
-}
-
 func TestNormalizedLinkDropsFragmentsAndUnsafeEmptyValues(t *testing.T) {
 	for input, expected := range map[string]string{
 		"/movie/1#reviews":            "/movie/1",
@@ -93,38 +54,5 @@ func TestNormalizedLinkDropsFragmentsAndUnsafeEmptyValues(t *testing.T) {
 		if got := normalizedLink(input); got != expected {
 			t.Fatalf("normalizedLink(%q) = %q, want %q", input, got, expected)
 		}
-	}
-}
-
-func TestLoadManifestRejectsUnknownFields(t *testing.T) {
-	_, err := LoadManifest(strings.NewReader(`{"cases":[{"name":"home","path":"/","kind":"html","unknown":true}]}`))
-	if err == nil {
-		t.Fatal("LoadManifest() error = nil, want unknown field error")
-	}
-}
-
-func TestSEOManifestIsValid(t *testing.T) {
-	file, err := os.Open("../../compat/seo_cases.json")
-	if err != nil {
-		t.Fatalf("open manifest: %v", err)
-	}
-	defer file.Close()
-
-	manifest, err := LoadManifest(file)
-	if err != nil {
-		t.Fatalf("LoadManifest() error = %v", err)
-	}
-	seen := make(map[string]struct{}, len(manifest.Cases))
-	for _, testCase := range manifest.Cases {
-		if testCase.Name == "" || !strings.HasPrefix(testCase.Path, "/") {
-			t.Errorf("invalid case: %#v", testCase)
-		}
-		if testCase.Kind != "html" && testCase.Kind != "text" && testCase.Kind != "http" {
-			t.Errorf("case %q has unsupported kind %q", testCase.Name, testCase.Kind)
-		}
-		if _, exists := seen[testCase.Name]; exists {
-			t.Errorf("duplicate case name %q", testCase.Name)
-		}
-		seen[testCase.Name] = struct{}{}
 	}
 }

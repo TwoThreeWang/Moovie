@@ -12,18 +12,25 @@ import (
 )
 
 func TestPostgresToggleLikeIsAtomicAndUsesUniqueConflictGuard(t *testing.T) {
-	fake := &socialFakeDatabase{row: socialFakeRow{values: []any{true, 3}}}
+	fake := &socialFakeDatabase{rows: []database.Row{
+		socialFakeRow{values: []any{true}}, // 切换点赞
+		socialFakeRow{values: []any{3}},    // 随后单独计数
+	}}
 	count, liked, err := NewPostgresStore(fake).ToggleLike(t.Context(), 9, 7)
 	if err != nil || !liked || count != 3 {
 		t.Fatalf("ToggleLike() = %d/%v/%v", count, liked, err)
 	}
-	for _, expected := range []string{"WITH deleted AS", "DELETE FROM comment_likes", "INSERT INTO comment_likes", "ON CONFLICT (user_movie_id, user_id) DO NOTHING", "SELECT COUNT(*)"} {
-		if !strings.Contains(fake.query, expected) {
-			t.Fatalf("toggle query missing %q: %s", expected, fake.query)
+	for _, expected := range []string{"WITH deleted AS", "DELETE FROM comment_likes", "INSERT INTO comment_likes", "ON CONFLICT (user_movie_id, user_id) DO NOTHING"} {
+		if !strings.Contains(fake.queries[0], expected) {
+			t.Fatalf("toggle query missing %q: %s", expected, fake.queries[0])
 		}
 	}
-	if !reflect.DeepEqual(fake.arguments, []any{9, 7}) {
-		t.Fatalf("arguments = %#v", fake.arguments)
+	// 计数必须是独立的第二条语句：合并进上一条会读到旧快照，少算刚插入的点赞。
+	if len(fake.queries) != 2 || !strings.Contains(fake.queries[1], "SELECT COUNT(*) FROM comment_likes") {
+		t.Fatalf("count query = %#v", fake.queries)
+	}
+	if !reflect.DeepEqual(fake.argsList[0], []any{9, 7}) {
+		t.Fatalf("toggle arguments = %#v", fake.argsList[0])
 	}
 }
 
@@ -45,8 +52,11 @@ func TestCinemaQueriesPreferCanonicalFieldsAndAvoidSingleUserFlooding(t *testing
 
 type socialFakeDatabase struct {
 	query     string
+	queries   []string
 	arguments []any
+	argsList  [][]any
 	row       database.Row
+	rows      []database.Row // 按 QueryRow 调用顺序依次返回，为空时回退到 row
 }
 
 func (fake *socialFakeDatabase) Query(_ context.Context, query string, arguments ...any) (database.Rows, error) {
@@ -56,6 +66,13 @@ func (fake *socialFakeDatabase) Query(_ context.Context, query string, arguments
 
 func (fake *socialFakeDatabase) QueryRow(_ context.Context, query string, arguments ...any) database.Row {
 	fake.query, fake.arguments = query, arguments
+	fake.queries = append(fake.queries, query)
+	fake.argsList = append(fake.argsList, arguments)
+	if len(fake.rows) > 0 {
+		row := fake.rows[0]
+		fake.rows = fake.rows[1:]
+		return row
+	}
 	return fake.row
 }
 

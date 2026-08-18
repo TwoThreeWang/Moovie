@@ -12,11 +12,12 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestDiscoverRoutesPreserveSEOHTMXAndDoubanCard(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{
 		DoubanID: "1292052", Title: "肖申克的救赎", OriginalTitle: "The Shawshank Redemption", Year: "1994",
 		Rating: 9.7, Genres: "剧情,犯罪", Countries: "美国", Directors: `[{"name":"弗兰克·德拉邦特"}]`,

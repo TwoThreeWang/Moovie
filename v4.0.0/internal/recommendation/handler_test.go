@@ -18,6 +18,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestRecommendationsPagePreservesPathSEOJSONLDAndReasons(t *testing.T) {
@@ -96,11 +97,12 @@ func TestForYouHeroPaginationSectionsAndCache(t *testing.T) {
 }
 
 func TestForYouColdCacheRequestsAreCoalesced(t *testing.T) {
+	testdb.User(t, testdb.Pool(t), 7)
 	personalizer := &concurrentPersonalizer{}
 	for index := 1; index <= 26; index++ {
 		personalizer.movies = append(personalizer.movies, catalog.Movie{ID: index, DoubanID: strconv.Itoa(index), Title: fmt.Sprintf("影片%02d", index)})
 	}
-	handler := NewHandler(config.Config{}, NewService(catalog.NewMemoryStore(), WithPersonalizer(personalizer)))
+	handler := NewHandler(config.Config{}, NewService(catalog.NewPostgresStore(testdb.Pool(t)), WithPersonalizer(personalizer)))
 	var group sync.WaitGroup
 	for index := 0; index < 20; index++ {
 		group.Add(1)
@@ -154,12 +156,15 @@ func TestForYouCacheIsBoundedExpiresAndDropsNonRenderFields(t *testing.T) {
 }
 
 func recommendationTestRouter(t *testing.T) (*gin.Engine, int) {
+	testdb.User(t, testdb.Pool(t), 7)
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	store := catalog.NewMemoryStore()
+	store := catalog.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), catalog.Movie{DoubanID: "1292052", Title: "肖申克的救赎", Year: "1994", Genres: "剧情,犯罪", Directors: `[{"name":"弗兰克"}]`, Rating: 9.7, Poster: "https://img3.doubanio.com/source.jpg"})
-	source, _ := store.FindByDoubanID(t.Context(), "1292052")
 	_ = store.Upsert(t.Context(), catalog.Movie{DoubanID: "target", Title: "目标电影", Year: "1995", Genres: "剧情", Directors: `[{"name":"弗兰克"}]`, Rating: 9.1, Poster: "https://img3.doubanio.com/target.jpg"})
+	seedEmbedding(t, store, "1292052")
+	seedEmbedding(t, store, "target")
+	source, _ := store.FindByDoubanID(t.Context(), "1292052")
 	cfg := config.Config{SiteName: "Moovie影牛", SiteURL: "https://moovie.example"}
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"recommendations", "404"})
 	if err != nil {
@@ -172,9 +177,10 @@ func recommendationTestRouter(t *testing.T) (*gin.Engine, int) {
 }
 
 func forYouTestRouter(t *testing.T) (*gin.Engine, *fakePersonalizer) {
+	testdb.User(t, testdb.Pool(t), 7)
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	store := catalog.NewMemoryStore()
+	store := catalog.NewPostgresStore(testdb.Pool(t))
 	personalizer := &fakePersonalizer{}
 	for index := 1; index <= 26; index++ {
 		personalizer.personalized = append(personalizer.personalized, catalog.Movie{ID: index, DoubanID: strconv.Itoa(index), Title: fmt.Sprintf("影片%02d", index), Rating: 9, Poster: "poster"})
@@ -225,6 +231,17 @@ func (fake *fakePersonalizer) ReliveClassics(context.Context, int, int) ([]catal
 func (fake *fakePersonalizer) RecentSimilar(context.Context, int, int) ([]catalog.Movie, string, error) {
 	fake.recentCalls++
 	return fake.recent, "最近观看", nil
+}
+
+// seedEmbedding 给影片写一条向量。相似推荐走 pgvector 距离，
+// 没有 embedding 的影片永远不会出现在 FindSimilar 里。
+func seedEmbedding(t *testing.T, store *catalog.PostgresStore, doubanID string) {
+	t.Helper()
+	vector := make([]float32, 768)
+	vector[len(doubanID)%768] = 0.5
+	if err := store.UpdateEmbedding(t.Context(), doubanID, "seed", "seed-hash", vector); err != nil {
+		t.Fatalf("seed embedding %s: %v", doubanID, err)
+	}
 }
 
 func recommendationToken(t *testing.T, userID int) string {

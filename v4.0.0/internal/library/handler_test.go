@@ -13,6 +13,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestLibraryUnauthorizedResponsesPreserveLegacyHTMXSemantics(t *testing.T) {
@@ -95,7 +96,6 @@ func TestMarkWatchedPreservesLegacyQueryFallback(t *testing.T) {
 
 func TestDashboardLibraryPaginationUsesLegacyPageSize(t *testing.T) {
 	router, store := libraryTestRouter(t)
-	store.now = func() time.Time { return time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC) }
 	for index := 1; index <= 25; index++ {
 		if err := store.Upsert(t.Context(), Record{UserID: 7, MovieID: strconvItoa(index), Title: "影片" + strconvItoa(index), Poster: "https://img.example/p.jpg", Year: "2026", Status: StatusWish}); err != nil {
 			t.Fatal(err)
@@ -115,10 +115,11 @@ func TestDashboardLibraryPaginationUsesLegacyPageSize(t *testing.T) {
 	}
 }
 
-func libraryTestRouter(t *testing.T) (*gin.Engine, *MemoryStore) {
+func libraryTestRouter(t *testing.T) (*gin.Engine, *PostgresStore) {
+	testdb.User(t, testdb.Pool(t), 7)
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), nil)
 	if err != nil {
 		t.Fatal(err)

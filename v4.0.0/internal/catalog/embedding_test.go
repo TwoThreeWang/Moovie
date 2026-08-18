@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestEmbeddingServiceUsesLocalMetadataAndPersistsExactly768Dimensions(t *testing.T) {
@@ -41,7 +43,7 @@ func TestEmbeddingServiceUsesLocalMetadataAndPersistsExactly768Dimensions(t *tes
 		}
 	})}
 
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", Summary: "越狱", Directors: `[{"name":"导演甲"}]`, Actors: `[{"name":"演员甲"}]`})
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test", OllamaModel: "bge-test",
@@ -71,7 +73,7 @@ func TestEmbeddingServiceFallsBackToMetadataAndRejectsWrongDimension(t *testing.
 		return testJSONResponse(request, http.StatusNotFound, `{}`), nil
 	})}
 
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{
 		DoubanID: "1292052", Title: "标题", Genres: "剧情", Summary: "简介", Directors: `[{"name":"导演甲"}]`,
 		Actors: `[{"name":"演员1"},{"name":"演员2"},{"name":"演员3"},{"name":"演员4"},{"name":"演员5"},{"name":"演员6"}]`,
@@ -119,7 +121,7 @@ func TestEmbeddingServiceEmbedsAIRewriteWhenGatewayConfigured(t *testing.T) {
 		}
 	})}
 
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", Summary: "越狱"})
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test", CFGatewayURL: "https://gateway.test", CFAPIToken: "cf-token", CFAIModel: "test-model",
@@ -157,7 +159,7 @@ func TestEmbeddingServiceFallsBackWhenGatewayKeepsFailing(t *testing.T) {
 		}
 	})}
 
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", Summary: "越狱"})
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test", CFGatewayURL: "https://gateway.test", CFAPIToken: "cf-token",
@@ -194,7 +196,7 @@ func TestEmbeddingServiceHashesMetadataNotAIOutput(t *testing.T) {
 		return testJSONResponse(request, http.StatusOK, string(encoded)), nil
 	})}
 
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1", Title: "标题", Summary: "简介"})
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test", CFGatewayURL: "https://gateway.test", CFAPIToken: "cf-token",
@@ -217,7 +219,7 @@ func TestEmbeddingServiceOnlyRebuildsWhenSemanticInputChanges(t *testing.T) {
 		encoded, _ := json.Marshal(map[string]any{"embedding": vector})
 		return testJSONResponse(request, http.StatusOK, string(encoded)), nil
 	})}
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1", Title: "标题", Summary: "简介"})
 	service := NewEmbeddingService(client, store, EmbeddingConfig{OllamaHost: "https://ollama.test"})
 	if err := service.Enrich(t.Context(), "1"); err != nil {

@@ -15,6 +15,7 @@ import (
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestAuthPagesPreserveLegacyTemplatesAndRedirectField(t *testing.T) {
@@ -185,16 +186,16 @@ func TestSettingsPreservePasswordAndAvatarValidation(t *testing.T) {
 	}
 }
 
-func identityTestRouter(t *testing.T, environment string) (*gin.Engine, *MemoryStore, time.Time) {
+func identityTestRouter(t *testing.T, environment string) (*gin.Engine, *PostgresStore, time.Time) {
 	return identityTestRouterWithOptions(t, environment)
 }
 
-func identityTestRouterWithOptions(t *testing.T, environment string, options ...HandlerOption) (*gin.Engine, *MemoryStore, time.Time) {
+func identityTestRouterWithOptions(t *testing.T, environment string, options ...HandlerOption) (*gin.Engine, *PostgresStore, time.Time) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
 	cfg := config.Config{Env: environment, SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret", JWTExpiry: 72 * time.Hour}
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	handler := NewHandler(cfg, store, options...)
 	handler.now = func() time.Time { return now }
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"login", "register", "dashboard", "settings"})

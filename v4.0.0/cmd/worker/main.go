@@ -34,11 +34,6 @@ func main() {
 		slog.Error("configuration failed", "error", err)
 		os.Exit(1)
 	}
-	if !cfg.Database.Enabled {
-		// 后台任务必须跨进程持久化，内存队列会在重启后丢失，也无法与 Web 共享状态。
-		slog.Error("worker requires DB_ENABLED=true; refusing an in-memory job queue")
-		os.Exit(1)
-	}
 
 	connectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	pool, err := database.Connect(connectCtx, cfg.Database.DSN(), cfg.Database.MaxConns)

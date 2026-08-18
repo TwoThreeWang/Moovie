@@ -4,7 +4,7 @@
 
 这份 README 主要写给第一次接触本项目、Go Web 或分层架构的开发者。建议先阅读“系统如何运行”和“推荐的代码阅读顺序”，再启动程序。
 
-> 当前状态（2026-08-14）：代码中已经包含独立 Web、Worker、34 个 schema migration、单向数据迁移、只读发布审计、SEO/路由兼容检查和突发负载检查工具。本地验收记录显示 `make check`、`make race`、最终迁移库回归和进程级过载保护均有通过记录，但这些证据不等于正式生产批准。发布唯一边界仍是 [`docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md`](docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md)，其中的 iOS/Safari、FLV/播放故障、生产同规格容器、灰度、监控和回滚演练不能由静态检查替代。当前旧、新 `.env` 的 `APP_SECRET` 不一致，迁移脚本会在写库前阻断；要保留现有登录 Cookie，必须先让新系统复用旧密钥。父仓库当前仍忽略 `new/`，正式部署前还必须完成源码纳入和真实灰度观察。
+> 当前状态（2026-08-18）：v4.0.0 已上线，旧库到新库的一次性数据迁移已在生产完成。随之作废的迁移与切流工具（`cmd/datamigrate`、`cmd/migrate`、`cmd/compatcheck`、`cmd/sitemapcheck`、`cmd/loadcheck`、`cmd/releaseaudit`、`scripts/migrate.sh`、`scripts/release/preflight.sh`）已从仓库移除，需要时可从 Git 历史取回。仓库现在只保留 `cmd/web`、`cmd/worker`、`cmd/dbmigrate` 和 `cmd/burstcheck` 四个二进制。发布唯一边界仍是 [`docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md`](docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md)，其中的 iOS/Safari、FLV/播放故障、生产同规格容器、灰度、监控和回滚演练不能由静态检查替代。
 
 ## 当前代码提供的能力
 
@@ -36,7 +36,7 @@ Moovie 需要同时处理四类工作：
 - 每类资源都有明确上限，例如 HTTP 在途请求、重请求、图片代理、数据库连接和外部主机连接。
 - 媒体身份、资源站记录和播放候选分开保存，换源时不会把不同影片或不同剧集混在一起。
 - 目录、片单和播放进度分别以 `media`、`user_movies`、`playback_positions` 为唯一运行时数据源，不保留双读、双写和废弃表。
-- 一次性迁移、最终结构审计、突发负载检查和发布门禁都有独立工具；发布方案把旧系统限定为短时间的应用回退路径，不提供新库反向迁回旧库的脚本。
+- 突发负载检查和发布源码审计有独立工具；数据迁移已完成，仓库不再保留迁移和切流脚本。
 
 ## 初级开发者需要知道的名词
 
@@ -47,7 +47,7 @@ Moovie 需要同时处理四类工作：
 | Service（服务） | 执行业务规则，不负责页面排版 | `internal/*/service.go` |
 | Store（存储接口） | 业务层需要的数据库能力约定 | `internal/*/store.go`、`ports.go` |
 | Postgres Store | Store 的 PostgreSQL 实现 | `internal/*/postgres.go` |
-| Memory Store | 不连接数据库时使用的内存实现，也方便测试 | `internal/*/memory.go` |
+| Memory Store | Store 接口的内存实现，仅用于测试；生产运行必须连接 PostgreSQL | `internal/*/memory.go` |
 | Renderer（渲染器） | 把 Go 数据交给模板，生成最终 HTML | `internal/platform/web`、`web/templates` |
 | Middleware（中间件） | 在 Handler 前后统一处理日志、安全、超时、过载和登录态 | `internal/platform/httpserver` |
 | Migration | 按版本顺序修改新数据库结构的 SQL 文件 | `internal/platform/database/migrations` |
@@ -64,7 +64,7 @@ Moovie 需要同时处理四类工作：
 - `user_movies`：用户的想看、在看、看过和评分等片单状态。
 - `playback_positions`：唯一的服务端播放进度表，既保存已关联媒体的进度，也允许少量只有资源站身份的记录。
 
-统一身份负责回答“它是不是同一部作品”，剧集单元负责回答“这部剧有哪些集、各自什么时候播”，资源记录负责回答“哪个站提供了它”，剧集候选负责回答“这一集最终播放哪条线路”。`watch_histories`、`movies`、`resource_episodes` 等旧表只在数据迁移、schema migration 和发布审计这些过渡/审计路径中出现，不属于新程序的业务运行结构。
+统一身份负责回答“它是不是同一部作品”，剧集单元负责回答“这部剧有哪些集、各自什么时候播”，资源记录负责回答“哪个站提供了它”，剧集候选负责回答“这一集最终播放哪条线路”。`watch_histories`、`movies`、`resource_episodes` 等旧表已由 migration 0031 删除，现在只出现在 migration 文件的历史记录里，不属于新程序的业务运行结构。
 
 ## 整个系统如何运行
 
@@ -196,7 +196,7 @@ Web 只负责尽快完成用户请求。影视资料、豆瓣短评、TMDB 剧�
 
 1. 解析 `.env`，再读取和校验完整配置。
 2. 加载共享 layout、页面模板和 partial。
-3. 根据 `DB_ENABLED` 选择 PostgreSQL Store 或 Memory Store。
+3. 连接 PostgreSQL 并创建各模块的 Store。
 4. 如果启用了 `DB_AUTO_MIGRATE`，顺序执行尚未应用的 migration。
 5. 创建共享的外部 HTTP Client、搜索 Runner、健康状态和各业务 Service。
 6. 创建各模块 Handler，并集中注册 Gin 路由。
@@ -212,12 +212,7 @@ cmd/
   web/              Web 入口：装配依赖、注册路由、启动和关闭服务
   worker/           Worker 入口：启动统一任务 Dispatcher
   dbmigrate/        受控执行新库结构 migration，可停在指定版本
-  datamigrate/      旧库到最终模型的一次性数据迁移（默认只读）
-  releaseaudit/     最终数据库结构和业务关系的只读发布审计
   burstcheck/       突发请求、受控 503 和健康隔离检查
-  compatcheck/      上线前临时对比公开页面、输入和 SEO，不参与运行
-  sitemapcheck/     上线前临时对比新旧 sitemap URL 集合
-  loadcheck/        上线前临时对比新旧只读端点延迟
 internal/
   platform/         配置、数据库、HTTP、认证、出站访问、模板渲染
   content/          首页、静态页面、robots 和 sitemap
@@ -239,18 +234,13 @@ internal/
   danmaku/          弹幕读取和发送
   admin/            后台管理页面、匹配复核和数据操作
   operations/       指标和运维检查
-  datamigrate/      数据迁移计划、冲突检查和规范模型回填
-  compat/           HTTP/SEO/sitemap/load 检查的共享实现
+  compat/           页面 SEO 快照抓取与端点压测的共享实现，供测试和 burstcheck 使用
   contract/         最终路由和请求输入契约，防止废弃 API 回流
-  releaseaudit/     最终数据库结构和关系审计
-  releasecontract/  发布脚本、Docker 和清单的契约测试
 web/
   templates/        Go HTML 模板
   static/css/       全站样式
   static/js/        业务 JavaScript 与第三方浏览器库
-compat/             上线前公开页面与 SEO 对比用例，不会进入运行时
-scripts/migrate.sh  一键完成结构准备、数据迁移、最终删表和发布审计
-scripts/release/    发布预检与源码审计脚本
+scripts/release/    发布源码完整性审计脚本
 docs/               发布清单、验收证据和高并发手册
 ```
 
@@ -360,8 +350,6 @@ TMDB、Ollama 和外部弹幕是当前入口实际接入的可选增强，未配
 psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE moovie_new;'
 ```
 
-要从旧库迁移数据时，正式目标库要改为 `moovie_v2`——`cmd/datamigrate` 的 `--apply` 对源库和目标库名做硬校验；`scripts/migrate.sh` 也按这个库名执行。直接做隔离演练时，才使用 `--allow-test-target` 配合 `moovie_v2_cutover_test_` 前缀。
-
 如果数据库已经存在，不要重复创建。可以先检查：
 
 ```bash
@@ -382,7 +370,6 @@ APP_ENV=development
 PORT=5008
 SITE_URL=http://localhost:5008
 
-DB_ENABLED=true
 DB_AUTO_MIGRATE=true
 DB_HOST=localhost
 DB_PORT=5432
@@ -429,7 +416,7 @@ curl http://127.0.0.1:5008/ready
 需要验证豆瓣同步、资料刷新、向量、热门快照或运维告警时，在另一个终端运行：
 
 ```bash
-DB_ENABLED=true JOBS_IN_WEB=false GOCACHE=/private/tmp/gocache go run ./cmd/worker
+JOBS_IN_WEB=false GOCACHE=/private/tmp/gocache go run ./cmd/worker
 ```
 
 只有 Web 侧 `JOBS_IN_WEB=false` 时才需要它。此时任务会保留为待处理状态，而不是由 Web 偷偷执行。
@@ -445,7 +432,7 @@ DB_ENABLED=true JOBS_IN_WEB=false GOCACHE=/private/tmp/gocache go run ./cmd/work
 | 分组 | 关键变量 | 作用 |
 | --- | --- | --- |
 | 应用 | `APP_ENV`、`PORT`、`SITE_URL`、`WEB_ROOT`、`APP_SECRET` | 运行环境、监听端口、模板目录和签名密钥 |
-| 数据库 | `DB_ENABLED`、`DB_AUTO_MIGRATE`、`DB_*` | 是否连接数据库、是否迁移、连接信息 |
+| 数据库 | `DB_AUTO_MIGRATE`、`DB_*` | 是否自动迁移、连接信息 |
 | HTTP 预算 | `HTTP_MAX_*`、`HTTP_QUEUE_TIMEOUT_MILLISECONDS` | 控制并发、排队、请求体和连接数 |
 | 日志 | `HTTP_ACCESS_LOG_SAMPLE_PERCENT`、`HTTP_ACCESS_LOG_MAX_PER_SECOND` | 防止访问日志在流量高峰放大资源占用 |
 | 搜索 | `SEARCH_*`、`OUTBOUND_MAX_CONNS_PER_HOST` | 上游超时、来源并发、缓存和熔断 |
@@ -455,7 +442,6 @@ DB_ENABLED=true JOBS_IN_WEB=false GOCACHE=/private/tmp/gocache go run ./cmd/work
 
 生产环境会额外强制校验：
 
-- `DB_ENABLED=true`。
 - `SITE_URL` 必须使用 HTTPS。
 - `APP_SECRET` 至少 32 字节且不能保留示例值。
 - HTTP、搜索、数据库和外部连接参数不能超过代码中的安全上限。
@@ -518,7 +504,7 @@ flowchart TD
 
 ## 数据库和 migration
 
-系统内嵌 32 个按文件名排序的 migration。应用 migration 时会：
+系统内嵌 41 个按文件名排序的 migration。应用 migration 时会：
 
 1. 打开一个数据库事务。
 2. 获取 PostgreSQL advisory transaction lock，防止多个实例同时迁移。
@@ -529,70 +515,7 @@ flowchart TD
 
 本地首次启动可以使用 `DB_AUTO_MIGRATE=true`。生产环境建议由受控发布步骤执行 migration，Web 和 Worker 日常运行使用 `DB_AUTO_MIGRATE=false`。
 
-需要区分两种「迁移」：
-
-- **schema migration**：建立和演进新库表结构，由应用内嵌 SQL 完成（`internal/platform/database/migrations`），启动时按 `DB_AUTO_MIGRATE` 自动执行，只跑一次并记录在 `schema_migrations`。
-- **data migration**：把旧库 `moovie` 的业务数据复制进已经建好表的新库 `moovie_v2`，由 `cmd/datamigrate` 完成。
-
-### 一键数据迁移怎么用
-
-迁移是**单向切换**：脚本只读取旧库 `moovie`，只写新库 `moovie_v2`，没有新库迁回旧库的实现。先确认两份 `.env` 分别指向正确数据库：
-
-```bash
-cd new
-
-# 只生成迁移计划和 JSON 报告，不修改任一数据库
-./scripts/migrate.sh
-
-# 完整迁移。确认参数表示写冻结已经真实完成，不是让脚本代做。
-./scripts/migrate.sh --apply --write-freeze-confirmed
-```
-
-完整流程分成六步：
-
-```mermaid
-flowchart LR
-    freeze["停止旧 Web / Worker 写入"] --> prepare["结构迁移到 0030<br/>只准备最终字段，暂不删旧结构"]
-    prepare --> dry["只读 dry-run<br/>冲突必须为 0"]
-    dry --> apply["单事务写入<br/>失败自动回滚"]
-    apply --> verify["再次 dry-run<br/>insert/update/conflict 全为 0"]
-    verify --> finalize["应用 0031 与 0036<br/>删除过渡结构并统一任务队列"]
-    finalize --> audit["releaseaudit<br/>最终结构和关系零失败"]
-    audit --> start["以 DB_AUTO_MIGRATE=false<br/>启动新 Web / Worker"]
-```
-
-数据转换规则如下：
-
-1. **复制仍然需要的业务表**。14 张白名单表按自然键对齐，例如用户按 `email`、资源按 `source_key + vod_id`；只复制源、目标共有列，旧库的 `NULL` 不会清空目标库已有值。任务记录不作为业务数据迁移，写冻结时必须先清空活动任务。
-2. **保留用户登录能力**。`users.password_hash` 原样复制，所以老用户仍使用原密码登录；用户 ID、邮箱、用户名、角色、头像和豆瓣绑定也会保留。
-3. **建立唯一影视目录**。旧 `movies` 直接转换到 `media`、别名、外部 ID 和媒体单元，不会在新库重新创建 `movies`。
-4. **保留片单**。旧 `user_movies` 迁入后补齐 `media_id`；独立 `favorites` 转成 `status='wish'`，不会把已有「看过」降级成「想看」。
-5. **保留播放进度**。旧 `watch_histories` 直接转换到 `playback_positions`。有合法豆瓣 ID 的记录关联 `media`；少量没有合法 ID 的记录用 `source_key + vod_id` 保留，仍能显示和继续播放。
-6. **建立资源关系**。旧资源事实转换到 `resource_media_links`、`resource_play_lines` 和 `resource_episode_candidates`，换源按同一媒体单元和同一集工作。
-7. **最终删掉过渡结构**。复验通过后，0031 删除媒体和播放领域的过渡表及旧影子列；0036 把旧任务记录迁入 `worker_jobs`，随后删除 `metadata_refresh_jobs` 与 `douban_sync_jobs`。新程序之后只读取最终结构。
-
-数据写入阶段在**一个目标库事务**内，任一步失败整体回滚；旧库连接始终是只读事务。同一目标库还使用 PostgreSQL advisory transaction lock，防止两个迁移同时执行。每次运行的 dry-run、apply、复验和 releaseaudit 报告都保存在 `.migration-reports/<run_id>.*.json`。
-
-旧库备份可按实际运维需要另行执行，但不再是数据迁移或切流的硬门禁；脚本仍强制旧库只读、源目标库隔离和写冻结。
-
-### 为什么 APP_SECRET 也是迁移门禁
-
-密码哈希决定“用户能否用原密码登录”，`APP_SECRET` 决定“切流前签发的登录 Cookie 在新系统中是否仍有效”。两者不是一回事。完整迁移会在第一步写库之前比较旧、新 `.env` 中的 `APP_SECRET`：缺失或不一致都会直接退出，而且不会打印密钥内容。
-
-请让新系统复用旧系统当前有效的 `APP_SECRET`，不要为这次切换重新生成。等所有旧 Cookie 自然过期并确认不再需要应用回退后，才能按单独的密钥轮换方案更换。
-
-### apply 的硬门禁
-
-`--apply` 本身不足以写入。脚本还要求：
-
-- 目标关系必须是 `moovie -> moovie_v2`；
-- 旧 Web、旧 Worker 和其他写入者已经停止，并传入 `--write-freeze-confirmed`；
-- 两份 `.env` 的 `APP_SECRET` 非空且一致；
-- dry-run 没有自然键缺失、重复键、CHECK 约束冲突或 favorites 父记录缺失；
-- 写入后的第二次 dry-run 中 `insert=0`、`update=0`、`conflict=0`、`favorites待转换=0`；
-- 最终 `releaseaudit` 零失败。
-
-退出码：`0` 成功，`1` dry-run 有冲突或 apply 被门禁阻止，`2` 参数、连接或执行错误。不要通过直接调用底层 SQL 绕过这些门禁。
+schema migration 由应用内嵌 SQL 完成（`internal/platform/database/migrations`），启动时按 `DB_AUTO_MIGRATE` 自动执行，只跑一次并记录在 `schema_migrations`。旧库到新库的一次性数据迁移已于 2026-08 完成，相关工具（`cmd/datamigrate`、`scripts/migrate.sh`、`cmd/releaseaudit`）已从仓库移除，需要时可从 Git 历史取回。
 
 ## 测试和验收工具
 
@@ -625,56 +548,20 @@ GOCACHE=/private/tmp/gocache go test -race ./...
 
 | 命令 | 作用 | 是否写数据 |
 | --- | --- | --- |
-| `cmd/compatcheck` | 切流前临时对比新旧公开页面、输入、状态码和 SEO；不属于运行时兼容层 | 否 |
-| `cmd/sitemapcheck` | 切流前对比 sitemap URL 集合 | 否 |
-| `cmd/loadcheck` | 切流前对比新旧只读端点 P95 | 只发送读取请求 |
 | `cmd/burstcheck` | 验证突发请求、受控 503 和健康隔离 | 只发送读取请求 |
 | `cmd/dbmigrate` | 应用目标库结构 migration | **是** |
-| `cmd/releaseaudit` | 检查最终表结构、用户关系、快照和资源一致性 | 否 |
-| `cmd/datamigrate` | 旧库到新库的数据迁移 | **仅 `--apply` 且通过全部门禁时** |
 
 查看参数：
 
 ```bash
 go run ./cmd/burstcheck -h
-go run ./cmd/releaseaudit -h
-go run ./cmd/datamigrate -h
 ```
 
-审计隔离演练库时，可以只覆盖数据库名，不必复制或让 shell 执行 `.env`：
+页面 SEO 不再由独立命令对比，而是由 `internal/content` 和 `internal/search` 的回归测试直接断言：`compat.Fetch` 抓取渲染后的页面，逐项检查 Title、H1、Description、Keywords、Robots、Canonical、OG/Twitter 标签和 JSON-LD。这些断言随 `make check` 一起运行。
 
-```bash
-go run ./cmd/releaseaudit \
-  -target-env ./.env \
-  -target-database moovie_v2_cutover_test_20260812 \
-  -json
-```
+### 发布源码审计
 
-`-target-database` 只适用于本地演练库；正式迁移仍以目标 `.env` 中的数据库名为准。
-
-### 完整发布预检
-
-[`scripts/release/preflight.sh`](scripts/release/preflight.sh) 包含 7 个阶段：
-
-1. 源码是否完整进入发布产物。
-2. 单元测试、vet 和构建。
-3. 竞态检测。
-4. 公开页面和 SEO 对比（切流前可设置 `OLD_BASE_URL`）。
-5. sitemap URL 集合对比（切流前可设置 `OLD_BASE_URL`）。
-6. 最终数据库结构只读审计。
-7. 新系统突发稳定性和健康隔离。
-
-`OLD_BASE_URL` 是可选的：切流前应当设置，用来确认用户可见页面和 SEO 没有意外变化；旧站下线后不再需要运行时兼容，不设置即可，第 4、5 步由静态路由契约和已保存的发布证据接替。
-
-脚本启动前必须提供 `NEW_BASE_URL`、`SEO_MOVIE_ID`、`SEO_SOURCE_KEY`、`SEO_VOD_ID`、`SEO_PUBLIC_USER_ID` 和 `SEO_YEAR_MONTH`。正式模式还必须提供 `MIGRATION_TARGET_DSN`；纯本地模式可设置 `LOCAL_PREFLIGHT=true`，此时 releaseaudit 使用 `./.env`。只要任一 URL 不是 localhost/127.0.0.1，就必须额外设置 `REMOTE_PREFLIGHT_CONFIRM=read-only-moovie-preflight`。这些变量是脚本的实际输入，不是 `.env` 应用配置的一部分。
-
-当前 `new/` 未纳入 Git，只能使用本地预检模式。正式灰度前必须解除父仓库忽略并通过源码纳入检查。远程预检还要求显式设置：
-
-```text
-REMOTE_PREFLIGHT_CONFIRM=read-only-moovie-preflight
-```
-
-预检不会执行数据迁移、数据清理或流量切换。
+[`scripts/release/source-audit.sh`](scripts/release/source-audit.sh) 检查发布产物是否完整：`go.mod`、`go.sum`、`Dockerfile`、`docker-compose.yml`、`.dockerignore`、`web/templates` 和 migration 目录缺任意一个都会失败。它不构建镜像，也不修改 Git 或业务数据。
 
 ## Docker Compose
 
@@ -725,11 +612,10 @@ cd /path/to/Moovie/new
 
 推荐发布顺序：
 
-1. 冻结发布版本并记录提交号和迁移前关键表数量。
-2. 确认新 `.env` 复用旧 `APP_SECRET`，冻结旧系统写入和 Worker。
-3. 执行 `./scripts/migrate.sh --apply --write-freeze-confirmed`；脚本会自动完成最终 `releaseaudit`。
-4. 完成浏览器、播放、SEO、sitemap、性能和高并发门禁。
-5. 部署独立 Web canary 与 Worker，观察无异常后放量。
+1. 冻结发布版本并记录提交号。
+2. 以受控步骤执行 `cmd/dbmigrate`，确认 `schema_migrations` 已推进到目标版本。
+3. 完成浏览器、播放、SEO、性能和高并发门禁。
+4. 部署独立 Web canary 与 Worker，观察无异常后放量。
 
 放量和应用回退由部署平台负责，仓库不提供切流脚本，也不提供新库到旧库的反向迁移。旧程序和旧库只用于处理“刚切流就发现严重问题”的短时间紧急回退：先把流量从新系统摘除，再启动只读冻结时保留的旧程序。新系统开始接收写入后产生的片单、评论和进度不会自动出现在旧库，因此回退窗口越长，业务数据缺口越大；这也是正式解除写冻结前必须完成写入 smoke test 的原因。不要通过删除新库或逆向执行 schema migration 回退。
 
@@ -788,7 +674,7 @@ Go 导出类型或函数的注释仍以标识符开头，例如 `// Config 保�
 - 临时二进制统一输出到已忽略的 `bin/`：
 
 ```bash
-go build -o ./bin/releaseaudit ./cmd/releaseaudit
+go build -o ./bin/burstcheck ./cmd/burstcheck
 ```
 
 - `.env`、日志、覆盖率文件和 `bin/` 不得进入 Git 或 Docker 上下文。

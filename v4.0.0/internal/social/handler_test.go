@@ -16,6 +16,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestCommentsLikesAndRepliesPreserveLegacyHTMXBehavior(t *testing.T) {
@@ -25,7 +26,10 @@ func TestCommentsLikesAndRepliesPreserveLegacyHTMXBehavior(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, _ := movies.GetByUserAndMovie(t.Context(), publicUser.ID, "1292052")
-	privateUser, _ := users.Create(t.Context(), identity.User{Email: "private@example.com", Username: "私密用户", Role: "user", Avatar: "🍿", CreatedAt: now})
+	privateUser, privateErr := users.Create(t.Context(), identity.User{Email: "private@example.com", Username: "私密用户", Role: "user", Avatar: "🍿", CreatedAt: now})
+	if privateErr != nil {
+		t.Fatalf("create private user: %v", privateErr)
+	}
 	_ = movies.Upsert(t.Context(), library.Record{UserID: privateUser.ID, MovieID: "1292052", Status: library.StatusWatched, Comment: "私密短评", CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute)})
 
 	comments := performRequest(router, http.MethodGet, "/api/htmx/movie-comments?douban_id=1292052", "", "")
@@ -92,13 +96,13 @@ func TestCinemaBuildsProgramCommentsAndFilmFriendRadar(t *testing.T) {
 	}
 }
 
-func socialTestRouter(t *testing.T) (*gin.Engine, *identity.MemoryStore, *library.MemoryStore, *MemoryStore, *identity.User, string) {
+func socialTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *library.PostgresStore, *PostgresStore, *identity.User, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	users := identity.NewMemoryStore()
+	users := identity.NewPostgresStore(testdb.Pool(t))
 	publicUser, _ := users.Create(t.Context(), identity.User{Email: "public@example.com", Username: "公开用户", Role: "user", Avatar: "🎬", IsPublic: true, CreatedAt: time.Now()})
-	movies := library.NewMemoryStore()
-	store := NewMemoryStore(movies, users)
+	movies := library.NewPostgresStore(testdb.Pool(t))
+	store := NewPostgresStore(testdb.Pool(t))
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"cinema"})
 	if err != nil {

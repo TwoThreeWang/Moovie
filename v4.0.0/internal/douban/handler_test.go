@@ -15,6 +15,8 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
 func TestBindStatusAndUnbindPreserveLegacyRoutes(t *testing.T) {
@@ -55,12 +57,12 @@ func TestBindRejectsInvalidIDWithoutCallingProvider(t *testing.T) {
 	}
 }
 
-func doubanTestRouter(t *testing.T) (*gin.Engine, *identity.MemoryStore, *MemoryJobStore, *recordingValidator, *recordingCoordinator, string) {
+func doubanTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *QueueJobStore, *recordingValidator, *recordingCoordinator, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	users := identity.NewMemoryStore()
+	users := identity.NewPostgresStore(testdb.Pool(t))
 	user, _ := users.Create(t.Context(), identity.User{Email: "person@example.com", Username: "person", PasswordHash: "hash", Role: "user", Avatar: "🎬", CreatedAt: time.Now()})
-	jobs := NewMemoryJobStore()
+	jobs := NewQueueJobStore(workqueue.NewPostgresStore(testdb.Pool(t)))
 	validator := &recordingValidator{}
 	coordinator := &recordingCoordinator{jobs: jobs}
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
@@ -84,7 +86,7 @@ func (validator *recordingValidator) ValidateUser(_ context.Context, userID stri
 }
 
 type recordingCoordinator struct {
-	jobs    *MemoryJobStore
+	jobs    *QueueJobStore
 	created int
 }
 

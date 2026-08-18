@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
 func TestFullSyncFiltersNonVideoAndPreservesLocalRatingComment(t *testing.T) {
@@ -18,9 +20,10 @@ func TestFullSyncFiltersNonVideoAndPreservesLocalRatingComment(t *testing.T) {
 		"movie/done": {interest("300", "", "show", "done", "综艺", "2026-07-03")},
 		"tv/done":    {interest("400", "tv", "", "done", "剧集", "2026-07-04")},
 	}}
-	libraryStore := library.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	libraryStore := library.NewPostgresStore(testdb.Pool(t))
 	_ = libraryStore.Upsert(t.Context(), library.Record{UserID: 7, MovieID: "100", Status: library.StatusWish, Rating: 5, Comment: "本地短评"})
-	jobs := NewMemoryJobStore()
+	jobs := NewQueueJobStore(workqueue.NewPostgresStore(testdb.Pool(t)))
 	job, _ := jobs.Create(t.Context(), 7, TypeFull)
 	service := NewService(provider, libraryStore, jobs, WithPageDelay(func(context.Context) error { return nil }))
 	if err := service.SyncFull(t.Context(), 7, "douban-user", job.ID); err != nil {
@@ -55,8 +58,9 @@ func TestIncrementalSyncUsesRSSSetAndStopsAtEarliestBoundary(t *testing.T) {
 		}},
 		rssSubjects: map[string]bool{"100": true, "102": true}, rssEarliest: earliest,
 	}
-	libraryStore := library.NewMemoryStore()
-	jobs := NewMemoryJobStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	libraryStore := library.NewPostgresStore(testdb.Pool(t))
+	jobs := NewQueueJobStore(workqueue.NewPostgresStore(testdb.Pool(t)))
 	job, _ := jobs.Create(t.Context(), 7, TypeIncremental)
 	service := NewService(provider, libraryStore, jobs, WithPageDelay(func(context.Context) error { return nil }))
 	if err := service.SyncIncremental(t.Context(), 7, "douban-user", job.ID); err != nil {

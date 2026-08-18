@@ -64,10 +64,6 @@ type AliasWriter interface {
 	UpsertAlias(ctx context.Context, alias Alias) error
 }
 
-type MediaUnitWriter interface {
-	EnsureMediaUnit(ctx context.Context, unit MediaUnit) (MediaUnit, error)
-}
-
 type sourceField struct {
 	column   string
 	value    any

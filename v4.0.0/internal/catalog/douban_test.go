@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestDoubanProviderFallsBackAcrossMediaTypesAndMapsMovie(t *testing.T) {
@@ -20,7 +22,7 @@ func TestDoubanProviderFallsBackAcrossMediaTypesAndMapsMovie(t *testing.T) {
 "countries":["美国"],"durations":["142分钟"],"pic":{"large":"https://img3.doubanio.com/a.jpg"},
 "directors":[{"id":"1","name":"弗兰克"}],"actors":[{"id":"2","name":"蒂姆"}]}`), nil
 	})}
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	provider := NewDoubanProvider(client, store)
 	if err := provider.Fetch(t.Context(), "1292052", false); err != nil {
 		t.Fatal(err)
@@ -47,7 +49,7 @@ func TestDoubanProviderUsesSuccessfulDetailEndpointForCanonicalMediaType(t *test
 "rating":{"value":8.6},"pic":{"large":"https://img.example/tv.jpg"}}`), nil
 	})}
 	writer := &canonicalWriterStub{}
-	provider := NewDoubanProvider(client, NewMemoryStore(), WithDoubanCanonicalWriter(writer))
+	provider := NewDoubanProvider(client, NewPostgresStore(testdb.Pool(t)), WithDoubanCanonicalWriter(writer))
 	if err := provider.Fetch(t.Context(), "30181230", false); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +77,7 @@ func TestDoubanProviderFetchesReviewsIntoExistingMovie(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return jsonResponse(request, http.StatusOK, `{"interests":[{"comment":"经典","create_time":"2026-07-01","sharing_url":"https://douban.example/1","user":{"name":"用户甲"}}]}`), nil
 	})}
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克"})
 	provider := NewDoubanProvider(client, store)
 	if err := provider.FetchReviews(t.Context(), "1292052"); err != nil {
@@ -92,7 +94,7 @@ func TestDoubanProviderRejectsInvalidIDBeforeNetwork(t *testing.T) {
 		t.Fatal("invalid ID reached network")
 		return nil, nil
 	})}
-	provider := NewDoubanProvider(client, NewMemoryStore())
+	provider := NewDoubanProvider(client, NewPostgresStore(testdb.Pool(t)))
 	for _, id := range []string{"", "12345", "abc123", "1234567890"} {
 		if err := provider.Fetch(t.Context(), id, false); err == nil {
 			t.Fatalf("Fetch(%q) unexpectedly succeeded", id)
@@ -109,7 +111,7 @@ func TestDoubanPopularFallsBackToRexxarBeforeLocalStore(t *testing.T) {
 		}
 		return jsonResponse(request, http.StatusOK, `{"items":[{"id":"1292052","title":"肖申克","pic":{"normal":"https://img.example/a.jpg"},"rating":{"value":9.7}}]}`), nil
 	})}
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "local", Title: "本地降级", Genres: "剧情", Rating: 8})
 	provider := NewDoubanProvider(client, store)
 	subjects, err := provider.Popular(t.Context(), "movie")
@@ -123,7 +125,7 @@ func TestDoubanPopularFallsBackToRexxarBeforeLocalStore(t *testing.T) {
 }
 
 func TestDoubanSuggestionsPreferLocalAndProxyExternalImages(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", OriginalTitle: "Shawshank", Genres: "剧情", Poster: "local-poster", Rating: 9.7})
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("local suggestion unexpectedly reached network")
@@ -135,7 +137,7 @@ func TestDoubanSuggestionsPreferLocalAndProxyExternalImages(t *testing.T) {
 		t.Fatalf("local suggestions/error = %+v/%v", local, err)
 	}
 
-	emptyStore := NewMemoryStore()
+	emptyStore := NewPostgresStore(testdb.Pool(t))
 	client = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.URL.Query().Get("q") != "霸王别姬" {
 			t.Fatalf("suggestion query = %q", request.URL.RawQuery)

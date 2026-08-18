@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 type queuedRunner struct {
@@ -16,7 +17,8 @@ func (runner *queuedRunner) Run(task func(context.Context)) {
 }
 
 func TestDetailServiceUsesLocalItemAndQueuesRefresh(t *testing.T) {
-	store := search.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), search.VodItem{SourceKey: "source", VodId: "42", VodName: "local"})
 	runner := &queuedRunner{}
 	service := NewDetailService(store, store, detailCrawlerFunc(func(context.Context, string, string, string) (*search.VodItem, error) {
@@ -34,8 +36,11 @@ func TestDetailServiceUsesLocalItemAndQueuesRefresh(t *testing.T) {
 }
 
 func TestDetailServiceFetchesAndSavesCacheMiss(t *testing.T) {
-	store := search.NewMemoryStore()
-	store.ReplaceSites([]search.Site{{Key: "source", BaseURL: "https://source.example/api", Enabled: true}})
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
+	for _, site := range []search.Site{{Key: "source", BaseURL: "https://source.example/api", Enabled: true}} {
+		_, _ = store.CreateSite(t.Context(), site)
+	}
 	service := NewDetailService(store, store, detailCrawlerFunc(func(_ context.Context, baseURL, vodID, sourceKey string) (*search.VodItem, error) {
 		if baseURL != "https://source.example/api" || vodID != "42" || sourceKey != "source" {
 			t.Fatalf("crawler arguments = %q/%q/%q", baseURL, vodID, sourceKey)

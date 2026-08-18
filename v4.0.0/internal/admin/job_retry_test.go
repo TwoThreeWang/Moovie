@@ -18,6 +18,7 @@ import (
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 type jobRetrierStub struct {
@@ -41,7 +42,7 @@ func (stub *jobRetrierStub) RetryFailed(_ context.Context, taskType string, limi
 func jobRetryRouter(t *testing.T, retrier JobRetrier) (*gin.Engine, string, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	users := identity.NewMemoryStore()
+	users := identity.NewPostgresStore(testdb.Pool(t))
 	_, _ = users.Create(t.Context(), identity.User{Email: "admin@example.com", Username: "admin", Role: "admin", CreatedAt: time.Now()})
 	_, _ = users.Create(t.Context(), identity.User{Email: "user@example.com", Username: "user", Role: "user", CreatedAt: time.Now()})
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
@@ -55,7 +56,7 @@ func jobRetryRouter(t *testing.T, retrier JobRetrier) (*gin.Engine, string, stri
 	if retrier != nil {
 		options = append(options, WithJobRetrier(retrier))
 	}
-	NewHandler(cfg, users, search.NewMemoryStore(), catalog.NewMemoryStore(), feedback.NewMemoryStore(),
+	NewHandler(cfg, users, search.NewPostgresStore(testdb.Pool(t)), catalog.NewPostgresStore(testdb.Pool(t)), feedback.NewPostgresStore(testdb.Pool(t)),
 		crawlerStub{}, nil, options...).Register(router)
 	now := time.Now()
 	adminToken, _ := auth.Sign(auth.Claims{UserID: 1, Role: "admin", Issued: now.Unix(), Expiry: now.Add(time.Hour).Unix()}, "secret")

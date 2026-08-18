@@ -7,27 +7,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
 const TaskSync = "douban_sync"
 
 type QueueJobStore struct{ queue workqueue.Store }
-type MemoryJobStore = QueueJobStore
-type PostgresJobStore = QueueJobStore
 
-func NewPostgresJobStore(executor database.Executor) *QueueJobStore {
-	return &QueueJobStore{queue: workqueue.NewPostgresStore(executor)}
-}
-
-func NewMemoryJobStore(stores ...workqueue.Store) *QueueJobStore {
-	var store workqueue.Store = workqueue.NewMemoryStore()
-	if len(stores) > 0 && stores[0] != nil {
-		store = stores[0]
-	}
-	return &QueueJobStore{queue: store}
-}
 
 func NewQueueJobStore(store workqueue.Store) *QueueJobStore { return &QueueJobStore{queue: store} }
 

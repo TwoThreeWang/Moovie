@@ -93,11 +93,17 @@ func (store *PostgresStore) ToggleLike(ctx context.Context, userMovieID, userID 
   SELECT $1, $2 WHERE NOT EXISTS (SELECT 1 FROM deleted)
   ON CONFLICT (user_movie_id, user_id) DO NOTHING RETURNING 1
 )
-SELECT EXISTS (SELECT 1 FROM inserted), (SELECT COUNT(*) FROM comment_likes WHERE user_movie_id = $1)`, userMovieID, userID)
+SELECT EXISTS (SELECT 1 FROM inserted)`, userMovieID, userID)
 	var liked bool
-	var count int
-	if err := row.Scan(&liked, &count); err != nil {
+	if err := row.Scan(&liked); err != nil {
 		return 0, false, fmt.Errorf("toggle comment like: %w", err)
+	}
+	// 计数必须单独查：上面那条语句里的 COUNT 读的是语句开始时的快照，
+	// 看不到同一条语句刚插入的点赞，会让刚点赞的用户看到少 1 的数字。
+	var count int
+	if err := store.database.QueryRow(ctx,
+		`SELECT COUNT(*) FROM comment_likes WHERE user_movie_id = $1`, userMovieID).Scan(&count); err != nil {
+		return 0, false, fmt.Errorf("count comment likes: %w", err)
 	}
 	return count, liked, nil
 }

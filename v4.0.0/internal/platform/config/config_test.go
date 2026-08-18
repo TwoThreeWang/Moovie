@@ -83,7 +83,6 @@ func TestDatabaseConfigFromDotEnvRequiresExistingFileAndDatabaseName(t *testing.
 func TestLoadUsesIsolatedDefaults(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("DB_NAME", "")
-	t.Setenv("DB_ENABLED", "")
 	t.Setenv("DB_AUTO_MIGRATE", "")
 	t.Setenv("PORT", "")
 	t.Setenv("SEARCH_SOURCE_TIMEOUT_SECONDS", "")
@@ -131,8 +130,8 @@ func TestLoadUsesIsolatedDefaults(t *testing.T) {
 	if cfg.Database.Name != "moovie_new" {
 		t.Fatalf("Database.Name = %q, want moovie_new", cfg.Database.Name)
 	}
-	if cfg.Database.Enabled || !cfg.Database.Migrate {
-		t.Fatalf("database enable/migrate defaults changed: %+v", cfg.Database)
+	if !cfg.Database.Migrate {
+		t.Fatalf("database migrate default changed: %+v", cfg.Database)
 	}
 	if cfg.Search.SourceTimeout != 10*time.Second || cfg.Search.TotalTimeout != 30*time.Second {
 		t.Fatalf("search timeouts = %s/%s", cfg.Search.SourceTimeout, cfg.Search.TotalTimeout)
@@ -189,7 +188,6 @@ func TestLoadUsesIsolatedDefaults(t *testing.T) {
 func TestLoadUsesSampledAccessLogsInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("SITE_URL", "https://example.com")
-	t.Setenv("DB_ENABLED", "true")
 	t.Setenv("DB_NAME", "moovie_new")
 	t.Setenv("APP_SECRET", strings.Repeat("s", minimumProductionSecretBytes))
 	t.Setenv("HTTP_ACCESS_LOG_SAMPLE_PERCENT", "")
@@ -230,7 +228,6 @@ func TestLoadRejectsUnsafeResourceLimits(t *testing.T) {
 
 func TestLoadAllowsPopularityRefreshOverride(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
-	t.Setenv("DB_ENABLED", "true")
 	t.Setenv("POPULARITY_REFRESH_MINUTES", "45")
 	cfg, err := Load()
 	if err != nil {
@@ -260,13 +257,6 @@ func TestLoadRejectsOverlappingMediaMatchThresholds(t *testing.T) {
 	t.Setenv("MEDIA_REVIEW_MATCH_THRESHOLD", "0.70")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MEDIA_REVIEW_MATCH_THRESHOLD") {
 		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestValidateRequiresDatabaseForSeparateWorkerMode(t *testing.T) {
-	cfg := Config{Env: "test", Port: "5008", SiteName: "Moovie影牛", SiteURL: "http://localhost:5008", WebRoot: "./web", Database: DatabaseConfig{Name: "moovie_new"}}
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("Validate() error = nil, want separate-worker database requirement")
 	}
 }
 
@@ -324,14 +314,6 @@ func TestValidateRejectsInsecureProductionSiteURL(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsProductionWithoutDatabase(t *testing.T) {
-	cfg := validProductionConfig()
-	cfg.Database.Enabled = false
-	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "DB_ENABLED") {
-		t.Fatalf("Validate() error = %v, want production database rejection", err)
-	}
-}
-
 func TestValidateAcceptsHardenedProductionConfig(t *testing.T) {
 	if err := validProductionConfig().Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -356,7 +338,7 @@ func validProductionConfig() Config {
 		WebRoot:   "./web",
 		AppSecret: strings.Repeat("a", minimumProductionSecretBytes),
 		JobsInWeb: true,
-		Database:  DatabaseConfig{Enabled: true, Name: "moovie_new"},
+		Database:  DatabaseConfig{Name: "moovie_new"},
 	}
 }
 

@@ -10,11 +10,14 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestHTTPContractAlwaysReturnsArrayAndRequiresLoginToSend(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	pool := testdb.Pool(t)
+	seedUsers(t, pool, 7)
+	store := NewPostgresStore(pool)
 	service := NewService(store, nil, "")
 	router := gin.New()
 	NewHandler(config.Config{AppSecret: "secret"}, service).Register(router)

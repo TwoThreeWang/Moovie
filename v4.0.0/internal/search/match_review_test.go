@@ -11,32 +11,6 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
-func TestMemoryStoreMatchReviewPromotesOnlyVerifiedCandidate(t *testing.T) {
-	store := NewMemoryStore()
-	item := VodItem{SourceKey: "source", VodId: "42", VodName: "候选资源"}
-	if err := store.Upsert(t.Context(), item); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.RecordMatchCandidate(t.Context(), "source", "42", 9, 0.7, "title_year"); err != nil {
-		t.Fatal(err)
-	}
-	pending, err := store.ListMatchCandidates(t.Context(), MatchStatusReview, 10)
-	if err != nil || len(pending) != 1 || pending[0].ID <= 0 || pending[0].ResourceTitle != "候选资源" {
-		t.Fatalf("pending = %+v/%v", pending, err)
-	}
-	if err := store.ReviewMatchCandidate(t.Context(), "source", "42", 9, 1, MatchStatusVerified, "人工确认"); err != nil {
-		t.Fatal(err)
-	}
-	verified, _ := store.ListMatchCandidates(t.Context(), MatchStatusVerified, 10)
-	stored, _ := store.FindBySourceID(t.Context(), "source", "42")
-	if len(verified) != 1 || stored == nil || stored.MediaID != 9 || stored.MediaConfidence != 1 || stored.MediaMatch != "manual" {
-		t.Fatalf("verified/stored = %+v/%+v", verified, stored)
-	}
-	if err := store.ReviewMatchCandidate(t.Context(), "source", "42", 9, 1, MatchStatusRejected, "覆盖结论"); err == nil {
-		t.Fatal("second review unexpectedly succeeded")
-	}
-}
-
 func TestPostgresMatchReviewCommitsCanonicalLinkCandidateAndAuditTogether(t *testing.T) {
 	transaction := &matchReviewTransaction{row: matchReviewRow{values: matchReviewValues(55, "source", "42", 9, MatchStatusReview, 0.71, "title_year")}}
 	database := &matchReviewDatabase{transaction: transaction}

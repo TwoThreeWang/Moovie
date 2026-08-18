@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestTMDBProviderResolvesIMDbTVAndPersistsLegacyFields(t *testing.T) {
@@ -38,7 +39,7 @@ func TestTMDBProviderResolvesIMDbTVAndPersistsLegacyFields(t *testing.T) {
 		}
 	})}
 
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "标题", Poster: "old-poster", IMDbID: "tt0111161"})
 	provider := NewTMDBProvider(client, store, "tmdb-token", WithTMDBBase("https://tmdb.test"))
 	if err := provider.SyncBackdrops(t.Context(), "1292052"); err != nil {
@@ -85,7 +86,7 @@ func TestTMDBProviderOnlyWritesTheSeasonNamedByDoubanMedia(t *testing.T) {
 			return testJSONResponse(request, http.StatusNotFound, `{}`), nil
 		}
 	})}
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{
 		DoubanID: "35468745", Title: "末日地堡 第一季", OriginalTitle: "Silo Season 1", IMDbID: "tt14688458",
 	})
@@ -137,7 +138,7 @@ func TestTMDBProviderFallsBackToSeriesTitleForSeasonIMDbID(t *testing.T) {
 			return testJSONResponse(request, http.StatusNotFound, `{}`), nil
 		}
 	})}
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{
 		DoubanID: "36857449", Title: "末日地堡 第三季", OriginalTitle: "Silo Season 3", IMDbID: "tt35047389",
 	})
@@ -177,7 +178,7 @@ func testJSONResponse(request *http.Request, status int, body string) *http.Resp
 }
 
 func TestTMDBProviderRequiresTokenBeforeNetwork(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "标题"})
 	provider := NewTMDBProvider(http.DefaultClient, store, "")
 	err := provider.SyncBackdrops(t.Context(), "1292052")

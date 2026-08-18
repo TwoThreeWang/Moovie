@@ -11,6 +11,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestImageProxyPreservesLegacyEncodingHeadersAndBody(t *testing.T) {
@@ -23,7 +24,7 @@ func TestImageProxyPreservesLegacyEncodingHeadersAndBody(t *testing.T) {
 			Request: request,
 		}, nil
 	})}
-	router := imageProxyRouter(client)
+	router := imageProxyRouter(t, client)
 	encoded := proxyImageURL("https://img9.doubanio.com/view/photo.jpg")
 	request := sameOriginImageRequest(encoded)
 	recorder := httptest.NewRecorder()
@@ -43,7 +44,7 @@ func TestImageProxyPreservesLegacyEncodingHeadersAndBody(t *testing.T) {
 
 func TestImageProxyAcceptsDynamicPublicImageHost(t *testing.T) {
 	var upstreamRequest *http.Request
-	router := imageProxyRouter(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	router := imageProxyRouter(t, &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		upstreamRequest = request
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"image/jpeg"}},
 			Body: io.NopCloser(strings.NewReader("resource-image")), ContentLength: 14, Request: request}, nil
@@ -57,7 +58,7 @@ func TestImageProxyAcceptsDynamicPublicImageHost(t *testing.T) {
 }
 
 func TestImageProxyReturnsSVGForHotlinkAndRejectsMalformedEncodingAndSSRF(t *testing.T) {
-	router := imageProxyRouter(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	router := imageProxyRouter(t, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Fatal("blocked proxy reached upstream")
 		return nil, nil
 	})})
@@ -86,7 +87,7 @@ func TestImageProxyReturnsSVGForHotlinkAndRejectsMalformedEncodingAndSSRF(t *tes
 }
 
 func TestImageProxyPassesThroughUpstreamStatus(t *testing.T) {
-	router := imageProxyRouter(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	router := imageProxyRouter(t, &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusNotFound, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("missing")), Request: request}, nil
 	})})
 	recorder := httptest.NewRecorder()
@@ -97,7 +98,7 @@ func TestImageProxyPassesThroughUpstreamStatus(t *testing.T) {
 }
 
 func TestImageProxyRejectsNonImageResponse(t *testing.T) {
-	router := imageProxyRouter(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	router := imageProxyRouter(t, &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/html"}},
 			Body: io.NopCloser(strings.NewReader("<html>not an image</html>")), Request: request}, nil
 	})})
@@ -110,7 +111,7 @@ func TestImageProxyRejectsNonImageResponse(t *testing.T) {
 
 func TestImageProxyRejectsRedirectToUnsafeTarget(t *testing.T) {
 	requests := 0
-	router := imageProxyRouter(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+	router := imageProxyRouter(t, &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		requests++
 		if request.URL.Hostname() != "img3.doubanio.com" {
 			t.Fatalf("redirect reached blocked host %q", request.URL.Hostname())
@@ -160,10 +161,11 @@ func TestImageProxyPublicIPClassification(t *testing.T) {
 	}
 }
 
-func imageProxyRouter(client *http.Client) *gin.Engine {
+func imageProxyRouter(t *testing.T, client *http.Client) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	NewHandler(config.Config{SiteURL: "https://moovie.example"}, NewMemoryStore(), WithHTTPClient(client)).Register(router)
+	NewHandler(config.Config{SiteURL: "https://moovie.example"}, NewPostgresStore(testdb.Pool(t)), WithHTTPClient(client)).Register(router)
 	return router
 }
 

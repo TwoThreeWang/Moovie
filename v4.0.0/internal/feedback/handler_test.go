@@ -14,6 +14,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestAnonymousAndAuthenticatedFeedbackListsPreservePrivacyAndValidation(t *testing.T) {
@@ -91,10 +92,11 @@ func TestAdminFeedbackRequiresRoleAndPreservesStatusReplyEnvelope(t *testing.T) 
 	}
 }
 
-func feedbackTestRouter(t *testing.T) (*gin.Engine, *MemoryStore, string, string) {
+func feedbackTestRouter(t *testing.T) (*gin.Engine, *PostgresStore, string, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 1, 2)
+	store := NewPostgresStore(testdb.Pool(t))
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"feedback", "admin_feedback"})
 	if err != nil {

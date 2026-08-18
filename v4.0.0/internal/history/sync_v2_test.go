@@ -10,10 +10,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestSyncV2BootstrapsExistingServerRecords(t *testing.T) {
-	store := NewMemoryStore()
+	testdb.Media(t, testdb.Pool(t), 9)
+	testdb.MediaUnit(t, testdb.Pool(t), 99, 9)
+	testdb.User(t, testdb.Pool(t), 42)
+	store := NewPostgresStore(testdb.Pool(t))
 	watchedAt := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
 	if err := store.Upsert(t.Context(), Record{UserID: 42, MediaID: 9, Source: "source-a", VodID: "vod",
 		Title: "旧云端记录", Episode: "第01集", SeasonNumber: 1, EpisodeKey: "S01E01", WatchedAt: watchedAt}); err != nil {
@@ -27,7 +32,7 @@ func TestSyncV2BootstrapsExistingServerRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Cursor != 1 || len(first.Changes) != 1 || first.Changes[0].OperationID != "bootstrap-history-1" {
+	if first.Cursor != 1 || len(first.Changes) != 1 || first.Changes[0].OperationID != "bootstrap-position-1" {
 		t.Fatalf("bootstrap = %#v", first)
 	}
 	second, err := store.SyncV2(t.Context(), 42, SyncV2Request{DeviceID: "device-bootstrap", Cursor: first.Cursor}, watchedAt.Add(2*time.Hour))
@@ -150,7 +155,10 @@ func TestSyncV2UsesMonotonicCursorIdempotencyConflictsAndTombstones(t *testing.T
 }
 
 func TestSyncV2SourceSwitchKeepsOneCanonicalUnitRecord(t *testing.T) {
-	store := NewMemoryStore()
+	testdb.Media(t, testdb.Pool(t), 9)
+	testdb.MediaUnit(t, testdb.Pool(t), 99, 9)
+	testdb.User(t, testdb.Pool(t), 42)
+	store := NewPostgresStore(testdb.Pool(t))
 	now := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
 	first := SyncV2Request{DeviceID: "device-source-a", Operations: []SyncOperation{{
 		OperationID: "operation-source-a", Type: "upsert", MediaID: 9, MediaUnitID: 99,

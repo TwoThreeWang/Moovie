@@ -24,7 +24,7 @@ func TestPostgresStoreUpsertsOnlyCanonicalPlaybackPosition(t *testing.T) {
 			t.Fatalf("upsert query missing %q: %s", expected, database.execQuery)
 		}
 	}
-	if len(database.arguments) != 16 || database.arguments[0] != 42 || database.arguments[7] != "vod" || database.arguments[6] != "source" || database.arguments[15] != "play" {
+	if len(database.arguments) != 17 || database.arguments[0] != 42 || database.arguments[7] != "vod" || database.arguments[6] != "source" || database.arguments[15] != "play" || !database.arguments[16].(time.Time).Equal(record.WatchedAt) {
 		t.Fatalf("upsert arguments = %#v", database.arguments)
 	}
 }
@@ -90,7 +90,7 @@ func TestPlaybackPositionUpsertsCanonicalUnitAndKeepsTombstone(t *testing.T) {
 			t.Fatalf("shadow upsert missing %q: %s", expected, database.execQuery)
 		}
 	}
-	if len(database.arguments) != 17 || database.arguments[0] != 42 || database.arguments[15] != "watch" || database.arguments[16] != 9 {
+	if len(database.arguments) != 18 || database.arguments[0] != 42 || database.arguments[15] != "watch" || database.arguments[16] != 9 || !database.arguments[17].(time.Time).Equal(now) {
 		t.Fatalf("shadow arguments = %#v", database.arguments)
 	}
 

@@ -6,46 +6,21 @@
 
 - [ ] 发布版本包含整个 `new/`，并记录构建版本与提交号。
 - [ ] `scripts/release/source-audit.sh` 通过；根仓库不再忽略发布所需的 `new/` 文件。
-- [ ] 旧系统仍可独立启动，旧数据库没有执行破坏性 schema 变更。
-- [ ] 新系统使用独立数据库，目标数据库名不是 `moovie`。
-- [ ] 新系统复用旧系统当前有效的 `APP_SECRET`；迁移脚本的会话连续性门禁通过。
-- [ ] 已记录迁移前关键表数量和负责人。
-
-旧库备份可按实际运维需要另行执行，但不属于数据迁移或切流硬门禁。
 
 ## 2. 自动化门禁
 
 - [ ] `make check` 通过。
 - [ ] `make race` 通过。
-- [ ] `scripts/release/preflight.sh` 通过。
-- [ ] SEO 路由、sitemap URL 集合和受控并发负载对比通过。
+- [ ] `scripts/release/source-audit.sh` 通过。
+- [ ] `make check` 中的页面 SEO 回归断言通过（`internal/content`、`internal/search` 逐项校验 Title、H1、Description、Robots、Canonical、OG/Twitter 和 JSON-LD）。
 - [ ] `cmd/burstcheck` 的正常容量与强制降载场景通过：仅出现 200/受控 503、传输错误为 0、`/health` 零失败、压测后 `/ready` 为 200。
 - [ ] 记录压测前/峰值/冷却后 RSS、CPU、文件描述符、数据库连接和容器重启次数；峰值 RSS 低于容器上限的 85%。
-- [ ] 新架构只读 `releaseaudit` 为零失败；warning 已逐项解释并留证。
 - [ ] 出站安全测试确认图片代理和资源站请求拒绝私网目标、非白名单重定向及 URL 凭据。
 - [ ] 管理员资源站测试响应不包含 `vod_play_url`，外部标题和本地历史均通过文本节点渲染。
 
-预检只读，不提供 migration、cleanup 或 traffic apply 能力。远程预检必须显式设置：
+## 3. 数据迁移与对账（已于 2026-08 完成，不再重复执行）
 
-```text
-REMOTE_PREFLIGHT_CONFIRM=read-only-moovie-preflight
-```
-
-纯本地联调可设置 `LOCAL_PREFLIGHT=true`，此时只跳过 Git 纳入检查，并允许等量、有限的 sitemap 窗口边界漂移；它不能用于远程地址，也不能替代正式发布前的源码纳入门禁。正式检查必须在写冻结后以零 allowance 重跑。
-
-## 3. 数据迁移与对账
-
-- [ ] 阅读 [`README.md`](../README.md) 的“一键数据迁移怎么用”，确认 0030 准备、单事务导入、复验、0031 最终删表和 releaseaudit 的边界。
-- [ ] 保存首次 dry-run JSON，记录 `run_id`、每表 insert/update/skip/target-only/conflict 和字段级差异。
-- [ ] dry-run 冲突为 0；任何 update 或 target-only 都已逐表解释，不能用参数绕过冲突。
-- [ ] 确认旧 `favorites` 已完整表示为 `user_movies`，且不会把已有 `watched` 降级为 `wish`。
-- [ ] 旧库 `douban_sync_jobs` 和目标库 `worker_jobs` 均无 pending/running；任务记录不作为业务数据迁移，切流后由统一队列重新调度。
-- [ ] 完成旧数据首次导入，保存 apply JSON，并核对 table/favorite/canonical/total mutations。
-- [ ] 对账 `movies -> media`、`watch_histories -> playback_positions`、资源网、用户密码摘要、片单和关系孤儿。
-- [ ] 写冻结后执行完整一键迁移；脚本内置复验必须为 insert=0、update=0、conflict=0、favorites待转换=0。
-- [ ] 0031 已应用；最终新库不存在 `movies`、`watch_histories`、`resource_episodes`、`resource_playback_health`、`legacy_media_mappings` 和旧影子列。
-- [ ] 0036 已应用；`metadata_refresh_jobs`、`douban_sync_jobs` 已迁入 `worker_jobs` 后删除。
-- [ ] `releaseaudit` 零失败，且 `user_movies.media_id` 全部补齐、媒体身份一致。
+旧库 `moovie` 到新库 `moovie_v2` 的一次性数据迁移、0031 最终删表、0036 任务队列统一和 `releaseaudit` 复验均已在生产完成并留证。对应工具（`cmd/datamigrate`、`scripts/migrate.sh`、`cmd/releaseaudit`、`scripts/release/preflight.sh`）已从仓库移除，历史版本见 Git。本节保留为发布记录索引，日常发布不再执行。
 
 ## 4. Feature flag 顺序
 
@@ -93,9 +68,7 @@ MAX_POPULARITY_AGE=2h
 - [ ] 5% 灰度确认 `X-Moovie-Overload` 降载率低于 1%；持续超过 5% 时停止加流量并扩容或降低重请求预算。
 - [ ] 25% 只读灰度：继续观察搜索、热门和详情页。
 - [ ] 50% 只读灰度：完成一轮完整浏览器旅程。
-- [ ] 100% 前确认数据迁移报告、写冻结、APP_SECRET 一致和 releaseaudit 零失败均有证据。
-- [ ] 100% 后继续保持写冻结，直到公开流量健康检查和写入 smoke test 通过。
-- [ ] 人工解除写冻结，并记录解除时间。
+- [ ] 100% 后完成公开流量健康检查和写入 smoke test。
 
 ## 8. 监控与回滚演练
 
@@ -112,4 +85,4 @@ MAX_POPULARITY_AGE=2h
 
 ## 9. 发布证据
 
-发布记录至少包含：版本、迁移报告、releaseaudit JSON、preflight 输出、浏览器截图或录像、灰度时间线、监控截图、最终批准人和回滚演练结果。
+发布记录至少包含：版本、`make check` / `make race` 输出、`source-audit.sh` 与 `burstcheck` 结果、浏览器截图或录像、灰度时间线、监控截图、最终批准人和回滚演练结果。

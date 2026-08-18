@@ -8,12 +8,14 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestGenerateFreezesMonthlyStatsPersonaPercentileAndPosterWall(t *testing.T) {
-	reports := NewMemoryStore()
-	libraryStore := library.NewMemoryStore()
-	catalogStore := catalog.NewMemoryStore()
+	testdb.User(t, testdb.Pool(t), 7)
+	reports := NewPostgresStore(testdb.Pool(t))
+	libraryStore := library.NewPostgresStore(testdb.Pool(t))
+	catalogStore := catalog.NewPostgresStore(testdb.Pool(t))
 	location := time.Local
 	records := []library.Record{
 		{MovieID: "1", Title: "最佳", Poster: "p1", Rating: 5, Comment: "最喜欢的一部", CreatedAt: time.Date(2026, 7, 31, 23, 0, 0, 0, location)},
@@ -51,8 +53,9 @@ func TestGenerateFreezesMonthlyStatsPersonaPercentileAndPosterWall(t *testing.T)
 }
 
 func TestGenerateRejectsInvalidOrEmptyMonthAndPersistsFailure(t *testing.T) {
-	reports := NewMemoryStore()
-	service := NewService(reports, library.NewMemoryStore(), catalog.NewMemoryStore())
+	testdb.User(t, testdb.Pool(t), 7)
+	reports := NewPostgresStore(testdb.Pool(t))
+	service := NewService(reports, library.NewPostgresStore(testdb.Pool(t)), catalog.NewPostgresStore(testdb.Pool(t)))
 	if err := service.Generate(t.Context(), 7, "2026-13", nil); err == nil {
 		t.Fatal("invalid month was accepted")
 	}

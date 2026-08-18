@@ -8,21 +8,26 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestServiceUsesLocalResultsFiltersCopyrightAndSortsBySpeed(t *testing.T) {
-	store := NewMemoryStore()
-	store.ReplaceCopyrightKeywords([]string{"禁片"})
+	store := NewPostgresStore(testdb.Pool(t))
+	_, _ = store.CreateCopyrightFilter(t.Context(), "禁片")
 	for _, item := range []VodItem{
-		{SourceKey: "a", VodId: "1", VodName: "普通电影", AvgSpeedMs: 3000},
-		{SourceKey: "b", VodId: "2", VodName: "禁片电影示例", AvgSpeedMs: 100},
-		{SourceKey: "c", VodId: "3", VodName: "普通电影 第二源", AvgSpeedMs: 900},
+		{SourceKey: "a", VodId: "1", VodName: "普通电影"},
+		{SourceKey: "b", VodId: "2", VodName: "禁片电影示例"},
+		{SourceKey: "c", VodId: "3", VodName: "普通电影 第二源"},
 		{SourceKey: "d", VodId: "4", VodName: "普通电影 未测速"},
 	} {
 		if err := store.Upsert(context.Background(), item); err != nil {
 			t.Fatal(err)
 		}
 	}
+	// 测速结果只存在于 playback_quality_rollups：a 3000ms、c 900ms，d 未测速。
+	seedPlaybackSpeed(t, "a", "1", 101, 1001, 3000)
+	seedPlaybackSpeed(t, "c", "3", 102, 1002, 900)
 	service := NewService(store, store, store, crawlerFunc(nil), nil, nil, ServiceConfig{})
 	result, err := service.Search(context.Background(), "电影", false)
 	if err != nil {
@@ -45,7 +50,7 @@ func TestServiceUsesLocalResultsFiltersCopyrightAndSortsBySpeed(t *testing.T) {
 }
 
 func TestServiceEnrichesResourceWithCanonicalMediaAndPersistsLink(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	if err := store.Upsert(context.Background(), VodItem{SourceKey: "source", VodId: "42", VodName: "肖申克", VodYear: "1994", VodDoubanId: "1292052"}); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +67,7 @@ func TestServiceEnrichesResourceWithCanonicalMediaAndPersistsLink(t *testing.T) 
 }
 
 func TestServiceKeepsExactMatchInShadowUntilAutoApplyIsEnabled(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	if err := store.Upsert(context.Background(), VodItem{SourceKey: "source", VodId: "42", VodName: "肖申克", VodYear: "1994", VodDoubanId: "1292052"}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +86,7 @@ func TestServiceKeepsExactMatchInShadowUntilAutoApplyIsEnabled(t *testing.T) {
 }
 
 func TestServiceCanDisableResourceMatchShadowWrites(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), VodItem{SourceKey: "source", VodId: "42", VodName: "同名影片", VodYear: "2026"})
 	identity := &fakeMediaIdentity{mediaID: 17}
 	service := NewService(store, store, store, crawlerFunc(nil), nil, nil, ServiceConfig{}, WithMediaIdentity(identity))
@@ -95,7 +100,7 @@ func TestServiceCanDisableResourceMatchShadowWrites(t *testing.T) {
 }
 
 func TestServicePersistsScoredEvidenceWithoutExposingShadowMatch(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), VodItem{SourceKey: "source", VodId: "42", VodName: "候选影片", VodYear: "2026", TypeName: "电影"})
 	identity := &fakeScoredMediaIdentity{match: MediaMatchResult{MediaID: 17, Confidence: 0.82,
 		MatchedBy: "weighted_features", Status: MatchStatusReview, ReasonJSON: `{"features":{"title":{"score":0.4}}}`}}
@@ -110,7 +115,7 @@ func TestServicePersistsScoredEvidenceWithoutExposingShadowMatch(t *testing.T) {
 }
 
 func TestServicePersistsHardConflictBelowReviewThresholdAsRejected(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(context.Background(), VodItem{SourceKey: "source", VodId: "42", VodName: "冲突影片", VodYear: "2026"})
 	identity := &fakeScoredMediaIdentity{match: MediaMatchResult{MediaID: 18, Confidence: 0.55,
 		MatchedBy: "weighted_features", Status: MatchStatusRejected, HardConflict: "year_mismatch", ReasonJSON: `{"hard_conflicts":["year_mismatch"]}`}}
@@ -125,7 +130,7 @@ func TestServicePersistsHardConflictBelowReviewThresholdAsRejected(t *testing.T)
 }
 
 func TestServiceKeepsTitleYearMatchInReviewWithoutClaimingCanonicalLink(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	if err := store.Upsert(context.Background(), VodItem{SourceKey: "source", VodId: "42", VodName: "同名影片", VodYear: "2026"}); err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +150,7 @@ func TestServiceKeepsTitleYearMatchInReviewWithoutClaimingCanonicalLink(t *testi
 }
 
 func TestServiceDoesNotTrustLowConfidenceResourceLink(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	if err := store.Upsert(context.Background(), VodItem{SourceKey: "source", VodId: "42", VodName: "同名影片", VodYear: "2026"}); err != nil {
 		t.Fatal(err)
 	}
@@ -161,9 +166,9 @@ func TestServiceDoesNotTrustLowConfidenceResourceLink(t *testing.T) {
 }
 
 func TestServiceFetchesEnabledSitesConcurrentlyAndToleratesPartialFailure(t *testing.T) {
-	store := NewMemoryStore()
-	store.ReplaceSites([]Site{{Key: "ok", BaseURL: "https://ok", Enabled: true}, {Key: "bad", BaseURL: "https://bad", Enabled: true}, {Key: "off", Enabled: false}})
-	store.ReplaceCategoryKeywords([]string{"写真"})
+	store := NewPostgresStore(testdb.Pool(t))
+	seedSites(t, store, Site{Key: "ok", BaseURL: "https://ok", Enabled: true}, Site{Key: "bad", BaseURL: "https://bad", Enabled: true}, Site{Key: "off", BaseURL: "", Enabled: false})
+	_, _ = store.CreateCategoryFilter(t.Context(), "写真")
 	health := &recordingHealth{}
 	crawler := crawlerFunc(func(_ context.Context, _ string, _ string, sourceKey string, categories []string) ([]VodItem, error) {
 		if len(categories) != 1 || categories[0] != "写真" {
@@ -192,8 +197,8 @@ func TestServiceFetchesEnabledSitesConcurrentlyAndToleratesPartialFailure(t *tes
 }
 
 func TestFetchAndSaveImmediatelyLinksFreshExactMediaIdentity(t *testing.T) {
-	store := NewMemoryStore()
-	store.ReplaceSites([]Site{{Key: "source", BaseURL: "https://source.example", Enabled: true}})
+	store := NewPostgresStore(testdb.Pool(t))
+	seedSites(t, store, Site{Key: "source", BaseURL: "https://source.example", Enabled: true})
 	identity := &fakeMediaIdentity{mediaID: 17}
 	service := NewService(store, store, store, crawlerFunc(func(context.Context, string, string, string, []string) ([]VodItem, error) {
 		return []VodItem{{SourceKey: "source", VodId: "42", VodName: "新资源", VodDoubanId: "1292052"}}, nil
@@ -209,8 +214,8 @@ func TestFetchAndSaveImmediatelyLinksFreshExactMediaIdentity(t *testing.T) {
 }
 
 func TestServiceReturnsFreshResourcesAlongsideWarmLocalResults(t *testing.T) {
-	store := NewMemoryStore()
-	store.ReplaceSites([]Site{{Key: "source", BaseURL: "https://source.example", Enabled: true}})
+	store := NewPostgresStore(testdb.Pool(t))
+	seedSites(t, store, Site{Key: "source", BaseURL: "https://source.example", Enabled: true})
 	if err := store.Upsert(t.Context(), VodItem{SourceKey: "source", VodId: "2", VodName: "末日地堡 第二季"}); err != nil {
 		t.Fatal(err)
 	}
@@ -231,12 +236,12 @@ func TestServiceReturnsFreshResourcesAlongsideWarmLocalResults(t *testing.T) {
 }
 
 func TestServiceBoundsPerSearchSourceFanout(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	sites := make([]Site, 10)
 	for index := range sites {
 		sites[index] = Site{Key: fmt.Sprintf("source-%d", index), BaseURL: "https://source.example", Enabled: true}
 	}
-	store.ReplaceSites(sites)
+	seedSites(t, store, sites...)
 	var active atomic.Int32
 	var maximum atomic.Int32
 	crawler := crawlerFunc(func(context.Context, string, string, string, []string) ([]VodItem, error) {
@@ -263,7 +268,7 @@ func TestServiceBoundsPerSearchSourceFanout(t *testing.T) {
 }
 
 func TestServiceIndexesResourceEpisodesImmediatelyAfterUpsert(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	indexer := &recordingEpisodeIndexer{}
 	service := NewService(store, store, store, crawlerFunc(nil), nil, nil, ServiceConfig{}, WithResourceEpisodeIndexer(indexer))
 	item := VodItem{SourceKey: "source", VodId: "42", VodName: "剧集", VodPlayUrl: "第01集$https://a.example/1.m3u8"}
@@ -277,8 +282,8 @@ func TestServiceIndexesResourceEpisodesImmediatelyAfterUpsert(t *testing.T) {
 }
 
 func TestServiceRetriesTransientResourcePersistence(t *testing.T) {
-	base := NewMemoryStore()
-	base.ReplaceSites([]Site{{Key: "source", Enabled: true}})
+	base := NewPostgresStore(testdb.Pool(t))
+	seedSites(t, base, Site{Key: "source", BaseURL: "", Enabled: true})
 	itemStore := &flakyItemStore{store: base, failures: 2}
 	service := NewService(itemStore, base, base, crawlerFunc(func(context.Context, string, string, string, []string) ([]VodItem, error) {
 		return []VodItem{{SourceKey: "source", VodId: "1", VodName: "重试资源", VodPlayUrl: "url"}}, nil
@@ -297,8 +302,8 @@ func TestServiceRetriesTransientResourcePersistence(t *testing.T) {
 }
 
 func TestServiceDoesNotRecordEmptyWhenEverySiteIsEmpty(t *testing.T) {
-	store := NewMemoryStore()
-	store.ReplaceSites([]Site{{Key: "a", Enabled: true}, {Key: "b", Enabled: true}})
+	store := NewPostgresStore(testdb.Pool(t))
+	seedSites(t, store, Site{Key: "a", BaseURL: "", Enabled: true}, Site{Key: "b", BaseURL: "", Enabled: true})
 	health := &recordingHealth{}
 	service := NewService(store, store, store, crawlerFunc(func(context.Context, string, string, string, []string) ([]VodItem, error) {
 		return []VodItem{}, nil
@@ -313,8 +318,8 @@ func TestServiceDoesNotRecordEmptyWhenEverySiteIsEmpty(t *testing.T) {
 }
 
 func TestServiceClassifiesPerSiteDeadlineAsTimeout(t *testing.T) {
-	store := NewMemoryStore()
-	store.ReplaceSites([]Site{{Key: "slow", Enabled: true}})
+	store := NewPostgresStore(testdb.Pool(t))
+	seedSites(t, store, Site{Key: "slow", BaseURL: "", Enabled: true})
 	health := &recordingHealth{}
 	service := NewService(store, store, store, crawlerFunc(func(ctx context.Context, _ string, _ string, _ string, _ []string) ([]VodItem, error) {
 		<-ctx.Done()
@@ -330,8 +335,8 @@ func TestServiceClassifiesPerSiteDeadlineAsTimeout(t *testing.T) {
 }
 
 func TestServiceSingleflightCoalescesColdSearch(t *testing.T) {
-	store := NewMemoryStore()
-	store.ReplaceSites([]Site{{Key: "source", Enabled: true}})
+	store := NewPostgresStore(testdb.Pool(t))
+	seedSites(t, store, Site{Key: "source", BaseURL: "", Enabled: true})
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var calls atomic.Int32
@@ -370,7 +375,7 @@ func TestServiceSingleflightCoalescesColdSearch(t *testing.T) {
 type crawlerFunc func(context.Context, string, string, string, []string) ([]VodItem, error)
 
 type flakyItemStore struct {
-	store    *MemoryStore
+	store    *PostgresStore
 	failures int
 	calls    int
 }
@@ -488,4 +493,36 @@ func (health *recordingHealth) count(want Outcome) int {
 		}
 	}
 	return count
+}
+
+// seedSites 写入测试用资源站。原来由已删除的 MemoryStore.ReplaceSites 承担。
+func seedSites(t *testing.T, store *PostgresStore, sites ...Site) {
+	t.Helper()
+	for _, site := range sites {
+		if _, err := store.CreateSite(t.Context(), site); err != nil {
+			t.Fatalf("seed site %q: %v", site.Key, err)
+		}
+	}
+}
+
+// seedPlaybackSpeed 为资源写入一条测速汇总，vod_items 本身不存速度，
+// 读取路径经 resource_play_lines → resource_episode_candidates → playback_quality_rollups。
+func seedPlaybackSpeed(t *testing.T, sourceKey, vodID string, mediaID, unitID, speedMs int) {
+	t.Helper()
+	pool := testdb.Pool(t)
+	testdb.MediaUnit(t, pool, unitID, mediaID)
+	var lineID, candidateID int
+	if err := pool.QueryRow(t.Context(), `INSERT INTO resource_play_lines (source_key, vod_id, line_key)
+VALUES ($1,$2,'default') RETURNING id`, sourceKey, vodID).Scan(&lineID); err != nil {
+		t.Fatalf("seed play line: %v", err)
+	}
+	if err := pool.QueryRow(t.Context(), `INSERT INTO resource_episode_candidates (line_id, media_id, media_unit_id, episode_key)
+VALUES ($1,$2,$3,'feature') RETURNING id`, lineID, mediaID, unitID).Scan(&candidateID); err != nil {
+		t.Fatalf("seed episode candidate: %v", err)
+	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO playback_quality_rollups
+(bucket, candidate_id, play_line_id, media_unit_id, media_id, first_frame_count, first_frame_total_ms)
+VALUES (date_trunc('hour', NOW()), $1, $2, $3, $4, 1, $5)`, candidateID, lineID, unitID, mediaID, speedMs); err != nil {
+		t.Fatalf("seed quality rollup: %v", err)
+	}
 }

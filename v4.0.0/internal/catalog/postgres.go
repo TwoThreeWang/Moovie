@@ -62,7 +62,8 @@ m.genres, m.countries, m.directors, m.actors, m.summary, m.duration,
 COALESCE((SELECT external_id FROM media_external_ids x WHERE x.media_id = m.id AND x.provider = 'imdb'
 ORDER BY x.is_primary DESC, x.updated_at DESC LIMIT 1), ''),
 m.series_status, m.backdrops, m.embedding_content, m.semantic_hash, m.reviews_json,
-m.reviews_updated_at, m.metadata_status, m.completeness_score, m.next_refresh_at, m.updated_at`
+m.reviews_updated_at, m.metadata_status, m.completeness_score, m.next_refresh_at, m.updated_at,
+COALESCE(m.embedding::text, '')`
 
 func (store *PostgresStore) FindByDoubanID(ctx context.Context, doubanID string) (*Movie, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+` FROM media m WHERE m.douban_id = $1 LIMIT 1`, doubanID)
@@ -399,11 +400,34 @@ WHERE m.rating_douban > 0 AND m.embedding IS NOT NULL ORDER BY m.rating_douban D
 
 func scanMovie(row interface{ Scan(...any) error }) (Movie, error) {
 	var movie Movie
+	var embeddingText string
 	err := row.Scan(&movie.ID, &movie.DoubanID, &movie.Title, &movie.OriginalTitle, &movie.Year,
 		&movie.Poster, &movie.Rating, &movie.Genres, &movie.Countries, &movie.Directors, &movie.Actors,
 		&movie.Summary, &movie.Duration, &movie.IMDbID, &movie.SeriesStatus, &movie.Backdrops,
 		&movie.EmbeddingContent, &movie.EmbeddingSemanticHash, &movie.ReviewsJSON,
 		&movie.ReviewsUpdatedAt, &movie.MetadataStatus, &movie.CompletenessScore,
-		&movie.NextRefreshAt, &movie.UpdatedAt)
+		&movie.NextRefreshAt, &movie.UpdatedAt, &embeddingText)
+	if err != nil {
+		return movie, err
+	}
+	movie.Embedding, err = parseEmbedding(embeddingText)
 	return movie, err
+}
+
+// parseEmbedding 解析 pgvector 的文本表示。没有注册 pgvector 的 pgx 类型，
+// 所以读取侧统一走 embedding::text。
+func parseEmbedding(text string) ([]float32, error) {
+	if text == "" {
+		return nil, nil
+	}
+	parts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(text, "["), "]"), ",")
+	vector := make([]float32, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.ParseFloat(strings.TrimSpace(part), 32)
+		if err != nil {
+			return nil, fmt.Errorf("parse embedding value %q: %w", part, err)
+		}
+		vector = append(vector, float32(value))
+	}
+	return vector, nil
 }

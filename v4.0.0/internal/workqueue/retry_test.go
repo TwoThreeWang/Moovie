@@ -3,9 +3,11 @@ package workqueue
 import (
 	"testing"
 	"time"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
-func failJob(t *testing.T, store *MemoryStore, outcome Outcome) Job {
+func failJob(t *testing.T, store *PostgresStore, outcome Outcome) Job {
 	t.Helper()
 	job, err := store.Claim(t.Context(), time.Minute)
 	if err != nil || job == nil {
@@ -18,7 +20,7 @@ func failJob(t *testing.T, store *MemoryStore, outcome Outcome) Job {
 }
 
 func TestRetryJobRestoresTheFullAttemptBudget(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	id, _ := store.Enqueue(t.Context(), Spec{TaskType: "tmdb", SubjectKey: "1292052", MaxAttempts: 1})
 	failJob(t, store, OutcomeRetry)
 	if stored, _ := store.Get(t.Context(), id); stored.Status != StatusFailed {
@@ -39,7 +41,7 @@ func TestRetryJobRestoresTheFullAttemptBudget(t *testing.T) {
 }
 
 func TestRetryJobSkipsWhenTheSameSubjectIsAlreadyQueued(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	failedID, _ := store.Enqueue(t.Context(), Spec{TaskType: "douban_metadata", SubjectKey: "1292052"})
 	failJob(t, store, OutcomeTerminal)
 	// 调度器随后为同一对象建了新任务；活跃唯一索引不允许两条同时 pending。
@@ -56,7 +58,7 @@ func TestRetryJobSkipsWhenTheSameSubjectIsAlreadyQueued(t *testing.T) {
 }
 
 func TestRetryFailedFiltersByTaskTypeAndHonorsLimit(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	// MaxAttempts 设成 1，让第一次失败就进入终态，省去铺垫。
 	for _, subject := range []string{"1292052", "1291864", "1296139"} {
 		_, _ = store.Enqueue(t.Context(), Spec{TaskType: "tmdb", SubjectKey: subject, MaxAttempts: 1})

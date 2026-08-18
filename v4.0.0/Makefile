@@ -1,12 +1,16 @@
-.PHONY: fmt test vet build check race run worker compat sitemap-compat load-compat release-audit release-preflight
+.PHONY: fmt test vet build check race run worker
 
 GOCACHE ?= /private/tmp/gocache
+
+# 内存 Store 已移除，测试直接打真库，连接取自 .env.local。
+
+# -p 1 必需：所有测试包共用同一个库，包级并行会互相清表。
 
 fmt:
 	gofmt -w $$(find cmd internal -name '*.go')
 
 test:
-	GOCACHE=$(GOCACHE) go test ./...
+	GOCACHE=$(GOCACHE) go test -p 1 ./...
 
 vet:
 	GOCACHE=$(GOCACHE) go vet ./...
@@ -17,25 +21,10 @@ build:
 check: test vet build
 
 race:
-	GOCACHE=$(GOCACHE) go test -race ./...
+	GOCACHE=$(GOCACHE) go test -p 1 -race ./...
 
 run:
 	GOCACHE=$(GOCACHE) go run ./cmd/web
 
 worker:
 	GOCACHE=$(GOCACHE) go run ./cmd/worker
-
-compat:
-	GOCACHE=$(GOCACHE) go run ./cmd/compatcheck -old http://127.0.0.1:5007 -new http://127.0.0.1:5008 -manifest ./compat/seo_cases.json
-
-sitemap-compat:
-	GOCACHE=$(GOCACHE) go run ./cmd/sitemapcheck -old http://127.0.0.1:5007 -new http://127.0.0.1:5008
-
-load-compat:
-	GOCACHE=$(GOCACHE) go run ./cmd/loadcheck -old http://127.0.0.1:5007 -new http://127.0.0.1:5008
-
-release-audit:
-	GOCACHE=$(GOCACHE) go run ./cmd/releaseaudit
-
-release-preflight:
-	./scripts/release/preflight.sh

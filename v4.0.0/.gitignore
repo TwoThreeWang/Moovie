@@ -4,3 +4,5 @@ bin/
 coverage.out
 *.log
 .migration-reports/
+.run-tests
+.test-out.txt

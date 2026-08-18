@@ -14,6 +14,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestLegacyHistoryRoutesAreRemoved(t *testing.T) {
@@ -48,8 +49,11 @@ func TestV2RemoveRequiresLoginAndPreservesHTMXBehavior(t *testing.T) {
 }
 
 func TestDashboardHistoryPreservesPaginationAndFragments(t *testing.T) {
+	testdb.Media(t, testdb.Pool(t), 7, 9)
+	testdb.MediaUnit(t, testdb.Pool(t), 70, 7)
+	testdb.User(t, testdb.Pool(t), 42)
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	base := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
 	for index := 1; index <= 25; index++ {
 		if err := store.Upsert(t.Context(), Record{UserID: 42, VodID: strconv.Itoa(index), DoubanID: "1292052", Title: "影片" + strconv.Itoa(index), Source: "source", Episode: "第01集", WatchedAt: base.Add(time.Duration(index) * time.Minute)}); err != nil {
@@ -89,8 +93,14 @@ func TestDashboardHistoryPreservesPaginationAndFragments(t *testing.T) {
 }
 
 func TestRecentHistoryUsesCanonicalEpisodeAcrossSources(t *testing.T) {
+	testdb.Media(t, testdb.Pool(t), 7, 9)
+	if _, err := testdb.Pool(t).Exec(t.Context(), `UPDATE media SET douban_id = '1292052' WHERE id = 9`); err != nil {
+		t.Fatal(err)
+	}
+	testdb.MediaUnit(t, testdb.Pool(t), 70, 7)
+	testdb.User(t, testdb.Pool(t), 42)
 	gin.SetMode(gin.TestMode)
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	base := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
 	for _, record := range []Record{
 		{UserID: 42, MediaID: 9, DoubanID: "1292052", SeasonNumber: 1, EpisodeKey: "S01E03", Episode: "第03集", Source: "slow", VodID: "old", Title: "影片", Poster: "https://image.example/poster.jpg", WatchedAt: base},
@@ -130,8 +140,11 @@ func TestRecentHistoryUsesCanonicalEpisodeAcrossSources(t *testing.T) {
 }
 
 func TestHistoryReadsCanonicalPlaybackPositions(t *testing.T) {
+	testdb.Media(t, testdb.Pool(t), 7, 9)
+	testdb.MediaUnit(t, testdb.Pool(t), 70, 7)
+	testdb.User(t, testdb.Pool(t), 42)
 	base := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
-	store := &playbackReadMemoryStore{MemoryStore: NewMemoryStore(), positions: []Record{{
+	store := &playbackReadStubStore{PostgresStore: NewPostgresStore(testdb.Pool(t)), positions: []Record{{
 		ID: 9, UserID: 42, MediaID: 7, MediaUnitID: 70, Source: "canonical", VodID: "new",
 		Title: "规范进度", Episode: "第03集", SeasonNumber: 1, EpisodeKey: "S01E03", WatchedAt: base,
 	}}}
@@ -160,12 +173,12 @@ func TestHistoryReadsCanonicalPlaybackPositions(t *testing.T) {
 	}
 }
 
-type playbackReadMemoryStore struct {
-	*MemoryStore
+type playbackReadStubStore struct {
+	*PostgresStore
 	positions []Record
 }
 
-func (store *playbackReadMemoryStore) ListContinue(_ context.Context, _ int, limit, offset int) ([]Record, error) {
+func (store *playbackReadStubStore) ListContinue(_ context.Context, _ int, limit, offset int) ([]Record, error) {
 	if offset >= len(store.positions) {
 		return []Record{}, nil
 	}
@@ -177,8 +190,11 @@ func (store *playbackReadMemoryStore) ListContinue(_ context.Context, _ int, lim
 }
 
 func historyTestRouter(t *testing.T) (*gin.Engine, string) {
+	testdb.Media(t, testdb.Pool(t), 7, 9)
+	testdb.MediaUnit(t, testdb.Pool(t), 70, 7)
+	testdb.User(t, testdb.Pool(t), 42)
 	t.Helper()
-	return historyRouterWithStore(t, NewMemoryStore())
+	return historyRouterWithStore(t, NewPostgresStore(testdb.Pool(t)))
 }
 
 func historyRouterWithStore(t *testing.T, store Store) (*gin.Engine, string) {

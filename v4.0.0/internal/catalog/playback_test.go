@@ -1,9 +1,13 @@
 package catalog
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+)
 
 func TestTitleFinderBridgesCatalogToTVBoxFallback(t *testing.T) {
-	store := NewMemoryStore()
+	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎"})
 	title, err := NewTitleFinder(store).FindTitleByDoubanID(t.Context(), "1292052")
 	if err != nil || title != "肖申克的救赎" {

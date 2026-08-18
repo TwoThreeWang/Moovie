@@ -132,8 +132,18 @@ AND NOT EXISTS (SELECT 1 FROM history_sync_events event WHERE event.user_id = po
 }
 
 func reserveSyncOperation(ctx context.Context, executor database.Executor, userID int, deviceID string, operation SyncOperation) (int64, bool, error) {
+	// 先查后插：BIGSERIAL 的 version 在 ON CONFLICT DO NOTHING 命中时也会自增，
+	// 幂等重试会在只追加账本里烧出空洞游标。
+	err := executor.QueryRow(ctx, `SELECT version FROM history_sync_events
+WHERE user_id = $1 AND device_id = $2 AND operation_id = $3`, userID, deviceID, operation.OperationID).Scan(new(int64))
+	if err == nil {
+		return 0, false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, fmt.Errorf("check history sync operation: %w", err)
+	}
 	var version int64
-	err := executor.QueryRow(ctx, `INSERT INTO history_sync_events
+	err = executor.QueryRow(ctx, `INSERT INTO history_sync_events
 (user_id, device_id, operation_id, device_seq, operation_type, record_id, media_id, media_unit_id,
  season_number, episode_key, source_key, vod_id, occurred_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
