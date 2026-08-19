@@ -220,6 +220,36 @@ func TestPostgresPersonalizationUsesCanonicalMediaAndPositions(t *testing.T) {
 	}
 }
 
+func TestEnqueueRefreshSkipsAutoReasonsWithinCooldown(t *testing.T) {
+	// 「剧照为空」这类条件永远成立（TMDB 本来就有大量条目没有剧照），
+	// 上一轮任务刚结束就必须挡住，否则页面每被访问一次就重新入队一次。
+	fake := &catalogFakeDatabase{row: catalogFakeRow{values: []any{true}}}
+	store := NewPostgresStore(fake)
+	jobID, err := store.EnqueueRefresh(t.Context(), "1292052", RefreshProviderTMDB, RefreshReasonMissingBackdrops, 0)
+	if err != nil || jobID != 0 {
+		t.Fatalf("cooled enqueue = %d/%v", jobID, err)
+	}
+	if strings.Contains(fake.query, "INSERT INTO worker_jobs") {
+		t.Fatalf("冷却期内仍然入队了: %s", fake.query)
+	}
+	for _, expected := range []string{"status IN ('completed', 'failed')", "make_interval(secs => $3)"} {
+		if !strings.Contains(fake.query, expected) {
+			t.Fatalf("cooldown query missing %q: %s", expected, fake.query)
+		}
+	}
+	if len(fake.arguments) != 3 || fake.arguments[2] != (7*24*time.Hour).Seconds() {
+		t.Fatalf("cooldown arguments = %#v", fake.arguments)
+	}
+	// 调度器和用户手动刷新不在冷却表里，必须照常入队。
+	fake.row = catalogFakeRow{values: []any{42}}
+	if jobID, err := store.EnqueueRefresh(t.Context(), "1292052", RefreshProviderTMDB, "scheduled", 0); err != nil || jobID != 42 {
+		t.Fatalf("scheduled enqueue = %d/%v", jobID, err)
+	}
+	if !strings.Contains(fake.query, "INSERT INTO worker_jobs") {
+		t.Fatalf("调度器入队被冷却挡掉了: %s", fake.query)
+	}
+}
+
 type catalogFakeDatabase struct {
 	query     string
 	execQuery string

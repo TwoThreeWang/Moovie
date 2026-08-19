@@ -450,7 +450,7 @@ func (handler *Handler) reviewList(c *gin.Context) {
 		var reviews []Review
 		if json.Unmarshal([]byte(movie.ReviewsJSON), &reviews) == nil {
 			if time.Since(movie.ReviewsUpdatedAt) > 72*time.Hour {
-				if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderReviews, "stale_reviews"); !queued {
+				if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderReviews, RefreshReasonStaleReviews); !queued {
 					handler.queueReviewRefresh(doubanID)
 				} else if queueErr != nil {
 					requestmeta.Logger(c.Request.Context()).Warn("queue stale Douban reviews", "douban_id", doubanID, "error", queueErr)
@@ -460,7 +460,7 @@ func (handler *Handler) reviewList(c *gin.Context) {
 			return
 		}
 	}
-	if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderReviews, "missing_reviews"); queued {
+	if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderReviews, RefreshReasonMissingReviews); queued {
 		if queueErr != nil {
 			c.HTML(http.StatusServiceUnavailable, "partials/reviews.html", gin.H{"Error": "短评采集任务入队失败，请稍后重试"})
 			return
@@ -484,7 +484,7 @@ func (handler *Handler) backdropList(c *gin.Context) {
 		return
 	}
 	if movie.Backdrops == "" && handler.backdrops != nil && (handler.refreshQueue != nil || handler.runner != nil) {
-		if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderTMDB, "missing_backdrops"); queued {
+		if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderTMDB, RefreshReasonMissingBackdrops); queued {
 			if queueErr != nil {
 				c.String(http.StatusServiceUnavailable, `<div class="reviews-error">剧照采集任务入队失败，请稍后重试</div>`)
 				return
@@ -753,7 +753,7 @@ func compactSimilarMovies(movies []Movie) []Movie {
 }
 
 func (handler *Handler) queueEmbedding(ctx context.Context, doubanID string) {
-	if queued, err := handler.enqueueRefresh(ctx, doubanID, RefreshProviderEmbedding, "missing_embedding"); queued {
+	if queued, err := handler.enqueueRefresh(ctx, doubanID, RefreshProviderEmbedding, RefreshReasonMissingEmbedding); queued {
 		if err != nil {
 			requestmeta.Logger(ctx).Warn("queue missing embedding", "douban_id", doubanID, "error", err)
 		}
@@ -775,7 +775,7 @@ func (handler *Handler) queueEmbedding(ctx context.Context, doubanID string) {
 }
 
 func (handler *Handler) fetchMissing(ctx context.Context, doubanID string) (bool, error) {
-	if queued, err := handler.enqueueRefresh(ctx, doubanID, RefreshProviderDouban, "missing_metadata"); queued {
+	if queued, err := handler.enqueueRefresh(ctx, doubanID, RefreshProviderDouban, RefreshReasonMissingMetadata); queued {
 		return true, err
 	}
 	if handler.fetcher == nil || handler.runner == nil || doubanID == "" {

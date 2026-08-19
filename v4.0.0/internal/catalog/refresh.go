@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
@@ -13,9 +14,32 @@ const (
 	RefreshProviderTMDB      = "tmdb"
 	RefreshProviderEmbedding = "embedding"
 
-	// RefreshReasonPartialMetadata 是详情页发现资料不全时自己触发的入队。
-	RefreshReasonPartialMetadata = "partial_metadata"
+	// 下面这些 reason 都是详情页按「某个字段还是空的」自动触发的，
+	// 需要入队冷却，理由见 autoRefreshCooldowns。
+	RefreshReasonPartialMetadata  = "partial_metadata"
+	RefreshReasonMissingMetadata  = "missing_metadata"
+	RefreshReasonMissingReviews   = "missing_reviews"
+	RefreshReasonStaleReviews     = "stale_reviews"
+	RefreshReasonMissingBackdrops = "missing_backdrops"
+	RefreshReasonMissingEmbedding = "missing_embedding"
 )
+
+// autoRefreshCooldowns 是详情页自动入队的冷却时间。这些入队条件都挂在「某个字段还是空的」
+// 上，而那个字段只有抓成功才会被填上：上游一坏、或者上游本来就没有这份数据
+// （TMDB 大量条目没有剧照、冷门片没有短评），条件就永远成立，页面每被访问一次就重新
+// 入队一次。pending/running 唯一索引只保证同时只有一个任务，挡不住「刚结束就立刻再排一个」。
+// 不在这张表里的 reason 行为不变：调度器入队时自己会推进 next_refresh_at，
+// IMDb 回填是查到新映射才触发的事件，用户手动刷新则必须立即生效。
+var autoRefreshCooldowns = map[string]time.Duration{
+	RefreshReasonPartialMetadata:  24 * time.Hour,
+	RefreshReasonMissingReviews:   24 * time.Hour,
+	RefreshReasonStaleReviews:     24 * time.Hour,
+	RefreshReasonMissingEmbedding: 24 * time.Hour,
+	// 详情页缺主资料时整页都渲染不出来，冷却给短一点，让用户重试还有机会。
+	RefreshReasonMissingMetadata: time.Hour,
+	// TMDB 没有剧照的条目占比很高，而且是永久状态，一周内不必再问第二次。
+	RefreshReasonMissingBackdrops: 7 * 24 * time.Hour,
+}
 
 type RefreshQueue interface {
 	EnqueueRefresh(ctx context.Context, doubanID, provider, reason string, requestedBy int) (int, error)
@@ -35,19 +59,33 @@ func (store *PostgresStore) EnqueueRefresh(ctx context.Context, doubanID, provid
 	if !validRefreshProvider(provider) {
 		return 0, workqueue.Terminal(fmt.Errorf("invalid metadata refresh provider %q", provider))
 	}
-	jobID, err := workqueue.NewPostgresStore(store.database).Enqueue(ctx, workqueue.Spec{
+	if cooling, err := store.coolingDown(ctx, provider, doubanID, reason); err != nil {
+		return 0, err
+	} else if cooling {
+		return 0, nil
+	}
+	return workqueue.NewPostgresStore(store.database).Enqueue(ctx, workqueue.Spec{
 		TaskType: provider, SubjectKey: doubanID, Payload: map[string]string{"douban_id": doubanID},
 		Reason: reason, RequestedBy: requestedBy,
 	})
-	if err == nil && reason == RefreshReasonPartialMetadata {
-		// 详情页触发的补全入队必须自己推进 next_refresh_at。抓取失败时 updateRefreshState
-		// 根本不会执行，next_refresh_at 就一直停在过去，于是这个页面每被访问一次就重新入队
-		// 一次——上游越不稳，重试打得越狠。这里跟 ScheduleDueRefreshes 一样在入队时就推后，
-		// 把节奏交还给调度器；用户手动刷新走的是别的 reason，不受影响。
-		_, _ = store.database.Exec(ctx,
-			`UPDATE media SET next_refresh_at = NOW() + INTERVAL '24 hours' WHERE douban_id = $1`, doubanID)
+}
+
+// coolingDown 判断这个对象最近是否已经跑完过一轮同类任务。只看终态行：
+// pending/running 由唯一偏索引兜住，不该也不需要再被冷却挡一次。
+func (store *PostgresStore) coolingDown(ctx context.Context, provider, doubanID, reason string) (bool, error) {
+	cooldown, tracked := autoRefreshCooldowns[reason]
+	if !tracked {
+		return false, nil
 	}
-	return jobID, err
+	var recent bool
+	if err := store.database.QueryRow(ctx, `SELECT EXISTS (
+    SELECT 1 FROM worker_jobs
+    WHERE task_type = $1 AND subject_key = $2 AND status IN ('completed', 'failed')
+      AND finished_at IS NOT NULL AND finished_at > NOW() - make_interval(secs => $3))`,
+		provider, doubanID, cooldown.Seconds()).Scan(&recent); err != nil {
+		return false, fmt.Errorf("check refresh cooldown: %w", err)
+	}
+	return recent, nil
 }
 
 func (store *PostgresStore) EnqueueMediaRefresh(ctx context.Context, mediaID int, reason string, requestedBy int) (int, error) {
