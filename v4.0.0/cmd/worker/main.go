@@ -103,8 +103,10 @@ func main() {
 	syncService := douban.NewService(douban.NewClient(client), libraryStore, jobs)
 	reportService := report.NewService(reports, libraryStore, movies)
 	doubanHandler := douban.NewTaskHandler(jobs, users, syncService, douban.WithMonthlyGenerator(reportService))
+	metricsStore := operations.NewMetricsStore(pool)
 	operationsService := operations.NewService(searchStore,
-		operations.WithJobQueueCleanup(operations.NewMetricsStore(pool).DeleteExpiredJobs))
+		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs),
+		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry))
 	dispatcher := workqueue.NewDispatcher(queueStore, cfg.Worker.Concurrency, cfg.Worker.Poll)
 	for _, taskType := range []string{catalog.RefreshProviderDouban, catalog.RefreshProviderReviews, catalog.RefreshProviderTMDB, catalog.RefreshProviderEmbedding} {
 		dispatcher.Handle(taskType, 10*time.Minute, metadataHandler.Handle)

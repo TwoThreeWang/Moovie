@@ -664,6 +664,12 @@ func (store *PostgresStore) WriteSourceSnapshot(ctx context.Context, mediaID int
 	if !json.Valid(payload) {
 		return fmt.Errorf("source snapshot payload is not valid JSON")
 	}
+	// 只有 payload_hash 有用：unchanged_count 和 next_refresh_at 全靠它比对，
+	// 而 hash 是在这里算好的。payload_json 本身全代码库没有任何 SELECT 读回去，
+	// 却要为每个 media × 每个 provider 存一份完整的上游 JSON。
+	// 这里改存空对象，列先留着——UPSERT 会让存量行在下次刷新时自然缩小，
+	// 不需要全表 UPDATE，也避免灰度期间旧进程写已删除的列。
+	// ponytail: 列还在，确认所有实例都升级后再单独发一个迁移 DROP COLUMN。
 	hash := sha256.Sum256(payload)
 	_, err := store.database.Exec(ctx, `INSERT INTO media_source_snapshots
 (media_id, provider, payload_json, payload_hash, fetched_at, last_success_at, error_message,
@@ -692,7 +698,7 @@ next_refresh_at = CASE
         ELSE INTERVAL '90 days' END END,
 changed_at = CASE
     WHEN $5 AND media_source_snapshots.payload_hash <> EXCLUDED.payload_hash THEN NOW()
-    ELSE media_source_snapshots.changed_at END`, mediaID, provider, string(payload), hex.EncodeToString(hash[:]), success, errorMessage)
+    ELSE media_source_snapshots.changed_at END`, mediaID, provider, "{}", hex.EncodeToString(hash[:]), success, errorMessage)
 	if err != nil {
 		return fmt.Errorf("write source snapshot: %w", err)
 	}

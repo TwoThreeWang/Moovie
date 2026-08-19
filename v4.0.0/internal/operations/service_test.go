@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/feedback"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func captureLogs(t *testing.T) *bytes.Buffer {
@@ -66,8 +66,12 @@ func TestCleanupUsesRetentionWindows(t *testing.T) {
 	store := &recordingStore{}
 	var completedBefore, failedBefore time.Time
 	var cleanupLimit int
+	var telemetryBefore time.Time
 	service := NewService(store, WithJobQueueCleanup(func(_ context.Context, completed, failed time.Time, limit int) (int, error) {
 		completedBefore, failedBefore, cleanupLimit = completed, failed, limit
+		return 0, nil
+	}), WithTelemetryCleanup(func(_ context.Context, before time.Time, _ int) (int, error) {
+		telemetryBefore = before
 		return 0, nil
 	}))
 	service.now = func() time.Time { return time.Date(2026, time.July, 30, 0, 0, 0, 0, time.UTC) }
@@ -77,6 +81,11 @@ func TestCleanupUsesRetentionWindows(t *testing.T) {
 	}
 	if !completedBefore.Equal(service.now().AddDate(0, 0, -30)) || !failedBefore.Equal(service.now().AddDate(0, 0, -90)) || cleanupLimit != 1000 {
 		t.Fatalf("job cleanup = %s / %s / %d", completedBefore, failedBefore, cleanupLimit)
+	}
+	// 遥测保留必须明显长于最长读取窗口（activity_popular 的 7 天），
+	// 否则首页活跃榜和候选质量分会因为清理而缺数据。
+	if !telemetryBefore.Equal(service.now().AddDate(0, 0, -30)) {
+		t.Fatalf("telemetry cleanup before = %s", telemetryBefore)
 	}
 }
 

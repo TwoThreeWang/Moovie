@@ -140,6 +140,67 @@ func (store *MetricsStore) Snapshot(ctx context.Context) (MetricsSnapshot, error
 	return snapshot, nil
 }
 
+// DeleteExpiredTelemetry 清理只在近期窗口内被读取的遥测数据。
+// 这三张表原本没有任何保留策略，只增不减：playback_attempt_events 每次播放尝试最多写 9 行、
+// 带 3 个索引，还被 ScheduleActiveContentRefreshes 定期扫描，表一大调度先慢下来。
+// 所有读取方的窗口都不超过 7 天（activity_popular 7 天、rollup 全部 7 天、
+// refresh 与 metrics 24 小时），rollup 又是和事件同一条语句里算出来的、不依赖原始事件，
+// 所以按 before 删除历史行不改变任何查询结果。
+// popularity 只读「每个 media_type 最新的 ready 快照」，但那一行必须留着：
+// 运维面板靠它显示上次快照时间，删了会让面板误报从未生成。
+// budget 是每张表每次清理的上限。清理任务 24 小时才跑一次，所以不能只删一批就收工，
+// 否则存量积压永远排不空；但一次性删几百万行又会长时间持锁。这里分小批循环，
+// 每条 DELETE 都只碰 telemetryDeleteChunk 行。
+const telemetryDeleteChunk = 20000
+
+func (store *MetricsStore) DeleteExpiredTelemetry(ctx context.Context, before time.Time, budget int) (int, error) {
+	if store == nil || store.database == nil {
+		return 0, nil
+	}
+	if budget < 1 {
+		budget = telemetryDeleteChunk
+	}
+	total := 0
+	for _, table := range []struct {
+		name      string
+		statement string
+	}{
+		{"playback events", `WITH expired AS (
+    SELECT id FROM playback_attempt_events WHERE created_at < $1 ORDER BY id LIMIT $2
+)
+DELETE FROM playback_attempt_events events USING expired WHERE events.id = expired.id`},
+		{"playback rollups", `WITH expired AS (
+    SELECT bucket, candidate_id FROM playback_quality_rollups WHERE bucket < $1 LIMIT $2
+)
+DELETE FROM playback_quality_rollups rollups USING expired
+WHERE rollups.bucket = expired.bucket AND rollups.candidate_id = expired.candidate_id`},
+	} {
+		for deleted := 0; deleted < budget; {
+			chunk := min(telemetryDeleteChunk, budget-deleted)
+			affected, err := store.database.Exec(ctx, table.statement, before, chunk)
+			if err != nil {
+				return total, fmt.Errorf("delete expired %s: %w", table.name, err)
+			}
+			deleted, total = deleted+int(affected), total+int(affected)
+			if int(affected) < chunk {
+				break
+			}
+		}
+	}
+	// 快照运行记录每天只有个位数行，一条语句就删干净了。
+	// popularity_snapshots 通过 run_id 外键级联删除，不必单独处理。
+	runs, err := store.database.Exec(ctx, `WITH latest AS (
+    SELECT DISTINCT ON (media_type) id FROM popularity_snapshot_runs
+    WHERE status = 'ready' ORDER BY media_type, generated_at DESC
+)
+DELETE FROM popularity_snapshot_runs
+WHERE generated_at < $1 AND id NOT IN (SELECT id FROM latest)`, before)
+	if err != nil {
+		return total, fmt.Errorf("delete expired popularity snapshots: %w", err)
+	}
+	return total + int(runs), nil
+}
+
 const metricsSnapshotSQL = `WITH event_window AS (
     SELECT * FROM playback_attempt_events WHERE created_at >= NOW() - INTERVAL '24 hours'
 ), event_totals AS (

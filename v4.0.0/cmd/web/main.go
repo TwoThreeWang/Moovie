@@ -197,7 +197,8 @@ func main() {
 		metricsStore = operations.NewMetricsStore(databasePool)
 	}
 	operationsService := operations.NewService(operationsStore,
-		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs))
+		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs),
+		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry))
 	tmdbProvider := catalog.NewTMDBProvider(sourceClient, catalogStore, cfg.Catalog.TMDBToken, tmdbOptions...)
 	embeddingService := catalog.NewEmbeddingService(sourceClient, catalogStore, catalog.EmbeddingConfig{
 		OllamaHost: cfg.Catalog.OllamaHost, OllamaModel: cfg.Catalog.OllamaModel,

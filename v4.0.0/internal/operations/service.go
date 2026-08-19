@@ -17,10 +17,14 @@ const (
 	completedJobRetentionDays = 30
 	failedJobRetentionDays    = 90
 	jobCleanupBatchSize       = 1000
-	siteAlertMinSamples       = 5
-	siteAlertCooldown         = 24 * time.Hour
-	TaskCleanup               = "operations_cleanup"
-	TaskHealthCheck           = "site_health_check"
+	// 遥测读取方最长只看 7 天，留 30 天是给排查留余量，不是给查询用的。
+	telemetryRetentionDays = 30
+	// 每天每张表最多删 100 万行：够排空存量积压，又不会让一次清理跑太久。
+	telemetryCleanupBudget = 1_000_000
+	siteAlertMinSamples    = 5
+	siteAlertCooldown      = 24 * time.Hour
+	TaskCleanup            = "operations_cleanup"
+	TaskHealthCheck        = "site_health_check"
 )
 
 type Store interface {
@@ -36,15 +40,20 @@ type Service struct {
 	store Store
 	now   func() time.Time
 
-	mu         sync.Mutex
-	lastAlert  map[string]time.Time
-	jobCleanup func(context.Context, time.Time, time.Time, int) (int, error)
+	mu               sync.Mutex
+	lastAlert        map[string]time.Time
+	jobCleanup       func(context.Context, time.Time, time.Time, int) (int, error)
+	telemetryCleanup func(context.Context, time.Time, int) (int, error)
 }
 
 type ServiceOption func(*Service)
 
 func WithJobQueueCleanup(cleanup func(context.Context, time.Time, time.Time, int) (int, error)) ServiceOption {
 	return func(service *Service) { service.jobCleanup = cleanup }
+}
+
+func WithTelemetryCleanup(cleanup func(context.Context, time.Time, int) (int, error)) ServiceOption {
+	return func(service *Service) { service.telemetryCleanup = cleanup }
 }
 
 func NewService(store Store, options ...ServiceOption) *Service {
@@ -74,6 +83,12 @@ func (service *Service) HandleCleanup(ctx context.Context, _ workqueue.Job) erro
 		now := service.now()
 		operations = append(operations, cleanupOperation{name: "expired worker jobs", run: func() (int, error) {
 			return service.jobCleanup(ctx, now.AddDate(0, 0, -completedJobRetentionDays), now.AddDate(0, 0, -failedJobRetentionDays), jobCleanupBatchSize)
+		}})
+	}
+	if service.telemetryCleanup != nil {
+		before := service.now().AddDate(0, 0, -telemetryRetentionDays)
+		operations = append(operations, cleanupOperation{name: "expired playback telemetry", run: func() (int, error) {
+			return service.telemetryCleanup(ctx, before, telemetryCleanupBudget)
 		}})
 	}
 	var failures []error

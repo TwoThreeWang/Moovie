@@ -9,6 +9,7 @@ import (
 
 	platformconfig "github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 // 该测试默认跳过；最终结构演练时传入隔离库 DSN，可确认整条指标 SQL 不依赖已删除表。
@@ -94,4 +95,51 @@ type metricsRow struct{ payload []byte }
 func (row metricsRow) Scan(destinations ...any) error {
 	*(destinations[0].(*[]byte)) = row.payload
 	return nil
+}
+
+func TestDeleteExpiredTelemetryKeepsLatestPopularityRun(t *testing.T) {
+	// 保留清理必须留下「每个 media_type 最新的 ready 快照」：
+	// 运维面板靠它显示上次快照时间，删掉会误报从未生成。
+	// 同一次调用还会执行播放事件和 rollup 的删除语句，顺便验证它们能被 Postgres 解析。
+	pool := testdb.Pool(t)
+	store := NewMetricsStore(pool)
+	insert := func(mediaType, status string, ageDays int) int64 {
+		var id int64
+		if err := pool.QueryRow(t.Context(), `INSERT INTO popularity_snapshot_runs
+(media_type, status, generated_at, expires_at) VALUES ($1,$2,NOW()-make_interval(days=>$3),NOW()+INTERVAL '1 hour')
+RETURNING id`, mediaType, status, ageDays).Scan(&id); err != nil {
+			t.Fatalf("插入快照运行记录: %v", err)
+		}
+		return id
+	}
+	staleMovie, latestMovie := insert("movie", "ready", 90), insert("movie", "ready", 60)
+	staleFailed := insert("tv", "failed", 90)
+	fresh := insert("tv", "ready", 1)
+
+	if _, err := store.DeleteExpiredTelemetry(t.Context(), time.Now().AddDate(0, 0, -30), 0); err != nil {
+		t.Fatalf("清理遥测数据: %v", err)
+	}
+
+	surviving := map[int64]bool{}
+	rows, err := pool.Query(t.Context(), `SELECT id FROM popularity_snapshot_runs`)
+	if err != nil {
+		t.Fatalf("查询存活快照: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("扫描快照 id: %v", err)
+		}
+		surviving[id] = true
+	}
+	if surviving[staleMovie] || surviving[staleFailed] {
+		t.Fatalf("过期快照未被清理: %v", surviving)
+	}
+	if !surviving[latestMovie] {
+		t.Fatalf("每个 media_type 最新的 ready 快照必须保留，即使它已超过保留期: %v", surviving)
+	}
+	if !surviving[fresh] {
+		t.Fatalf("保留期内的快照被误删: %v", surviving)
+	}
 }
