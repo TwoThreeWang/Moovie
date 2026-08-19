@@ -59,11 +59,19 @@ func TestMetadataRefreshStateUsesStableHashCompletenessAndCappedBackoff(t *testi
 	if score := metadataCompleteness(state); score != 100 {
 		t.Fatalf("completeness = %d", score)
 	}
-	if delay := metadataRefreshDelay(0); delay != 24*time.Hour {
+	if delay := metadataRefreshDelay(0, 100); delay != 24*time.Hour {
 		t.Fatalf("initial delay = %s", delay)
 	}
-	if delay := metadataRefreshDelay(20); delay != 90*24*time.Hour {
+	if delay := metadataRefreshDelay(20, 100); delay != 90*24*time.Hour {
 		t.Fatalf("capped delay = %s", delay)
+	}
+	// 资料不全时前几次加急到一天，但内容连续没变化后必须退回正常退避，
+	// 否则永远补不齐的条目会每天重新入队。
+	if delay := metadataRefreshDelay(1, 60); delay != 24*time.Hour {
+		t.Fatalf("partial delay = %s", delay)
+	}
+	if delay := metadataRefreshDelay(20, 60); delay != 90*24*time.Hour {
+		t.Fatalf("settled partial delay = %s", delay)
 	}
 }
 

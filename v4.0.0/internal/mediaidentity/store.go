@@ -548,10 +548,7 @@ content_hash, unchanged_refresh_count FROM media WHERE id = $1`, mediaID).Scan(
 		unchangedCount++
 	}
 	completeness := metadataCompleteness(state)
-	delay := metadataRefreshDelay(unchangedCount)
-	if completeness < 70 && delay > 24*time.Hour {
-		delay = 24 * time.Hour
-	}
+	delay := metadataRefreshDelay(unchangedCount, completeness)
 	// 新上映内容需要更频繁刷新，才能及时获得更新后的剧集、纠正资料和新增剧照/评分。
 	currentYear := time.Now().Year()
 	if yearInt := parseMediaYear(state.Year); yearInt >= currentYear {
@@ -584,21 +581,30 @@ func stableJSONHash(value any) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func metadataRefreshDelay(unchangedCount int) time.Duration {
+func metadataRefreshDelay(unchangedCount, completeness int) time.Duration {
+	var delay time.Duration
 	switch unchangedCount {
 	case 0:
-		return 24 * time.Hour
+		delay = 24 * time.Hour
 	case 1:
-		return 3 * 24 * time.Hour
+		delay = 3 * 24 * time.Hour
 	case 2:
-		return 7 * 24 * time.Hour
+		delay = 7 * 24 * time.Hour
 	case 3:
-		return 14 * 24 * time.Hour
+		delay = 14 * 24 * time.Hour
 	case 4:
-		return 30 * 24 * time.Hour
+		delay = 30 * 24 * time.Hour
 	default:
-		return 90 * 24 * time.Hour
+		delay = 90 * 24 * time.Hour
 	}
+	// 资料没凑齐时值得比正常节奏更勤地重试，但 unchangedCount 已经说明连续几次抓回来的
+	// 都是同一份数据——上游就这么多，再天天抓也变不出新字段（比如豆瓣本来就没有简介/片长，
+	// 或者 TMDB 映射一直没解析出来拿不到那 8 分）。所以加急只给前几次，之后退回正常退避；
+	// 不留这个出口的话，永远达不到 70 分的条目会每天重新入队，永不停止。
+	if completeness < 70 && unchangedCount < 3 && delay > 24*time.Hour {
+		delay = 24 * time.Hour
+	}
+	return delay
 }
 
 func metadataCompleteness(state mergedMetadataState) int {

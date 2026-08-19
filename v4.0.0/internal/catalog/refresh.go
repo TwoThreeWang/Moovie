@@ -12,6 +12,9 @@ const (
 	RefreshProviderReviews   = "douban_reviews"
 	RefreshProviderTMDB      = "tmdb"
 	RefreshProviderEmbedding = "embedding"
+
+	// RefreshReasonPartialMetadata 是详情页发现资料不全时自己触发的入队。
+	RefreshReasonPartialMetadata = "partial_metadata"
 )
 
 type RefreshQueue interface {
@@ -32,10 +35,19 @@ func (store *PostgresStore) EnqueueRefresh(ctx context.Context, doubanID, provid
 	if !validRefreshProvider(provider) {
 		return 0, workqueue.Terminal(fmt.Errorf("invalid metadata refresh provider %q", provider))
 	}
-	return workqueue.NewPostgresStore(store.database).Enqueue(ctx, workqueue.Spec{
+	jobID, err := workqueue.NewPostgresStore(store.database).Enqueue(ctx, workqueue.Spec{
 		TaskType: provider, SubjectKey: doubanID, Payload: map[string]string{"douban_id": doubanID},
 		Reason: reason, RequestedBy: requestedBy,
 	})
+	if err == nil && reason == RefreshReasonPartialMetadata {
+		// 详情页触发的补全入队必须自己推进 next_refresh_at。抓取失败时 updateRefreshState
+		// 根本不会执行，next_refresh_at 就一直停在过去，于是这个页面每被访问一次就重新入队
+		// 一次——上游越不稳，重试打得越狠。这里跟 ScheduleDueRefreshes 一样在入队时就推后，
+		// 把节奏交还给调度器；用户手动刷新走的是别的 reason，不受影响。
+		_, _ = store.database.Exec(ctx,
+			`UPDATE media SET next_refresh_at = NOW() + INTERVAL '24 hours' WHERE douban_id = $1`, doubanID)
+	}
+	return jobID, err
 }
 
 func (store *PostgresStore) EnqueueMediaRefresh(ctx context.Context, mediaID int, reason string, requestedBy int) (int, error) {

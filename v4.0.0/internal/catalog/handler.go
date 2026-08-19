@@ -547,7 +547,7 @@ func (handler *Handler) movie(c *gin.Context) {
 		return
 	}
 	if needsMetadataRefresh(movie, time.Now()) {
-		if _, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderDouban, "partial_metadata"); queueErr != nil {
+		if _, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderDouban, RefreshReasonPartialMetadata); queueErr != nil {
 			requestmeta.Logger(c.Request.Context()).Warn("queue partial metadata", "douban_id", doubanID, "error", queueErr)
 		}
 	}
