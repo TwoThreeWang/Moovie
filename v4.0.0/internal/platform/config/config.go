@@ -68,6 +68,10 @@ type CatalogConfig struct {
 	// IMDbLookupInterval 是 wmdb 豆瓣→IMDb 映射查询的最小发送间隔。
 	// wmdb 只作为批量回填的兜底，这里配的是它的节流节奏。
 	IMDbLookupInterval time.Duration
+	// DoubanRequestInterval 是所有 worker 共用的豆瓣请求最小发送间隔。
+	// worker 并发一高，多个 douban_metadata 任务会同时把请求打到同一个出口 IP 上，
+	// 单个任务自己退避没用，得让全进程的豆瓣请求排成队——这个值就是队列的节奏。
+	DoubanRequestInterval time.Duration
 	// WikidataEndpoint 和 WikidataUserAgent 用于批量补齐豆瓣→IMDb 映射。
 	// 维基媒体要求请求带上能说明来源和联系方式的 User-Agent，默认 UA 会被拒绝。
 	WikidataEndpoint  string
@@ -237,6 +241,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	doubanRequestIntervalMilliseconds, err := positiveIntEnv("DOUBAN_REQUEST_INTERVAL_MS", 200)
+	if err != nil {
+		return Config{}, err
+	}
 	imdbBackfillBatch, err := positiveIntEnv("IMDB_BACKFILL_BATCH", 200)
 	if err != nil {
 		return Config{}, err
@@ -297,12 +305,13 @@ func Load() (Config, error) {
 			CFAPIToken:   env("CF_API_TOKEN", ""),
 			CFAIModel:    env("CF_AI_MODEL", "custom-alibaba-coding/kimi-k2.5"),
 
-			AITimeout:          time.Duration(catalogAITimeoutSeconds) * time.Second,
-			IMDbLookupInterval: time.Duration(imdbLookupIntervalMilliseconds) * time.Millisecond,
-			WikidataEndpoint:   strings.TrimRight(env("WIKIDATA_SPARQL_URL", ""), "/"),
-			WikidataUserAgent:  env("WIKIDATA_USER_AGENT", ""),
-			IMDbBackfillBatch:  imdbBackfillBatch,
-			WikidataTimeout:    time.Duration(wikidataTimeoutSeconds) * time.Second,
+			AITimeout:             time.Duration(catalogAITimeoutSeconds) * time.Second,
+			IMDbLookupInterval:    time.Duration(imdbLookupIntervalMilliseconds) * time.Millisecond,
+			DoubanRequestInterval: time.Duration(doubanRequestIntervalMilliseconds) * time.Millisecond,
+			WikidataEndpoint:      strings.TrimRight(env("WIKIDATA_SPARQL_URL", ""), "/"),
+			WikidataUserAgent:     env("WIKIDATA_USER_AGENT", ""),
+			IMDbBackfillBatch:     imdbBackfillBatch,
+			WikidataTimeout:       time.Duration(wikidataTimeoutSeconds) * time.Second,
 		},
 		Danmaku: DanmakuConfig{APIBase: strings.TrimRight(env("DANMU_API_BASE", ""), "/")},
 		Database: DatabaseConfig{
@@ -361,6 +370,9 @@ func (c Config) Validate() error {
 	}
 	if c.Catalog.IMDbLookupInterval > time.Minute {
 		return errors.New("IMDB_LOOKUP_INTERVAL_MS must not exceed 60000")
+	}
+	if c.Catalog.DoubanRequestInterval > time.Minute {
+		return errors.New("DOUBAN_REQUEST_INTERVAL_MS must not exceed 60000")
 	}
 	if c.Catalog.IMDbBackfillBatch > 500 {
 		return errors.New("IMDB_BACKFILL_BATCH must not exceed 500")

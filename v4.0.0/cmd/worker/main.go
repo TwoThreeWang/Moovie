@@ -69,7 +69,7 @@ func main() {
 	// AI Gateway 单独一个 Client：LLM 的响应时间和抓取源不在一个量级，共用超时会让语义改写全部超时。
 	aiClient := outbound.NewClient(cfg.Catalog.AITimeout, 4)
 	defer aiClient.CloseIdleConnections()
-	metadataProvider := catalog.NewDoubanProvider(client, movies, catalog.WithDoubanCanonicalWriter(mediaStore))
+	metadataProvider := catalog.NewDoubanProvider(client, movies, catalog.WithDoubanCanonicalWriter(mediaStore), catalog.WithDoubanRequestInterval(cfg.Catalog.DoubanRequestInterval))
 	tmdbProvider := catalog.NewTMDBProvider(client, movies, cfg.Catalog.TMDBToken,
 		catalog.WithTMDBCanonicalWriter(mediaStore), catalog.WithTMDBMediaUnitWriter(mediaStore))
 	// SPARQL 批量查询比普通抓取慢得多，单独一个 Client，超时按 Wikidata 的查询上限配。

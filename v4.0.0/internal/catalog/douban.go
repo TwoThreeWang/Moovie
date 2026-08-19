@@ -14,9 +14,15 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/doubanpopular"
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/outbound"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 	"golang.org/x/sync/singleflight"
 )
+
+// defaultDoubanRequestInterval 是没有配置时的豆瓣请求最小间隔。
+// worker 并发一高，多个任务会同时把请求打到同一个出口 IP 上触发豆瓣的频率限制，
+// 这里把全进程的豆瓣请求串行化，出问题时 Pause 还会让大家一起冷却。
+const defaultDoubanRequestInterval = 200 * time.Millisecond
 
 type DoubanProvider struct {
 	client      *http.Client
@@ -27,6 +33,7 @@ type DoubanProvider struct {
 	popularMu   sync.Mutex
 	popular     map[string]popularCacheEntry
 	canonical   CanonicalWriter
+	limiter     *outbound.Limiter
 }
 
 type DoubanOption func(*DoubanProvider)
@@ -35,8 +42,13 @@ func WithDoubanCanonicalWriter(writer CanonicalWriter) DoubanOption {
 	return func(provider *DoubanProvider) { provider.canonical = writer }
 }
 
+func WithDoubanRequestInterval(interval time.Duration) DoubanOption {
+	return func(provider *DoubanProvider) { provider.limiter = outbound.NewLimiter(interval) }
+}
+
 func NewDoubanProvider(client *http.Client, store Store, options ...DoubanOption) *DoubanProvider {
-	provider := &DoubanProvider{client: client, store: store, base: "https://m.douban.com", suggestBase: "https://movie.douban.com", popular: make(map[string]popularCacheEntry)}
+	provider := &DoubanProvider{client: client, store: store, base: "https://m.douban.com", suggestBase: "https://movie.douban.com",
+		popular: make(map[string]popularCacheEntry), limiter: outbound.NewLimiter(defaultDoubanRequestInterval)}
 	for _, option := range options {
 		option(provider)
 	}
@@ -352,6 +364,9 @@ func (provider *DoubanProvider) SuggestExternal(ctx context.Context, keyword str
 }
 
 func (provider *DoubanProvider) getJSON(ctx context.Context, endpoint, referer string, destination any) error {
+	if err := provider.limiter.Wait(ctx); err != nil {
+		return err
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return err
@@ -365,7 +380,14 @@ func (provider *DoubanProvider) getJSON(ctx context.Context, endpoint, referer s
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return classifyUpstreamStatus("Douban", response)
+		err := classifyUpstreamStatus("Douban", response)
+		if retryAfter, throttled := workqueue.RetryAfter(err); throttled {
+			if retryAfter <= 0 {
+				retryAfter = 30 * time.Second
+			}
+			provider.limiter.Pause(retryAfter)
+		}
+		return err
 	}
 	if err := json.NewDecoder(response.Body).Decode(destination); err != nil {
 		return fmt.Errorf("decode Douban response: %w", err)

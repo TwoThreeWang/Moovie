@@ -178,7 +178,7 @@ func main() {
 	// AI Gateway 单独一个 Client：LLM 的响应时间和搜索源不在一个量级，共用超时会让语义改写全部超时。
 	aiClient := outbound.NewClient(cfg.Catalog.AITimeout, 4)
 	sourceCrawler := search.NewAppleCMSCrawler(sourceClient)
-	doubanOptions := []catalog.DoubanOption{}
+	doubanOptions := []catalog.DoubanOption{catalog.WithDoubanRequestInterval(cfg.Catalog.DoubanRequestInterval)}
 	tmdbOptions := []catalog.TMDBOption{}
 	if canonicalStore != nil {
 		doubanOptions = append(doubanOptions, catalog.WithDoubanCanonicalWriter(canonicalStore))
