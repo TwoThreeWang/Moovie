@@ -64,10 +64,10 @@ func (store *PostgresStore) RecordPlaybackEvent(ctx context.Context, event Playb
     RETURNING candidate_id, play_line_id, media_unit_id, media_id, source_key, vod_id, candidate_session_id,
               event_type, elapsed_ms, failure_reason, created_at
 ), enqueued AS (
-    INSERT INTO worker_jobs (task_type, subject_key, payload, reason, max_attempts, available_at)
+    INSERT INTO worker_jobs (task_type, subject_key, payload, reason, max_attempts, available_at, priority)
     SELECT 'quality_refresh', inserted.source_key || ':' || inserted.vod_id,
            JSONB_BUILD_OBJECT('source_key', inserted.source_key, 'vod_id', inserted.vod_id),
-           'playback_event', 3, NOW()
+           'playback_event', 3, NOW(), 5
     FROM inserted
     JOIN vod_items resource ON resource.source_key = inserted.source_key AND resource.vod_id = inserted.vod_id
     WHERE resource.quality_refreshed_at IS NULL OR resource.quality_refreshed_at < NOW() - INTERVAL '1 hour'

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -118,6 +119,13 @@ func (resolver linkedMediaResolverStub) FindResourceLink(_ context.Context, sour
 		return mediaidentity.ResourceLink{SourceKey: sourceKey, VodID: vodID, MediaID: resolver.media.ID}, nil
 	}
 	return mediaidentity.ResourceLink{}, nil
+}
+
+func (resolver linkedMediaResolverStub) FindLinkedResource(_ context.Context, mediaID int) (mediaidentity.ResourceLink, error) {
+	if mediaID == resolver.media.ID {
+		return mediaidentity.ResourceLink{SourceKey: "source", VodID: "42", MediaID: mediaID}, nil
+	}
+	return mediaidentity.ResourceLink{}, fmt.Errorf("no linked resource")
 }
 
 type playbackEventWriterFunc func(context.Context, mediaidentity.PlaybackAttemptEvent) (bool, error)

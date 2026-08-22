@@ -132,7 +132,7 @@ func (handler *Handler) enqueueRefresh(ctx context.Context, userID int, reason s
 		return
 	}
 	if _, err := handler.queue.Enqueue(ctx, workqueue.Spec{TaskType: TaskRefresh,
-		SubjectKey: strconv.Itoa(userID), Payload: map[string]int{"user_id": userID}, Reason: reason, RequestedBy: userID}); err != nil {
+		SubjectKey: strconv.Itoa(userID), Payload: map[string]int{"user_id": userID}, Reason: reason, RequestedBy: userID, Priority: 10}); err != nil {
 		slog.Warn("enqueue recommendation refresh", "user_id", userID, "error", err)
 	}
 }

@@ -997,6 +997,23 @@ FROM resource_media_links WHERE source_key = $1 AND vod_id = $2`, sourceKey, vod
 	return link, nil
 }
 
+// FindLinkedResource 按 media_id 取一条关联资源的 source_key/vod_id，
+// 用于 /watch 在没有剧集候选时找到可补录索引的资源。
+func (store *PostgresStore) FindLinkedResource(ctx context.Context, mediaID int) (ResourceLink, error) {
+	row := store.database.QueryRow(ctx, `SELECT source_key, vod_id, media_id, confidence, matched_by, is_locked, verified_at
+FROM resource_media_links WHERE media_id = $1
+ORDER BY is_locked DESC, confidence DESC LIMIT 1`, mediaID)
+	var link ResourceLink
+	var verifiedAt *time.Time
+	if err := row.Scan(&link.SourceKey, &link.VodID, &link.MediaID, &link.Confidence, &link.MatchedBy, &link.IsLocked, &verifiedAt); err != nil {
+		return ResourceLink{}, fmt.Errorf("find linked resource by media: %w", err)
+	}
+	if verifiedAt != nil {
+		link.VerifiedAt = *verifiedAt
+	}
+	return link, nil
+}
+
 // FindResourceLinkID 是 search.Service 使用的小型适配方法，
 // 使 search 包无需依赖 mediaidentity 的模型类型。
 func (store *PostgresStore) FindResourceLinkID(ctx context.Context, sourceKey, vodID string) (int, float64, string, error) {

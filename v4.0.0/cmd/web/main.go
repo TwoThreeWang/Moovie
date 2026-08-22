@@ -274,7 +274,7 @@ func main() {
 	snapshotStore := playback.NewPopularitySnapshotStore(databasePool)
 	siteTrendingSource := playback.NewSiteTrendingProvider(databasePool)
 	popularityRefresher := playback.NewPopularityRefresher(snapshotStore,
-		playback.NewCompositePopularProvider(popularSources...), siteTrendingSource, cfg.Popularity.RefreshInterval)
+		playback.NewCompositePopularProvider(popularSources...), siteTrendingSource, 24*time.Hour)
 	popularProvider := playback.PopularProvider(snapshotStore)
 	recommendationService := recommendation.NewService(catalogStore, recommendation.WithPersonalizer(postgresCatalogStore))
 	recommendationSnapshots := recommendation.NewSnapshotStore(databasePool)
@@ -312,8 +312,8 @@ func main() {
 		workerDispatcher.Handle(playback.TaskPopularityRefresh, 15*time.Minute, popularityRefresher.Handle)
 		workerDispatcher.Handle(playback.TaskSiteTrendingRefresh, 2*time.Minute, popularityRefresher.HandleSiteTrending)
 		workerDispatcher.Handle(recommendation.TaskRefresh, 5*time.Minute, recommendationRefresher.Handle)
-		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: cfg.Popularity.RefreshInterval})
-		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskSiteTrendingRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: playback.SiteTrendingRefreshInterval})
+		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled", Priority: 10}, Interval: 24 * time.Hour})
+		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskSiteTrendingRefresh, SubjectKey: "global", Reason: "scheduled", Priority: 10}, Interval: 24 * time.Hour})
 		if err := workerDispatcher.Start(); err != nil {
 			slog.Error("worker dispatcher failed to start", "error", err)
 			os.Exit(1)

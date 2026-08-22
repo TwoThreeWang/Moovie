@@ -211,8 +211,7 @@ const (
 	// TaskPopularityRefresh 是外部热门快照刷新任务的类型名。
 	TaskPopularityRefresh = "popularity_refresh"
 	// TaskSiteTrendingRefresh 是本站热播快照刷新任务的类型名。
-	TaskSiteTrendingRefresh     = "site_trending_refresh"
-	SiteTrendingRefreshInterval = 10 * time.Minute
+	TaskSiteTrendingRefresh = "site_trending_refresh"
 )
 
 // PopularityRefresher 是定时刷新热门快照的 Worker 任务。
@@ -229,7 +228,7 @@ func NewPopularityRefresher(store *PopularitySnapshotStore, provider, trending P
 	return &PopularityRefresher{store: store, provider: provider, trending: trending, ttl: 2 * interval}
 }
 
-// HandleSiteTrending 每 10 分钟从播放事件生成一次本站热播快照。
+// HandleSiteTrending 从播放事件生成本站热播快照。
 func (refresher *PopularityRefresher) HandleSiteTrending(ctx context.Context, _ workqueue.Job) error {
 	if refresher == nil || refresher.store == nil || refresher.trending == nil {
 		return fmt.Errorf("site trending refresher is not configured")
@@ -238,7 +237,7 @@ func (refresher *PopularityRefresher) HandleSiteTrending(ctx context.Context, _ 
 	if err != nil {
 		return err
 	}
-	return refresher.store.Replace(ctx, "trending", items, 2*SiteTrendingRefreshInterval)
+	return refresher.store.Replace(ctx, "trending", items, refresher.ttl)
 }
 
 // Handle 依次刷新四个分类，单个分类失败不影响其他分类。

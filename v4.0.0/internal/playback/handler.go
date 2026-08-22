@@ -44,6 +44,7 @@ type linkedMediaResolver interface {
 	mediaidentity.Resolver
 	FindByID(ctx context.Context, id int) (mediaidentity.Media, error)
 	FindResourceLink(ctx context.Context, sourceKey, vodID string) (mediaidentity.ResourceLink, error)
+	FindLinkedResource(ctx context.Context, mediaID int) (mediaidentity.ResourceLink, error)
 }
 
 // EpisodeSourceView 是同一集的预处理备选来源，可直接由模板渲染为可点击条目。
@@ -742,7 +743,34 @@ func (handler *Handler) watch(c *gin.Context) {
 		ranked = RankSameEpisode(filterSameEpisode(allCandidates, seasonNumber, episodeKey), seasonNumber, episodeKey)
 	}
 
-	// 6. 选择最佳候选。补录之后仍然没有候选，说明这条资源解析不出剧集结构
+	// 6. 仍然没有候选时，用 resource_media_links 找一条已关联的资源现场补录索引。
+	//    搜索结果已经知道"这部片有哪些资源"，只是剧集索引还没建好。
+	if len(ranked) == 0 {
+		if resolver, ok := handler.media.(linkedMediaResolver); ok {
+			if link, err := resolver.FindLinkedResource(c.Request.Context(), canonical.ID); err == nil &&
+				handler.indexWatchResource(c.Request.Context(), canonical, link.SourceKey, link.VodID) {
+				if epParam == "" {
+					episodeInfos, _ = handler.episodes.ListAllEpisodes(c.Request.Context(), canonical.ID)
+					if len(episodeInfos) > 0 {
+						seasonNumber, episodeKey = episodeInfos[0].SeasonNumber, episodeInfos[0].EpisodeKey
+						epParam = episodeInfos[0].EpisodeLabel
+						if epParam == "" {
+							epParam = episodeKey
+						}
+					}
+				}
+				allCandidates = allCandidates[:0]
+				if raw, queryErr := handler.episodes.ListResourceCandidates(c.Request.Context(), canonical.ID, seasonNumber, episodeKey); queryErr == nil {
+					for _, rc := range raw {
+						allCandidates = append(allCandidates, sourceCandidate(rc))
+					}
+				}
+				ranked = RankSameEpisode(filterSameEpisode(allCandidates, seasonNumber, episodeKey), seasonNumber, episodeKey)
+			}
+		}
+	}
+
+	// 7. 选择最佳候选。补录之后仍然没有候选，说明这条资源解析不出剧集结构
 	//    （分集格式不认识、或者干脆没关联到这部片子）——但它本身仍然能播，
 	//    这正是 /play 存在的场景，于是降级过去；实在没资源可播才回搜索页。
 	if len(ranked) == 0 {

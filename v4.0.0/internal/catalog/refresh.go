@@ -67,14 +67,21 @@ func (store *PostgresStore) EnqueueRefresh(ctx context.Context, doubanID, provid
 	if !validRefreshProvider(provider) {
 		return 0, workqueue.Terminal(fmt.Errorf("invalid metadata refresh provider %q", provider))
 	}
+	if skip, _ := store.alreadyComplete(ctx, provider, doubanID); skip {
+		return 0, nil
+	}
 	if cooling, err := store.coolingDown(ctx, provider, doubanID, reason); err != nil {
 		return 0, err
 	} else if cooling {
 		return 0, nil
 	}
+	priority := 0
+	if provider == RefreshProviderDouban {
+		priority = 5
+	}
 	return workqueue.NewPostgresStore(store.database).Enqueue(ctx, workqueue.Spec{
 		TaskType: provider, SubjectKey: doubanID, Payload: map[string]string{"douban_id": doubanID},
-		Reason: reason, RequestedBy: requestedBy,
+		Reason: reason, RequestedBy: requestedBy, Priority: priority,
 	})
 }
 
@@ -94,6 +101,28 @@ func (store *PostgresStore) coolingDown(ctx context.Context, provider, doubanID,
 		return false, fmt.Errorf("check refresh cooldown: %w", err)
 	}
 	return recent, nil
+}
+
+// alreadyComplete 检查该 provider 的数据是否已经存在，无需重复采集。
+func (store *PostgresStore) alreadyComplete(ctx context.Context, provider, doubanID string) (bool, error) {
+	var query string
+	switch provider {
+	case RefreshProviderDouban:
+		query = `SELECT completeness_score >= 70 AND metadata_status <> 'partial' FROM media WHERE douban_id = $1`
+	case RefreshProviderReviews:
+		query = `SELECT reviews_json <> '' AND reviews_json <> '[]' FROM media WHERE douban_id = $1`
+	case RefreshProviderTMDB:
+		query = `SELECT backdrops <> '' AND EXISTS (SELECT 1 FROM media_external_ids WHERE media_id = m.id AND provider = 'tmdb') FROM media m WHERE m.douban_id = $1`
+	case RefreshProviderEmbedding:
+		query = `SELECT semantic_hash <> '' FROM media WHERE douban_id = $1`
+	default:
+		return false, nil
+	}
+	var done bool
+	if err := store.database.QueryRow(ctx, query, doubanID).Scan(&done); err != nil {
+		return false, err
+	}
+	return done, nil
 }
 
 // EnqueueMediaRefresh 先把 media.id 换成豆瓣 ID，再走 EnqueueRefresh。
@@ -134,18 +163,24 @@ func validRefreshProvider(provider string) bool {
 	}
 }
 
-// ScheduleDueRefreshes 把到期的影片批量入队，并把下次刷新时间推后 24 小时。
+// ScheduleDueRefreshes 把到期且资料不完整的影片批量入队。
+// 资料已完整的影片清除 next_refresh_at，不再轮转。
 func (store *PostgresStore) ScheduleDueRefreshes(ctx context.Context, limit int) error {
 	if limit <= 0 {
 		limit = 20
 	}
 	_, err := store.database.Exec(ctx, `WITH due AS (
-    SELECT id, douban_id FROM media
+    SELECT id, douban_id, (metadata_status = 'partial' OR completeness_score < 70) AS incomplete
+    FROM media
     WHERE douban_id <> '' AND next_refresh_at IS NOT NULL AND next_refresh_at <= NOW()
     ORDER BY next_refresh_at, id LIMIT $1
+), skip_complete AS (
+    UPDATE media SET next_refresh_at = NULL
+    WHERE id IN (SELECT id FROM due WHERE NOT incomplete)
 ), queued AS (
     INSERT INTO worker_jobs (task_type, subject_key, payload, reason, status, available_at)
-    SELECT 'douban_metadata', douban_id, JSONB_BUILD_OBJECT('douban_id', douban_id), 'scheduled', 'pending', NOW() FROM due
+    SELECT 'douban_metadata', douban_id, JSONB_BUILD_OBJECT('douban_id', douban_id), 'scheduled', 'pending', NOW()
+    FROM due WHERE incomplete
     ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO NOTHING
     RETURNING subject_key
 )
@@ -157,8 +192,8 @@ WHERE douban_id IN (SELECT subject_key FROM queued)`, limit)
 	return nil
 }
 
-// ScheduleActiveContentRefreshes 为近期真正播放过、但资料已超过三天未刷新的媒体入队。
-// 这项查询必须由 Worker 使用的 catalog Store 实现，否则统一 Dispatcher 无法发现该能力。
+// ScheduleActiveContentRefreshes 为近期真正播放过、资料不完整或长期未刷新的媒体入队。
+// 资料已完整（completeness_score >= 70 且非 partial）的影片跳过，避免无谓刷新。
 func (store *PostgresStore) ScheduleActiveContentRefreshes(ctx context.Context, limit int) error {
 	if limit <= 0 {
 		limit = 10
@@ -174,6 +209,7 @@ func (store *PostgresStore) ScheduleActiveContentRefreshes(ctx context.Context, 
     JOIN media m ON m.id = active.media_id
     WHERE m.douban_id <> ''
       AND (m.last_metadata_sync_at IS NULL OR m.last_metadata_sync_at < NOW() - INTERVAL '3 days')
+      AND (m.metadata_status = 'partial' OR m.completeness_score < 70)
 )
 INSERT INTO worker_jobs (task_type, subject_key, payload, reason, status, available_at)
 SELECT 'douban_metadata', douban_id, JSONB_BUILD_OBJECT('douban_id', douban_id), 'active_content', 'pending', NOW() FROM stale

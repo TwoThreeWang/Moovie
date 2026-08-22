@@ -108,7 +108,7 @@ func main() {
 			Provider: playback.NewTMDBPopularProvider(client, cfg.Catalog.TMDBToken, mediaStore)})
 	}
 	popularityRefresher := playback.NewPopularityRefresher(playback.NewPopularitySnapshotStore(pool),
-		playback.NewCompositePopularProvider(popularSources...), playback.NewSiteTrendingProvider(pool), cfg.Popularity.RefreshInterval)
+		playback.NewCompositePopularProvider(popularSources...), playback.NewSiteTrendingProvider(pool), 24*time.Hour)
 	recommendationService := recommendation.NewService(movies, recommendation.WithPersonalizer(movies))
 	recommendationRefresher := recommendation.NewRefresher(recommendation.NewSnapshotStore(pool), recommendationService)
 	syncService := douban.NewService(douban.NewClient(client), libraryStore, jobs)
@@ -145,8 +145,8 @@ func main() {
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: "metadata_schedule", SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: catalog.TaskIMDbBackfill, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute, InitialDelay: 30 * time.Second})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: douban.TaskDaily, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour, InitialDelay: time.Minute})
-	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: cfg.Popularity.RefreshInterval})
-	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskSiteTrendingRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: playback.SiteTrendingRefreshInterval})
+	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled", Priority: 10}, Interval: 24 * time.Hour})
+	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskSiteTrendingRefresh, SubjectKey: "global", Reason: "scheduled", Priority: 10}, Interval: 24 * time.Hour})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: operations.TaskCleanup, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: operations.TaskHealthCheck, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Hour, InitialDelay: time.Hour})
 	if err := dispatcher.Start(); err != nil {
