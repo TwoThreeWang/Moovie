@@ -140,6 +140,11 @@ func (handler *Handler) runUnifiedSearch(c *gin.Context) (UnifiedResult, bool) {
 		if stale {
 			handler.refreshInBackground(cacheKey, query)
 		}
+		if refresher, ok := handler.unified.(UnifiedPlaybackRefresher); ok {
+			if refreshed, refreshErr := refresher.RefreshPlayback(c.Request.Context(), cached, query); refreshErr == nil {
+				cached = refreshed
+			}
+		}
 		return cached, true
 	}
 	if handler.unified == nil {

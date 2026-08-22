@@ -16,6 +16,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
+	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
 )
 
@@ -73,7 +74,7 @@ func TestMoviePageOnlyShowsDirectPlayForIndexedPlayableResources(t *testing.T) {
 	ready := httptest.NewRecorder()
 	router.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/movie/1292052", nil))
 	readyBody := ready.Body.String()
-	if ready.Code != http.StatusOK || !strings.Contains(readyBody, `href="/watch/1292052"`) || !strings.Contains(readyBody, "立即播放") || !strings.Contains(readyBody, "查看选集与线路") {
+	if ready.Code != http.StatusOK || !strings.Contains(readyBody, `href="/watch/1292052?source_key=source&vod_id=42"`) || !strings.Contains(readyBody, "立即播放") || !strings.Contains(readyBody, "查看选集与线路") {
 		t.Fatalf("playable movie page = %d/%s", ready.Code, readyBody)
 	}
 	if strings.Contains(readyBody, `hx-get="/api/htmx/search`) {
@@ -461,8 +462,13 @@ func (suggestions staticSuggester) Suggest(context.Context, string) ([]Suggestio
 
 type staticResourceLister struct{ playable bool }
 
-func (resources *staticResourceLister) HasPlayableResource(context.Context, int) (bool, error) {
-	return resources.playable, nil
+func (resources *staticResourceLister) PlaybackSummary(_ context.Context, mediaID int) (search.PlaybackSummary, error) {
+	summary := search.PlaybackSummary{MediaID: mediaID, State: search.PlaybackNone}
+	if resources.playable {
+		best := search.VodItem{SourceKey: "source", VodId: "42", PlaybackState: search.PlaybackReady}
+		summary.State, summary.ResourceCount, summary.BestResource = search.PlaybackReady, 1, &best
+	}
+	return summary, nil
 }
 
 type staticSimilarFinder []Movie

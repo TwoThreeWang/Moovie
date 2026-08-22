@@ -76,8 +76,8 @@ func TestSuccessfulSearchIsLoggedWithStableIPHash(t *testing.T) {
 
 func TestUnifiedSearchAPIKeepsGroupedAndUnmatchedResultsSeparate(t *testing.T) {
 	resources := &fakeSearcher{result: Result{Items: []VodItem{
-		{SourceKey: "a", VodId: "1", VodName: "沙丘", VodPic: "https://img.example/canonical.jpg", VodDoubanId: "1292052", MediaID: 9, SampleCount: 10, AvgSpeedMs: 300},
-		{SourceKey: "b", VodId: "2", VodName: "沙丘", MediaID: 9, SampleCount: 10, AvgSpeedMs: 100},
+		{SourceKey: "a", VodId: "1", VodName: "沙丘", VodPic: "https://img.example/canonical.jpg", VodDoubanId: "1292052", MediaID: 9, SampleCount: 10, AvgSpeedMs: 300, PlaybackState: PlaybackDirect},
+		{SourceKey: "b", VodId: "2", VodName: "沙丘", MediaID: 9, SampleCount: 10, AvgSpeedMs: 100, PlaybackState: PlaybackReady},
 		{SourceKey: "unknown", VodId: "3", VodName: "沙丘 未确认", VodPic: "https://img.example/unmatched.jpg", VodYear: "2026", VodArea: "中国", TypeName: "电视剧", VodActor: "演员甲,演员乙", VodRemarks: "更新至第06集", AvgSpeedMs: 100, SampleCount: 3, VodPlayUrl: "must-not-leak-play-url", VodContent: "must-not-leak-full-content"},
 	}}}
 	app := newSearchTestApp(t, resources, WithUnifiedSearcher(NewUnifiedSearchService(resources)))
@@ -137,6 +137,18 @@ func TestUnifiedSearchFragmentShowsCanonicalMediaWithoutPlaybackAction(t *testin
 	}
 }
 
+func TestUnifiedSearchFragmentUsesDirectPlayUntilCandidateIndexIsReady(t *testing.T) {
+	resources := &fakeSearcher{result: Result{Items: []VodItem{{
+		SourceKey: "source", VodId: "42", VodName: "待索引影片", VodDoubanId: "1292052",
+		MediaID: 9, PlaybackState: PlaybackDirect,
+	}}}}
+	app := newSearchTestApp(t, resources, WithUnifiedSearcher(NewUnifiedSearchService(resources)))
+	fragment := responseBody(t, app.client, app.baseURL+"/api/htmx/search?q=%E5%BE%85%E7%B4%A2%E5%BC%95")
+	if !strings.Contains(fragment, `href="/play/source/42?douban_id=1292052"`) || strings.Contains(fragment, `/watch/1292052`) {
+		t.Fatalf("direct playback fragment = %s", fragment)
+	}
+}
+
 func TestUnifiedSearchFragmentHidesCurrentMovieWithoutResources(t *testing.T) {
 	resources := &fakeSearcher{}
 	catalog := &recordingUnifiedCatalog{items: []UnifiedItem{
@@ -151,6 +163,22 @@ func TestUnifiedSearchFragmentHidesCurrentMovieWithoutResources(t *testing.T) {
 	response := performRequest(app.handler, "/api/v2/search?q=%E5%BD%B1%E7%89%87")
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "当前影片") {
 		t.Fatalf("unfiltered API = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestCachedSearchRefreshesPlaybackSummaryWithoutRepeatingSearch(t *testing.T) {
+	refresher := &cachePlaybackRefresher{}
+	app := newSearchTestApp(t, &fakeSearcher{}, WithUnifiedSearcher(refresher))
+	first := performRequest(app.handler, "/api/v2/search?q=cache")
+	second := performRequest(app.handler, "/api/v2/search?q=cache")
+	if first.Code != http.StatusOK || strings.Contains(first.Body.String(), `"resource_count":1`) {
+		t.Fatalf("first response = %d %s", first.Code, first.Body.String())
+	}
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), `"resource_count":1`) || !strings.Contains(second.Body.String(), `"playback_state":"ready"`) {
+		t.Fatalf("refreshed response = %d %s", second.Code, second.Body.String())
+	}
+	if refresher.searches != 1 || refresher.refreshes != 1 {
+		t.Fatalf("searches/refreshes = %d/%d", refresher.searches, refresher.refreshes)
 	}
 }
 
@@ -206,6 +234,21 @@ type fakeSearcher struct {
 	mu     sync.Mutex
 	result Result
 	calls  int
+}
+
+type cachePlaybackRefresher struct{ searches, refreshes int }
+
+func (refresher *cachePlaybackRefresher) SearchUnified(context.Context, UnifiedQuery) (UnifiedResult, error) {
+	refresher.searches++
+	return UnifiedResult{Items: []UnifiedItem{{MediaID: 7, Title: "缓存影片", PlaybackState: PlaybackNone, Resources: []UnifiedResource{}}}}, nil
+}
+
+func (refresher *cachePlaybackRefresher) RefreshPlayback(_ context.Context, result UnifiedResult, _ UnifiedQuery) (UnifiedResult, error) {
+	refresher.refreshes++
+	best := UnifiedResource{MediaID: 7, SourceKey: "source", VodId: "42", PlaybackState: PlaybackReady}
+	result.Items[0].PlaybackState, result.Items[0].ResourceCount = PlaybackReady, 1
+	result.Items[0].Resources, result.Items[0].BestResource = []UnifiedResource{best}, &best
+	return result, nil
 }
 
 func (searcher *fakeSearcher) Search(_ context.Context, _ string, _ bool) (*Result, error) {

@@ -17,6 +17,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
+	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/singleflight"
 )
@@ -86,9 +87,9 @@ type acceptingBackgroundRunner interface {
 	TryRun(task func(context.Context)) bool
 }
 
-// ResourceLister 判断某部影片是否已有可播放资源。
+// ResourceLister 返回某部影片的统一播放摘要。
 type ResourceLister interface {
-	HasPlayableResource(ctx context.Context, mediaID int) (bool, error)
+	PlaybackSummary(ctx context.Context, mediaID int) (search.PlaybackSummary, error)
 }
 
 // AirScheduleReader 提供某部作品尚未播出的剧集，用于详情页展示更新时间。
@@ -486,10 +487,10 @@ func (handler *Handler) movie(c *gin.Context) {
 		handler.queueEmbedding(c.Request.Context(), doubanID)
 	}
 	airSchedule := handler.airScheduleView(c.Request.Context(), movie)
-	hasPlayableResource := false
+	playbackSummary := search.PlaybackSummary{MediaID: movie.ID, State: search.PlaybackNone}
 	if handler.resources != nil {
-		if playable, resourceErr := handler.resources.HasPlayableResource(c.Request.Context(), movie.ID); resourceErr == nil {
-			hasPlayableResource = playable
+		if summary, resourceErr := handler.resources.PlaybackSummary(c.Request.Context(), movie.ID); resourceErr == nil {
+			playbackSummary = summary
 		}
 	}
 
@@ -502,7 +503,7 @@ func (handler *Handler) movie(c *gin.Context) {
 		"WatchedByCount": watchedByCount, "WishByCount": wishByCount,
 		"DirectorList": directors, "SearchTitle": searchTitle, "SimilarMovies": similarMovies,
 		"SeriesSeasons": seriesSeasons,
-		"AirSchedule":   airSchedule, "HasPlayableResource": hasPlayableResource,
+		"AirSchedule":   airSchedule, "Playback": playbackSummary,
 	}))
 }
 

@@ -237,6 +237,9 @@ func (refresher *PopularityRefresher) HandleSiteTrending(ctx context.Context, _ 
 	if err != nil {
 		return err
 	}
+	if len(items) == 0 {
+		return nil
+	}
 	return refresher.store.Replace(ctx, "trending", items, refresher.ttl)
 }
 

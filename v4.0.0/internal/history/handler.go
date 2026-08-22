@@ -8,6 +8,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
+	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,6 +18,7 @@ type Handler struct {
 	secret            string
 	now               func() time.Time
 	todayUpdateReader TodayUpdateReader
+	playbackReader    search.PlaybackSummaryReader
 	timeZone          string
 }
 
@@ -27,6 +29,11 @@ type HandlerOption func(*Handler)
 // 传空时回退到东八区——追剧更新时间必须按用户本地日历显示，UTC 会整体差一天。
 func WithTodayUpdateReader(reader TodayUpdateReader, timeZone string) HandlerOption {
 	return func(handler *Handler) { handler.todayUpdateReader, handler.timeZone = reader, timeZone }
+}
+
+// WithPlaybackSummaryReader 让今日更新根据最新播放摘要选择 /watch、/play 或详情页。
+func WithPlaybackSummaryReader(reader search.PlaybackSummaryReader) HandlerOption {
+	return func(handler *Handler) { handler.playbackReader = reader }
 }
 
 // NewHandler 创建观看记录处理器。

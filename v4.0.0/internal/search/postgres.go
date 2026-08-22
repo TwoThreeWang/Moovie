@@ -454,7 +454,7 @@ func (store *PostgresStore) PurgeStaleResources(ctx context.Context, staleDays i
 	cutoff := time.Now().AddDate(0, 0, -staleDays)
 	affected, err := store.database.Exec(ctx, `DELETE FROM vod_items v
 WHERE v.resource_status = 'stale'
-  AND COALESCE(v.last_seen_at, v.created_at) < $1
+  AND COALESCE(v.last_seen_at, v.last_visited_at) < $1
   AND COALESCE(v.last_played_at, '1970-01-01') < $1
   AND EXISTS (
       SELECT 1 FROM resource_media_links link

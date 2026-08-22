@@ -11,6 +11,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
 func TestSnapshotReadPrefersCanonicalDisplayFields(t *testing.T) {
@@ -69,6 +70,20 @@ func TestSnapshotReplaceRejectsEmptyPublishedRuns(t *testing.T) {
 	err := store.Replace(t.Context(), "tv", nil, time.Hour)
 	if !errors.Is(err, ErrEmptyPopularitySnapshot) {
 		t.Fatalf("Replace error = %v, want ErrEmptyPopularitySnapshot", err)
+	}
+}
+
+func TestSiteTrendingRefreshTreatsNoPlaybackAsSuccess(t *testing.T) {
+	mediaType := ""
+	refresher := NewPopularityRefresher(&PopularitySnapshotStore{}, nil, popularProviderFunc(func(_ context.Context, value string) ([]PopularSubject, error) {
+		mediaType = value
+		return nil, nil
+	}), time.Hour)
+	if err := refresher.HandleSiteTrending(t.Context(), workqueue.Job{}); err != nil {
+		t.Fatalf("HandleSiteTrending() error = %v", err)
+	}
+	if mediaType != "trending" {
+		t.Fatalf("media type = %q", mediaType)
 	}
 }
 

@@ -38,6 +38,7 @@ type UnifiedItem struct {
 	Actors        string            `json:"actors,omitempty"`
 	Duration      string            `json:"duration,omitempty"`
 	ResourceCount int               `json:"resource_count"`
+	PlaybackState PlaybackState     `json:"playback_state"`
 	Resources     []UnifiedResource `json:"resources"`
 	BestResource  *UnifiedResource  `json:"best_resource,omitempty"`
 	SearchAliases []string          `json:"-"`
@@ -46,22 +47,23 @@ type UnifiedItem struct {
 // UnifiedResource 刻意保持精简。搜索响应只需要稳定资源键和质量摘要；
 // 播放地址与完整来源数据仍只允许通过详情或播放端点获取。
 type UnifiedResource struct {
-	MediaID        int     `json:"media_id,omitempty"`
-	SourceKey      string  `json:"source_key"`
-	VodId          string  `json:"vod_id"`
-	VodName        string  `json:"name"`
-	VodRemarks     string  `json:"remarks,omitempty"`
-	VodYear        string  `json:"year,omitempty"`
-	TypeName       string  `json:"media_type,omitempty"`
-	CategoryName   string  `json:"category_name,omitempty"`
-	VodPic         string  `json:"poster,omitempty"`
-	VodArea        string  `json:"area,omitempty"`
-	VodActor       string  `json:"actors,omitempty"`
-	AvgSpeedMs     int     `json:"avg_speed_ms"`
-	SampleCount    int     `json:"sample_count"`
-	FailedCount    int     `json:"failed_count"`
-	SuccessRate    float64 `json:"success_rate"`
-	ResourceStatus string  `json:"resource_status,omitempty"`
+	MediaID        int           `json:"media_id,omitempty"`
+	SourceKey      string        `json:"source_key"`
+	VodId          string        `json:"vod_id"`
+	VodName        string        `json:"name"`
+	VodRemarks     string        `json:"remarks,omitempty"`
+	VodYear        string        `json:"year,omitempty"`
+	TypeName       string        `json:"media_type,omitempty"`
+	CategoryName   string        `json:"category_name,omitempty"`
+	VodPic         string        `json:"poster,omitempty"`
+	VodArea        string        `json:"area,omitempty"`
+	VodActor       string        `json:"actors,omitempty"`
+	AvgSpeedMs     int           `json:"avg_speed_ms"`
+	SampleCount    int           `json:"sample_count"`
+	FailedCount    int           `json:"failed_count"`
+	SuccessRate    float64       `json:"success_rate"`
+	ResourceStatus string        `json:"resource_status,omitempty"`
+	PlaybackState  PlaybackState `json:"playback_state"`
 }
 
 // UnifiedResult 是统一搜索的返回值。Unmatched 是没能归到任何媒体的裸资源；
@@ -80,6 +82,16 @@ type UnifiedResult struct {
 // UnifiedSearcher 是统一搜索接口。
 type UnifiedSearcher interface {
 	SearchUnified(ctx context.Context, query UnifiedQuery) (UnifiedResult, error)
+}
+
+// UnifiedPlaybackRefresher 只刷新缓存结果里的本地播放摘要，不重新请求外部资源站。
+type UnifiedPlaybackRefresher interface {
+	RefreshPlayback(ctx context.Context, result UnifiedResult, query UnifiedQuery) (UnifiedResult, error)
+}
+
+// PlaybackSummaryReader 批量读取媒体的最新播放摘要。
+type PlaybackSummaryReader interface {
+	ListPlaybackSummaries(ctx context.Context, mediaIDs []int) (map[int]PlaybackSummary, error)
 }
 
 // UnifiedCatalog 是媒体库一侧的检索能力（按标题/别名查 media 表，再批量取其资源）。
@@ -250,14 +262,7 @@ func (service *UnifiedSearchService) SearchUnified(ctx context.Context, query Un
 			break
 		}
 		group := groups[mediaID]
-		sort.SliceStable(group.Resources, func(left, right int) bool {
-			return resourceIsBetter(group.Resources[left], group.Resources[right])
-		})
-		group.ResourceCount = len(group.Resources)
-		if group.ResourceCount > 0 {
-			best := group.Resources[0]
-			group.BestResource = &best
-		}
+		finalizeUnifiedItem(group)
 		items = append(items, *group)
 	}
 	if len(items) == 0 && service.suggestions != nil {
@@ -271,6 +276,67 @@ func (service *UnifiedSearchService) SearchUnified(ctx context.Context, query Un
 	return UnifiedResult{Items: items, Unmatched: unmatched, FilteredCount: resourceResult.FilteredCount,
 		DurationMS: time.Since(started).Milliseconds(), ResourceDurationMS: resourceDuration, ResourceUnavailable: resourceUnavailable,
 		CatalogDurationMS: catalogDuration, CatalogFallback: catalogFallback}, nil
+}
+
+// RefreshPlayback 用数据库里的最新摘要覆盖缓存中的易变资源字段。
+// 搜索卡片元数据继续走长缓存，后台刚写入的资源则能在下一次请求立即出现。
+func (service *UnifiedSearchService) RefreshPlayback(ctx context.Context, result UnifiedResult, query UnifiedQuery) (UnifiedResult, error) {
+	reader, ok := service.catalog.(PlaybackSummaryReader)
+	if !ok || len(result.Items) == 0 {
+		return result, nil
+	}
+	items := append([]UnifiedItem(nil), result.Items...)
+	refreshIdentity := false
+	for _, item := range items {
+		if item.MediaID <= 0 && item.DoubanID != "" {
+			refreshIdentity = true
+			break
+		}
+	}
+	if refreshIdentity {
+		catalogItems, err := service.catalog.SearchUnifiedMedia(ctx, query)
+		if err != nil {
+			return result, err
+		}
+		byDoubanID := make(map[string]UnifiedItem, len(catalogItems))
+		for _, item := range catalogItems {
+			byDoubanID[item.DoubanID] = item
+		}
+		for index, item := range items {
+			if canonical, found := byDoubanID[item.DoubanID]; found {
+				items[index] = canonical
+				delete(byDoubanID, item.DoubanID)
+			}
+		}
+		for _, item := range catalogItems {
+			if _, found := byDoubanID[item.DoubanID]; found && len(items) < query.Limit {
+				items = append(items, item)
+			}
+		}
+	}
+	mediaIDs := make([]int, 0, len(result.Items))
+	for _, item := range items {
+		if item.MediaID > 0 {
+			mediaIDs = append(mediaIDs, item.MediaID)
+		}
+	}
+	summaries, err := reader.ListPlaybackSummaries(ctx, mediaIDs)
+	if err != nil {
+		return result, err
+	}
+	for index := range items {
+		item := &items[index]
+		item.Resources = []UnifiedResource{}
+		item.ResourceCount, item.BestResource, item.PlaybackState = 0, nil, PlaybackNone
+		for _, resource := range summaries[item.MediaID].Resources {
+			if !query.excludes(resource.SourceKey, resource.VodId) {
+				item.Resources = append(item.Resources, newUnifiedResource(resource))
+			}
+		}
+		finalizeUnifiedItem(item)
+	}
+	result.Items = items
+	return result, nil
 }
 
 // maxAliasResourceSearches 限制用别名再搜几轮，避免一个词发散成大量上游请求。
@@ -353,12 +419,19 @@ func unifiedItemFromResource(resource VodItem) *UnifiedItem {
 
 // appendUniqueUnifiedResource 按 source_key+vod_id 去重后追加资源。
 func appendUniqueUnifiedResource(group *UnifiedItem, resource VodItem) {
-	for _, existing := range group.Resources {
+	candidate := newUnifiedResource(resource)
+	if candidate.PlaybackState == PlaybackNone {
+		return
+	}
+	for index, existing := range group.Resources {
 		if existing.SourceKey == resource.SourceKey && existing.VodId == resource.VodId {
+			if resourceIsBetter(candidate, existing) {
+				group.Resources[index] = candidate
+			}
 			return
 		}
 	}
-	group.Resources = append(group.Resources, newUnifiedResource(resource))
+	group.Resources = append(group.Resources, candidate)
 }
 
 // newUnifiedResource 把内部资源模型裁剪成对外返回的精简结构。
@@ -367,7 +440,30 @@ func newUnifiedResource(item VodItem) UnifiedResource {
 		VodRemarks: item.VodRemarks, VodYear: item.VodYear, TypeName: normalizeMediaType(item.TypeName), CategoryName: item.TypeName,
 		VodPic: item.VodPic, VodArea: item.VodArea, VodActor: item.VodActor,
 		AvgSpeedMs: item.AvgSpeedMs, SampleCount: item.SampleCount, FailedCount: item.FailedCount,
-		SuccessRate: resourceSuccessRate(item.SampleCount, item.FailedCount), ResourceStatus: item.ResourceStatus}
+		SuccessRate: resourceSuccessRate(item.SampleCount, item.FailedCount), ResourceStatus: item.ResourceStatus,
+		PlaybackState: playbackState(item)}
+}
+
+func playbackState(item VodItem) PlaybackState {
+	if item.PlaybackState != "" {
+		return item.PlaybackState
+	}
+	if strings.TrimSpace(item.VodPlayUrl) != "" {
+		return PlaybackDirect
+	}
+	return PlaybackNone
+}
+
+func finalizeUnifiedItem(item *UnifiedItem) {
+	sort.SliceStable(item.Resources, func(left, right int) bool {
+		return resourceIsBetter(item.Resources[left], item.Resources[right])
+	})
+	item.ResourceCount = len(item.Resources)
+	item.PlaybackState, item.BestResource = PlaybackNone, nil
+	if item.ResourceCount > 0 {
+		best := item.Resources[0]
+		item.BestResource, item.PlaybackState = &best, best.PlaybackState
+	}
 }
 
 // GenreNames/CountryNames/DirectorNames/ActorNames 为规范影片卡提供精简列表。
@@ -402,6 +498,9 @@ func peopleNames(value string, limit int) []string {
 
 // resourceIsBetter 排序规则：先看成功率，再看首帧速度；没有样本的排在后面。
 func resourceIsBetter(left, right UnifiedResource) bool {
+	if left.PlaybackState != right.PlaybackState {
+		return left.PlaybackState == PlaybackReady
+	}
 	leftSuccess, rightSuccess := left.SuccessRate, right.SuccessRate
 	if leftSuccess != rightSuccess {
 		return leftSuccess > rightSuccess

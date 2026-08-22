@@ -128,8 +128,8 @@
                 {{ end }}
             </div>
             <div class="movie-primary-actions">
-                {{ if .HasPlayableResource }}
-                <a href="/watch/{{ .Movie.DoubanID }}" class="btn btn-primary movie-play-btn">
+                {{ if .Playback.Available }}
+                <a href="{{ if .Playback.Ready }}/watch/{{ .Movie.DoubanID }}?source_key={{ .Playback.BestResource.SourceKey }}&vod_id={{ .Playback.BestResource.VodId }}{{ else }}/play/{{ .Playback.BestResource.SourceKey }}/{{ .Playback.BestResource.VodId }}?douban_id={{ .Movie.DoubanID }}{{ end }}" class="btn btn-primary movie-play-btn">
                     <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
                         <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.2-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z"/>
                     </svg>
@@ -239,14 +239,14 @@
 
     <!-- 在线资源：已有可播放候选时不再重复执行全网搜索。 -->
     <div class="movie-section">
-        {{ if .HasPlayableResource }}
-        <h2 class="section-title">选集与线路</h2>
+        {{ if .Playback.Available }}
+        <h2 class="section-title">{{ if .Playback.Ready }}选集与线路{{ else }}在线播放资源{{ end }}</h2>
         <div class="movie-resource-ready">
             <div>
-                <strong>已找到可播放线路</strong>
-                <p>进入播放页选择选集，并可随时切换来源。</p>
+                <strong>{{ if .Playback.Ready }}已找到可播放线路{{ else }}已找到直连资源{{ end }}</strong>
+                <p>{{ if .Playback.Ready }}进入播放页选择选集，并可随时切换来源。{{ else }}该资源尚未完成选集索引，将使用资源直连播放。{{ end }}</p>
             </div>
-            <a href="/watch/{{ .Movie.DoubanID }}" class="movie-resource-link">查看选集与线路 →</a>
+            <a href="{{ if .Playback.Ready }}/watch/{{ .Movie.DoubanID }}?source_key={{ .Playback.BestResource.SourceKey }}&vod_id={{ .Playback.BestResource.VodId }}{{ else }}/play/{{ .Playback.BestResource.SourceKey }}/{{ .Playback.BestResource.VodId }}?douban_id={{ .Movie.DoubanID }}{{ end }}" class="movie-resource-link">{{ if .Playback.Ready }}查看选集与线路{{ else }}立即播放{{ end }} →</a>
         </div>
         {{ else }}
         <h2 class="section-title">查找在线播放资源</h2>

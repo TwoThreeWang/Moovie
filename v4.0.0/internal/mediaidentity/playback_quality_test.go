@@ -46,14 +46,18 @@ func TestRecordPlaybackEventRejectsUnboundIdentity(t *testing.T) {
 func TestResourceCandidateQueryReadsFromVodItems(t *testing.T) {
 	for _, expected := range []string{
 		"SELECT candidate.id, line.id",
-		"LEFT JOIN vod_items resource",
+		"JOIN vod_items resource",
 		"resource.success_count",
 		"resource.failure_count",
 		"resource.avg_speed_ms",
 		"resource_media_links",
+		"COALESCE(candidate.play_url, '') <> ''",
+		"COALESCE(resource.resource_status, 'active') <> 'removed'",
+		"COALESCE(resource.vod_play_url, '') <> ''",
 	} {
-		if !strings.Contains(resourceCandidateSelect, expected) {
-			t.Fatalf("candidate query missing %q: %s", expected, resourceCandidateSelect)
+		query := resourceCandidateSelect + playableCandidateFilter
+		if !strings.Contains(query, expected) {
+			t.Fatalf("candidate query missing %q: %s", expected, query)
 		}
 	}
 }

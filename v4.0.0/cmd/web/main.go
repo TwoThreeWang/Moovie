@@ -350,6 +350,9 @@ func main() {
 	if updateReader, ok := mediaIdentityStore.(history.TodayUpdateReader); ok {
 		historyOptions = append(historyOptions, history.WithTodayUpdateReader(updateReader, cfg.Database.TimeZone))
 	}
+	if playbackReader, ok := itemStore.(search.PlaybackSummaryReader); ok {
+		historyOptions = append(historyOptions, history.WithPlaybackSummaryReader(playbackReader))
+	}
 	historyHandler := history.NewHandler(historyStore, cfg.AppSecret, historyOptions...)
 	libraryHandler := library.NewHandler(libraryStore, cfg.AppSecret)
 	identityHandler := identity.NewHandler(cfg, identityStore, identity.WithHistoryCounter(historyStore), identity.WithLibraryCounter(libraryStore), identity.WithMonthlyReportReader(reportStore), identity.WithFeedbackCounter(feedbackStore))

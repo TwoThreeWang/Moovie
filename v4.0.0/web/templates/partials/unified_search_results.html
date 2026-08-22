@@ -35,7 +35,7 @@
             <div class="card-playback">
                 {{ if .BestResource }}
                 <span class="playback-match">已匹配 <strong>{{ .ResourceCount }}</strong> 个播放资源</span>
-                <a href="{{ if .DoubanID }}/watch/{{ .DoubanID }}?source_key={{ .BestResource.SourceKey }}&vod_id={{ .BestResource.VodId }}{{ else }}/play/{{ .BestResource.SourceKey }}/{{ .BestResource.VodId }}{{ end }}" class="playback-action">立即播放 <span aria-hidden="true">→</span></a>
+                <a href="{{ if and .DoubanID (eq .BestResource.PlaybackState "ready") }}/watch/{{ .DoubanID }}?source_key={{ .BestResource.SourceKey }}&vod_id={{ .BestResource.VodId }}{{ else }}/play/{{ .BestResource.SourceKey }}/{{ .BestResource.VodId }}{{ if .DoubanID }}?douban_id={{ .DoubanID }}{{ end }}{{ end }}" class="playback-action">立即播放 <span aria-hidden="true">→</span></a>
                 {{ else }}
                 <span class="playback-match playback-unavailable">暂未匹配播放资源</span>
                 {{ end }}

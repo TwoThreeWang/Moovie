@@ -70,9 +70,35 @@ type VodItem struct {
 	FailedCount    int       `json:"failed_count"`
 	ResourceStatus string    `json:"resource_status,omitempty"`
 	// MediaID 指向规范媒体；source_key 与 vod_id 共同标识具体资源。
-	MediaID         int     `json:"media_id,omitempty"`
-	MediaMatch      string  `json:"media_match,omitempty"`
-	MediaConfidence float64 `json:"media_confidence,omitempty"`
+	MediaID         int           `json:"media_id,omitempty"`
+	MediaMatch      string        `json:"media_match,omitempty"`
+	MediaConfidence float64       `json:"media_confidence,omitempty"`
+	PlaybackState   PlaybackState `json:"playback_state,omitempty"`
+}
+
+// PlaybackState 是全站统一的播放可用性：ready 走 /watch，direct 走 /play，
+// none 表示当前没有已经确认可用的播放入口。
+type PlaybackState string
+
+const (
+	PlaybackNone   PlaybackState = "none"
+	PlaybackDirect PlaybackState = "direct"
+	PlaybackReady  PlaybackState = "ready"
+)
+
+// PlaybackSummary 是媒体级播放摘要，搜索、详情和首页入口共用这一份判断。
+type PlaybackSummary struct {
+	MediaID       int
+	State         PlaybackState
+	ResourceCount int
+	Resources     []VodItem
+	BestResource  *VodItem
+}
+
+func (summary PlaybackSummary) Ready() bool  { return summary.State == PlaybackReady }
+func (summary PlaybackSummary) Direct() bool { return summary.State == PlaybackDirect }
+func (summary PlaybackSummary) Available() bool {
+	return summary.State != PlaybackNone && summary.BestResource != nil
 }
 
 // GetGenres/GetDirectors/GetActors 把逗号分隔的字段拆成切片，供模板渲染。

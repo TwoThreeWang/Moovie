@@ -8,6 +8,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
+	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
 )
 
@@ -28,6 +29,7 @@ type TodayUpdate struct {
 	// WatchingLabel 是用户当前的观看位置，例如 "第 3 集"。
 	// 它让"已更新到第 7 集但你看到第 3 集"这件事在首页就能被看到。
 	WatchingLabel string
+	Playback      search.PlaybackSummary
 }
 
 // todayUpdatesLimit 限制首页一次展示的更新条目。
@@ -84,6 +86,15 @@ func (handler *Handler) todayUpdates(c *gin.Context) {
 		c.Status(http.StatusOK)
 		return
 	}
+	playback := make(map[int]search.PlaybackSummary)
+	if handler.playbackReader != nil {
+		if summaries, summaryErr := handler.playbackReader.ListPlaybackSummaries(c.Request.Context(), mediaIDs); summaryErr == nil {
+			playback = summaries
+		} else {
+			requestmeta.Logger(c.Request.Context()).Warn("today updates: load playback summaries failed",
+				"user_id", userID, "error", summaryErr)
+		}
+	}
 
 	// 一部剧同一天可能连更多集，这里只保留集号最大的一集作为"最新更新"。
 	// units 已按 media_id、season、episode 升序，因此后来的覆盖先前的即可。
@@ -111,6 +122,7 @@ func (handler *Handler) todayUpdates(c *gin.Context) {
 			EpisodeLabel:  mediaidentity.EpisodeLabel(unit.SeasonNumber, unit.EpisodeNumber),
 			EpisodeTitle:  unit.Title,
 			WatchingLabel: record.Episode,
+			Playback:      playback[mediaID],
 		})
 		if len(updates) >= todayUpdatesLimit {
 			break

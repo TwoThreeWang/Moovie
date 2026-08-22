@@ -59,43 +59,27 @@ func TestPostgresStoreSearchesCanonicalMediaAndAliases(t *testing.T) {
 	}
 }
 
-func TestPostgresStoreListsOnlyLinkedNonRemovedResources(t *testing.T) {
+func TestPostgresStoreBuildsReadyPlaybackSummaryFromUsableResources(t *testing.T) {
 	visitedAt := time.Date(2026, time.August, 3, 1, 2, 3, 0, time.UTC)
 	database := &fakeSQLDatabase{rows: &fakeSQLRows{values: [][]any{{
 		int64(7), "source", "42", "流浪地球", "副标题", "Wandering Earth", "tag", "科幻",
 		"poster", "actor", "director", "blurb", "完结", "2019-01-01", "1", "1",
 		"中国", "国语", "2019", "125分钟", "today", "26266893", "content", "正片$url",
-		"电影", visitedAt, int64(120), int64(10), int64(1), "active", int64(7), float64(0), "",
+		"电影", visitedAt, int64(120), int64(10), int64(1), "active", int64(7), float64(0), "", "ready",
 	}}}}
 	store := NewPostgresStore(database)
-	items, err := store.ListUnifiedResources(t.Context(), []int{7})
+	summaries, err := store.ListPlaybackSummaries(t.Context(), []int{7})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].MediaID != 7 || items[0].VodId != "42" || items[0].AvgSpeedMs != 120 {
-		t.Fatalf("resources = %+v", items)
+	summary := summaries[7]
+	if !summary.Ready() || summary.ResourceCount != 1 || summary.BestResource == nil || summary.BestResource.VodId != "42" {
+		t.Fatalf("summary = %+v", summary)
 	}
-	for _, expected := range []string{"resource_media_links", "media_link.media_id = ANY($1::bigint[])", "resource.resource_status", "<> 'removed'"} {
+	for _, expected := range []string{"resource_media_links", "media_link.media_id = ANY($1::bigint[])", "resource_episode_candidates", "candidate.play_url", "vod_play_url", "<> 'removed'"} {
 		if !strings.Contains(database.query, expected) {
 			t.Fatalf("resource query missing %q: %s", expected, database.query)
 		}
-	}
-}
-
-func TestPostgresStoreRequiresIndexedActivePlaybackForDirectPlay(t *testing.T) {
-	database := &fakeSQLDatabase{row: fakeSQLRow{value: true}}
-	store := NewPostgresStore(database)
-	playable, err := store.HasPlayableResource(t.Context(), 7)
-	if err != nil || !playable {
-		t.Fatalf("playable/error = %t/%v", playable, err)
-	}
-	for _, expected := range []string{"resource_episode_candidates", "resource_play_lines", "vod_items", "candidate.media_id = $1", "vod_play_url", "resource_status NOT IN"} {
-		if !strings.Contains(database.query, expected) {
-			t.Fatalf("playable query missing %q: %s", expected, database.query)
-		}
-	}
-	if !reflect.DeepEqual(database.arguments, []any{7}) {
-		t.Fatalf("playable arguments = %#v", database.arguments)
 	}
 }
 
@@ -260,6 +244,9 @@ func TestPostgresStoreCleanupUsesBoundedRetentionPredicates(t *testing.T) {
 	before := time.Now().Add(-7 * 24 * time.Hour)
 	if _, err := store.DeleteHealthBefore(context.Background(), before); err != nil || database.execQuery != "DELETE FROM site_stats WHERE bucket < $1" || !reflect.DeepEqual(database.arguments, []any{before}) {
 		t.Fatalf("health cleanup = %s / %v / %v", database.execQuery, database.arguments, err)
+	}
+	if _, err := store.PurgeStaleResources(context.Background(), 90); err != nil || !strings.Contains(database.execQuery, "COALESCE(v.last_seen_at, v.last_visited_at) < $1") || strings.Contains(database.execQuery, "v.created_at") {
+		t.Fatalf("stale resource cleanup = %s / %v", database.execQuery, err)
 	}
 }
 

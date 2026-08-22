@@ -8,8 +8,8 @@ import (
 
 func TestUnifiedSearchGroupsOnlyTrustedMediaLinks(t *testing.T) {
 	resources := &recordingUnifiedResources{result: Result{FilteredCount: 3, Items: []VodItem{
-		{SourceKey: "slow", VodId: "1", VodName: "流浪地球", VodEn: "The Wandering Earth", VodYear: "2019", TypeName: "电影", MediaID: 7, SampleCount: 10, FailedCount: 1, AvgSpeedMs: 80},
-		{SourceKey: "reliable", VodId: "2", VodName: "流浪地球", VodYear: "2019", TypeName: "movie", MediaID: 7, SampleCount: 20, FailedCount: 1, AvgSpeedMs: 500},
+		{SourceKey: "slow", VodId: "1", VodName: "流浪地球", VodEn: "The Wandering Earth", VodYear: "2019", TypeName: "电影", MediaID: 7, SampleCount: 10, FailedCount: 1, AvgSpeedMs: 80, PlaybackState: PlaybackDirect},
+		{SourceKey: "reliable", VodId: "2", VodName: "流浪地球", VodYear: "2019", TypeName: "movie", MediaID: 7, SampleCount: 20, FailedCount: 1, AvgSpeedMs: 500, PlaybackState: PlaybackDirect},
 		{SourceKey: "unknown-a", VodId: "3", VodName: "流浪地球 未确认", VodYear: "2019", TypeName: "电影"},
 		{SourceKey: "unknown-b", VodId: "4", VodName: "流浪地球 未确认", VodYear: "2019", TypeName: "电影"},
 		{SourceKey: "tv", VodId: "5", VodName: "流浪地球 剧集", VodYear: "2019", TypeName: "电视剧", MediaID: 8},
@@ -78,8 +78,8 @@ func TestUnifiedSearchFallsBackToDoubanSuggestionsWithoutCanonicalItems(t *testi
 
 func TestUnifiedSearchExcludesCurrentPlaybackResource(t *testing.T) {
 	resources := &recordingUnifiedResources{result: Result{Items: []VodItem{
-		{SourceKey: "current", VodId: "1", VodName: "影片", MediaID: 7, SampleCount: 10, AvgSpeedMs: 20},
-		{SourceKey: "alternative", VodId: "2", VodName: "影片", MediaID: 7, SampleCount: 10, AvgSpeedMs: 40},
+		{SourceKey: "current", VodId: "1", VodName: "影片", MediaID: 7, SampleCount: 10, AvgSpeedMs: 20, PlaybackState: PlaybackDirect},
+		{SourceKey: "alternative", VodId: "2", VodName: "影片", MediaID: 7, SampleCount: 10, AvgSpeedMs: 40, PlaybackState: PlaybackDirect},
 		{SourceKey: "current", VodId: "1", VodName: "未确认的重复资源"},
 	}}}
 	result, err := NewUnifiedSearchService(resources).SearchUnified(t.Context(), UnifiedQuery{
@@ -98,14 +98,14 @@ func TestUnifiedSearchExcludesCurrentPlaybackResource(t *testing.T) {
 
 func TestUnifiedSearchPrefersCanonicalMetadataAndSupplementsResources(t *testing.T) {
 	resources := &recordingUnifiedResources{result: Result{Items: []VodItem{
-		{SourceKey: "fresh", VodId: "2", VodName: "资源标题", MediaID: 7, SampleCount: 5, AvgSpeedMs: 90},
+		{SourceKey: "fresh", VodId: "2", VodName: "资源标题", MediaID: 7, SampleCount: 5, AvgSpeedMs: 90, PlaybackState: PlaybackDirect},
 		{SourceKey: "unknown", VodId: "3", VodName: "未确认资源"},
 	}}}
 	catalog := &recordingUnifiedCatalog{
 		items: []UnifiedItem{{MediaID: 7, Title: "规范标题", OriginalTitle: "Canonical Title", Year: "2026", MediaType: "movie", Poster: "canonical-poster"}},
 		resources: []VodItem{
-			{SourceKey: "stored", VodId: "1", VodName: "旧资源标题", MediaID: 7, SampleCount: 5, AvgSpeedMs: 300},
-			{SourceKey: "fresh", VodId: "2", VodName: "重复缓存资源", MediaID: 7, SampleCount: 5, AvgSpeedMs: 90},
+			{SourceKey: "stored", VodId: "1", VodName: "旧资源标题", MediaID: 7, SampleCount: 5, AvgSpeedMs: 300, PlaybackState: PlaybackDirect},
+			{SourceKey: "fresh", VodId: "2", VodName: "重复缓存资源", MediaID: 7, SampleCount: 5, AvgSpeedMs: 90, PlaybackState: PlaybackReady},
 		},
 	}
 	service := NewUnifiedSearchService(resources, WithUnifiedCatalog(catalog))
@@ -118,6 +118,9 @@ func TestUnifiedSearchPrefersCanonicalMetadataAndSupplementsResources(t *testing
 	}
 	if result.Items[0].ResourceCount != 2 || result.Items[0].BestResource == nil || result.Items[0].BestResource.SourceKey != "fresh" {
 		t.Fatalf("supplemented resources = %+v", result.Items[0].Resources)
+	}
+	if result.Items[0].PlaybackState != PlaybackReady || result.Items[0].BestResource.PlaybackState != PlaybackReady {
+		t.Fatalf("duplicate resource did not upgrade to ready: %+v", result.Items[0])
 	}
 	if len(catalog.mediaIDs) != 1 || catalog.mediaIDs[0] != 7 {
 		t.Fatalf("catalog resource IDs = %v", catalog.mediaIDs)
@@ -158,6 +161,36 @@ func TestUnifiedSearchUsesCanonicalAliasForMissingResourceCard(t *testing.T) {
 	}
 }
 
+func TestRefreshPlaybackReplacesCachedResourceStateFromCatalog(t *testing.T) {
+	catalog := &recordingUnifiedCatalog{
+		items: []UnifiedItem{{MediaID: 7, DoubanID: "37450627", Title: "规范标题"}},
+		summaries: map[int]PlaybackSummary{
+			7: {
+				MediaID: 7,
+				State:   PlaybackReady,
+				Resources: []VodItem{
+					{MediaID: 7, SourceKey: "direct", VodId: "1", PlaybackState: PlaybackDirect},
+					{MediaID: 7, SourceKey: "ready", VodId: "2", PlaybackState: PlaybackReady},
+				},
+			},
+		},
+	}
+	service := NewUnifiedSearchService(&recordingUnifiedResources{}, WithUnifiedCatalog(catalog))
+	result, err := service.RefreshPlayback(t.Context(), UnifiedResult{Items: []UnifiedItem{{
+		DoubanID: "37450627", Title: "缓存建议", PlaybackState: PlaybackNone, Resources: []UnifiedResource{},
+	}}}, UnifiedQuery{Keyword: "规范标题", ExcludeSourceKey: "direct", ExcludeVodID: "1", Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.summaryMediaIDs) != 1 || catalog.summaryMediaIDs[0] != 7 {
+		t.Fatalf("summary media IDs = %v", catalog.summaryMediaIDs)
+	}
+	item := result.Items[0]
+	if item.MediaID != 7 || item.Title != "规范标题" || item.PlaybackState != PlaybackReady || item.ResourceCount != 1 || item.BestResource == nil || item.BestResource.SourceKey != "ready" {
+		t.Fatalf("refreshed item = %+v", item)
+	}
+}
+
 type recordingUnifiedResources struct {
 	result  Result
 	keyword string
@@ -183,10 +216,12 @@ func (resources *recordingUnifiedResources) Search(_ context.Context, keyword st
 }
 
 type recordingUnifiedCatalog struct {
-	items     []UnifiedItem
-	resources []VodItem
-	mediaIDs  []int
-	err       error
+	items           []UnifiedItem
+	resources       []VodItem
+	summaries       map[int]PlaybackSummary
+	mediaIDs        []int
+	summaryMediaIDs []int
+	err             error
 }
 
 func (catalog *recordingUnifiedCatalog) SearchUnifiedMedia(context.Context, UnifiedQuery) ([]UnifiedItem, error) {
@@ -196,4 +231,9 @@ func (catalog *recordingUnifiedCatalog) SearchUnifiedMedia(context.Context, Unif
 func (catalog *recordingUnifiedCatalog) ListUnifiedResources(_ context.Context, mediaIDs []int) ([]VodItem, error) {
 	catalog.mediaIDs = append([]int(nil), mediaIDs...)
 	return append([]VodItem(nil), catalog.resources...), catalog.err
+}
+
+func (catalog *recordingUnifiedCatalog) ListPlaybackSummaries(_ context.Context, mediaIDs []int) (map[int]PlaybackSummary, error) {
+	catalog.summaryMediaIDs = append([]int(nil), mediaIDs...)
+	return catalog.summaries, catalog.err
 }

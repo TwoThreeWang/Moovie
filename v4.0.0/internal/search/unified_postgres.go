@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/mediatitle"
@@ -56,7 +57,7 @@ LIMIT $6`, pattern, normalizedPattern, strings.TrimSpace(query.Year), normalizeM
 	return items, nil
 }
 
-// ListUnifiedResources 批量取出这些媒体下挂着的全部资源。
+// ListUnifiedResources 批量取出这些媒体下挂着的有效播放资源。
 func (store *PostgresStore) ListUnifiedResources(ctx context.Context, mediaIDs []int) ([]VodItem, error) {
 	if len(mediaIDs) == 0 {
 		return []VodItem{}, nil
@@ -68,11 +69,21 @@ func (store *PostgresStore) ListUnifiedResources(ctx context.Context, mediaIDs [
 	// 别名必须叫 media_link：vodItemColumns 末尾三列读的就是 media_link.*。
 	// 这里已经 JOIN 了 resource_media_links，所以不再叠 resourceMediaLinkJoin
 	// 那个 LATERAL——同一张表查两遍纯属浪费。
-	rows, err := store.database.Query(ctx, `SELECT media_link.media_id, `+vodItemColumns+`
+	rows, err := store.database.Query(ctx, `SELECT media_link.media_id, `+vodItemColumns+`,
+	CASE WHEN EXISTS (
+	    SELECT 1 FROM resource_episode_candidates candidate
+	    JOIN resource_play_lines line ON line.id = candidate.line_id
+	    WHERE candidate.media_id = media_link.media_id
+	      AND line.source_key = media_link.source_key AND line.vod_id = media_link.vod_id
+	      AND candidate.resource_status NOT IN ('retired', 'deleted')
+	      AND line.resource_status NOT IN ('retired', 'deleted')
+	      AND COALESCE(candidate.play_url, '') <> ''
+	) THEN 'ready' ELSE 'direct' END
 FROM resource_media_links media_link
 JOIN vod_items resource ON resource.source_key = media_link.source_key AND resource.vod_id = media_link.vod_id
 WHERE media_link.media_id = ANY($1::bigint[])
   AND COALESCE(resource.resource_status, 'active') <> 'removed'
+  AND COALESCE(resource.vod_play_url, '') <> ''
 ORDER BY media_link.media_id, resource.last_visited_at DESC`, identifiers)
 	if err != nil {
 		return nil, fmt.Errorf("list unified resources: %w", err)
@@ -80,28 +91,43 @@ ORDER BY media_link.media_id, resource.last_visited_at DESC`, identifiers)
 	return scanUnifiedResources(rows)
 }
 
-// HasPlayableResource 与 /watch 的输入保持一致：只有已经建立剧集候选、线路仍有效，
-// 且资源详情包含播放地址时，详情页才展示“立即播放”。
-func (store *PostgresStore) HasPlayableResource(ctx context.Context, mediaID int) (bool, error) {
-	if mediaID <= 0 {
-		return false, nil
+// ListPlaybackSummaries 批量聚合媒体播放状态，供搜索缓存、详情页和首页入口共用。
+func (store *PostgresStore) ListPlaybackSummaries(ctx context.Context, mediaIDs []int) (map[int]PlaybackSummary, error) {
+	summaries := make(map[int]PlaybackSummary, len(mediaIDs))
+	for _, mediaID := range mediaIDs {
+		summaries[mediaID] = PlaybackSummary{MediaID: mediaID, State: PlaybackNone, Resources: []VodItem{}}
 	}
-	var playable bool
-	err := store.database.QueryRow(ctx, `SELECT EXISTS (
-	    SELECT 1
-	    FROM resource_episode_candidates candidate
-	    JOIN resource_play_lines line ON line.id = candidate.line_id
-	    JOIN vod_items resource ON resource.source_key = line.source_key AND resource.vod_id = line.vod_id
-	    WHERE candidate.media_id = $1
-	      AND candidate.resource_status NOT IN ('retired', 'deleted')
-	      AND line.resource_status NOT IN ('retired', 'deleted')
-	      AND COALESCE(resource.resource_status, 'active') <> 'removed'
-	      AND COALESCE(resource.vod_play_url, '') <> ''
-	)`, mediaID).Scan(&playable)
+	resources, err := store.ListUnifiedResources(ctx, mediaIDs)
 	if err != nil {
-		return false, fmt.Errorf("check playable resource: %w", err)
+		return nil, err
 	}
-	return playable, nil
+	for _, resource := range resources {
+		summary := summaries[resource.MediaID]
+		summary.MediaID = resource.MediaID
+		summary.Resources = append(summary.Resources, resource)
+		summaries[resource.MediaID] = summary
+	}
+	for mediaID, summary := range summaries {
+		sort.SliceStable(summary.Resources, func(left, right int) bool {
+			return resourceIsBetter(newUnifiedResource(summary.Resources[left]), newUnifiedResource(summary.Resources[right]))
+		})
+		summary.ResourceCount = len(summary.Resources)
+		if summary.ResourceCount > 0 {
+			best := summary.Resources[0]
+			summary.BestResource, summary.State = &best, playbackState(best)
+		}
+		summaries[mediaID] = summary
+	}
+	return summaries, nil
+}
+
+// PlaybackSummary 返回单部媒体的统一播放摘要。
+func (store *PostgresStore) PlaybackSummary(ctx context.Context, mediaID int) (PlaybackSummary, error) {
+	summaries, err := store.ListPlaybackSummaries(ctx, []int{mediaID})
+	if err != nil {
+		return PlaybackSummary{}, err
+	}
+	return summaries[mediaID], nil
 }
 
 // scanUnifiedResources 比 scanVodItems 多扫一列 media_id（查询里在最前面）。
@@ -118,7 +144,7 @@ func scanUnifiedResources(rows database.Rows) ([]VodItem, error) {
 			&item.VodDuration, &item.VodTime, &item.VodDoubanId, &item.VodContent,
 			&item.VodPlayUrl, &item.TypeName, &item.LastVisitedAt, &item.AvgSpeedMs,
 			&item.SampleCount, &item.FailedCount, &item.ResourceStatus,
-			&item.MediaID, &item.MediaConfidence, &item.MediaMatch,
+			&item.MediaID, &item.MediaConfidence, &item.MediaMatch, &item.PlaybackState,
 		); err != nil {
 			return nil, fmt.Errorf("scan unified resource: %w", err)
 		}

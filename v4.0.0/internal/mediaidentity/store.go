@@ -887,7 +887,7 @@ func (store *PostgresStore) ListResourceCandidates(ctx context.Context, mediaID,
 	return store.listResourceCandidates(ctx, resourceCandidateSelect+`
 WHERE candidate.media_id = $1 AND candidate.season_number = $2 AND candidate.episode_key = $3
   AND candidate.resource_status NOT IN ('retired', 'deleted')
-  AND line.resource_status NOT IN ('retired', 'deleted')
+  AND line.resource_status NOT IN ('retired', 'deleted')`+playableCandidateFilter+`
 ORDER BY line.sort_order ASC, candidate.sort_order ASC`, mediaID, seasonNumber, episodeKey)
 }
 
@@ -896,12 +896,16 @@ func (store *PostgresStore) ListAllEpisodes(ctx context.Context, mediaID int) ([
 	if mediaID <= 0 {
 		return nil, nil
 	}
-	rows, err := store.database.Query(ctx, `SELECT season_number, episode_key,
-		MIN(episode_label) AS episode_label, COUNT(DISTINCT line_id) AS source_count
-		FROM resource_episode_candidates
-		WHERE media_id = $1 AND resource_status NOT IN ('retired','deleted')
-		GROUP BY season_number, episode_key
-		ORDER BY season_number ASC, episode_key ASC`, mediaID)
+	rows, err := store.database.Query(ctx, `SELECT candidate.season_number, candidate.episode_key,
+		MIN(candidate.episode_label) AS episode_label, COUNT(DISTINCT candidate.line_id) AS source_count
+		FROM resource_episode_candidates candidate
+		JOIN resource_play_lines line ON line.id = candidate.line_id
+		JOIN vod_items resource ON resource.source_key = line.source_key AND resource.vod_id = line.vod_id
+		WHERE candidate.media_id = $1
+		  AND candidate.resource_status NOT IN ('retired','deleted')
+		  AND line.resource_status NOT IN ('retired','deleted')`+playableCandidateFilter+`
+		GROUP BY candidate.season_number, candidate.episode_key
+		ORDER BY candidate.season_number ASC, candidate.episode_key ASC`, mediaID)
 	if err != nil {
 		return nil, fmt.Errorf("list all episodes: %w", err)
 	}
@@ -925,9 +929,14 @@ func (store *PostgresStore) ListUnitResourceCandidates(ctx context.Context, medi
 	return store.listResourceCandidates(ctx, resourceCandidateSelect+`
 WHERE candidate.media_unit_id = $1
   AND candidate.resource_status NOT IN ('retired', 'deleted')
-  AND line.resource_status NOT IN ('retired', 'deleted')
+  AND line.resource_status NOT IN ('retired', 'deleted')`+playableCandidateFilter+`
 ORDER BY line.sort_order ASC, candidate.sort_order ASC`, mediaUnitID)
 }
+
+const playableCandidateFilter = `
+  AND COALESCE(candidate.play_url, '') <> ''
+  AND COALESCE(resource.resource_status, 'active') <> 'removed'
+  AND COALESCE(resource.vod_play_url, '') <> ''`
 
 const resourceCandidateSelect = `SELECT candidate.id, line.id, line.line_key, line.line_label, line.sort_order,
 line.source_key, line.vod_id, candidate.media_id, candidate.media_unit_id, candidate.season_number,
@@ -939,7 +948,7 @@ COALESCE(resource.avg_speed_ms, 0)::INTEGER,
 COALESCE(link.confidence, 0)
 FROM resource_episode_candidates candidate
 JOIN resource_play_lines line ON line.id = candidate.line_id
-LEFT JOIN vod_items resource ON resource.source_key = line.source_key AND resource.vod_id = line.vod_id
+JOIN vod_items resource ON resource.source_key = line.source_key AND resource.vod_id = line.vod_id
 LEFT JOIN resource_media_links link ON link.source_key = line.source_key AND link.vod_id = line.vod_id
 `
 
@@ -1000,9 +1009,14 @@ FROM resource_media_links WHERE source_key = $1 AND vod_id = $2`, sourceKey, vod
 // FindLinkedResource 按 media_id 取一条关联资源的 source_key/vod_id，
 // 用于 /watch 在没有剧集候选时找到可补录索引的资源。
 func (store *PostgresStore) FindLinkedResource(ctx context.Context, mediaID int) (ResourceLink, error) {
-	row := store.database.QueryRow(ctx, `SELECT source_key, vod_id, media_id, confidence, matched_by, is_locked, verified_at
-FROM resource_media_links WHERE media_id = $1
-ORDER BY is_locked DESC, confidence DESC LIMIT 1`, mediaID)
+	row := store.database.QueryRow(ctx, `SELECT link.source_key, link.vod_id, link.media_id, link.confidence,
+	link.matched_by, link.is_locked, link.verified_at
+FROM resource_media_links link
+JOIN vod_items resource ON resource.source_key = link.source_key AND resource.vod_id = link.vod_id
+WHERE link.media_id = $1
+  AND COALESCE(resource.resource_status, 'active') <> 'removed'
+  AND COALESCE(resource.vod_play_url, '') <> ''
+ORDER BY link.is_locked DESC, link.confidence DESC, resource.last_visited_at DESC LIMIT 1`, mediaID)
 	var link ResourceLink
 	var verifiedAt *time.Time
 	if err := row.Scan(&link.SourceKey, &link.VodID, &link.MediaID, &link.Confidence, &link.MatchedBy, &link.IsLocked, &verifiedAt); err != nil {
