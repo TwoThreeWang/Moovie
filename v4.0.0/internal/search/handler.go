@@ -156,7 +156,9 @@ func (handler *Handler) runUnifiedSearch(c *gin.Context) (UnifiedResult, bool) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": "unified_search_failed", "message": "统一搜索失败"})
 		return UnifiedResult{}, false
 	}
-	handler.cache.Set(cacheKey, result)
+	if len(result.Items) > 0 || len(result.Unmatched) > 0 {
+		handler.cache.Set(cacheKey, result)
+	}
 	return result, true
 }
 
