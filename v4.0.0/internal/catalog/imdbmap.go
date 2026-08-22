@@ -20,6 +20,7 @@ import (
 // 混在一条路径上的结果是 worker 全部堵在映射查询上，真正该做的抓取反而排不上。
 const TaskIMDbBackfill = "imdb_backfill"
 
+// IMDb 补全用到的外部接口地址、限速和 Wikidata 属性号。
 const (
 	defaultWMDBBase         = "https://api.wmdb.tv"
 	defaultWikidataEndpoint = "https://query.wikidata.org/sparql"
@@ -57,6 +58,8 @@ type SingleIMDbResolver interface {
 	ResolveOne(ctx context.Context, doubanID string) (string, error)
 }
 
+// IMDbBackfillHandler 是 IMDb 映射回填任务：先用批量源扫一遍，剩下的交给限流很严的逐条兜底源。
+// 补到新映射后会立刻为该条目排一个 TMDB 抓取任务。
 type IMDbBackfillHandler struct {
 	store             IMDbMappingStore
 	queue             RefreshQueue
@@ -79,6 +82,7 @@ type stageStats struct {
 	misses     int
 }
 
+// IMDbBackfillOption 是回填任务的可选装配项。
 type IMDbBackfillOption func(*IMDbBackfillHandler)
 
 // WithIMDbFallback 配置逐条兜底源（wmdb）。不配置时只用批量源。
@@ -133,6 +137,7 @@ func WithIMDbFallbackBatchSize(size int) IMDbBackfillOption {
 	}
 }
 
+// NewIMDbBackfillHandler 创建回填任务执行器。
 func NewIMDbBackfillHandler(store IMDbMappingStore, queue RefreshQueue, batch BatchIMDbResolver, options ...IMDbBackfillOption) *IMDbBackfillHandler {
 	handler := &IMDbBackfillHandler{store: store, queue: queue, batch: batch,
 		batchSize: 200, fallbackBatchSize: 32, budget: 20 * time.Second,
@@ -269,6 +274,7 @@ type WikidataResolver struct {
 	userAgent string
 }
 
+// NewWikidataResolver 创建批量映射源：一次 SPARQL 查询能翻译几百个豆瓣 ID。
 func NewWikidataResolver(client *http.Client, endpoint, userAgent string) *WikidataResolver {
 	if endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/"); endpoint == "" {
 		endpoint = defaultWikidataEndpoint
@@ -280,6 +286,7 @@ func NewWikidataResolver(client *http.Client, endpoint, userAgent string) *Wikid
 	return &WikidataResolver{client: client, endpoint: endpoint, userAgent: userAgent}
 }
 
+// Resolve 批量翻译豆瓣 ID，只返回命中的部分。
 func (resolver *WikidataResolver) Resolve(ctx context.Context, doubanIDs []string) (map[string]string, error) {
 	query := wikidataQuery(doubanIDs)
 	if query == "" {
@@ -349,6 +356,7 @@ type WMDBResolver struct {
 	limiter *outbound.Limiter
 }
 
+// NewWMDBResolver 创建逐条兜底映射源（wmdb 免费接口，必须配速）。
 func NewWMDBResolver(client *http.Client, base string, interval time.Duration) *WMDBResolver {
 	if base = strings.TrimRight(strings.TrimSpace(base), "/"); base == "" {
 		base = defaultWMDBBase
@@ -366,6 +374,7 @@ func (resolver *WMDBResolver) Wait(ctx context.Context) error { return resolver.
 // Allow 是非阻塞版本，保留给只想探一下配额状态、不打算等待的调用方。
 func (resolver *WMDBResolver) Allow() bool { return resolver.limiter.Allow() }
 
+// ResolveOne 翻译一个豆瓣 ID。
 func (resolver *WMDBResolver) ResolveOne(ctx context.Context, doubanID string) (string, error) {
 	if !validDoubanID(doubanID) {
 		return "", workqueue.Terminal(fmt.Errorf("invalid Douban ID %q", doubanID))

@@ -1,13 +1,13 @@
-package search
+package cache
 
 import (
 	"testing"
 	"time"
 )
 
-func TestCacheExpiresAndEvictsLeastRecentlyUsed(t *testing.T) {
+func TestTTLExpiresAndEvictsLeastRecentlyUsed(t *testing.T) {
 	now := time.Date(2026, time.July, 29, 0, 0, 0, 0, time.UTC)
-	cache := NewCache[string](2, time.Hour)
+	cache := New[string](2, time.Hour)
 	cache.clock = func() time.Time { return now }
 	cache.Set("a", "A")
 	cache.Set("b", "B")

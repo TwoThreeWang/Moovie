@@ -7,6 +7,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 )
 
+// CanonicalWriter 把抓到的资料写进规范媒体表，并留一份原始报文快照便于回溯。
 type CanonicalWriter interface {
 	Upsert(ctx context.Context, media mediaidentity.Media) (mediaidentity.Media, error)
 	UpsertExternalID(ctx context.Context, external mediaidentity.ExternalID) error
@@ -19,6 +20,7 @@ type CanonicalSourceWriter interface {
 	MergeSource(ctx context.Context, provider string, media mediaidentity.Media, payload []byte, externalIDs ...mediaidentity.ExternalID) (mediaidentity.Media, error)
 }
 
+// syncCanonical 把 Movie 转成规范媒体结构再落库。
 func syncCanonical(ctx context.Context, writer CanonicalWriter, movie Movie, mediaType, provider string, payload any, externalIDs ...mediaidentity.ExternalID) (int, error) {
 	return syncCanonicalMedia(ctx, writer, mediaidentity.Media{
 		MediaType: mediaType, DoubanID: movie.DoubanID, Title: movie.Title,
@@ -29,6 +31,8 @@ func syncCanonical(ctx context.Context, writer CanonicalWriter, movie Movie, med
 	}, provider, payload, externalIDs...)
 }
 
+// syncCanonicalMedia 落库规范媒体：能按来源优先级合并就合并，否则退化成简单覆盖写。
+// writer 为 nil 表示没开规范化，直接返回 0。
 func syncCanonicalMedia(ctx context.Context, writer CanonicalWriter, media mediaidentity.Media, provider string, payload any, externalIDs ...mediaidentity.ExternalID) (int, error) {
 	if writer == nil {
 		return 0, nil

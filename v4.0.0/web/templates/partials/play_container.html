@@ -1,0 +1,17 @@
+{{/* 播放器容器：/play 和 /watch 共用。没有播放地址时给出占位提示，
+     initPlayer 找不到 #artplayer-app 会自己返回 null，不需要再包一层判断。 */}}
+<section class="video-section">
+    <div class="video-container" id="player-container">
+        {{ if .PlayURL }}
+        <div id="artplayer-app"></div>
+        {{ else }}
+        <div class="video-loading">
+            <span>暂无可用播放链接</span>
+        </div>
+        {{ end }}
+    </div>
+</section>
+
+{{ if .PlayURL }}
+{{ template "play_disclaimer.html" . }}
+{{ end }}

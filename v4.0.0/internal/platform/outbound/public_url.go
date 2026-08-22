@@ -32,6 +32,7 @@ func ValidatePublicHTTPURL(rawURL string) error {
 	return nil
 }
 
+// PublicRedirectClient 包一层重定向校验：允许的公网地址不能通过 302 跳到内网，是 SSRF 防护的第二道关。
 func PublicRedirectClient(base *http.Client) *http.Client {
 	if base == nil {
 		base = http.DefaultClient
@@ -53,6 +54,7 @@ func PublicRedirectClient(base *http.Client) *http.Client {
 	return &client
 }
 
+// isPublicIP 排除回环、私网、链路本地以及 CGNAT 等保留网段。
 func isPublicIP(address net.IP) bool {
 	if !address.IsGlobalUnicast() || address.IsPrivate() || address.IsLoopback() || address.IsUnspecified() ||
 		address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsMulticast() {

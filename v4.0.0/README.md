@@ -4,8 +4,6 @@
 
 这份 README 主要写给第一次接触本项目、Go Web 或分层架构的开发者。建议先阅读“系统如何运行”和“推荐的代码阅读顺序”，再启动程序。
 
-> 当前状态（2026-08-18）：v4.0.0 已上线，旧库到新库的一次性数据迁移已在生产完成。随之作废的迁移与切流工具（`cmd/datamigrate`、`cmd/migrate`、`cmd/compatcheck`、`cmd/sitemapcheck`、`cmd/loadcheck`、`cmd/releaseaudit`、`scripts/migrate.sh`、`scripts/release/preflight.sh`）已从仓库移除，需要时可从 Git 历史取回。仓库现在只保留 `cmd/web`、`cmd/worker`、`cmd/dbmigrate` 和 `cmd/burstcheck` 四个二进制。发布唯一边界仍是 [`docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md`](docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md)，其中的 iOS/Safari、FLV/播放故障、生产同规格容器、灰度、监控和回滚演练不能由静态检查替代。
-
 ## 当前代码提供的能力
 
 从 `cmd/web/main.go` 的路由装配和 `web/templates/pages` 的页面模板可以看到，当前实现包括：
@@ -17,7 +15,7 @@
 - 资料与推荐：豆瓣资料和短评、TMDB 剧照与季集、媒体身份和外部 ID、向量、相似内容、个性化推荐和热门快照。
 - 管理与运维：资源站和过滤规则管理、媒体匹配复核、版权/分类管理、反馈处理、数据生命周期操作和 `/api/v2/admin/metrics` 指标接口。
 
-这些是代码已提供的能力清单，不代表每项都已完成生产灰度验收；生产准入仍按发布清单逐项留证。
+这些是代码已提供的能力清单，不代表每项都已完成生产验收；生产准入仍按发布清单逐项留证。
 
 ## 先理解这个系统解决什么问题
 
@@ -47,13 +45,11 @@ Moovie 需要同时处理四类工作：
 | Service（服务） | 执行业务规则，不负责页面排版 | `internal/*/service.go` |
 | Store（存储接口） | 业务层需要的数据库能力约定 | `internal/*/store.go`、`ports.go` |
 | Postgres Store | Store 的 PostgreSQL 实现 | `internal/*/postgres.go` |
-| Memory Store | Store 接口的内存实现，仅用于测试；生产运行必须连接 PostgreSQL | `internal/*/memory.go` |
 | Renderer（渲染器） | 把 Go 数据交给模板，生成最终 HTML | `internal/platform/web`、`web/templates` |
 | Middleware（中间件） | 在 Handler 前后统一处理日志、安全、超时、过载和登录态 | `internal/platform/httpserver` |
 | Migration | 按版本顺序修改新数据库结构的 SQL 文件 | `internal/platform/database/migrations` |
 | Worker | 不直接服务网页，专门执行后台任务的进程 | `cmd/worker` |
 | Feature Flag | 控制少数高风险策略是否启用，例如资源匹配自动确认 | `.env.example` |
-| Canary（灰度实例） | 只接收少量真实流量的新版本实例 | `docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md` |
 
 还需要区分六个容易混淆的数据概念：
 
@@ -186,24 +182,24 @@ Web 只负责尽快完成用户请求。影视资料、豆瓣短评、TMDB 剧�
 5. Worker 把结果、错误和更新时间写回 PostgreSQL。
 6. 浏览器刷新或轮询状态时，从数据库读取最终结果。
 
-管理员可在 `/admin/jobs` 查看统一队列并按状态筛选任务，列表使用任务 ID 游标分页，每页 50 条。运维任务每天分批清理终态记录：已完成保留 30 天、失败保留 90 天，统一任务表每轮最多删除 1,000 条；等待中和执行中的任务永不清理。
+管理员可在 `/admin/jobs` 查看统一队列并按状态筛选任务，列表使用任务 ID 游标分页，每页 50 条。运维任务每天分批清理终态记录：已完成保留 30 天、失败保留 90 天，统一任务表每轮最多删除 1,000 条；等待中和执行中的任务永不清理。同一个清理任务还负责观影历史同步账本 `history_sync_events`（保留 30 天，分块删）——删旧事件不会丢进度：进度本体在 `playback_positions`，账本只是游标流，被删掉的那条下次同步时由 `bootstrapSyncEvents` 自动补回来，所以账本会稳定在「保留期内的事件 + 每条存量进度一条」而不再无限增长。
 
 生产 Compose 强制 Web 使用 `JOBS_IN_WEB=false`。不要为了“让任务马上跑”而临时让每个 Web 副本都启动 Dispatcher，否则扩容后同一类后台工作会与用户请求争抢资源。
 
 ## Web 进程的启动顺序
 
-入口是 `cmd/web/main.go`。启动时会按下面的顺序装配依赖：
+入口是 `cmd/web/main.go`。代码按 `── 阶段 N ──` 注释分段，启动顺序如下：
 
-1. 解析 `.env`，再读取和校验完整配置。
-2. 加载共享 layout、页面模板和 partial。
-3. 连接 PostgreSQL 并创建各模块的 Store。
-4. 如果启用了 `DB_AUTO_MIGRATE`，顺序执行尚未应用的 migration。
-5. 创建共享的外部 HTTP Client、搜索 Runner、健康状态和各业务 Service。
-6. 创建各模块 Handler，并集中注册 Gin 路由。
-7. 创建 HTTP Server，安装全局中间件和连接数限制。
-8. 监听 `SIGINT` / `SIGTERM`，收到停止信号后执行优雅关闭。
-
-“优雅关闭”表示先停止接收新请求，再给正在运行的请求、Runner 和 Dispatcher 一段时间结束，最后关闭数据库连接和空闲外部连接。这样发布或容器停止时不容易留下半写入状态。
+0. 解析 `.env`，再读取和校验完整配置。任一步失败都直接退出。
+1. **模板**：编译所有 HTML 模板，缺模板直接报错退出。
+2. **数据库连接 + Store 创建**：连接 PostgreSQL，按需执行 migration，用同一个连接池创建所有业务 Store。每个 Store 变量旁有注释说明它负责什么。
+3. **进程级共享组件**：创建全局共享的外部 HTTP Client（资源站用、AI 用各一个）、搜索并发控制器、资源站熔断器和采集器。
+4. **Service 层**：创建豆瓣/TMDB 数据提供者、搜索服务、播放详情、热门榜、元数据刷新链（豆瓣 → 短评 → 剧照 → 向量）等业务 Service。
+5. **内嵌后台任务**（可选）：`JOBS_IN_WEB=true` 时在 Web 进程内启动 Worker Dispatcher，本地开发省得同时起两个进程。
+6. **Handler 层**：创建各模块的 HTTP 处理器。代码中大量 `if xxx, ok := store.(SomeInterface)` 是在检查 Store 是否实现了某个可选能力——实现了就注入，没实现就安全降级。
+7. **路由注册 + HTTP 服务启动**：集中注册所有路由，安装全局中间件，启动监听。
+8. **等待退出信号**：主 goroutine 阻塞等 `SIGINT`/`SIGTERM`。
+9. **优雅关闭**：按顺序关闭 HTTP 服务 → 后台搜索 → 熔断器 → Worker → 数据库 → HTTP Client，所有步骤共用同一个超时窗口，防止某一步卡住导致进程挂起。
 
 ## 目录和分层职责
 
@@ -214,7 +210,7 @@ cmd/
   dbmigrate/        受控执行新库结构 migration，可停在指定版本
   burstcheck/       突发请求、受控 503 和健康隔离检查
 internal/
-  platform/         配置、数据库、HTTP、认证、出站访问、模板渲染
+  platform/         配置、数据库、HTTP、认证、出站访问、模板渲染、进程内缓存、按 IP 限流
   content/          首页、静态页面、robots 和 sitemap
   search/           资源站搜索、缓存、熔断、统一搜索和资源治理
   mediaidentity/    统一媒体身份、外部 ID、季集、播放候选和剧集播出日期
@@ -233,6 +229,7 @@ internal/
   feedback/         用户反馈
   danmaku/          弹幕读取和发送
   admin/            后台管理页面、匹配复核和数据操作
+  workqueue/        全站唯一的后台任务队列（worker_jobs）：入队、抢锁、租约、重试退避
   operations/       指标和运维检查
   compat/           页面 SEO 快照抓取与端点压测的共享实现，供测试和 burstcheck 使用
   contract/         最终路由和请求输入契约，防止废弃 API 回流
@@ -258,7 +255,8 @@ docs/               发布清单、验收证据和高并发手册
 
 第一次阅读不建议从最大的 SQL 文件或所有 Handler 开始。可以按下面顺序建立整体认识：
 
-1. `README.md`：理解系统边界和流程。
+0. 先看目标包顶部的中文包说明（例如 `head -12 internal/search/service.go`），一句话知道它管什么、碰哪几张表。
+1. `README.md`：理解系统边界、数据表分组和流程。
 2. `.env.example`：知道系统有哪些可选能力和安全上限。
 3. `cmd/web/main.go`：看所有模块如何被组装。
 4. `internal/platform/httpserver/server.go`：看一条请求先经过哪些保护。
@@ -291,7 +289,7 @@ rg -n '要查找的路径或字段名' cmd internal web
 
 ### 播放流程
 
-1. `/play` 或 `/watch` 根据统一媒体身份、资源站和剧集键查找候选。
+1. `/play` 或 `/watch` 根据统一媒体身份、资源站和剧集键查找候选。两个入口分工不同，不能合并：`/play/:source_key/:vod_id` 直接拿资源站详情播，**不需要豆瓣关联**，服务的是关联不上元数据的资源；`/watch/:douban_id` 先定媒体再挑最优线路，能跨资源站自动选最好的。`/watch` 走不通（媒体查不到、或补录索引后仍无候选）而 URL 上又带了 `source_key`+`vod_id` 时，会降级成 `/play` 的资源直连方式渲染，不再把用户 302 回搜索页。
 2. 后端先过滤到“同一部作品、同一季、同一集”，再根据成功率和速度排序。
 3. 默认候选被解析成播放 URL，页面同时获得可手动选择的备选线路。
 4. 浏览器中的 `player.js` 根据 HLS 等格式初始化播放器。
@@ -316,6 +314,7 @@ rg -n '要查找的路径或字段名' cmd internal web
 - 一次 `/3/tv/{id}` 详情请求同时返回连载状态 `status` 和 `next_episode_to_air`。后者直接给出下一集的集号与播出日期，因此不必逐季调用 season 接口就能拿到最关键的信息；`syncTVSeasons` 会先把它落库，再补齐整季数据。
 - 连载状态存在 `media.series_status`，保存 TMDB 原值（`Returning Series` / `Ended` / `Canceled` 等）。判断是否还会更新一律使用 `mediaidentity.SeriesEnded`，不要直接比较字符串。
 - 该判定是"白名单式完结"：只有明确的完结与砍剧状态才算完结，空值和未知的新状态都按"可能还会更新"处理。漏掉一次更新提醒，好过把在播剧错误地标成完结。
+- `/play` 和 `/watch` 共用四个播放片段：`partials/play_container.html`（播放器 + 免责条）、`play_scripts.html`（播放器依赖库）、`play_comments.html`、`play_similar.html`。改播放器版本号只需要动 `play_scripts.html` 一处。两页的 `initPlayer` 配置**故意各写各的**：`episodes` 和 `vodName` 在两边含义不同。
 - 详情页、`/play` 和 `/watch` 共用 `partials/air_schedule.html`。已完结、非剧集、以及 TMDB 尚未给出播出日期时，这个 partial 不渲染任何内容，包括外壳。
 - 首页「今日更新」先从「继续观看」收敛出用户在看的 `media_id`，再按当天日期查 `media_units`。区块外壳同样全部放在 partial 内部，没有更新时端点返回空响应体，首页不会留下孤立标题。
 - 「今天」按 `DB_TIMEZONE` 指定的时区判断，默认 `Asia/Shanghai`。`air_date` 是不带时区的 DATE，展示时只取年月日再按该时区重建，不做时区换算——否则 UTC 与东八区之间会整体差一天。
@@ -450,7 +449,7 @@ JOBS_IN_WEB=false GOCACHE=/private/tmp/gocache go run ./cmd/worker
 
 ## 功能开关
 
-统一搜索、历史 V2、播放候选排序、自动换源和热门快照均已固定启用，不再有灰度开关。仍可调节的只有资源匹配策略：
+统一搜索、历史 V2、播放候选排序、自动换源和热门快照均已固定启用，不再提供旧版切换开关。仍可调节的只有资源匹配策略：
 
 1. `RESOURCE_MATCH_SHADOW=true` 时匹配候选只进影子表，不改动线上关联。
 2. 观察影子表质量数据后，再决定是否开启 `RESOURCE_MATCH_AUTO_APPLY`。
@@ -491,7 +490,7 @@ flowchart TD
 | 单个外部主机连接 | 12 | 复用共享 Client，限制套接字数量 |
 | 单次搜索来源并发 | 6 | 其余来源等待或受总超时取消 |
 | 搜索后台补全并发 | 8 | 无槽位时放弃可重试的非关键异步工作 |
-| 搜索缓存 | 200 条 | 按 LRU 淘汰旧条目 |
+| 搜索缓存 | 500 条 | 按 LRU 淘汰旧条目（`internal/platform/cache`，搜索、弹幕、相似推荐共用一份实现） |
 | 个性化推荐缓存 | 512 用户 / 1 小时 | 防止用户量直接变成无界内存 |
 | AppleCMS 单响应 | 4MiB | 超限响应被拒绝 |
 | 生产成功访问日志 | 10%，最多 20 条/秒 | 错误和慢请求仍然记录 |
@@ -504,7 +503,52 @@ flowchart TD
 
 ## 数据库和 migration
 
-系统内嵌 41 个按文件名排序的 migration。应用 migration 时会：
+### 全部 29 张业务表
+
+除 `schema_migrations` 外，运行时一共 29 张表。按用途分成七组，同一组内的表通常在同一个模块里读写：
+
+| 组 | 表 | 一句话说明 |
+| --- | --- | --- |
+| **账号与社区** | `users` | 账号本身 |
+| | `user_movies` | 片单：想看 / 看过 / 评分 / 短评。短评没有独立的表，就是这张表上的 `comment` 字段 |
+| | `comment_likes` | 短评点赞，挂在 `user_movie_id` 上 |
+| | `comment_replies` | 短评回复，同样挂在 `user_movie_id` 上 |
+| | `feedbacks` | 用户反馈 |
+| | `monthly_reports` | 月度观影报告，每人每月一行，由定时任务算好存起来 |
+| **观看记录** | `playback_positions` | 唯一的服务端播放进度表 |
+| | `history_sync_events` | 多设备同步的事件账本，只追加，客户端按游标增量拉取；保留 30 天，过期由每日清理删掉 |
+| **影片身份** | `media` | 一部电影或剧集的统一身份，全站围绕它组织 |
+| | `media_units` | 作品自己的一集（来自 TMDB），带官方播出日期 `air_date` |
+| | `media_aliases` | 别名，用于搜索匹配 |
+| | `media_external_ids` | 豆瓣 / TMDB / IMDb 等外部 ID |
+| | `media_field_sources` | 每个字段当前由哪个来源提供，防止低优先级来源覆盖高优先级数据 |
+| | `media_source_snapshots` | 每个来源最近一次抓取的状态：`payload_hash` 比对是否有变化、`unchanged_count` 连续未变次数、`changed_at` 最后一次真的变了是什么时候。`payload_json` 已不再写入真实内容 |
+| **资源站** | `sites` | 已接入的 AppleCMS 资源站 |
+| | `vod_items` | 某个资源站上的一条影片记录，同一部影片可以有多条 |
+| | `resource_media_links` | 资源 ↔ 影片身份的已确认关联 |
+| | `resource_match_candidates` | 机器拿不准的匹配，进后台等人工复核 |
+| | `resource_play_lines` | 一条资源下的播放线路（不同线路速度不同） |
+| | `resource_episode_candidates` | 具体到某一季某一集的可播放候选，换源就在这一层选 |
+| | `site_stats` | 各资源站按时间桶的成功 / 空 / 超时 / 失败次数 |
+| **播放质量与热度** | `playback_attempt_events` | 播放埋点原始事件 |
+| | `popularity_snapshots` | 热门榜快照 |
+| | `popularity_snapshot_runs` | 每次重算热门榜的记录 |
+| **搜索与过滤** | `search_logs` | 搜索日志 |
+| | `copyright_filters` | 版权屏蔽词，命中的影片不出现在搜索结果 |
+| | `category_filters` | 分类屏蔽词，用于不收录某些资源分类 |
+| **其他** | `danmakus` | 站内弹幕 |
+| | `worker_jobs` | 全站唯一的后台任务队列，所有定时和异步任务都在这里 |
+
+几条帮助理解的规则：
+
+- **`media` 和 `vod_items` 是两件事。** `media` 回答"它是不是同一部作品"，`vod_items` 回答"哪个站提供了它"，中间靠 `resource_media_links` 连起来。这一层拆分是刻意的：不拆的话换源时会把不同影片或不同剧集混在一起。
+- **豆瓣同步没有自己的表**，直接复用 `worker_jobs`，结果写进 `user_movies`。
+- **短评没有自己的表**，它是 `user_movies.comment`；所以点赞和回复都挂在 `user_movie_id` 上。
+- 表按功能分组后，`resource_*` 系列 7 张是最密集的一块，也是最值得优先审视的地方。
+
+### migration 如何执行
+
+系统内嵌 50 个按文件名排序的 migration。应用 migration 时会：
 
 1. 打开一个数据库事务。
 2. 获取 PostgreSQL advisory transaction lock，防止多个实例同时迁移。
@@ -615,9 +659,9 @@ cd /path/to/Moovie/new
 1. 冻结发布版本并记录提交号。
 2. 以受控步骤执行 `cmd/dbmigrate`，确认 `schema_migrations` 已推进到目标版本。
 3. 完成浏览器、播放、SEO、性能和高并发门禁。
-4. 部署独立 Web canary 与 Worker，观察无异常后放量。
+4. 部署 Web 与 Worker，完成健康检查和写入 smoke test。
 
-放量和应用回退由部署平台负责，仓库不提供切流脚本，也不提供新库到旧库的反向迁移。旧程序和旧库只用于处理“刚切流就发现严重问题”的短时间紧急回退：先把流量从新系统摘除，再启动只读冻结时保留的旧程序。新系统开始接收写入后产生的片单、评论和进度不会自动出现在旧库，因此回退窗口越长，业务数据缺口越大；这也是正式解除写冻结前必须完成写入 smoke test 的原因。不要通过删除新库或逆向执行 schema migration 回退。
+应用回退由部署平台负责，仓库不提供切流脚本，也不提供新库到旧库的反向迁移。旧程序和旧库只用于处理“刚切流就发现严重问题”的短时间紧急回退：先把流量从新系统摘除，再启动只读冻结时保留的旧程序。新系统开始接收写入后产生的片单、评论和进度不会自动出现在旧库，因此回退窗口越长，业务数据缺口越大；这也是正式解除写冻结前必须完成写入 smoke test 的原因。不要通过删除新库或逆向执行 schema migration 回退。
 
 发布唯一边界见 [`docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md`](docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md)。代码通过、数据库对账、浏览器验证、容器验证和生产流量观察是五个独立证据。
 
@@ -652,6 +696,23 @@ cd /path/to/Moovie/new
 
 ## 代码注释约定
 
+全部 131 个非测试 Go 文件都已补齐中文注释，可以直接当作阅读材料：
+
+- **每个包的第一个文件顶部有一段包说明**，写清这个包干什么、涉及哪几张表、核心流程是什么。想快速了解一个模块，先看它的包说明就够了：
+
+```bash
+head -12 internal/workqueue/dispatcher.go     # 后台任务队列怎么运转
+head -12 internal/history/model.go            # 观看进度和多设备同步
+head -12 internal/social/model.go             # 为什么短评没有独立的表
+```
+
+- **每个导出的类型、函数和常量都有一行说明**，说的是"它负责什么"，不是重复代码字面意思。
+- **标了 `ponytail:` 的注释是已知的简化取舍**，写明了当前实现的天花板和以后该怎么升级，是优化时优先要看的地方：
+
+```bash
+rg -n 'ponytail:' internal
+```
+
 第一方代码的必要注释使用中文，并重点解释以下内容：
 
 - 为什么要这样设计，而不是逐行重复代码表面行为。
@@ -664,6 +725,7 @@ Go 导出类型或函数的注释仍以标识符开头，例如 `// Config 保�
 
 ## 相关文档
 
+- [`docs/系统优化方案.md`](docs/系统优化方案.md)：2026-08-20 出具并复核过的瘦身方案。**批次 0（2 个 BUG）、批次 P（6 处页面加载速度问题）、批次 1（删无人使用的表、列和重复实现）和批次 2（`/watch` 兜底 `/play` + 播放模板去重）已改完并有回归测试**；只剩批次 4，文档里还有一份「看着重复但不该动」的清单。文末还记了一条本地环境坑：**跑全量测试要加 `-p 1`**，各包共用同一个数据库、彼此会 TRUNCATE 掉对方的数据；本地在跑的 `go run cmd/web` / `cmd/worker` 同理。
 - [`docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md`](docs/P9_RELEASE_ACCEPTANCE_CHECKLIST.md)：发布唯一边界和未完成项。
 - [`docs/LOCAL_HIGH_CONCURRENCY_ACCEPTANCE_2026-08-10.md`](docs/LOCAL_HIGH_CONCURRENCY_ACCEPTANCE_2026-08-10.md)：高并发实测数据。
 - [`docs/HIGH_CONCURRENCY_RUNBOOK.md`](docs/HIGH_CONCURRENCY_RUNBOOK.md)：生产重启诊断、容量和处置手册。

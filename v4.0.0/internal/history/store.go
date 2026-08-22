@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Store 是观看记录的读写接口。
 type Store interface {
 	ListByUser(ctx context.Context, userID, limit, offset int) ([]Record, error)
 	ListContinue(ctx context.Context, userID, limit, offset int) ([]Record, error)

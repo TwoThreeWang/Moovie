@@ -2,6 +2,7 @@ package report
 
 import "context"
 
+// Store 是月报的读写接口。
 type Store interface {
 	Save(ctx context.Context, report MonthlyReport) (*MonthlyReport, error)
 	GetByUserAndMonth(ctx context.Context, userID int, yearMonth string) (*MonthlyReport, error)

@@ -13,6 +13,7 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
+// migrationLockID 是执行迁移时使用的数据库咨询锁 ID，保证多实例同时启动也只有一个在迁移。
 const migrationLockID int64 = 746786689410227
 
 // Migrate 在单个事务中按版本顺序执行尚未应用的 SQL。
@@ -27,6 +28,7 @@ func MigrateThrough(ctx context.Context, database Beginner, through string) erro
 	return migrateThrough(ctx, database, strings.TrimSpace(through))
 }
 
+// migrateThrough 只执行到指定版本为止，测试用来验证某个迁移前后的状态。
 func migrateThrough(ctx context.Context, database Beginner, through string) error {
 	migrations, err := loadMigrations(migrationFiles)
 	if err != nil {
@@ -78,11 +80,13 @@ func migrateThrough(ctx context.Context, database Beginner, through string) erro
 	return nil
 }
 
+// migration 是一条待执行的迁移：version 取自文件名前缀（如 0001），sql 是文件全文。
 type migration struct {
 	version string
 	sql     string
 }
 
+// loadMigrations 读出内嵌的迁移文件并校验：版本号不能重复、内容不能为空。
 func loadMigrations(files fs.FS) ([]migration, error) {
 	// 先按文件路径排序，再校验版本唯一和内容非空，使不同机器得到完全相同的执行顺序。
 	paths, err := fs.Glob(files, "migrations/*.sql")

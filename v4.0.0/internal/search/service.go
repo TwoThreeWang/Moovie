@@ -9,14 +9,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/cache"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
 	"golang.org/x/sync/singleflight"
 )
 
 // ServiceConfig 保存一次跨来源搜索及媒体匹配所允许使用的时间、并发和阈值预算。
 type ServiceConfig struct {
-	SourceTimeout             time.Duration
-	TotalTimeout              time.Duration
+	SourceTimeout time.Duration
+	TotalTimeout  time.Duration
+	// RefreshWait 是「本地已经有结果时，最多再等上游刷新多久」。
+	// 0 表示用 defaultRefreshWait。它必须远小于 TotalTimeout，
+	// 否则搜索页会一直干等最慢的那个资源站。
+	RefreshWait               time.Duration
 	SourceMaxConcurrency      int
 	PersistRetries            int
 	ResourceMatchShadow       bool
@@ -37,9 +42,10 @@ type Service struct {
 	singleflight  singleflight.Group
 	identity      MediaIdentity
 	episodes      ResourceEpisodeIndexer
-	identityCache *Cache[mediaIdentityResult]
+	identityCache *cache.TTL[mediaIdentityResult]
 }
 
+// mediaIdentityResult 是媒体匹配结果的缓存值；found=false 表示“确认匹配不上”，同样要缓存以免反复计算。
 type mediaIdentityResult struct {
 	mediaID    int
 	confidence float64
@@ -66,14 +72,17 @@ type MediaIdentity interface {
 	LinkResource(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy string) error
 }
 
+// MatchCandidateRecorder 记录待复核的匹配候选（简版）。
 type MatchCandidateRecorder interface {
 	RecordMatchCandidate(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy string) error
 }
 
+// DetailedMatchCandidateRecorder 记录带打分理由的匹配候选，后台复核页会展示这些理由。
 type DetailedMatchCandidateRecorder interface {
 	RecordDetailedMatchCandidate(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy, status, reasonJSON string) error
 }
 
+// MediaMatchRequest 是送去打分的资源特征。
 type MediaMatchRequest struct {
 	Title         string
 	OriginalTitle string
@@ -83,6 +92,7 @@ type MediaMatchRequest struct {
 	Directors     string
 }
 
+// MediaMatchResult 是打分结果；HardConflict 非空表示存在硬冲突（例如年份差太多），必须直接拒绝。
 type MediaMatchResult struct {
 	MediaID      int
 	Confidence   float64
@@ -92,20 +102,25 @@ type MediaMatchResult struct {
 	HardConflict string
 }
 
+// ScoredMediaIdentity 是第 4 层加权打分匹配的接口。
 type ScoredMediaIdentity interface {
 	MatchResource(ctx context.Context, request MediaMatchRequest) (MediaMatchResult, error)
 }
 
+// ResourceEpisodeIndexer 把资源的播放地址解析成结构化的剧集候选。
 type ResourceEpisodeIndexer interface {
 	IndexResourceEpisodes(ctx context.Context, item VodItem) error
 }
 
+// ServiceOption 是 Service 的可选装配项。
 type ServiceOption func(*Service)
 
+// WithMediaIdentity 注入媒体身份匹配实现；不注入时搜索仍可用，只是不做归一。
 func WithMediaIdentity(identity MediaIdentity) ServiceOption {
 	return func(service *Service) { service.identity = identity }
 }
 
+// WithResourceEpisodeIndexer 注入剧集索引器。
 func WithResourceEpisodeIndexer(indexer ResourceEpisodeIndexer) ServiceOption {
 	return func(service *Service) { service.episodes = indexer }
 }
@@ -131,7 +146,7 @@ func NewService(items ItemStore, sites SiteStore, filters FilterStore, crawler S
 		cfg.MediaReviewMatchThreshold = 0.68
 	}
 	service := &Service{items: items, sites: sites, filters: filters, crawler: crawler, health: health, runner: runner, config: cfg,
-		identityCache: NewCache[mediaIdentityResult](5000, 30*time.Minute)}
+		identityCache: cache.New[mediaIdentityResult](5000, 30*time.Minute)}
 	for _, option := range options {
 		option(service)
 	}
@@ -156,13 +171,8 @@ func (service *Service) Search(ctx context.Context, keyword string, bypassFilter
 			items = value.([]VodItem)
 		}
 	} else if service.runner != nil {
-		value, refreshErr, _ := service.singleflight.Do(keyword, func() (any, error) {
-			return service.fetchAndSave(ctx, keyword)
-		})
-		if refreshErr != nil {
-			requestmeta.Logger(ctx).Warn("source refresh failed; keeping local results", "error", refreshErr)
-		} else if value != nil {
-			items = mergeSearchItems(items, value.([]VodItem))
+		if fresh, arrived := service.refreshWithinBudget(ctx, keyword); arrived && fresh != nil {
+			items = mergeSearchItems(items, fresh)
 		}
 	}
 	service.enrichMediaIdentity(ctx, items)
@@ -186,6 +196,7 @@ func (service *Service) Search(ctx context.Context, keyword string, bypassFilter
 	return &Result{Items: items, FilteredCount: filteredCount}, nil
 }
 
+// mergeSearchItems 用 source_key+vod_id 做键，把本次上游刷新结果覆盖到本地结果上。
 func mergeSearchItems(local, refreshed []VodItem) []VodItem {
 	merged := append([]VodItem(nil), local...)
 	indexes := make(map[string]int, len(merged))
@@ -259,7 +270,7 @@ func (service *Service) enrichMediaIdentity(ctx context.Context, items []VodItem
 
 		// 第 3 层：规范标题、年份和类型全部相同，作为高置信度自动候选。
 		if mediaID <= 0 && item.VodName != "" && item.VodYear != "" {
-			normalizedType := normalizeSearchMediaType(item.TypeName)
+			normalizedType := normalizeMediaType(item.TypeName)
 			if normalizedType != "" {
 				if id, err := service.identity.FindByTitleYearType(ctx, item.VodName, item.VodYear, normalizedType); err == nil && id > 0 {
 					mediaID, matchedBy, confidence = id, "title_year_type", 0.95
@@ -322,6 +333,7 @@ func (service *Service) enrichMediaIdentity(ctx context.Context, items []VodItem
 	}
 }
 
+// imdbIDPattern 用来从文本里认出 IMDb ID。
 var imdbIDPattern = regexp.MustCompile(`tt\d{7,}`)
 
 // extractIMDbID 尝试从资源元数据中提取 IMDb ID（例如 tt1234567）。
@@ -335,20 +347,7 @@ func extractIMDbID(item *VodItem) string {
 	return ""
 }
 
-func normalizeSearchMediaType(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	switch {
-	case value == "movie" || value == "film" || strings.Contains(value, "电影"):
-		return "movie"
-	case value == "tv" || value == "series" || value == "season" || value == "show" || value == "animation" ||
-		strings.Contains(value, "电视") || strings.Contains(value, "连续剧") || strings.Contains(value, "动漫") || strings.Contains(value, "综艺") ||
-		strings.HasSuffix(value, "剧"):
-		return "tv"
-	default:
-		return ""
-	}
-}
-
+// recordMatchCandidate 把低于自动阈值的匹配写进待复核表；只有开了 shadow 开关才记录。
 func (service *Service) recordMatchCandidate(ctx context.Context, item VodItem, mediaID int, confidence float64, matchedBy, status, reasonJSON string) {
 	if !service.config.ResourceMatchShadow || (status != MatchStatusRejected && confidence < service.config.MediaReviewMatchThreshold) {
 		return
@@ -366,6 +365,7 @@ func (service *Service) recordMatchCandidate(ctx context.Context, item VodItem, 
 	}
 }
 
+// firstNonEmpty 返回第一个非空字符串。
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -375,6 +375,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// IsCopyrightRestricted 判断标题是否命中版权屏蔽词，命中时返回命中的关键词。
 func (service *Service) IsCopyrightRestricted(ctx context.Context, title string) (bool, string) {
 	keywords, err := service.filters.CopyrightKeywords(ctx)
 	if err != nil {
@@ -386,6 +387,54 @@ func (service *Service) IsCopyrightRestricted(ctx context.Context, title string)
 		}
 	}
 	return false, ""
+}
+
+// fetchAndSave 向所有启用的资源站抓取一轮，逐条落库，再立即回填媒体关联。
+// defaultRefreshWait 是本地已有结果时等待上游刷新的默认上限。
+// 取 3 秒是因为绝大多数资源站在 1 秒内就返回了，慢于此的基本是超时或挂掉的站，
+// 没必要让用户陪着一起等。
+const defaultRefreshWait = 3 * time.Second
+
+// refreshWithinBudget 触发一次上游刷新，但最多只等 RefreshWait。
+//
+// 为什么要有这个：本地已经有结果时，老写法会同步等 fetchAndSave 跑完才返回，
+// 而它的预算是 SEARCH_TOTAL_TIMEOUT_SECONDS（默认 30 秒）。
+// 于是只要有一个资源站卡住，搜索页就要转 30 秒圈才出内容——这正是「页面打开了、
+// 内容半天不出来」的主要来源。
+//
+// 现在改成：等一小会儿，上游及时回来就照旧合并（用户看到的东西一点没少）；
+// 回不来就先把本地结果给用户，刷新任务用脱离请求的 context 在后台跑完并落库，
+// 下一次搜索（以及同一关键词的其它并发请求）就能拿到完整结果。
+//
+// 返回值第二项为 false 表示这次没等到，调用方应当直接用本地结果。
+func (service *Service) refreshWithinBudget(ctx context.Context, keyword string) ([]VodItem, bool) {
+	// 必须脱离请求 context：请求一结束 ctx 就被取消，后台那半截刷新会跟着夭折，
+	// 结果是既没让用户等到、也没把数据存下来，等于白跑。
+	detached := context.WithoutCancel(ctx)
+	outcome := service.singleflight.DoChan(keyword, func() (any, error) {
+		return service.fetchAndSave(detached, keyword)
+	})
+	budget := service.config.RefreshWait
+	if budget <= 0 {
+		budget = defaultRefreshWait
+	}
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case result := <-outcome:
+		if result.Err != nil {
+			requestmeta.Logger(ctx).Warn("source refresh failed; keeping local results", "error", result.Err)
+			return nil, false
+		}
+		if result.Val == nil {
+			return nil, false
+		}
+		return result.Val.([]VodItem), true
+	case <-timer.C:
+		requestmeta.Logger(ctx).Info("source refresh exceeded wait budget; serving local results",
+			"keyword", keyword, "budget_ms", budget.Milliseconds())
+		return nil, false
+	}
 }
 
 func (service *Service) fetchAndSave(ctx context.Context, keyword string) ([]VodItem, error) {
@@ -406,6 +455,7 @@ func (service *Service) fetchAndSave(ctx context.Context, keyword string) ([]Vod
 	return items, nil
 }
 
+// persistItem 带重试地写入一条资源；成功后顺带做剧集索引。
 func (service *Service) persistItem(ctx context.Context, item VodItem) error {
 	var lastErr error
 	for attempt := 0; attempt <= service.config.PersistRetries; attempt++ {
@@ -436,12 +486,15 @@ func (service *Service) persistItem(ctx context.Context, item VodItem) error {
 	return fmt.Errorf("upsert after %d retries: %w", service.config.PersistRetries, lastErr)
 }
 
+// probe 记录一次资源站抓取的结果和耗时，用于事后统一写健康统计。
 type probe struct {
 	key     string
 	outcome Outcome
 	elapsed time.Duration
 }
 
+// fetchFromSources 用固定数量的 worker 并发抓取所有启用资源站。
+// 每个站单独超时，整体再受 TotalTimeout 约束；慢站不会拖垮整轮搜索。
 func (service *Service) fetchFromSources(ctx context.Context, keyword string) ([]VodItem, error) {
 	sites, err := service.sites.ListEnabled(ctx)
 	if err != nil {
@@ -497,6 +550,7 @@ func (service *Service) fetchFromSources(ctx context.Context, keyword string) ([
 	return allItems, nil
 }
 
+// recordOutcomes 写入健康统计。特例：整轮一条结果都没有时，“返回空”不算某个站的问题，不计入。
 func (service *Service) recordOutcomes(probes []probe, anyHit bool) {
 	if service.health == nil {
 		return
@@ -509,6 +563,7 @@ func (service *Service) recordOutcomes(probes []probe, anyHit bool) {
 	}
 }
 
+// filterCopyright 按版权关键词过滤结果，返回过滤后的列表和被过滤条数。
 func (service *Service) filterCopyright(ctx context.Context, items []VodItem) ([]VodItem, int) {
 	keywords, err := service.filters.CopyrightKeywords(ctx)
 	if err != nil || len(keywords) == 0 {
@@ -523,6 +578,7 @@ func (service *Service) filterCopyright(ctx context.Context, items []VodItem) ([
 	return filtered, len(items) - len(filtered)
 }
 
+// matchesCopyright 判断片名是否包含任一屏蔽词（忽略大小写）。
 func matchesCopyright(name string, keywords []string) bool {
 	lowerName := strings.ToLower(name)
 	for _, keyword := range keywords {

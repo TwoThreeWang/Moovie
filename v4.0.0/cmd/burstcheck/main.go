@@ -1,3 +1,7 @@
+// burstcheck 是压测小工具：对某个只读页面打一波并发请求，
+// 同时用另一个连接持续探测 /health，确认高峰期健康检查没被拖垮。
+//
+// 它不是网站的一部分，只在发布前手工跑，用来验证过载保护是否生效。
 package main
 
 import (
@@ -15,11 +19,13 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/compat"
 )
 
+// healthCounts 记录健康检查的总次数和失败次数。
 type healthCounts struct {
 	checks   atomic.Int64
 	failures atomic.Int64
 }
 
+// main 解析参数、并发压测、汇总 p95 和状态码分布，不达标时以非零码退出。
 func main() {
 	// burstcheck 只允许对调用方指定的读取路径施压，并同时用独立 Client 高频检查 /health。
 	target := flag.String("target", "http://127.0.0.1:5008", "server base URL")
@@ -80,6 +86,7 @@ func main() {
 	}
 }
 
+// monitorHealth 压测期间持续探测 /health。
 func monitorHealth(ctx context.Context, client *http.Client, endpoint string, counts *healthCounts, done chan<- struct{}) {
 	defer close(done)
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -97,6 +104,7 @@ func monitorHealth(ctx context.Context, client *http.Client, endpoint string, co
 	}
 }
 
+// probe 请求一次健康检查，返回状态码。
 func probe(client *http.Client, endpoint string) int {
 	response, err := client.Get(endpoint)
 	if err != nil {
@@ -107,6 +115,7 @@ func probe(client *http.Client, endpoint string) int {
 	return response.StatusCode
 }
 
+// fatalf 打印错误并退出。
 func fatalf(format string, arguments ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", arguments...)
 	os.Exit(2)

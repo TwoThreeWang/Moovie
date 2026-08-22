@@ -8,7 +8,7 @@ import (
 )
 
 func TestRefreshHandlerDispatchesAllMetadataTypesAndChainsWork(t *testing.T) {
-	queue := &refreshQueueStub{}
+	queue := &refreshQueueStub{needsTMDB: true}
 	fetcher := &recordingFetcher{}
 	reviews := &recordingReviewFetcher{}
 	backdrops := &recordingBackdropSyncer{}
@@ -27,9 +27,27 @@ func TestRefreshHandlerDispatchesAllMetadataTypesAndChainsWork(t *testing.T) {
 	}
 }
 
-type refreshQueueStub struct{ jobs []workqueue.Job }
+func TestRefreshHandlerSkipsSatisfiedTMDBCollection(t *testing.T) {
+	queue := &refreshQueueStub{}
+	handler := NewRefreshHandler(queue, &recordingFetcher{}, nil, WithRefreshBackdrops(&recordingBackdropSyncer{}))
+	if err := handler.Handle(t.Context(), workqueue.Job{TaskType: RefreshProviderDouban, SubjectKey: "1292052"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(queue.jobs) != 0 {
+		t.Fatalf("unexpected chained jobs = %+v", queue.jobs)
+	}
+}
+
+type refreshQueueStub struct {
+	jobs      []workqueue.Job
+	needsTMDB bool
+}
 
 func (queue *refreshQueueStub) EnqueueRefresh(_ context.Context, doubanID, provider, reason string, requestedBy int) (int, error) {
 	queue.jobs = append(queue.jobs, workqueue.Job{TaskType: provider, SubjectKey: doubanID, Reason: reason, RequestedBy: requestedBy})
 	return len(queue.jobs), nil
+}
+
+func (queue *refreshQueueStub) NeedsTMDBRefresh(context.Context, string) (bool, error) {
+	return queue.needsTMDB, nil
 }

@@ -1,7 +1,14 @@
+// worker 是后台任务进程：所有定时任务和异步任务都在这里跑。
+//
+// 任务类型见各业务包里的 Task* 常量，统一由 workqueue.Dispatcher 调度，
+// 数据都落在 worker_jobs 一张表里。
+// 它不监听 HTTP 端口，可以和 web 进程分开部署、分别扩容。
 package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -10,6 +17,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 	"github.com/TwoThreeWang/Moovie/new/internal/douban"
+	"github.com/TwoThreeWang/Moovie/new/internal/history"
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
@@ -23,6 +31,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
+// main 装配所有任务处理器，注册定时计划，然后阻塞等待停止信号。
 func main() {
 	// Worker 与 Web 使用同一套配置解析和校验，避免两个进程对变量含义理解不一致。
 	if err := config.LoadDotEnv(".env"); err != nil {
@@ -91,11 +100,10 @@ func main() {
 	metadataHandler := catalog.NewRefreshHandler(movies, metadataProvider, embeddingService, refreshOptions...)
 	doubanPopular := playback.NewDoubanPopularProvider(client)
 	popularSources := []playback.PopularSource{
-		{Name: "douban", Weight: 0.30, Provider: doubanPopular},
-		{Name: "activity", Weight: 0.40, Provider: playback.NewActivityPopularProvider(pool)},
+		{Name: "douban", Provider: doubanPopular},
 	}
 	if cfg.Catalog.TMDBToken != "" {
-		popularSources = append(popularSources, playback.PopularSource{Name: "tmdb", Weight: 0.30,
+		popularSources = append(popularSources, playback.PopularSource{Name: "tmdb",
 			Provider: playback.NewTMDBPopularProvider(client, cfg.Catalog.TMDBToken, mediaStore)})
 	}
 	popularityRefresher := playback.NewPopularityRefresher(playback.NewPopularitySnapshotStore(pool),
@@ -106,7 +114,8 @@ func main() {
 	metricsStore := operations.NewMetricsStore(pool)
 	operationsService := operations.NewService(searchStore,
 		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs),
-		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry))
+		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry),
+		operations.WithSyncEventCleanup(history.NewPostgresStore(pool).DeleteExpiredSyncEvents))
 	dispatcher := workqueue.NewDispatcher(queueStore, cfg.Worker.Concurrency, cfg.Worker.Poll)
 	for _, taskType := range []string{catalog.RefreshProviderDouban, catalog.RefreshProviderReviews, catalog.RefreshProviderTMDB, catalog.RefreshProviderEmbedding} {
 		dispatcher.Handle(taskType, 10*time.Minute, metadataHandler.Handle)
@@ -118,6 +127,16 @@ func main() {
 	dispatcher.Handle(playback.TaskPopularityRefresh, 15*time.Minute, popularityRefresher.Handle)
 	dispatcher.Handle(operations.TaskCleanup, 30*time.Minute, operationsService.HandleCleanup)
 	dispatcher.Handle(operations.TaskHealthCheck, 5*time.Minute, operationsService.HandleHealthCheck)
+	dispatcher.Handle(mediaidentity.TaskQualityRefresh, time.Minute, func(ctx context.Context, job workqueue.Job) error {
+		var p struct {
+			SourceKey string `json:"source_key"`
+			VodID     string `json:"vod_id"`
+		}
+		if err := json.Unmarshal(job.Payload, &p); err != nil || p.SourceKey == "" || p.VodID == "" {
+			return workqueue.Terminal(fmt.Errorf("invalid quality refresh payload"))
+		}
+		return mediaStore.RefreshQuality(ctx, p.SourceKey, p.VodID)
+	})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: "metadata_schedule", SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: catalog.TaskIMDbBackfill, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute, InitialDelay: 30 * time.Second})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: douban.TaskDaily, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour, InitialDelay: time.Minute})

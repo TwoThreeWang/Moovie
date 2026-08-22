@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// GoroutineRunner 是有并发上限的后台任务执行器：槽位满了就直接丢弃任务而不是排队，
+// 这样请求高峰时后台任务不会把内存和数据库连接吃光。
 type GoroutineRunner struct {
 	timeout time.Duration
 	root    context.Context
@@ -21,6 +23,7 @@ type GoroutineRunner struct {
 	lastLog atomic.Int64
 }
 
+// NewGoroutineRunner 创建后台执行器，每个任务都有独立超时。
 func NewGoroutineRunner(timeout time.Duration, maximumConcurrency ...int) *GoroutineRunner {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -33,6 +36,7 @@ func NewGoroutineRunner(timeout time.Duration, maximumConcurrency ...int) *Gorou
 	return &GoroutineRunner{timeout: timeout, root: root, cancel: cancel, slots: make(chan struct{}, maxConcurrency)}
 }
 
+// Run 提交任务，忽略是否被丢弃。
 func (runner *GoroutineRunner) Run(task func(context.Context)) {
 	_ = runner.TryRun(task)
 }
@@ -69,6 +73,7 @@ func (runner *GoroutineRunner) TryRun(task func(context.Context)) bool {
 	return true
 }
 
+// recordDrop 累计被丢弃的任务数，日志每秒最多一条。
 func (runner *GoroutineRunner) recordDrop() {
 	total := runner.dropped.Add(1)
 	now := time.Now().Unix()
@@ -79,9 +84,13 @@ func (runner *GoroutineRunner) recordDrop() {
 	slog.Warn("background task shed to protect process", "dropped_total", total, "active", len(runner.slots), "limit", cap(runner.slots))
 }
 
-func (runner *GoroutineRunner) Active() int     { return len(runner.slots) }
+// Active/Dropped 供后台监控页展示。
+func (runner *GoroutineRunner) Active() int { return len(runner.slots) }
+
+// Dropped 返回因队列满被丢弃的任务数。
 func (runner *GoroutineRunner) Dropped() uint64 { return runner.dropped.Load() }
 
+// Stop 取消所有在跑的任务并等待退出，用于优雅停机。
 func (runner *GoroutineRunner) Stop(ctx context.Context) error {
 	runner.mu.Lock()
 	if !runner.stopped {

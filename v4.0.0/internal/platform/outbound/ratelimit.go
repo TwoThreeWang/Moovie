@@ -15,6 +15,7 @@ type Limiter struct {
 	next     time.Time
 }
 
+// NewLimiter 按最小发送间隔创建限速器；interval 为 0 表示不限速。
 func NewLimiter(interval time.Duration) *Limiter {
 	if interval < 0 {
 		interval = 0

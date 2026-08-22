@@ -4,6 +4,7 @@ package contract
 // FormOrQuery 用于页面表单与 HTMX 查询共用的 Handler。
 type InputLocation string
 
+// 参数可能出现的位置。
 const (
 	InputQuery       InputLocation = "query"
 	InputForm        InputLocation = "form"

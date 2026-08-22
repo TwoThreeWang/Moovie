@@ -113,7 +113,7 @@ memory 实现本身保留，但身份从「第二个生产后端」降级为「�
 2. **memory 有而 postgres 没有的「播种方法」**。`ReplaceSites` / `ReplaceCopyrightKeywords` / `ReplaceCategoryKeywords` 是内存实现专有的，12 处调用改用 `testdb.SeedSites` / `testdb.SeedFilters`（裸 SQL，不 import `search`，否则 `search` 的包内测试会构成循环）。
 3. **`search.MemoryStore` 兼职了 `mediaidentity` 的活**。`RecordDetailedMatchCandidate` 在生产里由 `mediaidentity.PostgresStore` 实现，内存版却挂在 `search` 上。`admin` 的测试改为直接用 `mediaidentity`；`search/match_review_test.go` 里那个纯粹测内存实现的用例直接删除（同文件的 postgres 用例已覆盖该路径）。
 
-`recommendation.NewMemoryPersonalizer` **不在删除范围**——名字里有 Memory，但它是生产环境真正在用的个性化实现（`cmd/web/main.go:337`），不是存储替身。
+`recommendation.NewMemoryPersonalizer` 后续已被 PostgreSQL + pgvector 实现替代并删除。
 
 ### 过程中的一次事故
 

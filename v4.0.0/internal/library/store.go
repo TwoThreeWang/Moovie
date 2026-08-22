@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Store 是片单的读写接口。后半部分的统计方法主要给月报和片场用。
 type Store interface {
 	Upsert(ctx context.Context, record Record) error
 	Remove(ctx context.Context, userID int, movieID string) error

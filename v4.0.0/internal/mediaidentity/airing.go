@@ -52,6 +52,7 @@ func EpisodeLabel(seasonNumber, episodeNumber int) string {
 	return fmt.Sprintf("S%02dE%02d", seasonNumber, episodeNumber)
 }
 
+// airingWeekdays 下标对应 time.Weekday。
 var airingWeekdays = [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
 
 // AiringEpisodeView 是模板直接渲染的单集播出信息。
@@ -98,6 +99,7 @@ func BuildAirScheduleView(seriesStatus string, units []MediaUnit, now time.Time,
 	return AirScheduleView{Show: true, Next: views[0], Upcoming: views}
 }
 
+// buildAiringEpisodeView 把一条季集记录整理成模板可直接渲染的播出信息。
 func buildAiringEpisodeView(unit MediaUnit, today time.Time, location *time.Location) AiringEpisodeView {
 	// air_date 是不带时区的 DATE，驱动会把它解析成 UTC 零点。
 	// 这里只取年月日再按展示时区重建，避免时区换算把日期整体挪动一天。
@@ -120,6 +122,7 @@ func buildAiringEpisodeView(unit MediaUnit, today time.Time, location *time.Loca
 	}
 }
 
+// relativeDayText 把天数差转成「今天/明天/后天/N天后」。
 func relativeDayText(daysUntil int) string {
 	switch {
 	case daysUntil <= 0:

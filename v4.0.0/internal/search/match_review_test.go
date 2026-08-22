@@ -11,7 +11,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
-func TestPostgresMatchReviewCommitsCanonicalLinkCandidateAndAuditTogether(t *testing.T) {
+func TestPostgresMatchReviewCommitsCanonicalLinkAndCandidateTogether(t *testing.T) {
 	transaction := &matchReviewTransaction{row: matchReviewRow{values: matchReviewValues(55, "source", "42", 9, MatchStatusReview, 0.71, "title_year")}}
 	database := &matchReviewDatabase{transaction: transaction}
 	store := NewPostgresStore(database)
@@ -21,10 +21,14 @@ func TestPostgresMatchReviewCommitsCanonicalLinkCandidateAndAuditTogether(t *tes
 	if !transaction.committed || transaction.rolledBack {
 		t.Fatalf("transaction state committed=%v rolledBack=%v", transaction.committed, transaction.rolledBack)
 	}
-	if len(transaction.queries) != 4 {
+	// 审计表已删（迁移 0044），事务里只剩三条写：关联、剧集候选、候选状态。
+	if len(transaction.queries) != 3 {
 		t.Fatalf("exec queries = %d: %v", len(transaction.queries), transaction.queries)
 	}
-	for _, expected := range []string{"INSERT INTO resource_media_links", "UPDATE resource_episode_candidates", "UPDATE resource_match_candidates", "INSERT INTO resource_match_audits"} {
+	if containsQuery(transaction.queries, "resource_match_audits") {
+		t.Fatalf("audit table is dropped but still written: %v", transaction.queries)
+	}
+	for _, expected := range []string{"INSERT INTO resource_media_links", "UPDATE resource_episode_candidates", "UPDATE resource_match_candidates"} {
 		if !containsQuery(transaction.queries, expected) {
 			t.Fatalf("missing %q in %v", expected, transaction.queries)
 		}
@@ -32,8 +36,8 @@ func TestPostgresMatchReviewCommitsCanonicalLinkCandidateAndAuditTogether(t *tes
 	if !strings.Contains(transaction.queries[0], "resource_media_links.is_locked = FALSE OR resource_media_links.media_id = EXCLUDED.media_id") {
 		t.Fatalf("canonical link upsert can overwrite a conflicting manual lock: %s", transaction.queries[0])
 	}
-	if !reflect.DeepEqual(transaction.arguments[3], []any{int64(55), "source", "42", 9, 9, 9, 3, MatchStatusVerified, MatchStatusReview, 0.71, "title_year", "人工确认"}) {
-		t.Fatalf("audit arguments = %#v", transaction.arguments[3])
+	if !reflect.DeepEqual(transaction.arguments[2], []any{int64(55), MatchStatusVerified, 9}) {
+		t.Fatalf("candidate status arguments = %#v", transaction.arguments[2])
 	}
 }
 
@@ -58,7 +62,7 @@ func TestPostgresMatchReviewRollsBackRejectedCandidateWithoutCanonicalLink(t *te
 	if err := store.ReviewMatchCandidate(context.Background(), "source", "43", 10, 3, MatchStatusRejected, "年份不符"); err != nil {
 		t.Fatal(err)
 	}
-	if len(transaction.queries) != 2 || containsQuery(transaction.queries, "resource_media_links") {
+	if len(transaction.queries) != 1 || containsQuery(transaction.queries, "resource_media_links") {
 		t.Fatalf("rejected queries = %v", transaction.queries)
 	}
 }
@@ -72,13 +76,13 @@ func TestPostgresMatchReviewCanResolveStableCandidateID(t *testing.T) {
 	if !strings.Contains(transaction.rowQuery, "WHERE id = $1") || !reflect.DeepEqual(transaction.rowArguments, []any{int64(58)}) {
 		t.Fatalf("candidate ID lock = %s / %#v", transaction.rowQuery, transaction.rowArguments)
 	}
-	if !transaction.committed || len(transaction.queries) != 4 {
+	if !transaction.committed || len(transaction.queries) != 3 {
 		t.Fatalf("candidate ID review = committed:%v queries:%v", transaction.committed, transaction.queries)
 	}
+	// 三条写都必须用管理员改选的 99，而不是候选原本猜的 11。
 	if !reflect.DeepEqual(transaction.arguments[0], []any{"source", "44", 99}) ||
 		!reflect.DeepEqual(transaction.arguments[1], []any{"source", "44", 99}) ||
-		!reflect.DeepEqual(transaction.arguments[2], []any{int64(58), MatchStatusVerified, 99}) ||
-		transaction.arguments[3][5] != 99 {
+		!reflect.DeepEqual(transaction.arguments[2], []any{int64(58), MatchStatusVerified, 99}) {
 		t.Fatalf("alternative media resolution arguments = %#v", transaction.arguments)
 	}
 }

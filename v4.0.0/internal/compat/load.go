@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// LoadMetrics 是压测结果：请求数、错误数、各状态码分布和耗时分位数。
 type LoadMetrics struct {
 	Requests   int           `json:"requests"`
 	Errors     int           `json:"errors"`
@@ -23,6 +24,7 @@ type LoadMetrics struct {
 	Throughput float64       `json:"throughput"`
 }
 
+// MeasureEndpoint 用固定并发压测一个接口，响应体读完即丢只统计耗时。
 func MeasureEndpoint(ctx context.Context, client *http.Client, baseURL, path string, requests, concurrency int) (LoadMetrics, error) {
 	if requests < 1 || concurrency < 1 {
 		return LoadMetrics{}, fmt.Errorf("requests and concurrency must be positive")
@@ -119,6 +121,7 @@ func MeasureEndpoint(ctx context.Context, client *http.Client, baseURL, path str
 	return metrics, nil
 }
 
+// percentileIndex 计算分位数在有序切片中的下标。
 func percentileIndex(length, percentile int) int {
 	if length <= 1 {
 		return 0

@@ -244,3 +244,48 @@ func syncV2Request(t *testing.T, router http.Handler, token string, request Sync
 	}
 	return result
 }
+
+// 保留期清理删掉的是账本，不是进度：过期事件要删干净，没过期的不许动，
+// 而被删掉那条进度必须靠 bootstrap 自动补回来——否则老设备就永远收不到它了。
+func TestExpiredSyncEventsAreDeletedAndBootstrappedAgain(t *testing.T) {
+	testdb.Media(t, testdb.Pool(t), 9)
+	testdb.User(t, testdb.Pool(t), 42)
+	store := NewPostgresStore(testdb.Pool(t))
+	watchedAt := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	for _, episode := range []string{"S01E01", "S01E02"} {
+		if err := store.Upsert(t.Context(), Record{UserID: 42, MediaID: 9, Source: "source-a", VodID: "vod",
+			Title: "旧云端记录", Episode: episode, SeasonNumber: 1, EpisodeKey: episode, WatchedAt: watchedAt}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := store.SyncV2(t.Context(), 42, SyncV2Request{DeviceID: "device-retention"}, watchedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Changes) != 2 {
+		t.Fatalf("bootstrap changes = %d, want 2", len(first.Changes))
+	}
+
+	// 只把第一条事件挪到 40 天前，另一条保持新鲜。
+	stale := first.Changes[0].Version
+	if _, err := testdb.Pool(t).Exec(t.Context(),
+		`UPDATE history_sync_events SET created_at = NOW() - INTERVAL '40 days' WHERE version = $1`, stale); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := store.DeleteExpiredSyncEvents(t.Context(), time.Now().AddDate(0, 0, -30), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1（没过期的那条不该被删）", deleted)
+	}
+
+	// 账本少了一条，但进度还在：下次同步必须把它补回来发给客户端。
+	second, err := store.SyncV2(t.Context(), 42, SyncV2Request{DeviceID: "device-retention", Cursor: first.Cursor}, watchedAt.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Changes) != 1 || second.Changes[0].OperationID != first.Changes[0].OperationID {
+		t.Fatalf("被清掉的进度没有补回来：%#v", second.Changes)
+	}
+}

@@ -1,3 +1,7 @@
+// web 是网站主进程：装配所有依赖、注册路由、启动 HTTP 服务。
+//
+// 全站只有这一个地方创建 Store 和 Service，其他包之间只通过接口打交道。
+// 后台任务由单独的 worker 进程跑（见 cmd/worker）。
 package main
 
 import (
@@ -41,6 +45,7 @@ import (
 // 显式维护清单可以让模板缺失或重名在启动阶段暴露，而不是等用户访问时才报错。
 var contentPages = []string{"home", "search", "trends", "about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "404", "player", "player_embed", "iptv", "tvbox", "play", "watch", "login", "register", "dashboard", "settings", "movie", "fetching", "recommendations", "foryou", "share", "share_monthly", "cinema", "feedback", "admin_feedback", "discover", "admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_copyright", "admin_category", "admin_matches", "admin_jobs"}
 
+// doubanResourceLister 是 search 存储里按豆瓣 ID 查资源的能力。
 type doubanResourceLister interface {
 	ListResourcesByDoubanID(ctx context.Context, doubanID string) ([]search.LinkedResourceRow, error)
 	HasPlayableResource(ctx context.Context, mediaID int) (bool, error)
@@ -49,6 +54,7 @@ type doubanResourceLister interface {
 // catalogResourceListerAdapter 只做模型转换，让 catalog 不必依赖 search 的具体结构体。
 type catalogResourceListerAdapter struct{ lister doubanResourceLister }
 
+// ListResourcesByDoubanID 转换资源模型。
 func (a catalogResourceListerAdapter) ListResourcesByDoubanID(ctx context.Context, doubanID string) ([]catalog.LinkedResource, error) {
 	rows, err := a.lister.ListResourcesByDoubanID(ctx, doubanID)
 	if err != nil {
@@ -67,6 +73,7 @@ func (a catalogResourceListerAdapter) ListResourcesByDoubanID(ctx context.Contex
 	return result, nil
 }
 
+// HasPlayableResource 判断这部片子有没有可播放的资源。
 func (a catalogResourceListerAdapter) HasPlayableResource(ctx context.Context, mediaID int) (bool, error) {
 	return a.lister.HasPlayableResource(ctx, mediaID)
 }
@@ -74,6 +81,7 @@ func (a catalogResourceListerAdapter) HasPlayableResource(ctx context.Context, m
 // discoverPopularAdapter 把播放域的热门结果转换成发现页需要的轻量结构。
 type discoverPopularAdapter struct{ provider playback.PopularProvider }
 
+// Popular 转换热门榜结果。
 func (adapter discoverPopularAdapter) Popular(ctx context.Context, mediaType string) ([]catalog.PopularSubject, error) {
 	subjects, err := adapter.provider.Popular(ctx, mediaType)
 	if err != nil {
@@ -86,6 +94,8 @@ func (adapter discoverPopularAdapter) Popular(ctx context.Context, mediaType str
 	return result, nil
 }
 
+// main 按「配置 → 数据库 → Store → Service → Handler → 路由 → 启动」的顺序装配整个网站，
+// 收到停止信号后优雅关闭。
 func main() {
 	// 启动阶段先完成配置和模板校验；任一步失败都直接退出，避免带着半套配置接收请求。
 	if err := config.LoadDotEnv(".env"); err != nil {
@@ -98,38 +108,40 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Store 变量按业务接口声明，实现统一来自 PostgreSQL。
-	// Handler 和 Service 只依赖这些接口，因此不需要知道底层表结构。
+	// ── 阶段 1：模板 ──────────────────────────────────────────────
+	// 启动时就把所有 HTML 模板编译好，缺模板会直接报错退出。
 	renderer, err := platformweb.LoadRenderer(filepath.Join(cfg.WebRoot, "templates"), contentPages)
 	if err != nil {
 		slog.Error("template loading failed", "error", err)
 		os.Exit(1)
 	}
-	var itemStore search.ItemStore
-	var siteStore search.SiteStore
-	var filterStore search.FilterStore
-	var searchLogStore search.SearchLogStore
-	var healthStatStore search.HealthStatStore
-	var readiness httpserver.ReadinessProbe
-	var historyStore history.Store
-	var mediaIdentityStore mediaidentity.Resolver
-	var canonicalStore mediaidentity.Store
-	var mediaIdentitySearch search.MediaIdentity
-	var identityStore identity.Store
-	var doubanUserStore douban.UserStore
-	var doubanJobStore douban.JobStore
-	var queueStore workqueue.Store
-	var reportStore report.Store
-	var libraryStore library.Store
-	var catalogStore catalog.Store
-	var metadataRefreshJobs catalog.RefreshQueue
-	var socialStore social.Store
-	var feedbackStore feedback.Store
-	var danmakuStore danmaku.Store
-	var adminSearchStore admin.SearchStore
-	var operationsStore operations.Store
+	// ── 阶段 2：数据库连接 + Store 创建 ──────────────────────────
+	// 所有 Store 变量按业务接口声明，底层实现统一来自 PostgreSQL。
+	// Handler 和 Service 只依赖这些接口，因此不需要知道底层表结构。
+	var itemStore search.ItemStore                // 资源条目（采集到的影视资源）
+	var siteStore search.SiteStore                // 资源站配置
+	var filterStore search.FilterStore            // 搜索过滤条件
+	var searchLogStore search.SearchLogStore      // 搜索日志
+	var healthStatStore search.HealthStatStore    // 资源站健康统计（熔断用）
+	var readiness httpserver.ReadinessProbe       // 就绪探针（k8s 健康检查）
+	var historyStore history.Store                // 用户播放历史
+	var mediaIdentityStore mediaidentity.Resolver // 规范媒体身份（豆瓣 ID → 内部媒体 ID 的映射）
+	var canonicalStore mediaidentity.Store        // 规范媒体写入
+	var mediaIdentitySearch search.MediaIdentity  // 搜索时的媒体匹配
+	var identityStore identity.Store              // 用户账号
+	var doubanUserStore douban.UserStore          // 豆瓣账号绑定
+	var doubanJobStore douban.JobStore            // 豆瓣同步任务
+	var queueStore workqueue.Store                // 通用后台任务队列
+	var reportStore report.Store                  // 月报
+	var libraryStore library.Store                // 用户片库（想看/已看）
+	var catalogStore catalog.Store                // 影片元数据（标题、海报、评分等）
+	var metadataRefreshJobs catalog.RefreshQueue  // 元数据刷新任务队列
+	var socialStore social.Store                  // 社交（分享）
+	var feedbackStore feedback.Store              // 用户反馈
+	var danmakuStore danmaku.Store                // 弹幕
+	var adminSearchStore admin.SearchStore        // 后台管理的搜索
+	var operationsStore operations.Store          // 运维（清理、健康检查）
 	var databasePool *database.Pool
-	// 数据库连接和 migration 都设置独立超时，防止启动过程无限卡住。
 	connectContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	databasePool, err = database.Connect(connectContext, cfg.Database.DSN(), cfg.Database.MaxConns)
 	cancel()
@@ -137,6 +149,7 @@ func main() {
 		slog.Error("database connection failed", "error", err)
 		os.Exit(1)
 	}
+	// 在启动 Web 服务前,检查配置是否启用了自动迁移,如果启用则执行数据库表结构更新。
 	if cfg.Database.Migrate {
 		migrationContext, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		err = database.Migrate(migrationContext, databasePool)
@@ -147,12 +160,15 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// 用同一个数据库连接池创建所有 Store。
+	// 一个 Postgres Store 可能同时实现多个业务接口（如 postgresStore 同时是 ItemStore、SiteStore、FilterStore）。
 	postgresStore := search.NewPostgresStore(databasePool)
 	itemStore, siteStore, filterStore = postgresStore, postgresStore, postgresStore
 	adminSearchStore = postgresStore
 	operationsStore = postgresStore
 	searchLogStore, healthStatStore = postgresStore, postgresStore
-	historyStore = history.NewPostgresStore(databasePool)
+	postgresHistory := history.NewPostgresStore(databasePool)
+	historyStore = postgresHistory
 	mediaStore := mediaidentity.NewPostgresStore(databasePool)
 	mediaIdentityStore = mediaStore
 	canonicalStore = mediaStore
@@ -170,14 +186,17 @@ func main() {
 	feedbackStore = feedback.NewPostgresStore(databasePool)
 	danmakuStore = danmaku.NewPostgresStore(databasePool)
 	readiness = databasePool.Ping
-	// 搜索 Runner、健康状态和出站 Client 都是进程级共享对象；重复创建会绕过并发上限。
-	searchRunner := search.NewGoroutineRunner(cfg.Search.TotalTimeout, cfg.Search.BackgroundMaxConcurrency)
-	searchHealth := search.NewHealthWithStore(cfg.Search.BreakerEnabled, healthStatStore)
+	// ── 阶段 3：进程级共享组件（HTTP Client、搜索并发控制、熔断器）───
+	// 这些是全局单例，所有 Service 共用；重复创建会绕过并发上限。
+	searchRunner := search.NewGoroutineRunner(cfg.Search.TotalTimeout, cfg.Search.BackgroundMaxConcurrency) // 控制后台搜索并发数
+	searchHealth := search.NewHealthWithStore(cfg.Search.BreakerEnabled, healthStatStore)                   // 资源站熔断器
 	searchHealth.Start()
-	sourceClient := outbound.NewClient(cfg.Search.SourceTimeout, cfg.OutboundMaxConnsPerHost)
-	// AI Gateway 单独一个 Client：LLM 的响应时间和搜索源不在一个量级，共用超时会让语义改写全部超时。
-	aiClient := outbound.NewClient(cfg.Catalog.AITimeout, 4)
-	sourceCrawler := search.NewAppleCMSCrawler(sourceClient)
+	sourceClient := outbound.NewClient(cfg.Search.SourceTimeout, cfg.OutboundMaxConnsPerHost) // 访问外部资源站的 HTTP Client
+	aiClient := outbound.NewClient(cfg.Catalog.AITimeout, 4)                                  // AI（向量化）专用 Client，超时比资源站长
+	sourceCrawler := search.NewAppleCMSCrawler(sourceClient)                                  // 苹果 CMS 采集器
+	// ── 阶段 4：Service 层（业务逻辑）──────────────────────────────
+	// 数据提供者：豆瓣（抓取影片元数据、短评）和 TMDB（剧照、英文信息）。
+	// 抓取到的元数据会通过 canonicalStore 写入 media_identity 表建立规范映射。
 	doubanOptions := []catalog.DoubanOption{catalog.WithDoubanRequestInterval(cfg.Catalog.DoubanRequestInterval)}
 	tmdbOptions := []catalog.TMDBOption{}
 	if canonicalStore != nil {
@@ -189,22 +208,24 @@ func main() {
 	}
 	doubanProvider := catalog.NewDoubanProvider(sourceClient, catalogStore, doubanOptions...)
 	doubanClient := douban.NewClient(sourceClient)
-	doubanService := douban.NewService(doubanClient, libraryStore, doubanJobStore)
-	reportService := report.NewService(reportStore, libraryStore, catalogStore)
+	doubanService := douban.NewService(doubanClient, libraryStore, doubanJobStore) // 豆瓣标记同步（想看/已看导入）
+	reportService := report.NewService(reportStore, libraryStore, catalogStore)    // 月度观影报告
 	doubanTaskHandler := douban.NewTaskHandler(doubanJobStore, doubanUserStore, doubanService, douban.WithMonthlyGenerator(reportService))
 	metricsStore := operations.NewMetricsStore(nil)
 	if databasePool != nil {
 		metricsStore = operations.NewMetricsStore(databasePool)
 	}
-	operationsService := operations.NewService(operationsStore,
+	operationsService := operations.NewService(operationsStore, // 运维服务：定期清理过期任务、遥测、同步事件
 		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs),
-		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry))
+		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry),
+		operations.WithSyncEventCleanup(postgresHistory.DeleteExpiredSyncEvents))
 	tmdbProvider := catalog.NewTMDBProvider(sourceClient, catalogStore, cfg.Catalog.TMDBToken, tmdbOptions...)
-	embeddingService := catalog.NewEmbeddingService(sourceClient, catalogStore, catalog.EmbeddingConfig{
+	embeddingService := catalog.NewEmbeddingService(sourceClient, catalogStore, catalog.EmbeddingConfig{ // 向量化服务（相似推荐用）
 		OllamaHost: cfg.Catalog.OllamaHost, OllamaModel: cfg.Catalog.OllamaModel,
 		CFGatewayURL: cfg.Catalog.CFGatewayURL, CFAPIToken: cfg.Catalog.CFAPIToken,
 		CFAIModel: cfg.Catalog.CFAIModel,
 	}, catalog.WithEmbeddingAIClient(aiClient))
+	// 元数据刷新：豆瓣抓基本信息 → 补短评 → TMDB 补剧照 → 向量化，四步串行，由后台任务驱动。
 	var metadataRefreshHandler *catalog.RefreshHandler
 	if metadataRefreshJobs != nil {
 		refreshOptions := []catalog.RefreshHandlerOption{catalog.WithRefreshReviews(doubanProvider)}
@@ -213,6 +234,7 @@ func main() {
 		}
 		metadataRefreshHandler = catalog.NewRefreshHandler(metadataRefreshJobs, doubanProvider, embeddingService, refreshOptions...)
 	}
+	// 搜索服务：聚合多个资源站的结果，支持媒体身份匹配（把不同站的同一部片子归并到一起）。
 	searchOptions := []search.ServiceOption{}
 	if mediaIdentitySearch != nil {
 		searchOptions = append(searchOptions, search.WithMediaIdentity(mediaIdentitySearch))
@@ -228,6 +250,7 @@ func main() {
 		searchHealth,
 		searchRunner,
 		search.ServiceConfig{SourceTimeout: cfg.Search.SourceTimeout, TotalTimeout: cfg.Search.TotalTimeout,
+			RefreshWait:          cfg.Search.RefreshWait,
 			SourceMaxConcurrency: cfg.Search.SourceMaxConcurrency,
 			ResourceMatchShadow:  cfg.Search.ResourceMatchShadow, ResourceMatchAutoApply: cfg.Search.ResourceMatchAutoApply,
 			MediaAutoMatchThreshold: cfg.Search.MediaAutoMatchThreshold, MediaReviewMatchThreshold: cfg.Search.MediaReviewMatchThreshold}, searchOptions...,
@@ -243,30 +266,25 @@ func main() {
 		search.WithSearchLogger(searchLogStore, searchRunner),
 		search.WithUnifiedSearcher(unifiedSearchService),
 	)
+	// 播放详情服务：用户点"播放"时实时去资源站拉最新的播放地址。
 	detailService := playback.NewDetailService(itemStore.(playback.Catalog), siteStore.(playback.SiteCatalog), sourceCrawler, searchRunner, cfg.Search.SourceTimeout)
 	doubanPopular := playback.NewDoubanPopularProvider(sourceClient)
-	popularSources := []playback.PopularSource{{Name: "douban", Weight: 0.30, Provider: doubanPopular}}
-	if databasePool != nil {
-		popularSources = append(popularSources, playback.PopularSource{Name: "activity", Weight: 0.40, Provider: playback.NewActivityPopularProvider(databasePool)})
+	popularSources := []playback.PopularSource{
+		{Name: "douban", Provider: doubanPopular},
 	}
 	if resolver, ok := mediaIdentityStore.(playback.PopularIdentityResolver); ok && cfg.Catalog.TMDBToken != "" {
 		tmdbPopular := playback.NewTMDBPopularProvider(sourceClient, cfg.Catalog.TMDBToken, resolver)
-		popularSources = append(popularSources, playback.PopularSource{Name: "tmdb", Weight: 0.30, Provider: tmdbPopular})
+		popularSources = append(popularSources, playback.PopularSource{Name: "tmdb", Provider: tmdbPopular})
 	}
-	popularProvider := playback.PopularProvider(doubanPopular)
-	var popularityRefresher *playback.PopularityRefresher
-	if len(popularSources) > 1 {
-		popularProvider = playback.NewCompositePopularProvider(popularSources...)
-	}
-	if databasePool != nil {
-		snapshotStore := playback.NewPopularitySnapshotStore(databasePool)
-		popularityRefresher = playback.NewPopularityRefresher(snapshotStore, playback.NewCompositePopularProvider(popularSources...), cfg.Popularity.RefreshInterval)
-		// 快照不可用时 SnapshotPopularProvider 内部回退到豆瓣榜单。
-		popularProvider = playback.NewSnapshotPopularProvider(snapshotStore, doubanPopular)
-	}
+	snapshotStore := playback.NewPopularitySnapshotStore(databasePool)
+	popularityRefresher := playback.NewPopularityRefresher(snapshotStore,
+		playback.NewCompositePopularProvider(popularSources...), cfg.Popularity.RefreshInterval)
+	popularProvider := playback.PopularProvider(playback.NewSnapshotPopularProvider(snapshotStore, doubanPopular))
+	// ── 阶段 5（可选）：内嵌后台任务 ───────────────────────────────
+	// 生产环境后台任务由独立的 cmd/worker 进程跑，但本地开发时开启 JOBS_IN_WEB
+	// 可以把 worker 也跑在 web 进程里，省得同时启两个进程。
 	var workerDispatcher *workqueue.Dispatcher
 	if cfg.JobsInWeb {
-		// 单进程开发同样使用唯一 Dispatcher；生产环境关闭 JOBS_IN_WEB，交给 cmd/worker。
 		workerDispatcher = workqueue.NewDispatcher(queueStore, cfg.Worker.Concurrency, cfg.Worker.Poll)
 		workerDispatcher.Handle(douban.TaskSync, 30*time.Minute, doubanTaskHandler.Handle)
 		workerDispatcher.Handle(douban.TaskDaily, 30*time.Minute, doubanTaskHandler.HandleDaily)
@@ -292,15 +310,17 @@ func main() {
 			}
 			workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: "metadata_schedule", SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute})
 		}
-		if popularityRefresher != nil {
-			workerDispatcher.Handle(playback.TaskPopularityRefresh, 15*time.Minute, popularityRefresher.Handle)
-			workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: cfg.Popularity.RefreshInterval})
-		}
+		workerDispatcher.Handle(playback.TaskPopularityRefresh, 15*time.Minute, popularityRefresher.Handle)
+		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: cfg.Popularity.RefreshInterval})
 		if err := workerDispatcher.Start(); err != nil {
 			slog.Error("worker dispatcher failed to start", "error", err)
 			os.Exit(1)
 		}
 	}
+	// ── 阶段 6：Handler 层（HTTP 处理器）──────────────────────────
+	// 每个业务模块一个 Handler，通过 WithXxx 选项注入可选依赖。
+	// if xxx, ok := store.(SomeInterface) 这种写法是在检查 Store 是否实现了某个可选能力，
+	// 实现了就注入，没实现就安全降级（页面上少一个区块而已）。
 	playbackOptions := []playback.HandlerOption{
 		playback.WithSpeedStore(itemStore.(playback.SpeedStore)),
 		playback.WithCopyrightChecker(searchService),
@@ -313,7 +333,6 @@ func main() {
 	if eventWriter, ok := mediaIdentityStore.(mediaidentity.PlaybackEventWriter); ok {
 		playbackOptions = append(playbackOptions, playback.WithPlaybackEventWriter(eventWriter))
 	}
-	// 播出日期只有 PostgreSQL 实现能提供；内存启动时播放页不展示更新时间区块。
 	if airReader, ok := mediaIdentityStore.(playback.AirScheduleReader); ok {
 		playbackOptions = append(playbackOptions, playback.WithAirScheduleReader(airReader))
 	}
@@ -326,7 +345,6 @@ func main() {
 		playbackOptions...,
 	)
 	historyOptions := []history.HandlerOption{}
-	// 播出日期只有 PostgreSQL 实现能提供；内存启动时首页不展示"今日更新"。
 	if updateReader, ok := mediaIdentityStore.(history.TodayUpdateReader); ok {
 		historyOptions = append(historyOptions, history.WithTodayUpdateReader(updateReader, cfg.Database.TimeZone))
 	}
@@ -335,11 +353,7 @@ func main() {
 	identityHandler := identity.NewHandler(cfg, identityStore, identity.WithHistoryCounter(historyStore), identity.WithLibraryCounter(libraryStore), identity.WithMonthlyReportReader(reportStore), identity.WithFeedbackCounter(feedbackStore))
 	doubanHandler := douban.NewHandler(cfg, doubanUserStore, doubanJobStore, doubanService, doubanTaskHandler)
 	reportHandler := report.NewHandler(cfg, doubanUserStore, libraryStore, reportStore, reportService)
-	var personalizer recommendation.Personalizer = recommendation.NewMemoryPersonalizer(catalogStore, libraryStore, historyStore)
-	if databasePersonalizer, ok := catalogStore.(recommendation.Personalizer); ok {
-		personalizer = databasePersonalizer
-	}
-	recommendationService := recommendation.NewService(catalogStore, recommendation.WithPersonalizer(personalizer))
+	recommendationService := recommendation.NewService(catalogStore, recommendation.WithPersonalizer(postgresCatalogStore))
 	catalogHandlerOptions := []catalog.HandlerOption{
 		catalog.WithUserMovies(libraryStore),
 		catalog.WithFetcher(doubanProvider, searchRunner),
@@ -348,6 +362,7 @@ func main() {
 		catalog.WithBackgroundRunner(searchRunner),
 		catalog.WithSuggester(doubanProvider),
 		catalog.WithPopularProvider(discoverPopularAdapter{provider: popularProvider}),
+		catalog.WithSiteTrending(discoverPopularAdapter{provider: playback.NewSiteTrendingProvider(databasePool)}),
 		catalog.WithSimilarFinder(recommendationService),
 	}
 	if cfg.Catalog.TMDBToken != "" {
@@ -359,7 +374,6 @@ func main() {
 	if metadataRefreshJobs != nil {
 		catalogHandlerOptions = append(catalogHandlerOptions, catalog.WithRefreshQueue(metadataRefreshJobs))
 	}
-	// 同上：无数据库启动时详情页安全降级为不展示更新时间区块。
 	if airReader, ok := mediaIdentityStore.(catalog.AirScheduleReader); ok {
 		catalogHandlerOptions = append(catalogHandlerOptions, catalog.WithAirScheduleReader(airReader))
 	}
@@ -378,7 +392,8 @@ func main() {
 	}
 	adminHandler := admin.NewHandler(cfg, identityStore, adminSearchStore, catalogStore, feedbackStore, sourceCrawler, searchHealth,
 		adminOptions...)
-	// 所有路由在一个位置集中注册；全局中间件由 httpserver.New 先于这些路由安装。
+	// ── 阶段 7：路由注册 + HTTP 服务启动 ─────────────────────────
+	// 所有路由在一个位置集中注册；全局中间件（限流、CORS 等）由 httpserver.New 先于这些路由安装。
 	server := httpserver.New(cfg, readiness, func(router *gin.Engine) {
 		router.HTMLRender = renderer
 		router.Use(auth.Optional(cfg.AppSecret), identity.LoadUser(identityStore, cfg.AppSecret, cfg.Env == "production"))
@@ -413,6 +428,8 @@ func main() {
 		errCh <- httpserver.ListenAndServe(server, cfg.HTTP.MaxConnections)
 	}()
 
+	// ── 阶段 8：等待退出信号 ─────────────────────────────────────
+	// 主 goroutine 阻塞在这里，等 Ctrl+C 或 kill 信号。
 	signalCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -425,8 +442,9 @@ func main() {
 	case <-signalCtx.Done():
 	}
 
-	// 收到 SIGINT/SIGTERM 后按同一超时窗口停止 HTTP、后台 Runner 和可选 Dispatcher，
-	// 最后关闭数据库与空闲连接，避免发布时中断正在写入的数据。
+	// ── 阶段 9：优雅关闭 ─────────────────────────────────────────
+	// 收到停止信号后按顺序关闭：HTTP 服务 → 后台搜索 → 熔断器 → Worker → 数据库 → HTTP Client。
+	// 所有关闭共用同一个超时窗口，防止某一步卡住导致进程挂起。
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {

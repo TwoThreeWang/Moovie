@@ -21,22 +21,8 @@
         </div>
     </div>
 
-    <!-- 播放器 -->
-    <section class="video-section">
-        <div class="video-container" id="player-container">
-            {{ if .PlayURL }}
-            <div id="artplayer-app"></div>
-            {{ else }}
-            <div class="video-loading">
-                <span>暂无可用播放链接</span>
-            </div>
-            {{ end }}
-        </div>
-    </section>
-
-    {{ if .PlayURL }}
-    {{ template "play_disclaimer.html" . }}
-    {{ end }}
+    <!-- 播放器（含紧贴下方的免责条） -->
+    {{ template "play_container.html" . }}
 
     <div class="watch-content">
 
@@ -135,41 +121,20 @@
         {{ if .DoubanID }}{{ if ne .DoubanID "0" }}
         <div class="watch-section" style="margin-top:16px">
             <div class="watch-section-title">短评</div>
-            <div id="user-comments"
-                 hx-get="/api/htmx/movie-comments?douban_id={{ .DoubanID }}"
-                 hx-trigger="load"
-                 hx-indicator="#user-comments-loading">
-                <div id="user-comments-loading" class="htmx-indicator movie-search-loading-state">
-                    <div class="loading-spinner"></div>
-                    <p>正在加载短评...</p>
-                </div>
-            </div>
+            {{ template "play_comments.html" .DoubanID }}
         </div>
 
         <!-- 推荐 -->
         <div class="watch-section">
             <div class="watch-section-title">喜欢这部剧的人也喜欢</div>
-            <div id="similar-movies"
-                 hx-get="/api/htmx/similar?douban_id={{ .DoubanID }}"
-                 hx-trigger="load"
-                 hx-indicator="#similar-loading">
-                <div id="similar-loading" class="htmx-indicator movie-search-loading-state">
-                    <div class="loading-spinner"></div>
-                    <p>正在加载推荐...</p>
-                </div>
-            </div>
+            {{ template "play_similar.html" .DoubanID }}
         </div>
         {{ end }}{{ end }}
 
     </div>
 </div>
 
-<!-- 播放器依赖库 -->
-<script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/artplayer-plugin-danmuku/dist/artplayer-plugin-danmuku.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
-<script src="/static/js/player.js?v=0.11"></script>
+{{ template "play_scripts.html" . }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var doubanID = '{{ .DoubanID }}';

@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// episodePatterns 按优先级排列的集数识别规则，兼顾中英文写法。
 var episodePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)S(\d{1,2})\s*E(\d{1,3})`),
 	regexp.MustCompile(`第\s*(\d{1,2})\s*季\s*第\s*(\d{1,3})\s*[集话]`),
@@ -40,6 +41,7 @@ func NormalizeEpisodeLabel(label string) (season int, key string) {
 	return 1, strings.ToUpper(label)
 }
 
+// episodeKey 生成 S01E01 形式的键，季/集不合法时归一到 1。
 func episodeKey(season, episode int) (int, string) {
 	if season < 1 {
 		season = 1
@@ -50,6 +52,7 @@ func episodeKey(season, episode int) (int, string) {
 	return season, "S" + twoDigits(season) + "E" + twoDigits(episode)
 }
 
+// parseNumber 解析数字，失败或小于 1 时返回 fallback。
 func parseNumber(value string, fallback int) int {
 	number, err := strconv.Atoi(value)
 	if err != nil || number < 1 {
@@ -58,6 +61,7 @@ func parseNumber(value string, fallback int) int {
 	return number
 }
 
+// twoDigits 补足两位。
 func twoDigits(number int) string {
 	if number < 10 {
 		return "0" + strconv.Itoa(number)

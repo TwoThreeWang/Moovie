@@ -2,6 +2,7 @@ package feedback
 
 import "context"
 
+// Store 是反馈的读写接口。
 type Store interface {
 	Create(ctx context.Context, feedback Feedback) (*Feedback, error)
 	ListPublic(ctx context.Context, feedbackType string, limit, offset int) ([]Feedback, error)

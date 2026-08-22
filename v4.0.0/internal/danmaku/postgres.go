@@ -9,14 +9,18 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// PostgresStore 是弹幕的 PostgreSQL 实现，只涉及 danmaku 一张表。
 type PostgresStore struct{ database database.Beginner }
 
+// NewPostgresStore 创建弹幕存储。
 func NewPostgresStore(beginner database.Beginner) *PostgresStore {
 	return &PostgresStore{database: beginner}
 }
 
+// recordColumns 是各查询共用的字段列表。
 const recordColumns = `id, vod_key, time, text, mode, color, user_id, deleted, created_at`
 
+// ListByVodKey 读某一集的弹幕，已软删除的不返回。
 func (store *PostgresStore) ListByVodKey(ctx context.Context, vodKey string, limit int) ([]Record, error) {
 	transaction, err := store.database.Begin(ctx)
 	if err != nil {
@@ -32,6 +36,8 @@ WHERE vod_key = $1 AND deleted = FALSE ORDER BY time ASC LIMIT $2`, vodKey, limi
 	return scanRecords(rows)
 }
 
+// CreateGuarded 在一个事务里同时做频率检查、重复检查和写入，
+// 放在事务里是为了并发提交时也拦得住。
 func (store *PostgresStore) CreateGuarded(ctx context.Context, record Record, rateSince, duplicateSince time.Time, maxPerWindow int) (*Record, error) {
 	transaction, err := store.database.Begin(ctx)
 	if err != nil {
@@ -72,10 +78,12 @@ VALUES ($1,$2,$3,$4,$5,$6,FALSE,$7) RETURNING id`, record.VodKey, record.Time, r
 	return &record, nil
 }
 
+// SoftDelete 软删除一条弹幕。
 func (store *PostgresStore) SoftDelete(ctx context.Context, id int) error {
 	return store.exec(ctx, `UPDATE danmakus SET deleted = TRUE WHERE id = $1`, id)
 }
 
+// ListRecent 分页列出最近的弹幕，后台审核用。
 func (store *PostgresStore) ListRecent(ctx context.Context, limit, offset int) ([]Record, error) {
 	transaction, err := store.database.Begin(ctx)
 	if err != nil {
@@ -91,6 +99,7 @@ WHERE deleted = FALSE ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offse
 	return scanRecords(rows)
 }
 
+// exec 执行一条写语句。
 func (store *PostgresStore) exec(ctx context.Context, query string, arguments ...any) error {
 	transaction, err := store.database.Begin(ctx)
 	if err != nil {
@@ -103,6 +112,7 @@ func (store *PostgresStore) exec(ctx context.Context, query string, arguments ..
 	return transaction.Commit(ctx)
 }
 
+// scanRecords 把查询结果扫成弹幕列表。
 func scanRecords(rows database.Rows) ([]Record, error) {
 	records := make([]Record, 0)
 	for rows.Next() {

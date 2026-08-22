@@ -10,6 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// upsertPlaybackPosition 写入播放进度。
+// 进度按三种身份之一去重（优先级从高到低）：季集 ID → 媒体+季集 → 资源站+资源 ID+季集，
+// 对应三个不同的唯一索引，所以下面有两段几乎一样的 SQL。
+// 末尾的 WHERE EXCLUDED.activity_at >= ... 保证晚到的旧数据不会覆盖新进度。
 func upsertPlaybackPosition(ctx context.Context, executor database.Executor, userID int, operation SyncOperation) error {
 	if operation.Season < 1 {
 		operation.Season = 1
@@ -95,6 +99,7 @@ WHERE EXCLUDED.activity_at >= playback_positions.activity_at`, append(arguments,
 	return nil
 }
 
+// playbackPositionConflictTarget 根据有没有 media_id 选择对应的部分唯一索引。
 func playbackPositionConflictTarget(mediaID int) string {
 	if mediaID > 0 {
 		return `(user_id, media_id, season_number, episode_key)
@@ -104,6 +109,9 @@ WHERE media_unit_id IS NULL AND media_id IS NOT NULL`
 WHERE media_unit_id IS NULL AND media_id IS NULL`
 }
 
+// resolvePlaybackMediaUnit 尽量把进度挂到规范季集上：
+// 先按 media_id + 集号找，再退回按资源的候选反查（该资源只对应唯一一集时也认）。
+// 实在找不到就返回 0，进度按资源身份保存。
 func resolvePlaybackMediaUnit(ctx context.Context, executor database.Executor, operation SyncOperation) (int, error) {
 	if operation.MediaUnitID > 0 {
 		return operation.MediaUnitID, nil
@@ -146,6 +154,7 @@ SELECT COALESCE((SELECT media_unit_id FROM exact_match), (SELECT media_unit_id F
 	return *mediaUnitID, nil
 }
 
+// playbackPositionSelect 是进度查询的公共部分，标题和海报优先取 media 表的（更准更新）。
 const playbackPositionSelect = `SELECT position.id, position.user_id, position.media_id, position.media_unit_id,
 COALESCE(media.douban_id, ''), position.last_vod_id,
 COALESCE(NULLIF(media.title, ''), position.title),
@@ -154,6 +163,7 @@ position.season_number, position.episode_key, position.progress_percent, positio
 position.duration_seconds, position.last_source_key, position.entry_page, position.activity_at, position.updated_at
 FROM playback_positions position LEFT JOIN media ON media.id = position.media_id`
 
+// queryPlaybackPositions 按给定条件查询进度记录。
 func queryPlaybackPositions(ctx context.Context, executor database.Executor, predicate string, arguments ...any) ([]Record, error) {
 	rows, err := executor.Query(ctx, playbackPositionSelect+` WHERE `+predicate, arguments...)
 	if err != nil {

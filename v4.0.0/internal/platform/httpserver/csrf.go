@@ -10,13 +10,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// CSRF token 的 Cookie 名和请求头名。
 const (
 	csrfCookieName = "csrf_token"
 	csrfHeaderName = "X-CSRF-Token"
 )
 
+// csrfTokenPattern 限定 token 是 64 位十六进制。
 var csrfTokenPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
+// csrfProtection 采用 double-submit cookie 方案：Cookie 里放随机 token，
+// 写操作必须在 X-CSRF-Token 头或表单字段里回传同一个值。
+// GET/HEAD 等安全方法直接放行，只负责补发 Cookie。
 func csrfProtection(secureCookie bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, err := c.Cookie(csrfCookieName)
@@ -55,6 +60,7 @@ func csrfProtection(secureCookie bool) gin.HandlerFunc {
 	}
 }
 
+// newCSRFToken 生成 32 字节随机 token 的十六进制表示。
 func newCSRFToken() (string, error) {
 	buffer := make([]byte, 32)
 	if _, err := rand.Read(buffer); err != nil {
@@ -63,6 +69,7 @@ func newCSRFToken() (string, error) {
 	return hex.EncodeToString(buffer), nil
 }
 
+// isSafeMethod 判断是否为不改变状态的 HTTP 方法。
 func isSafeMethod(method string) bool {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:

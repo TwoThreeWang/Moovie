@@ -1,3 +1,9 @@
+// Package admin 是管理后台，只有 role=admin 的账号能访问。
+//
+// 本包自己不建表，全部通过其他包的接口读写：用户、资源网、版权/分类过滤词、
+// 任务队列、运行指标、资源匹配复核、资源退役。
+//
+// 页面接口返回 HTML，操作接口统一返回 {code, message, data, success} 的 JSON。
 package admin
 
 import (
@@ -20,12 +26,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// UserStore 是后台需要的账号读写接口。
 type UserStore interface {
 	ListUsers(ctx context.Context) ([]identity.User, error)
 	UpdateRole(ctx context.Context, userID int, role string) error
 	Delete(ctx context.Context, userID int) error
 }
 
+// SearchStore 是后台需要的资源网和过滤词接口。
 type SearchStore interface {
 	ListSites(ctx context.Context) ([]search.Site, error)
 	GetSite(ctx context.Context, id uint) (*search.Site, error)
@@ -43,14 +51,17 @@ type SearchStore interface {
 	SummaryHealthSince(ctx context.Context, since time.Time) (map[string]*search.HealthSummary, error)
 }
 
+// CircuitState 用于在资源网列表上显示熔断状态。
 type CircuitState interface {
 	TrippedUntil(siteKey string) time.Time
 }
 
+// MovieCounter 用于首页统计影片数量。
 type MovieCounter interface {
 	Count(ctx context.Context) (int, error)
 }
 
+// FeedbackCounter 用于首页统计待处理反馈数量。
 type FeedbackCounter interface {
 	CountPending(ctx context.Context) (int, error)
 }
@@ -63,6 +74,7 @@ type JobRetrier interface {
 	RetryFailed(ctx context.Context, taskType string, limit int) (int, error)
 }
 
+// Handler 是后台的全部接口。metrics 和 jobs 是可选的，没注入时相关页面返回 503。
 type Handler struct {
 	config   config.Config
 	users    UserStore
@@ -75,16 +87,20 @@ type Handler struct {
 	jobs     JobRetrier
 }
 
+// HandlerOption 用于注入可选依赖。
 type HandlerOption func(*Handler)
 
+// WithMetricsReader 注入运行指标读取器。
 func WithMetricsReader(reader operations.MetricsReader) HandlerOption {
 	return func(handler *Handler) { handler.metrics = reader }
 }
 
+// WithJobRetrier 注入任务重试能力。
 func WithJobRetrier(retrier JobRetrier) HandlerOption {
 	return func(handler *Handler) { handler.jobs = retrier }
 }
 
+// NewHandler 创建后台处理器。
 func NewHandler(cfg config.Config, users UserStore, searchStore SearchStore, movies MovieCounter, feedbackStore feedback.Store, crawler search.SourceCrawler, health CircuitState, options ...HandlerOption) *Handler {
 	handler := &Handler{config: cfg, users: users, search: searchStore, movies: movies, feedback: feedbackStore, crawler: crawler, health: health}
 	for _, option := range options {
@@ -93,6 +109,7 @@ func NewHandler(cfg config.Config, users UserStore, searchStore SearchStore, mov
 	return handler
 }
 
+// Register 注册后台路由，所有路由都先过登录校验再过管理员校验。
 func (handler *Handler) Register(router *gin.Engine) {
 	require := auth.Require(handler.config.AppSecret, handler.config.Env == "production")
 	middleware := []gin.HandlerFunc{require, requireAdmin}
@@ -115,9 +132,6 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/api/v2/admin/media-matches/:id/resolve", append(middleware, handler.matchReviewAPIResolve)...)
 	router.GET("/api/v2/admin/metrics", append(middleware, handler.metricsSnapshot)...)
 	router.POST("/admin/data/clean", append(middleware, handler.dataClean)...)
-	router.GET("/admin/data/retire-preview", append(middleware, handler.dataRetirePreview)...)
-	router.POST("/admin/data/retire", append(middleware, handler.dataRetire)...)
-	router.POST("/admin/data/restore", append(middleware, handler.dataRestore)...)
 	router.GET("/admin/copyright", append(middleware, handler.copyrightList)...)
 	router.POST("/admin/copyright", append(middleware, handler.copyrightCreate)...)
 	router.PUT("/admin/copyright/:id", append(middleware, handler.copyrightUpdate)...)
@@ -127,6 +141,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.DELETE("/admin/category/:id", append(middleware, handler.categoryDelete)...)
 }
 
+// jobQueuePage 渲染任务队列页，按状态筛选、按游标翻页。
 func (handler *Handler) jobQueuePage(c *gin.Context) {
 	reader, ok := handler.metrics.(operations.JobQueueReader)
 	if !ok {
@@ -214,6 +229,7 @@ func (handler *Handler) jobRetryFailed(c *gin.Context) {
 	apiSuccess(c, gin.H{"task_type": taskType, "retried": retried, "limit": limit})
 }
 
+// metricsSnapshot 返回运行指标快照 JSON，前端定时刷新。
 func (handler *Handler) metricsSnapshot(c *gin.Context) {
 	if handler.metrics == nil {
 		apiError(c, http.StatusServiceUnavailable, "运行指标暂不可用")
@@ -228,6 +244,7 @@ func (handler *Handler) metricsSnapshot(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": snapshot})
 }
 
+// matchReviewPage 渲染资源匹配复核页：机器拿不准的「资源属于哪部片」由人来定。
 func (handler *Handler) matchReviewPage(c *gin.Context) {
 	store, ok := handler.search.(search.MatchReviewStore)
 	if !ok {
@@ -246,6 +263,7 @@ func (handler *Handler) matchReviewPage(c *gin.Context) {
 	handler.page(c, "admin_matches.html", "资源匹配复核 - Moovie影牛", gin.H{"Candidates": candidates, "Status": status})
 }
 
+// matchReviewDecision 处理页面表单提交的复核结果。
 func (handler *Handler) matchReviewDecision(c *gin.Context) {
 	store, ok := handler.search.(search.MatchReviewStore)
 	if !ok {
@@ -267,6 +285,7 @@ func (handler *Handler) matchReviewDecision(c *gin.Context) {
 	apiSuccess(c, gin.H{"source_key": sourceKey, "vod_id": vodID, "media_id": mediaID, "decision": decision})
 }
 
+// matchReviewAPIList 是复核列表的 JSON 接口。
 func (handler *Handler) matchReviewAPIList(c *gin.Context) {
 	store, ok := handler.search.(search.MatchReviewStore)
 	if !ok {
@@ -291,12 +310,14 @@ func (handler *Handler) matchReviewAPIList(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"matches": candidates, "status": status, "limit": limit}})
 }
 
+// matchResolveRequest 是复核接口的请求体。
 type matchResolveRequest struct {
 	Decision string `json:"decision"`
 	Reason   string `json:"reason"`
 	MediaID  int    `json:"media_id,omitempty"`
 }
 
+// matchReviewAPIResolve 是复核提交的 JSON 接口，按候选 ID 处理。
 func (handler *Handler) matchReviewAPIResolve(c *gin.Context) {
 	store, ok := handler.search.(search.MatchReviewStore)
 	if !ok {
@@ -330,10 +351,12 @@ func (handler *Handler) matchReviewAPIResolve(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
 
+// matchAPIError 返回带错误码的复核接口错误。
 func matchAPIError(c *gin.Context, status int, code, message string) {
 	c.JSON(status, gin.H{"success": false, "code": code, "message": message})
 }
 
+// dashboard 渲染后台首页的几个数量统计。
 func (handler *Handler) dashboard(c *gin.Context) {
 	users, _ := handler.users.ListUsers(c.Request.Context())
 	sites, _ := handler.search.ListSites(c.Request.Context())
@@ -344,6 +367,7 @@ func (handler *Handler) dashboard(c *gin.Context) {
 	})
 }
 
+// userList 渲染用户管理页。
 func (handler *Handler) userList(c *gin.Context) {
 	users, err := handler.users.ListUsers(c.Request.Context())
 	if err != nil {
@@ -353,6 +377,7 @@ func (handler *Handler) userList(c *gin.Context) {
 	handler.page(c, "admin_users.html", "用户管理 - Moovie影牛", gin.H{"Users": users})
 }
 
+// userRole 修改用户角色，不允许改自己的，防止把自己降权锁在门外。
 func (handler *Handler) userRole(c *gin.Context) {
 	id, err := positiveInt(c.Param("id"))
 	if err != nil {
@@ -375,6 +400,7 @@ func (handler *Handler) userRole(c *gin.Context) {
 	apiSuccess(c, gin.H{"message": "角色已更新"})
 }
 
+// userDelete 删除用户，同样不允许删自己。
 func (handler *Handler) userDelete(c *gin.Context) {
 	id, err := positiveInt(c.Param("id"))
 	if err != nil {
@@ -392,6 +418,7 @@ func (handler *Handler) userDelete(c *gin.Context) {
 	apiSuccess(c, gin.H{"message": "用户已删除"})
 }
 
+// siteList 渲染资源网列表，附带最近 24 小时的健康统计和熔断状态。
 func (handler *Handler) siteList(c *gin.Context) {
 	sites, err := handler.search.ListSites(c.Request.Context())
 	if err != nil {
@@ -418,6 +445,7 @@ func (handler *Handler) siteList(c *gin.Context) {
 	handler.page(c, "admin_sites.html", "资源网管理 - Moovie影牛", gin.H{"Sites": sites, "Stats": stats})
 }
 
+// siteCreate 新增资源网。
 func (handler *Handler) siteCreate(c *gin.Context) {
 	site, ok := parseSite(c, true)
 	if !ok {
@@ -432,6 +460,7 @@ func (handler *Handler) siteCreate(c *gin.Context) {
 	apiSuccess(c, created)
 }
 
+// siteUpdate 修改资源网。
 func (handler *Handler) siteUpdate(c *gin.Context) {
 	id, err := positiveUint(c.Param("id"))
 	if err != nil {
@@ -454,6 +483,7 @@ func (handler *Handler) siteUpdate(c *gin.Context) {
 	apiSuccess(c, site)
 }
 
+// siteDelete 删除资源网。
 func (handler *Handler) siteDelete(c *gin.Context) {
 	id, err := positiveUint(c.Param("id"))
 	if err != nil {
@@ -467,6 +497,7 @@ func (handler *Handler) siteDelete(c *gin.Context) {
 	apiSuccess(c, nil)
 }
 
+// siteTest 用一个关键词实际请求一次资源网，确认接口是否还能用。
 func (handler *Handler) siteTest(c *gin.Context) {
 	id, err := positiveUint(c.Param("id"))
 	if err != nil {
@@ -501,10 +532,12 @@ type siteTestPreview struct {
 	UpdatedAt string `json:"vod_time"`
 }
 
+// dataPage 渲染搜索数据管理页。
 func (handler *Handler) dataPage(c *gin.Context) {
 	handler.page(c, "admin_cache.html", "搜索数据管理 - Moovie影牛", nil)
 }
 
+// dataClean 清理 7 天没更新过的资源记录。
 func (handler *Handler) dataClean(c *gin.Context) {
 	affected, err := handler.search.DeleteInactive(c.Request.Context(), 7)
 	if err != nil {
@@ -514,87 +547,8 @@ func (handler *Handler) dataClean(c *gin.Context) {
 	apiSuccess(c, gin.H{"affected": affected, "message": "清理完成"})
 }
 
-const defaultRetirementDays = 90
 
-func (handler *Handler) dataRetirePreview(c *gin.Context) {
-	store, ok := handler.search.(search.ResourceCoolingStore)
-	if !ok {
-		apiError(c, http.StatusNotImplemented, "当前存储不支持资源退役预览")
-		return
-	}
-	days, err := retirementDays(c)
-	if err != nil {
-		apiError(c, http.StatusBadRequest, "无效的保留天数")
-		return
-	}
-	preview, err := store.PreviewCooling(c.Request.Context(), days)
-	if err != nil {
-		apiError(c, http.StatusInternalServerError, "退役预览失败")
-		return
-	}
-	apiSuccess(c, gin.H{"dry_run": true, "days": days, "preview": preview,
-		"batch_id": preview.BatchID, "eligible": preview.Eligible,
-		"message": "仅预览，不会修改数据；确认时必须提交该 batch_id"})
-}
-
-func (handler *Handler) dataRetire(c *gin.Context) {
-	store, ok := handler.search.(search.ResourceCoolingStore)
-	if !ok {
-		apiError(c, http.StatusNotImplemented, "当前存储不支持资源退役")
-		return
-	}
-	if !strings.EqualFold(strings.TrimSpace(c.Query("confirm")), "true") && !strings.EqualFold(strings.TrimSpace(c.PostForm("confirm")), "true") {
-		apiError(c, http.StatusBadRequest, "资源退役需要显式确认 confirm=true")
-		return
-	}
-	batchIDValue := strings.TrimSpace(c.Query("batch_id"))
-	if batchIDValue == "" {
-		batchIDValue = strings.TrimSpace(c.PostForm("batch_id"))
-	}
-	batchID, err := strconv.ParseInt(batchIDValue, 10, 64)
-	if err != nil || batchID <= 0 {
-		apiError(c, http.StatusBadRequest, "必须提交有效的 dry-run batch_id")
-		return
-	}
-	affected, err := store.ApplyCooling(c.Request.Context(), batchID, true)
-	if err != nil {
-		apiError(c, http.StatusInternalServerError, "资源退役失败")
-		return
-	}
-	apiSuccess(c, gin.H{"affected": affected, "batch_id": batchID, "message": "资源已降为 cold，元数据、资源明细和观看记录均未删除"})
-}
-
-func (handler *Handler) dataRestore(c *gin.Context) {
-	store, ok := handler.search.(search.ResourceCoolingStore)
-	if !ok {
-		apiError(c, http.StatusNotImplemented, "当前存储不支持资源恢复")
-		return
-	}
-	sourceKey := strings.TrimSpace(c.Query("source_key"))
-	if sourceKey == "" {
-		sourceKey = strings.TrimSpace(c.PostForm("source_key"))
-	}
-	vodID := strings.TrimSpace(c.Query("vod_id"))
-	if vodID == "" {
-		vodID = strings.TrimSpace(c.PostForm("vod_id"))
-	}
-	if sourceKey == "" || vodID == "" || len(sourceKey) > 128 || len(vodID) > 256 {
-		apiError(c, http.StatusBadRequest, "source_key 和 vod_id 不能为空且长度无效")
-		return
-	}
-	affected, err := store.RestoreCold(c.Request.Context(), sourceKey, vodID)
-	if err != nil {
-		apiError(c, http.StatusInternalServerError, "资源恢复失败")
-		return
-	}
-	apiSuccess(c, gin.H{"affected": affected, "source_key": sourceKey, "vod_id": vodID, "message": "资源已恢复为 active"})
-}
-
-func retirementDays(c *gin.Context) (int, error) {
-	value := strings.TrimSpace(c.DefaultQuery("days", strconv.Itoa(defaultRetirementDays)))
-	return positiveInt(value)
-}
-
+// copyrightList 渲染版权屏蔽词列表，命中的影片不出现在搜索结果里。
 func (handler *Handler) copyrightList(c *gin.Context) {
 	filters, err := handler.search.ListCopyrightFilters(c.Request.Context())
 	if err != nil {
@@ -604,6 +558,7 @@ func (handler *Handler) copyrightList(c *gin.Context) {
 	handler.page(c, "admin_copyright.html", "版權限制管理 - Moovie影牛", gin.H{"Filters": filters})
 }
 
+// copyrightCreate 新增版权屏蔽词。
 func (handler *Handler) copyrightCreate(c *gin.Context) {
 	keyword, ok := keyword(c)
 	if !ok {
@@ -617,6 +572,7 @@ func (handler *Handler) copyrightCreate(c *gin.Context) {
 	apiSuccess(c, filter)
 }
 
+// copyrightUpdate 修改版权屏蔽词。
 func (handler *Handler) copyrightUpdate(c *gin.Context) {
 	id, err := positiveUint(c.Param("id"))
 	if err != nil {
@@ -634,10 +590,12 @@ func (handler *Handler) copyrightUpdate(c *gin.Context) {
 	apiSuccess(c, search.Filter{ID: id, Keyword: value})
 }
 
+// copyrightDelete 删除版权屏蔽词。
 func (handler *Handler) copyrightDelete(c *gin.Context) {
 	handler.deleteFilter(c, handler.search.DeleteCopyrightFilter)
 }
 
+// categoryList 渲染分类屏蔽词列表，用于过滤掉不想收录的资源分类。
 func (handler *Handler) categoryList(c *gin.Context) {
 	filters, err := handler.search.ListCategoryFilters(c.Request.Context())
 	if err != nil {
@@ -647,6 +605,7 @@ func (handler *Handler) categoryList(c *gin.Context) {
 	handler.page(c, "admin_category.html", "分类过滤管理 - Moovie影牛", gin.H{"Filters": filters})
 }
 
+// categoryCreate 新增分类屏蔽词。
 func (handler *Handler) categoryCreate(c *gin.Context) {
 	value, ok := keyword(c)
 	if !ok {
@@ -660,10 +619,12 @@ func (handler *Handler) categoryCreate(c *gin.Context) {
 	apiSuccess(c, filter)
 }
 
+// categoryDelete 删除分类屏蔽词。
 func (handler *Handler) categoryDelete(c *gin.Context) {
 	handler.deleteFilter(c, handler.search.DeleteCategoryFilter)
 }
 
+// deleteFilter 是两类屏蔽词删除的公共实现。
 func (handler *Handler) deleteFilter(c *gin.Context, remove func(context.Context, uint) error) {
 	id, err := positiveUint(c.Param("id"))
 	if err != nil {
@@ -677,10 +638,12 @@ func (handler *Handler) deleteFilter(c *gin.Context, remove func(context.Context
 	apiSuccess(c, nil)
 }
 
+// page 渲染后台页面。
 func (handler *Handler) page(c *gin.Context, templateName, title string, extra gin.H) {
 	c.HTML(http.StatusOK, templateName, platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title}, extra))
 }
 
+// requireAdmin 是管理员校验中间件。
 func requireAdmin(c *gin.Context) {
 	if role, exists := c.Get("role"); !exists || role != "admin" {
 		apiError(c, http.StatusForbidden, "需要管理员权限")
@@ -690,14 +653,17 @@ func requireAdmin(c *gin.Context) {
 	c.Next()
 }
 
+// apiSuccess 返回成功响应。
 func apiSuccess(c *gin.Context, data any) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "success", "data": data, "success": true})
 }
 
+// apiError 返回错误响应。
 func apiError(c *gin.Context, code int, message string) {
 	c.JSON(code, gin.H{"code": code, "message": message, "data": nil, "success": false})
 }
 
+// parseSite 解析并校验资源网表单。
 func parseSite(c *gin.Context, requireValues bool) (search.Site, bool) {
 	site := search.Site{Key: strings.TrimSpace(c.PostForm("key")), BaseURL: strings.TrimSpace(c.PostForm("base_url")), Enabled: c.PostForm("enabled") == "on" || c.PostForm("enabled") == "true"}
 	if requireValues && (site.Key == "" || site.BaseURL == "") {
@@ -711,6 +677,7 @@ func parseSite(c *gin.Context, requireValues bool) (search.Site, bool) {
 	return site, true
 }
 
+// keyword 解析并校验屏蔽词表单。
 func keyword(c *gin.Context) (string, bool) {
 	value := strings.TrimSpace(c.PostForm("keyword"))
 	if value == "" {
@@ -724,6 +691,7 @@ func keyword(c *gin.Context) (string, bool) {
 	return value, true
 }
 
+// positiveInt 解析正整数。
 func positiveInt(value string) (int, error) {
 	id, err := strconv.Atoi(value)
 	if err != nil || id <= 0 {
@@ -732,6 +700,7 @@ func positiveInt(value string) (int, error) {
 	return id, nil
 }
 
+// positiveUint 解析正整数（无符号）。
 func positiveUint(value string) (uint, error) {
 	id, err := strconv.ParseUint(value, 10, 32)
 	if err != nil || id == 0 {
@@ -740,10 +709,13 @@ func positiveUint(value string) (uint, error) {
 	return uint(id), nil
 }
 
+// siteKeyPattern 限制资源网 Key 的字符集。
 var siteKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
+// taskTypePattern 限制任务类型的字符集。
 var taskTypePattern = regexp.MustCompile(`^[a-z_]{1,40}$`)
 
+// validHTTPURL 校验是公网可达的 http(s) 地址，挡住指向内网的地址。
 func validHTTPURL(value string) bool {
 	return outbound.ValidatePublicHTTPURL(value) == nil
 }

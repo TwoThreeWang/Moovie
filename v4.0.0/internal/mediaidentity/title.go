@@ -12,6 +12,7 @@ func NormalizeTitle(value string) string {
 	return mediatitle.Normalize(value)
 }
 
+// episodeNumberFromKey 从 S01E05 这样的键里取出集号，取不到返回 0。
 func episodeNumberFromKey(key string) int {
 	key = strings.ToUpper(strings.TrimSpace(key))
 	index := strings.LastIndex(key, "E")

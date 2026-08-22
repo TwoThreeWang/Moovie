@@ -18,8 +18,11 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// forYouCacheCapacity 是「为你推荐」结果的缓存条数上限。
 const forYouCacheCapacity = 512
 
+// Handler 提供相似影片页和「为你推荐」。
+// 推荐计算比较重，结果按用户缓存一段时间，并用 singleflight 防止同一用户并发重算。
 type Handler struct {
 	config        config.Config
 	service       *Service
@@ -30,21 +33,26 @@ type Handler struct {
 	now           func() time.Time
 }
 
+// NewHandler 创建推荐处理器。
 func NewHandler(cfg config.Config, service *Service) *Handler {
 	return &Handler{config: cfg, service: service, cache: make(map[int]forYouCache), cacheCapacity: forYouCacheCapacity, now: time.Now}
 }
 
+// forYouData 是「为你推荐」页面的全部内容。
 type forYouData struct {
 	Personalized, ReliveClassics, SimilarToLast []catalog.Movie
 	LastMovieTitle                              string
 	HeroMovie                                   *catalog.Movie
 	NoPersonalData                              bool
 }
+
+// forYouCache 是一个用户的推荐缓存。
 type forYouCache struct {
 	data    forYouData
 	expires time.Time
 }
 
+// Register 注册推荐相关路由。
 func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/similar/:douban_id", handler.page)
 	router.GET("/api/htmx/similar", handler.similar)
@@ -55,10 +63,12 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/htmx/foryou", optional, handler.forYou)
 }
 
+// forYouPage 渲染「为你推荐」页面骨架，内容由 HTMX 异步加载。
 func (handler *Handler) forYouPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "foryou.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "为你推荐 - " + handler.config.SiteName}, nil))
 }
 
+// forYou 返回「为你推荐」的内容片段。
 func (handler *Handler) forYou(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -95,6 +105,7 @@ func (handler *Handler) forYou(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/foryou_movies.html", view)
 }
 
+// loadForYou 先查缓存，没有再用 singleflight 计算一次。
 func (handler *Handler) loadForYou(ctx context.Context, userID int) forYouData {
 	if data, ok := handler.cachedForYou(userID); ok {
 		return data
@@ -113,6 +124,7 @@ func (handler *Handler) loadForYou(ctx context.Context, userID int) forYouData {
 	return data
 }
 
+// buildForYou 组装推荐内容，没有个人数据时退回热门影片。
 func (handler *Handler) buildForYou(ctx context.Context, userID int) forYouData {
 	personalized, _ := handler.service.UserRecommendations(ctx, userID, 60)
 	hadPersonalData := len(personalized) > 0
@@ -151,6 +163,7 @@ func (handler *Handler) buildForYou(ctx context.Context, userID int) forYouData 
 	return forYouData{Personalized: personalized, ReliveClassics: relive, SimilarToLast: recent, LastMovieTitle: lastTitle, HeroMovie: hero, NoPersonalData: !hadPersonalData}
 }
 
+// cachedForYou 读缓存。
 func (handler *Handler) cachedForYou(userID int) (forYouData, bool) {
 	handler.mu.Lock()
 	defer handler.mu.Unlock()
@@ -165,6 +178,7 @@ func (handler *Handler) cachedForYou(userID int) (forYouData, bool) {
 	return entry.data, true
 }
 
+// storeForYou 写缓存，超容量时清理过期条目。
 func (handler *Handler) storeForYou(userID int, data forYouData) forYouData {
 	data = compactForYouData(data)
 	handler.mu.Lock()
@@ -193,6 +207,7 @@ func (handler *Handler) storeForYou(userID int, data forYouData) forYouData {
 	return data
 }
 
+// compactForYouData 缓存前裁掉用不到的大字段（简介、向量文本），控制内存占用。
 func compactForYouData(data forYouData) forYouData {
 	data.Personalized = compactForYouMovies(data.Personalized)
 	data.ReliveClassics = compactForYouMovies(data.ReliveClassics)
@@ -205,6 +220,7 @@ func compactForYouData(data forYouData) forYouData {
 	return data
 }
 
+// compactForYouMovies 批量裁剪。
 func compactForYouMovies(movies []catalog.Movie) []catalog.Movie {
 	result := make([]catalog.Movie, len(movies))
 	for index, movie := range movies {
@@ -213,6 +229,7 @@ func compactForYouMovies(movies []catalog.Movie) []catalog.Movie {
 	return result
 }
 
+// compactForYouMovie 裁剪单部影片。
 func compactForYouMovie(movie catalog.Movie) catalog.Movie {
 	return catalog.Movie{
 		ID: movie.ID, DoubanID: compactRecommendationText(movie.DoubanID, 32),
@@ -223,6 +240,7 @@ func compactForYouMovie(movie catalog.Movie) catalog.Movie {
 	}
 }
 
+// compactRecommendationText 截断长文本。
 func compactRecommendationText(value string, limit int) string {
 	runes := []rune(value)
 	if len(runes) > limit {
@@ -231,6 +249,7 @@ func compactRecommendationText(value string, limit int) string {
 	return strings.Clone(value)
 }
 
+// similar 返回相似影片片段。
 func (handler *Handler) similar(c *gin.Context) {
 	doubanID := c.Query("douban_id")
 	if doubanID == "" {
@@ -243,6 +262,7 @@ func (handler *Handler) similar(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/similar_movies.html", gin.H{"Movies": movies, "doubanID": doubanID})
 }
 
+// similarWithReasons 返回带推荐理由的相似影片片段。
 func (handler *Handler) similarWithReasons(c *gin.Context) {
 	doubanID := c.Param("douban_id")
 	if doubanID == "" {
@@ -257,6 +277,7 @@ func (handler *Handler) similarWithReasons(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/similar_movies_with_reasons.html", gin.H{"SimilarMovies": movies})
 }
 
+// page 渲染相似影片页。
 func (handler *Handler) page(c *gin.Context) {
 	doubanID := c.Param("douban_id")
 	if doubanID == "" {
@@ -292,6 +313,7 @@ func (handler *Handler) page(c *gin.Context) {
 	c.HTML(http.StatusOK, "recommendations.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title, Description: description, Canonical: fmt.Sprintf("%s/similar/%s", handler.config.SiteURL, source.DoubanID)}, gin.H{"SourceMovie": source, "SimilarMovies": movies, "PrimaryGenre": primaryGenre}))
 }
 
+// directorNames 截取前几位导演用于页面展示。
 func directorNames(value string) string {
 	var directors []catalog.Director
 	if json.Unmarshal([]byte(value), &directors) != nil {
@@ -306,6 +328,7 @@ func directorNames(value string) string {
 	return strings.Join(names, "、")
 }
 
+// notFound 渲染 404。
 func (handler *Handler) notFound(c *gin.Context, title string) {
 	c.HTML(http.StatusNotFound, "404.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title}, nil))
 }

@@ -24,6 +24,8 @@ import (
 // 这里把全进程的豆瓣请求串行化，出问题时 Pause 还会让大家一起冷却。
 const defaultDoubanRequestInterval = 200 * time.Millisecond
 
+// DoubanProvider 抓取豆瓣的主资料、短评、热门榜和搜索联想。
+// singleflight 合并同一条目的并发抓取，limiter 保证全进程对豆瓣的请求不超频。
 type DoubanProvider struct {
 	client      *http.Client
 	store       Store
@@ -36,16 +38,20 @@ type DoubanProvider struct {
 	limiter     *outbound.Limiter
 }
 
+// DoubanOption 是豆瓣抓取器的可选装配项。
 type DoubanOption func(*DoubanProvider)
 
+// WithDoubanCanonicalWriter 注入规范媒体写入器。
 func WithDoubanCanonicalWriter(writer CanonicalWriter) DoubanOption {
 	return func(provider *DoubanProvider) { provider.canonical = writer }
 }
 
+// WithDoubanRequestInterval 覆盖豆瓣请求的最小间隔。
 func WithDoubanRequestInterval(interval time.Duration) DoubanOption {
 	return func(provider *DoubanProvider) { provider.limiter = outbound.NewLimiter(interval) }
 }
 
+// NewDoubanProvider 创建豆瓣抓取器。
 func NewDoubanProvider(client *http.Client, store Store, options ...DoubanOption) *DoubanProvider {
 	provider := &DoubanProvider{client: client, store: store, base: "https://m.douban.com", suggestBase: "https://movie.douban.com",
 		popular: make(map[string]popularCacheEntry), limiter: outbound.NewLimiter(defaultDoubanRequestInterval)}
@@ -55,6 +61,7 @@ func NewDoubanProvider(client *http.Client, store Store, options ...DoubanOption
 	return provider
 }
 
+// PopularSubject 是发现页热门榜的一条数据。
 type PopularSubject struct {
 	ID           string `json:"id"`
 	Title        string `json:"title"`
@@ -71,33 +78,78 @@ func (subject PopularSubject) HasRating() bool {
 	return err == nil && rating > 0
 }
 
+// popularCacheEntry 是热门榜的内存缓存条目。
 type popularCacheEntry struct {
 	subjects  []PopularSubject
 	expiresAt time.Time
 }
 
+// popularQueries 是发现页四个分类对应的豆瓣查询参数。
+var popularQueries = map[string]string{
+	"movie":   "type=movie&tag=热门",
+	"tv":      "type=tv&tag=热门",
+	"show":    "type=tv&tag=综艺",
+	"cartoon": "type=tv&tag=日本动画",
+}
+
+// popularRefreshTimeout 是后台刷新热门榜的整体上限，防止后台 goroutine 挂死。
+const popularRefreshTimeout = 30 * time.Second
+
+// Popular 取热门榜，缓存 12 小时。
+// 缓存新鲜就直接返回；缓存过期但旧榜单还在，先把旧的还给页面、刷新丢到后台跑，
+// 因为同步等上游最坏要 20 秒（主接口超时 + Rexxar 兜底再超时一次），
+// 那 20 秒里发现页就是一个空转的加载圈，而热门榜晚几分钟根本没人看得出来。
+// 只有完全没有缓存的冷启动才同步等一次。
 func (provider *DoubanProvider) Popular(ctx context.Context, movieType string) ([]PopularSubject, error) {
-	query := ""
-	switch movieType {
-	case "movie":
-		query = "type=movie&tag=热门"
-	case "tv":
-		query = "type=tv&tag=热门"
-	case "show":
-		query = "type=tv&tag=综艺"
-	case "cartoon":
-		query = "type=tv&tag=日本动画"
-	default:
+	if _, supported := popularQueries[movieType]; !supported {
 		return nil, fmt.Errorf("unsupported movie type %q", movieType)
 	}
-	provider.popularMu.Lock()
-	cached, exists := provider.popular[movieType]
+	cached, exists := provider.cachedPopular(movieType)
 	if exists && time.Now().Before(cached.expiresAt) {
-		result := append([]PopularSubject(nil), cached.subjects...)
-		provider.popularMu.Unlock()
-		return result, nil
+		return append([]PopularSubject(nil), cached.subjects...), nil
 	}
-	provider.popularMu.Unlock()
+	if exists && len(cached.subjects) > 0 {
+		provider.refreshPopularInBackground(ctx, movieType)
+		return append([]PopularSubject(nil), cached.subjects...), nil
+	}
+	return provider.refreshPopular(ctx, movieType)
+}
+
+// cachedPopular 读一份热门榜缓存，包括已经过期的。
+func (provider *DoubanProvider) cachedPopular(movieType string) (popularCacheEntry, bool) {
+	provider.popularMu.Lock()
+	defer provider.popularMu.Unlock()
+	entry, exists := provider.popular[movieType]
+	return entry, exists
+}
+
+// refreshPopularInBackground 把刷新丢到后台。用 WithoutCancel 保留日志上下文，
+// 但请求结束后不能跟着被取消，否则后台刷新永远跑不完，缓存也就永远不会更新。
+func (provider *DoubanProvider) refreshPopularInBackground(ctx context.Context, movieType string) {
+	detached := context.WithoutCancel(ctx)
+	go func() {
+		background, cancel := context.WithTimeout(detached, popularRefreshTimeout)
+		defer cancel()
+		_, _ = provider.refreshPopular(background, movieType)
+	}()
+}
+
+// refreshPopular 真正去抓热门榜。降级顺序：主接口 → Rexxar 接口 → 过期缓存 → 本地高分库。
+// 用 singleflight 合并并发刷新：冷启动时四个分类被同时打开，同一分类只该发一次请求。
+func (provider *DoubanProvider) refreshPopular(ctx context.Context, movieType string) ([]PopularSubject, error) {
+	result, err, _ := provider.group.Do("popular:"+movieType, func() (any, error) {
+		return provider.fetchPopular(ctx, movieType)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.([]PopularSubject), nil
+}
+
+// fetchPopular 是热门榜抓取和各级降级的实现，只应由 refreshPopular 调用。
+func (provider *DoubanProvider) fetchPopular(ctx context.Context, movieType string) ([]PopularSubject, error) {
+	query := popularQueries[movieType]
+	cached, exists := provider.cachedPopular(movieType)
 
 	endpoint := strings.TrimRight(provider.suggestBase, "/") + "/j/search_subjects?" + query + "&page_limit=50&page_start=0"
 	var response struct {
@@ -140,12 +192,14 @@ func (provider *DoubanProvider) Popular(ctx context.Context, movieType string) (
 	return fallback, nil
 }
 
+// cachePopular 写入热门榜缓存。
 func (provider *DoubanProvider) cachePopular(movieType string, subjects []PopularSubject) {
 	provider.popularMu.Lock()
 	provider.popular[movieType] = popularCacheEntry{subjects: append([]PopularSubject(nil), subjects...), expiresAt: time.Now().Add(12 * time.Hour)}
 	provider.popularMu.Unlock()
 }
 
+// Suggestion 是一条搜索联想结果。
 type Suggestion struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
@@ -156,6 +210,7 @@ type Suggestion struct {
 	Img      string `json:"img"`
 }
 
+// rexxarMovie 对应豆瓣移动端 rexxar 接口的影片详情结构。
 type rexxarMovie struct {
 	ID            string   `json:"id"`
 	Title         string   `json:"title"`
@@ -183,6 +238,8 @@ type rexxarMovie struct {
 	} `json:"actors"`
 }
 
+// Fetch 抓一部影片的主资料。豆瓣按 movie/tv/show 分了三个端点，且事先不知道是哪一种，
+// 所以依次尝试，第一个成功的即为准，同时把它的媒体类型作为规范类型写进 media 表。
 func (provider *DoubanProvider) Fetch(ctx context.Context, doubanID string, _ bool) error {
 	if !validDoubanID(doubanID) {
 		return workqueue.Terminal(fmt.Errorf("invalid Douban ID %q", doubanID))
@@ -224,6 +281,7 @@ func (provider *DoubanProvider) Fetch(ctx context.Context, doubanID string, _ bo
 	return err
 }
 
+// FetchReviews 抓热门短评（最多 10 条），同样要三个端点轮着试。
 func (provider *DoubanProvider) FetchReviews(ctx context.Context, doubanID string) error {
 	if !validDoubanID(doubanID) {
 		return workqueue.Terminal(fmt.Errorf("invalid Douban ID %q", doubanID))
@@ -281,6 +339,7 @@ type mediaTypeAttempts struct {
 	errors   []error
 }
 
+// add 记录一次失败的尝试。
 func (attempts *mediaTypeAttempts) add(mediaType string, err error) {
 	attempts.failures = append(attempts.failures, mediaType+": "+err.Error())
 	attempts.errors = append(attempts.errors, err)
@@ -309,6 +368,7 @@ func (attempts *mediaTypeAttempts) err(action string) error {
 	return combined
 }
 
+// Suggest 先查本地库，本地没有才去问豆瓣。
 func (provider *DoubanProvider) Suggest(ctx context.Context, keyword string) ([]Suggestion, error) {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
@@ -325,10 +385,17 @@ func (provider *DoubanProvider) Suggest(ctx context.Context, keyword string) ([]
 	return provider.SuggestExternal(ctx, keyword)
 }
 
+// SuggestExternal 直接调豆瓣的联想接口。
+// 走 limiter 是必须的：搜索页每次本地不足 5 条就会打一次这个接口，
+// 不限速迟早被豆瓣 429，而 429 之后所有豆瓣抓取都会一起变慢。
+// limiter.Wait 认 ctx，所以调用方给的超时仍然说了算。
 func (provider *DoubanProvider) SuggestExternal(ctx context.Context, keyword string) ([]Suggestion, error) {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
 		return []Suggestion{}, nil
+	}
+	if err := provider.limiter.Wait(ctx); err != nil {
+		return nil, err
 	}
 	endpoint := strings.TrimRight(provider.suggestBase, "/") + "/j/subject_suggest?q=" + url.QueryEscape(keyword)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -363,6 +430,7 @@ func (provider *DoubanProvider) SuggestExternal(ctx context.Context, keyword str
 	return results, nil
 }
 
+// getJSON 是所有豆瓣请求的公共出口：先等限流放行，被限流时让整个进程一起冷却。
 func (provider *DoubanProvider) getJSON(ctx context.Context, endpoint, referer string, destination any) error {
 	if err := provider.limiter.Wait(ctx); err != nil {
 		return err
@@ -395,6 +463,7 @@ func (provider *DoubanProvider) getJSON(ctx context.Context, endpoint, referer s
 	return nil
 }
 
+// validDoubanID 豆瓣 ID 必须是 6~9 位纯数字。
 func validDoubanID(value string) bool {
 	if len(value) < 6 || len(value) > 9 {
 		return false
@@ -407,6 +476,7 @@ func validDoubanID(value string) bool {
 	return true
 }
 
+// mapRexxarMovie 把豆瓣返回的结构映射成 Movie，导演和演员存成 JSON 字符串。
 func mapRexxarMovie(response rexxarMovie) Movie {
 	movie := Movie{
 		DoubanID: response.ID, Title: response.Title, OriginalTitle: response.OriginalTitle,
@@ -451,6 +521,9 @@ func fallbackMovieType(movie Movie) string {
 	return "tv"
 }
 
+// inferMovieType 从类型标签里猜是剧集/综艺/动漫，猜不出算电影。
+// 注意：豆瓣的 genres 多是「剧情/动作」这种内容标签，这个函数命中率不高，
+// 只适合做二次细分，不能单独用来判断媒体类型（见 fallbackMovieType）。
 func inferMovieType(genres string) string {
 	lower := strings.ToLower(genres)
 	switch {

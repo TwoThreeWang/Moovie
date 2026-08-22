@@ -17,7 +17,7 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		versions = append(versions, migration.version)
 	}
-	if !reflect.DeepEqual(versions, []string{"0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0036", "0037", "0038", "0039", "0040", "0041", "0042"}) {
+	if !reflect.DeepEqual(versions, []string{"0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0036", "0037", "0038", "0039", "0040", "0041", "0042", "0043", "0044", "0045", "0046"}) {
 		t.Fatalf("migrations = %+v", migrations)
 	}
 	upperSQL := ""
@@ -69,6 +69,10 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	if !strings.Contains(upperSQL, "CREATE TABLE IF NOT EXISTS RESOURCE_MATCH_AUDITS") {
 		t.Fatal("resource match audit migration is missing")
 	}
+	// 建表迁移必须留着（老库跑过），但最终状态是删掉的：0044 负责收尾。
+	if !strings.Contains(upperSQL, "DROP TABLE IF EXISTS RESOURCE_MATCH_AUDITS") {
+		t.Fatal("resource match audit drop migration is missing")
+	}
 	for _, required := range []string{"ADD COLUMN IF NOT EXISTS ID BIGSERIAL", "ADD COLUMN IF NOT EXISTS CANDIDATE_ID", "ADD COLUMN IF NOT EXISTS PREVIOUS_MEDIA_ID", "ADD COLUMN IF NOT EXISTS RESOLVED_MEDIA_ID"} {
 		if !strings.Contains(upperSQL, required) {
 			t.Fatalf("resource match API migration missing %q", required)
@@ -112,13 +116,16 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	// 迁移编号在 0031 之后仍会继续增长，因此这里按版本号定位割接迁移，
 	// 而不是取最后一个文件——否则每加一条新迁移都会误报。
 	const cutoverVersion = "0031"
+	allowedTableDrops := map[string]bool{"0036": true, "0044": true}
 	cutoverSQL := ""
 	for _, migration := range migrations {
 		if migration.version == cutoverVersion {
 			cutoverSQL = strings.ToUpper(migration.sql)
 			continue
 		}
-		if migration.version != "0036" && strings.Contains(strings.ToUpper(migration.sql), "DROP TABLE") {
+		// 删表必须是刻意的：0036 合并任务队列、0044 删只写不读的审计表，
+		// 其余迁移一律不许出现 DROP TABLE，防止误删。
+		if !allowedTableDrops[migration.version] && strings.Contains(strings.ToUpper(migration.sql), "DROP TABLE") {
 			t.Fatalf("only explicit cutover migrations may drop retired tables: version=%s", migration.version)
 		}
 	}

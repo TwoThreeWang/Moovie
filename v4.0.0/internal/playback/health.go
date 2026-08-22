@@ -15,8 +15,10 @@ type PlaybackHealth struct {
 	LastFailure  time.Time
 }
 
+// Total 返回总样本数。
 func (health PlaybackHealth) Total() int { return health.SuccessCount + health.FailureCount }
 
+// SuccessRate 返回成功率。
 func (health PlaybackHealth) SuccessRate() float64 {
 	if health.Total() == 0 {
 		return 0
@@ -44,6 +46,7 @@ func (health PlaybackHealth) Score() float64 {
 	return reliability*0.8 + speed*0.2
 }
 
+// SourceCandidate 是一个可播放的候选来源，带质量统计和匹配置信度。
 type SourceCandidate struct {
 	CandidateID       int
 	LineID            int
@@ -61,6 +64,7 @@ type SourceCandidate struct {
 	Health            PlaybackHealth
 }
 
+// Score 综合播放质量（85%）和匹配置信度（15%）。
 func (candidate SourceCandidate) Score() float64 {
 	confidence := candidate.MappingConfidence
 	if confidence < 0 {
@@ -86,6 +90,7 @@ func RankSameEpisode(candidates []SourceCandidate, season int, episodeKey string
 	return result
 }
 
+// filterSameEpisode 只保留同一季同一集、且有播放地址的候选。
 func filterSameEpisode(candidates []SourceCandidate, season int, episodeKey string) []SourceCandidate {
 	if season < 1 {
 		season = 1

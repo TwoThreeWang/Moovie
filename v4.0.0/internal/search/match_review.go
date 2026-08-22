@@ -8,14 +8,18 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
 )
 
+// 匹配候选的三种状态：待复核、已确认、已否决。
 const (
 	MatchStatusReview   = "review"
 	MatchStatusVerified = "verified"
 	MatchStatusRejected = "rejected"
 )
 
+// MatchCandidate 是一条待人工复核的“资源↔媒体”匹配候选，同时带上两边的展示信息便于后台比对。
 type MatchCandidate struct {
 	ID               int64   `json:"id"`
 	SourceKey        string  `json:"source_key"`
@@ -37,6 +41,7 @@ type MatchCandidate struct {
 	MediaType        string  `json:"media_type"`
 }
 
+// MarshalJSON 额外把打分理由（reason）作为对象输出，而不是一个 JSON 字符串。
 func (candidate MatchCandidate) MarshalJSON() ([]byte, error) {
 	type candidateAlias MatchCandidate
 	reason := any(map[string]any{})
@@ -51,6 +56,7 @@ func (candidate MatchCandidate) MarshalJSON() ([]byte, error) {
 	}{candidateAlias: candidateAlias(candidate), Reason: reason})
 }
 
+// MatchReviewStore 是后台复核匹配候选所需的存储接口。
 type MatchReviewStore interface {
 	ListMatchCandidates(ctx context.Context, status string, limit int) ([]MatchCandidate, error)
 	ReviewMatchCandidate(ctx context.Context, sourceKey, vodID string, mediaID, actorUserID int, decision, reason string) error
@@ -58,6 +64,7 @@ type MatchReviewStore interface {
 	ResolveMatchCandidateByID(ctx context.Context, candidateID int64, resolvedMediaID, actorUserID int, decision, reason string) error
 }
 
+// ListMatchCandidates 按状态列出候选，置信度高的排前面。
 func (store *PostgresStore) ListMatchCandidates(ctx context.Context, status string, limit int) ([]MatchCandidate, error) {
 	status = normalizeMatchDecision(status, MatchStatusReview)
 	if limit <= 0 || limit > 500 {
@@ -96,6 +103,7 @@ LIMIT $2`, status, limit)
 	return result, nil
 }
 
+// ReviewMatchCandidate 按 (source_key, vod_id, media_id) 定位候选并做出复核决定。
 func (store *PostgresStore) ReviewMatchCandidate(ctx context.Context, sourceKey, vodID string, mediaID, actorUserID int, decision, reason string) error {
 	sourceKey, vodID, reason = strings.TrimSpace(sourceKey), strings.TrimSpace(vodID), strings.TrimSpace(reason)
 	if sourceKey == "" || vodID == "" || mediaID <= 0 {
@@ -104,10 +112,12 @@ func (store *PostgresStore) ReviewMatchCandidate(ctx context.Context, sourceKey,
 	return store.reviewMatchCandidate(ctx, 0, sourceKey, vodID, mediaID, 0, actorUserID, decision, reason)
 }
 
+// ReviewMatchCandidateByID 按候选 ID 复核，沿用候选自带的 media_id。
 func (store *PostgresStore) ReviewMatchCandidateByID(ctx context.Context, candidateID int64, actorUserID int, decision, reason string) error {
 	return store.ResolveMatchCandidateByID(ctx, candidateID, 0, actorUserID, decision, reason)
 }
 
+// ResolveMatchCandidateByID 按候选 ID 复核，并允许人工改判到另一个 media_id。
 func (store *PostgresStore) ResolveMatchCandidateByID(ctx context.Context, candidateID int64, resolvedMediaID, actorUserID int, decision, reason string) error {
 	if candidateID <= 0 {
 		return errors.New("invalid resource match review")
@@ -115,6 +125,9 @@ func (store *PostgresStore) ResolveMatchCandidateByID(ctx context.Context, candi
 	return store.reviewMatchCandidate(ctx, candidateID, "", "", 0, resolvedMediaID, actorUserID, decision, strings.TrimSpace(reason))
 }
 
+// reviewMatchCandidate 在一个事务里完成复核：锁定候选行 → 写/改资源关联 →
+// 同步剧集候选的 media_id → 更新候选状态。提交后再记一行日志留痕。
+// 通过的关联会被标记 is_locked，之后自动匹配不能再覆盖它。
 func (store *PostgresStore) reviewMatchCandidate(ctx context.Context, candidateID int64, sourceKey, vodID string, mediaID, resolvedMediaID, actorUserID int, decision, reason string) error {
 	decision = normalizeMatchDecision(decision, "")
 	if actorUserID <= 0 || reason == "" || (decision != MatchStatusVerified && decision != MatchStatusRejected) {
@@ -187,26 +200,21 @@ SET status = $2, resolved_media_id = $3, updated_at = NOW()
 WHERE id = $1`, candidateID, decision, nullableMediaID(resolvedMediaID)); err != nil {
 		return fmt.Errorf("update resource match candidate: %w", err)
 	}
-	if _, err := transaction.Exec(ctx, `INSERT INTO resource_match_audits
-(candidate_id, source_key, vod_id, media_id, previous_media_id, resolved_media_id,
-	 actor_user_id, decision, previous_status, confidence, match_method, reason)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, candidateID, sourceKey, vodID, mediaID, mediaID,
-		nullableResolvedMediaID(resolvedMediaID, decision), actorUserID, decision, previousStatus, confidence, matchMethod, reason); err != nil {
-		return fmt.Errorf("audit resource match decision: %w", err)
-	}
 	if err := transaction.Commit(ctx); err != nil {
 		return fmt.Errorf("commit resource match review: %w", err)
 	}
+	// 复核留痕写日志而不是写 resource_match_audits：那张表从建出来到删掉都没有读取方，
+	// 想查还得自己开库敲 SQL。日志是现成的检索入口，字段一个不少。
+	requestmeta.Logger(ctx).Info("resource match reviewed",
+		"candidate_id", candidateID, "source", sourceKey, "vod_id", vodID,
+		"media_id", mediaID, "resolved_media_id", resolvedMediaID,
+		"actor_user_id", actorUserID, "decision", decision,
+		"previous_status", previousStatus, "confidence", confidence,
+		"match_method", matchMethod, "reason", reason)
 	return nil
 }
 
-func nullableResolvedMediaID(mediaID int, decision string) any {
-	if decision != MatchStatusVerified {
-		return nil
-	}
-	return mediaID
-}
-
+// normalizeMatchDecision 归一复核状态取值，非法值回退到 fallback。
 func normalizeMatchDecision(value, fallback string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {

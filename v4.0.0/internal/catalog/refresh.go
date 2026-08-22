@@ -8,6 +8,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
+// 元数据刷新的任务类型，以及自动触发刷新的原因标识。
 const (
 	RefreshProviderDouban    = "douban_metadata"
 	RefreshProviderReviews   = "douban_reviews"
@@ -19,7 +20,6 @@ const (
 	RefreshReasonPartialMetadata  = "partial_metadata"
 	RefreshReasonMissingMetadata  = "missing_metadata"
 	RefreshReasonMissingReviews   = "missing_reviews"
-	RefreshReasonStaleReviews     = "stale_reviews"
 	RefreshReasonMissingBackdrops = "missing_backdrops"
 	RefreshReasonMissingEmbedding = "missing_embedding"
 )
@@ -33,7 +33,6 @@ const (
 var autoRefreshCooldowns = map[string]time.Duration{
 	RefreshReasonPartialMetadata:  24 * time.Hour,
 	RefreshReasonMissingReviews:   24 * time.Hour,
-	RefreshReasonStaleReviews:     24 * time.Hour,
 	RefreshReasonMissingEmbedding: 24 * time.Hour,
 	// 详情页缺主资料时整页都渲染不出来，冷却给短一点，让用户重试还有机会。
 	RefreshReasonMissingMetadata: time.Hour,
@@ -41,14 +40,22 @@ var autoRefreshCooldowns = map[string]time.Duration{
 	RefreshReasonMissingBackdrops: 7 * 24 * time.Hour,
 }
 
+// RefreshQueue 是资料刷新入队接口。
 type RefreshQueue interface {
 	EnqueueRefresh(ctx context.Context, doubanID, provider, reason string, requestedBy int) (int, error)
 }
 
+// MediaRefreshQueue 支持按 media.id 入队（后台/接口用，前台一般用豆瓣 ID）。
 type MediaRefreshQueue interface {
 	EnqueueMediaRefresh(ctx context.Context, mediaID int, reason string, requestedBy int) (int, error)
 }
 
+// TMDBRefreshChecker 判断一部影片是否还缺首次 TMDB 资料采集。
+type TMDBRefreshChecker interface {
+	NeedsTMDBRefresh(ctx context.Context, doubanID string) (bool, error)
+}
+
+// EnqueueRefresh 把一次资料刷新放进 worker_jobs。返回的 job id 为 0 表示被冷却挡下了，不是失败。
 func (store *PostgresStore) EnqueueRefresh(ctx context.Context, doubanID, provider, reason string, requestedBy int) (int, error) {
 	if !validDoubanID(doubanID) {
 		return 0, workqueue.Terminal(fmt.Errorf("invalid Douban ID %q", doubanID))
@@ -88,6 +95,7 @@ func (store *PostgresStore) coolingDown(ctx context.Context, provider, doubanID,
 	return recent, nil
 }
 
+// EnqueueMediaRefresh 先把 media.id 换成豆瓣 ID，再走 EnqueueRefresh。
 func (store *PostgresStore) EnqueueMediaRefresh(ctx context.Context, mediaID int, reason string, requestedBy int) (int, error) {
 	if mediaID <= 0 {
 		return 0, fmt.Errorf("invalid media ID %d", mediaID)
@@ -99,6 +107,23 @@ func (store *PostgresStore) EnqueueMediaRefresh(ctx context.Context, mediaID int
 	return store.EnqueueRefresh(ctx, doubanID, RefreshProviderDouban, reason, requestedBy)
 }
 
+// NeedsTMDBRefresh 在剧照为空或尚无 TMDB 映射时返回 true。
+// IMDb 映射是当前 TMDB 采集器的查询前提，没有时交给 imdb_backfill 处理。
+func (store *PostgresStore) NeedsTMDBRefresh(ctx context.Context, doubanID string) (bool, error) {
+	var needed bool
+	if err := store.database.QueryRow(ctx, `SELECT EXISTS (
+    SELECT 1 FROM media m
+    WHERE m.douban_id = $1
+      AND EXISTS (SELECT 1 FROM media_external_ids WHERE media_id = m.id AND provider = 'imdb')
+      AND (m.backdrops = ''
+        OR NOT EXISTS (SELECT 1 FROM media_external_ids WHERE media_id = m.id AND provider = 'tmdb'))
+)`, doubanID).Scan(&needed); err != nil {
+		return false, fmt.Errorf("check TMDB refresh state: %w", err)
+	}
+	return needed, nil
+}
+
+// validRefreshProvider 只允许四种已知的刷新来源，防止任意字符串被写进任务表。
 func validRefreshProvider(provider string) bool {
 	switch provider {
 	case RefreshProviderDouban, RefreshProviderReviews, RefreshProviderTMDB, RefreshProviderEmbedding:
@@ -108,6 +133,7 @@ func validRefreshProvider(provider string) bool {
 	}
 }
 
+// ScheduleDueRefreshes 把到期的影片批量入队，并把下次刷新时间推后 24 小时。
 func (store *PostgresStore) ScheduleDueRefreshes(ctx context.Context, limit int) error {
 	if limit <= 0 {
 		limit = 20
@@ -157,6 +183,7 @@ ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO N
 	return nil
 }
 
+// RefreshHandler 是资料刷新任务的执行器，四种 provider 走同一个 Handle 分发。
 type RefreshHandler struct {
 	queue     RefreshQueue
 	fetcher   Fetcher
@@ -165,16 +192,20 @@ type RefreshHandler struct {
 	backdrops BackdropSyncer
 }
 
+// RefreshHandlerOption 是刷新执行器的可选装配项。
 type RefreshHandlerOption func(*RefreshHandler)
 
+// WithRefreshReviews 注入短评抓取。
 func WithRefreshReviews(fetcher ReviewFetcher) RefreshHandlerOption {
 	return func(handler *RefreshHandler) { handler.reviews = fetcher }
 }
 
+// WithRefreshBackdrops 注入 TMDB 剧照同步。
 func WithRefreshBackdrops(syncer BackdropSyncer) RefreshHandlerOption {
 	return func(handler *RefreshHandler) { handler.backdrops = syncer }
 }
 
+// NewRefreshHandler 创建刷新执行器。
 func NewRefreshHandler(queue RefreshQueue, fetcher Fetcher, vectors VectorEnricher, options ...RefreshHandlerOption) *RefreshHandler {
 	handler := &RefreshHandler{queue: queue, fetcher: fetcher, vectors: vectors}
 	for _, option := range options {
@@ -183,6 +214,8 @@ func NewRefreshHandler(queue RefreshQueue, fetcher Fetcher, vectors VectorEnrich
 	return handler
 }
 
+// Handle 执行一个刷新任务。豆瓣主资料抓完后，只在首次 TMDB 资料确实缺失时派生 TMDB 任务；
+// 剧照是该任务的附带结果，不会因为已有资料而反复刷新。
 func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) error {
 	doubanID := job.SubjectKey
 	switch job.TaskType {
@@ -194,8 +227,17 @@ func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) er
 			return err
 		}
 		if handler.backdrops != nil {
-			if _, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderTMDB, job.Reason, job.RequestedBy); err != nil {
-				return err
+			checker, ok := handler.queue.(TMDBRefreshChecker)
+			if ok {
+				needed, err := checker.NeedsTMDBRefresh(ctx, doubanID)
+				if err != nil {
+					return err
+				}
+				if needed {
+					if _, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderTMDB, job.Reason, job.RequestedBy); err != nil {
+						return err
+					}
+				}
 			}
 		}
 		if handler.vectors != nil {
@@ -224,6 +266,7 @@ func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) er
 	}
 }
 
+// Schedule 是定时入口：把到期的和近期有人播放过的媒体排进队列。
 func (handler *RefreshHandler) Schedule(ctx context.Context, _ workqueue.Job) error {
 	store, ok := handler.queue.(interface {
 		ScheduleDueRefreshes(context.Context, int) error

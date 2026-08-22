@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Handler 提供观看记录的接口和首页/仪表盘的 HTMX 片段。
 type Handler struct {
 	store             Store
 	secret            string
@@ -19,6 +20,7 @@ type Handler struct {
 	timeZone          string
 }
 
+// HandlerOption 用于注入可选依赖。
 type HandlerOption func(*Handler)
 
 // WithTodayUpdateReader 启用首页"今日更新"。timeZone 决定"今天"按哪个日历判断，
@@ -27,6 +29,7 @@ func WithTodayUpdateReader(reader TodayUpdateReader, timeZone string) HandlerOpt
 	return func(handler *Handler) { handler.todayUpdateReader, handler.timeZone = reader, timeZone }
 }
 
+// NewHandler 创建观看记录处理器。
 func NewHandler(store Store, secret string, options ...HandlerOption) *Handler {
 	handler := &Handler{store: store, secret: secret, now: time.Now}
 	for _, option := range options {
@@ -35,6 +38,8 @@ func NewHandler(store Store, secret string, options ...HandlerOption) *Handler {
 	return handler
 }
 
+// Register 注册路由。全部用 Optional 鉴权：未登录时返回空内容而不是 401，
+// 这样首页的 HTMX 片段对游客也能正常渲染。
 func (handler *Handler) Register(router *gin.Engine) {
 	optionalAuth := auth.Optional(handler.secret)
 	router.POST("/api/v2/history/sync", optionalAuth, handler.syncV2)
@@ -44,6 +49,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/htmx/history/today-updates", optionalAuth, handler.todayUpdates)
 }
 
+// syncV2 是多设备同步入口：校验参数 → 逐条应用操作 → 返回增量变更和冲突。
 func (handler *Handler) syncV2(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -70,6 +76,7 @@ func (handler *Handler) syncV2(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// dashboard 渲染个人中心的观看记录（每页 24 条，翻页返回纯网格片段）。
 func (handler *Handler) dashboard(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -93,6 +100,7 @@ func (handler *Handler) dashboard(c *gin.Context) {
 	})
 }
 
+// recent 渲染首页的最近观看（固定 12 条）。
 func (handler *Handler) recent(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -107,6 +115,7 @@ func (handler *Handler) recent(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/dashboard_history.html", gin.H{"History": records, "HasMore": false})
 }
 
+// continueRecords 取「继续观看」并做合并去重，再在内存里分页。
 func (handler *Handler) continueRecords(c *gin.Context, userID, limit, offset int) ([]Record, int, error) {
 	// 浏览器最多保存 100 条本地记录，因此此有界读取足以覆盖正常用户数据；
 	// 首页和仪表盘使用同一合并规则，超过上限时 HasMore 仍为 true。
@@ -130,6 +139,8 @@ func (handler *Handler) continueRecords(c *gin.Context, userID, limit, offset in
 	return merged[offset:end], count, nil
 }
 
+// remove 删除一条记录。它走的也是同步接口（构造一条 delete 操作），
+// 这样删除动作同样会进事件账本，其他设备下次同步就能收到。
 func (handler *Handler) remove(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := auth.UserID(c)
@@ -162,6 +173,7 @@ func (handler *Handler) remove(c *gin.Context) {
 	respond(c, http.StatusOK, "success", nil, true)
 }
 
+// respond 统一的接口返回格式。
 func respond(c *gin.Context, status int, message string, data any, success bool) {
 	c.JSON(status, gin.H{"code": status, "message": message, "data": data, "success": success})
 }

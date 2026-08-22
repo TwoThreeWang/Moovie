@@ -8,18 +8,23 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 )
 
+// 同步接口的边界：一次最多 100 条操作，一次最多返回 500 条变更，
+// 客户端时钟比服务端快 5 分钟以内的时间戳按有效处理。
 const (
 	maxSyncOperations = 100
 	maxSyncChanges    = 500
 	maxClockSkew      = 5 * time.Minute
 )
 
+// SyncV2Request 是客户端提交的同步请求：本机待上传的操作 + 已收到的游标。
 type SyncV2Request struct {
 	DeviceID   string          `json:"device_id"`
 	Cursor     int64           `json:"cursor"`
 	Operations []SyncOperation `json:"operations"`
 }
 
+// SyncOperation 是一条同步操作。operation_id 由客户端生成并保证唯一，服务端靠它做幂等。
+// force 是内部字段（不走 JSON），仅供服务端自己发起的删除跳过时间冲突检查。
 type SyncOperation struct {
 	OperationID string    `json:"operation_id"`
 	DeviceSeq   int64     `json:"device_seq"`
@@ -43,6 +48,8 @@ type SyncOperation struct {
 	force       bool
 }
 
+// SyncV2Result 是同步返回：新游标、增量变更、冲突列表。
+// RequiresFullSync 表示客户端游标比服务端还大（通常是换库或数据被清过），需要全量重来。
 type SyncV2Result struct {
 	Cursor           int64          `json:"cursor"`
 	Changes          []SyncChange   `json:"changes"`
@@ -50,6 +57,7 @@ type SyncV2Result struct {
 	RequiresFullSync bool           `json:"requires_full_sync"`
 }
 
+// SyncChange 是一条已生效的变更。
 type SyncChange struct {
 	Version     int64   `json:"version"`
 	OperationID string  `json:"operation_id"`
@@ -57,6 +65,7 @@ type SyncChange struct {
 	Record      *Record `json:"record,omitempty"`
 }
 
+// SyncConflict 表示这条操作没生效（服务端记录更新），并附上服务端的当前值。
 type SyncConflict struct {
 	Version     int64   `json:"version"`
 	OperationID string  `json:"operation_id"`
@@ -64,11 +73,14 @@ type SyncConflict struct {
 	Current     *Record `json:"current,omitempty"`
 }
 
+// syncEventPayload 是事件账本里存的 JSON 内容。
 type syncEventPayload struct {
 	Change   *SyncChange   `json:"change,omitempty"`
 	Conflict *SyncConflict `json:"conflict,omitempty"`
 }
 
+// normalizeSyncRequest 校验并归一化同步请求：ID 长度、操作类型、去重、季集补全、
+// 进度百分比换算、时间戳纠偏。校验不通过直接 400，不写库。
 func normalizeSyncRequest(request *SyncV2Request, now time.Time) error {
 	request.DeviceID = strings.TrimSpace(request.DeviceID)
 	if len(request.DeviceID) < 8 || len(request.DeviceID) > 128 {
@@ -154,6 +166,7 @@ func normalizeSyncRequest(request *SyncV2Request, now time.Time) error {
 	return nil
 }
 
+// recordFromOperation 把同步操作转成进度记录。
 func recordFromOperation(userID int, operation SyncOperation) Record {
 	return Record{
 		ID: operation.HistoryID, UserID: userID, MediaID: operation.MediaID,
@@ -168,6 +181,8 @@ func recordFromOperation(userID int, operation SyncOperation) Record {
 	}
 }
 
+// operationMatchesRecord 判断一条操作指向的是不是这条记录：
+// 依次按记录 ID、季集 ID、媒体+季集、资源站+资源 ID 匹配。
 func operationMatchesRecord(operation SyncOperation, record Record) bool {
 	if operation.HistoryID > 0 && record.ID == operation.HistoryID {
 		return true

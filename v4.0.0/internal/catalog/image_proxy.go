@@ -16,8 +16,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// imageProxyPrefix 是代理链接里的固定前缀，用来挡掉随手拼 base64 的请求。
 const imageProxyPrefix = "r76RqSIVvUryzx"
 
+// 图片代理的安全名单：禁止访问内网和保留地址段，防止被当作内网探测跳板。
 var (
 	errUnsafeImageProxyTarget = errors.New("unsafe image proxy target")
 	blockedImageProxyRanges   = []netip.Prefix{
@@ -46,8 +48,11 @@ var (
 	}
 )
 
+// hotlinkDeniedSVG 是被判定为盗链时返回的占位图。
 const hotlinkDeniedSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#111827"/><text x="320" y="180" fill="#f9fafb" font-family="system-ui,sans-serif" font-size="28" text-anchor="middle" dominant-baseline="middle">仅限 Moovie 内部使用</text></svg>`
 
+// proxyImage 代理外站图片。豆瓣图片有防盗链，必须由服务端带 Referer 去取；
+// 同时这个接口本身也要防着被别人当免费图床用（同源校验 + 目标地址白名单校验）。
 func (handler *Handler) proxyImage(c *gin.Context) {
 	c.Header("Vary", "Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode")
 	c.Header("Cache-Control", "private, no-store")
@@ -120,18 +125,21 @@ func (handler *Handler) proxyImage(c *gin.Context) {
 	c.DataFromReader(http.StatusOK, response.ContentLength, contentType, reader, nil)
 }
 
+// isSameOriginImageRequest 用浏览器发的 Sec-Fetch-* 头判断是不是本站页面在加载图片。
 func isSameOriginImageRequest(request *http.Request) bool {
 	return request.Header.Get("Sec-Fetch-Site") == "same-origin" &&
 		request.Header.Get("Sec-Fetch-Dest") == "image" &&
 		request.Header.Get("Sec-Fetch-Mode") == "no-cors"
 }
 
+// writeHotlinkDeniedSVG 返回占位图，而不是报错，免得别人站上出现一堆裂图报警。
 func writeHotlinkDeniedSVG(c *gin.Context) {
 	c.Header("Content-Security-Policy", "default-src 'none'; sandbox")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Data(http.StatusOK, "image/svg+xml; charset=utf-8", []byte(hotlinkDeniedSVG))
 }
 
+// decodeProxyImageURL 去掉前缀并 base64 解码出真实图片地址。
 func decodeProxyImageURL(value string) (string, error) {
 	if !strings.HasPrefix(value, imageProxyPrefix) {
 		return "", fmt.Errorf("invalid proxy prefix")
@@ -146,6 +154,7 @@ func decodeProxyImageURL(value string) (string, error) {
 	return "", fmt.Errorf("invalid proxy encoding")
 }
 
+// validateImageProxyTarget 只允许 http/https 且域名可解析到公网地址，防止被用来探测内网（SSRF）。
 func validateImageProxyTarget(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.User != nil || parsed.Hostname() == "" || parsed.Fragment != "" ||
@@ -175,6 +184,7 @@ func validateImageProxyTarget(rawURL string) (string, error) {
 	return parsed.String(), nil
 }
 
+// imageProxyReferer 按目标站点补上对应的 Referer，绕过对方的防盗链。
 func imageProxyReferer(rawURL string) string {
 	parsed, _ := url.Parse(rawURL)
 	if strings.HasSuffix(strings.ToLower(parsed.Hostname()), ".doubanio.com") {
@@ -183,6 +193,8 @@ func imageProxyReferer(rawURL string) string {
 	return parsed.Scheme + "://" + parsed.Host + "/"
 }
 
+// newImageProxyHTTPClient 给 Client 换上受限的 Transport：拨号阶段再校验一次 IP，
+// 防止 DNS 解析结果在校验之后被改成内网地址。
 func newImageProxyHTTPClient(client *http.Client) *http.Client {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
@@ -205,12 +217,14 @@ func newImageProxyHTTPClient(client *http.Client) *http.Client {
 	return &hardened
 }
 
+// imageProxyTransport 只在图片代理请求上启用安全拨号，其他请求原样透传。
 type imageProxyTransport struct {
 	direct  http.RoundTripper
 	proxied http.RoundTripper
 	proxy   func(*http.Request) (*url.URL, error)
 }
 
+// RoundTrip 在真正发请求前校验目标地址不是内网地址。
 func (transport *imageProxyTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	if transport.proxy != nil {
 		proxyURL, err := transport.proxy(request)
@@ -224,6 +238,7 @@ func (transport *imageProxyTransport) RoundTrip(request *http.Request) (*http.Re
 	return transport.direct.RoundTrip(request)
 }
 
+// CloseIdleConnections 关闭空闲连接。
 func (transport *imageProxyTransport) CloseIdleConnections() {
 	if closer, ok := transport.direct.(interface{ CloseIdleConnections() }); ok {
 		closer.CloseIdleConnections()
@@ -233,6 +248,7 @@ func (transport *imageProxyTransport) CloseIdleConnections() {
 	}
 }
 
+// safeImageProxyDialContext 逐个尝试解析出的 IP，跳过所有内网/保留地址。
 func safeImageProxyDialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
@@ -267,6 +283,7 @@ func safeImageProxyDialContext(ctx context.Context, network, address string) (ne
 	return nil, lastErr
 }
 
+// isPublicImageProxyIP 判断是否是可以访问的公网地址。
 func isPublicImageProxyIP(address netip.Addr) bool {
 	address = address.Unmap()
 	if !address.IsValid() || address.Zone() != "" || !address.IsGlobalUnicast() || address.IsPrivate() {
@@ -280,6 +297,7 @@ func isPublicImageProxyIP(address netip.Addr) bool {
 	return true
 }
 
+// catalogAPIError 统一的 JSON 错误响应。
 func catalogAPIError(c *gin.Context, status int, message string) {
 	c.JSON(status, gin.H{"code": status, "message": message, "data": nil, "success": false})
 }

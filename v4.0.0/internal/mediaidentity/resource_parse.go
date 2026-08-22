@@ -7,6 +7,8 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/playurl"
 )
 
+// ParseResourceEpisodes 把资源站的播放地址串（多线路、多集，用分隔符拼在一起）
+// 解析成结构化的剧集候选列表。电影且只有一集时标记为 feature。
 func ParseResourceEpisodes(sourceKey, vodID string, mediaID int, mediaType, raw string) []Episode {
 	sources := playurl.Parse(raw)
 	result := make([]Episode, 0)
@@ -30,6 +32,7 @@ func ParseResourceEpisodes(sourceKey, vodID string, mediaID int, mediaType, raw 
 	return result
 }
 
+// isMovieMediaType 判断分类名是否表示电影。
 func isMovieMediaType(value string) bool {
 	value = strings.ToLower(strings.TrimSpace(value))
 	return value == "movie" || value == "film" || strings.Contains(value, "电影")

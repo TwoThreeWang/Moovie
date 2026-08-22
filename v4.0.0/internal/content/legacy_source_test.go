@@ -27,6 +27,10 @@ func TestTemplateInventoryMatchesLegacySource(t *testing.T) {
 			legacyFiles = append(legacyFiles, "unified_search_results.html")
 			// 追剧更新时间是新系统独有能力，旧站没有对应 partial 可比对。
 			legacyFiles = append(legacyFiles, "air_schedule.html", "today_updates.html")
+			// play_* 这四个是从 play.html / watch.html 里抽出来的公共片段（批次 2）。
+			// 旧站把这些内容各写了一遍在两个页面里，没有独立文件可比对。
+			legacyFiles = append(legacyFiles, "play_container.html", "play_scripts.html",
+				"play_comments.html", "play_similar.html")
 			sort.Strings(legacyFiles)
 		}
 		if strings.Join(newFiles, "\n") != strings.Join(legacyFiles, "\n") {
@@ -296,10 +300,18 @@ func isReviewedHTMXLoadingFile(relativePath string) bool {
 // changelog.html 承载发布公告（v4.0.0 条目），内容更新本就该与旧站分叉，
 // 不属于重构漂移；air_schedule 与 today_updates 是追剧更新时间的新增 partial，
 // 旧站不存在同名文件，没有可比对的冻结源。
+// play_container / play_scripts / play_comments / play_similar 同理：它们是从
+// play.html 和 watch.html 里抽出来的共用片段（批次 2），旧站是在两个页面里各抄一份的。
+// 抽出来之后两边渲染出的 HTML 不变，由 playback 包的
+// TestPlayerPagesShareTheSamePlayerAndLazySections 把关。
 var reviewedTemplateDrift = map[string]bool{
-	"pages/changelog.html":        true,
-	"partials/air_schedule.html":  true,
-	"partials/today_updates.html": true,
+	"pages/changelog.html":         true,
+	"partials/air_schedule.html":   true,
+	"partials/today_updates.html":  true,
+	"partials/play_container.html": true,
+	"partials/play_scripts.html":   true,
+	"partials/play_comments.html":  true,
+	"partials/play_similar.html":   true,
 }
 
 func isReviewedTemplateDrift(relativePath string) bool {

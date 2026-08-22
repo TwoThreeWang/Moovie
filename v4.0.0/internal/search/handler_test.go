@@ -110,7 +110,7 @@ func TestUnifiedSearchAPIKeepsGroupedAndUnmatchedResultsSeparate(t *testing.T) {
 	}
 
 	fragment := responseBody(t, app.client, app.baseURL+"/api/htmx/search?q=%E6%B2%99%E4%B8%98")
-	for _, expected := range []string{"2 个已确认资源", "最佳线路：b", "可能相关的其他资源", "沙丘 未确认", `href="/watch/1292052"`, `href="/play/unknown/3"`} {
+	for _, expected := range []string{"2 个已确认资源", "最佳线路：b", "可能相关的其他资源", "沙丘 未确认", `href="/watch/1292052?source_key=b&vod_id=2"`, `href="/play/unknown/3"`} {
 		if !strings.Contains(fragment, expected) {
 			t.Fatalf("fragment missing %q: %s", expected, fragment)
 		}
@@ -155,8 +155,8 @@ func TestUnifiedSearchAPIValidatesStableQueryContract(t *testing.T) {
 func TestTrendsPagePreservesThresholdsSEOAndCache(t *testing.T) {
 	now := time.Date(2026, time.July, 29, 12, 34, 0, 0, time.UTC)
 	logger := &fakeSearchLogStore{trending: map[int][]TrendingKeyword{
-		24: {{Keyword: "热词", Count: 101, LastSearchedAt: now}, {Keyword: "新词", Count: 100, LastSearchedAt: now}},
-		0:  {{Keyword: "爆词", Count: 4001}, {Keyword: "总榜热词", Count: 2001}},
+		24:  {{Keyword: "热词", Count: 101, LastSearchedAt: now}, {Keyword: "新词", Count: 100, LastSearchedAt: now}},
+		720: {{Keyword: "爆词", Count: 4001}, {Keyword: "总榜热词", Count: 2001}},
 	}}
 	app := newSearchTestApp(t, &fakeSearcher{}, WithSearchLogger(logger, immediateRunner{}))
 	app.searchHandler.now = func() time.Time { return now }

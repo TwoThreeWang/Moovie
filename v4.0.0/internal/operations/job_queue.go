@@ -8,10 +8,12 @@ import (
 	"time"
 )
 
+// JobQueueReader 是任务队列查询接口。
 type JobQueueReader interface {
 	JobQueue(context.Context, JobQueueQuery) (JobQueueSnapshot, error)
 }
 
+// JobQueueQuery 是队列查询条件，用游标翻页而不是 offset。
 type JobQueueQuery struct {
 	Status    string
 	Direction string
@@ -19,8 +21,10 @@ type JobQueueQuery struct {
 	Limit     int
 }
 
+// JobCounts 是各状态的任务数量。
 type JobCounts struct{ Pending, Running, Completed, Failed int64 }
 
+// WorkerJob 是后台展示用的任务信息。
 type WorkerJob struct {
 	ID             int64      `json:"id"`
 	TaskType       string     `json:"task_type"`
@@ -44,17 +48,20 @@ type WorkerJob struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
+// JobQueueSnapshot 是一页任务及各状态计数。
 type JobQueueSnapshot struct {
 	Counts JobCounts    `json:"counts"`
 	Jobs   []WorkerJob  `json:"jobs"`
 	Page   JobQueuePage `json:"-"`
 }
 
+// JobQueuePage 是翻页游标。
 type JobQueuePage struct {
 	HasPrevious, HasNext       bool
 	PreviousCursor, NextCursor int64
 }
 
+// JobQueue 查询任务队列快照，多取一条用来判断还有没有下一页。
 func (store *MetricsStore) JobQueue(ctx context.Context, query JobQueueQuery) (JobQueueSnapshot, error) {
 	if query.Status != "pending" && query.Status != "running" && query.Status != "completed" && query.Status != "failed" {
 		query.Status = ""
@@ -86,6 +93,7 @@ func (store *MetricsStore) JobQueue(ctx context.Context, query JobQueueQuery) (J
 	return snapshot, nil
 }
 
+// paginate 根据翻页方向裁剪结果并算出前后游标。
 func (snapshot *JobQueueSnapshot) paginate(query JobQueueQuery) {
 	hasExtra := len(snapshot.Jobs) > query.Limit
 	if hasExtra {
@@ -105,6 +113,7 @@ func (snapshot *JobQueueSnapshot) paginate(query JobQueueQuery) {
 	snapshot.Page.NextCursor = snapshot.Jobs[len(snapshot.Jobs)-1].ID
 }
 
+// DeleteExpiredJobs 分批删除过期的已完成和已失败任务。
 func (store *MetricsStore) DeleteExpiredJobs(ctx context.Context, completedBefore, failedBefore time.Time, limit int) (int, error) {
 	if store == nil || store.database == nil {
 		return 0, nil
@@ -121,6 +130,7 @@ DELETE FROM worker_jobs jobs USING expired WHERE jobs.id=expired.id`, completedB
 	return int(affected), err
 }
 
+// jobQueueSQL 一次查出各状态计数和当前页任务。
 const jobQueueSQL = `WITH counts AS (
     SELECT COUNT(*) FILTER (WHERE status='pending') AS pending,
            COUNT(*) FILTER (WHERE status='running') AS running,

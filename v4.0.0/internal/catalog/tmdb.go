@@ -15,8 +15,10 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// defaultTMDBBase 是 TMDB 接口地址。
 const defaultTMDBBase = "https://api.themoviedb.org"
 
+// errTMDBResultNotFound 表示 TMDB 上查不到这部片子。
 var errTMDBResultNotFound = errors.New("TMDB result not found")
 
 // MediaUnitWriter 把结构化季集数据写入规范 media_units 表；为 nil 时跳过电视剧季集同步。
@@ -24,6 +26,8 @@ type MediaUnitWriter interface {
 	EnsureMediaUnit(ctx context.Context, unit mediaidentity.MediaUnit) (mediaidentity.MediaUnit, error)
 }
 
+// TMDBProvider 从 TMDB 同步剧照、剧集状态和季集表。
+// 入口是豆瓣 ID：先经 IMDb 映射找到 TMDB ID，再抓图片和详情。
 type TMDBProvider struct {
 	client    *http.Client
 	store     Store
@@ -34,20 +38,25 @@ type TMDBProvider struct {
 	units     MediaUnitWriter
 }
 
+// TMDBOption 是 TMDB 抓取器的可选装配项。
 type TMDBOption func(*TMDBProvider)
 
+// WithTMDBCanonicalWriter 注入规范媒体写入器。
 func WithTMDBCanonicalWriter(writer CanonicalWriter) TMDBOption {
 	return func(provider *TMDBProvider) { provider.canonical = writer }
 }
 
+// WithTMDBMediaUnitWriter 注入季集写入器，不注入时跳过季集同步。
 func WithTMDBMediaUnitWriter(writer MediaUnitWriter) TMDBOption {
 	return func(provider *TMDBProvider) { provider.units = writer }
 }
 
+// WithTMDBBase 覆盖 TMDB 接口地址（测试用）。
 func WithTMDBBase(tmdbBase string) TMDBOption {
 	return func(provider *TMDBProvider) { provider.tmdbBase = strings.TrimRight(tmdbBase, "/") }
 }
 
+// NewTMDBProvider 创建 TMDB 抓取器。
 func NewTMDBProvider(client *http.Client, store Store, token string, options ...TMDBOption) *TMDBProvider {
 	provider := &TMDBProvider{
 		client: client, store: store, token: strings.TrimSpace(token),
@@ -59,6 +68,7 @@ func NewTMDBProvider(client *http.Client, store Store, token string, options ...
 	return provider
 }
 
+// SyncBackdrops 同步一部影片的 TMDB 数据，同一条目的并发调用会被合并。
 func (provider *TMDBProvider) SyncBackdrops(ctx context.Context, doubanID string) error {
 	// 配置缺失和 ID 非法都不会因为重试而改变，直接判死，别占着重试预算。
 	if provider.token == "" {
@@ -73,6 +83,8 @@ func (provider *TMDBProvider) SyncBackdrops(ctx context.Context, doubanID string
 	return err
 }
 
+// sync 的完整流程：IMDb ID → TMDB ID（找不到且标题带季号时改用剧名搜索）→ 抓图片和详情
+// → 更新 Movie → 写规范媒体 → 电视剧再抓一次季集表。
 func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 	movie, err := provider.store.FindByDoubanID(ctx, doubanID)
 	if err != nil {
@@ -149,6 +161,7 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 	return nil
 }
 
+// 下面几个结构体只用来解析 TMDB 的接口返回，字段按需保留。
 type tmdbFindResponse struct {
 	MovieResults []struct {
 		ID int `json:"id"`
@@ -158,6 +171,7 @@ type tmdbFindResponse struct {
 	} `json:"tv_results"`
 }
 
+// findTMDBID 用 IMDb ID 反查 TMDB ID，同时得到它是电影还是剧集。
 func (provider *TMDBProvider) findTMDBID(ctx context.Context, imdbID string) (int, string, error) {
 	endpoint := fmt.Sprintf("%s/3/find/%s?external_source=imdb_id&language=zh-CN", provider.tmdbBase, url.PathEscape(imdbID))
 	var response tmdbFindResponse
@@ -181,6 +195,7 @@ type tmdbTVSearchResponse struct {
 	} `json:"results"`
 }
 
+// searchTMDBTV 按剧名搜索剧集，是 IMDb 反查失败时的兜底（分季条目常常没有独立 IMDb ID）。
 func (provider *TMDBProvider) searchTMDBTV(ctx context.Context, title string) (int, string, error) {
 	if title == "" {
 		return 0, "", fmt.Errorf("%w for empty TV title", errTMDBResultNotFound)
@@ -208,6 +223,7 @@ type tmdbImagesResponse struct {
 	} `json:"posters"`
 }
 
+// fetchImages 抓剧照。
 func (provider *TMDBProvider) fetchImages(ctx context.Context, tmdbID int, mediaType string) (*tmdbImagesResponse, error) {
 	endpoint := fmt.Sprintf("%s/3/%s/%d/images?include_image_language=zh,en,null", provider.tmdbBase, mediaType, tmdbID)
 	var response tmdbImagesResponse
@@ -264,6 +280,7 @@ type tmdbSeasonResponse struct {
 	} `json:"episodes"`
 }
 
+// fetchDetails 抓详情（剧集状态、时长、季列表等）。
 func (provider *TMDBProvider) fetchDetails(ctx context.Context, tmdbID int, mediaType string) (*tmdbDetailsResponse, error) {
 	endpoint := fmt.Sprintf("%s/3/%s/%d?language=zh-CN", provider.tmdbBase, mediaType, tmdbID)
 	var response tmdbDetailsResponse
@@ -273,6 +290,7 @@ func (provider *TMDBProvider) fetchDetails(ctx context.Context, tmdbID int, medi
 	return &response, nil
 }
 
+// fetchTVSeason 抓某一季的分集列表，用于生成更新时间表。
 func (provider *TMDBProvider) fetchTVSeason(ctx context.Context, tmdbID, seasonNumber int) (*tmdbSeasonResponse, error) {
 	endpoint := fmt.Sprintf("%s/3/tv/%d/season/%d?language=zh-CN", provider.tmdbBase, tmdbID, seasonNumber)
 	var response tmdbSeasonResponse
@@ -351,6 +369,7 @@ func (provider *TMDBProvider) syncEpisodeStubs(ctx context.Context, mediaID, tar
 	}
 }
 
+// getJSON 是所有 TMDB 请求的公共出口。
 func (provider *TMDBProvider) getJSON(ctx context.Context, endpoint string, authorize bool, destination any) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -375,6 +394,7 @@ func (provider *TMDBProvider) getJSON(ctx context.Context, endpoint string, auth
 	return nil
 }
 
+// applyTMDBData 把 TMDB 抓到的剧照和详情合并进 Movie。
 func applyTMDBData(movie *Movie, images *tmdbImagesResponse, details *tmdbDetailsResponse) {
 	if images != nil {
 		backdrops := make([]string, 0, len(images.Backdrops))
@@ -432,6 +452,7 @@ func applyTMDBData(movie *Movie, images *tmdbImagesResponse, details *tmdbDetail
 	}
 }
 
+// parseDate 解析 TMDB 的 YYYY-MM-DD 日期。
 func parseDate(value string) (time.Time, error) {
 	return time.Parse("2006-01-02", value)
 }

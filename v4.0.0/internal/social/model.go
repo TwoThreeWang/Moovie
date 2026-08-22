@@ -1,3 +1,9 @@
+// Package social 是社区功能「片场」：本周热门放映、精选短评、片友推荐，
+// 以及短评的点赞和回复。
+//
+// 涉及的表：user_movies（短评本体，本包不写）、comment_likes、comment_replies、users。
+// 注意短评没有独立的表，它就是 user_movies 上的 comment 字段，
+// 所以点赞和回复都挂在 user_movie_id 上。
 package social
 
 import (
@@ -13,6 +19,7 @@ type Activity struct {
 	User identity.User
 }
 
+// WeeklyFilm 是本周被标记最多的影片及其统计。
 type WeeklyFilm struct {
 	MovieID       string
 	Title         string
@@ -24,6 +31,7 @@ type WeeklyFilm struct {
 	LastSeenAt    time.Time
 }
 
+// FilmFriend 是推荐的片友及其活跃度和口味重合度。
 type FilmFriend struct {
 	UserID       int
 	Username     string
@@ -34,6 +42,7 @@ type FilmFriend struct {
 	LastActiveAt time.Time
 }
 
+// Reply 是一条短评回复。
 type Reply struct {
 	ID          int
 	UserMovieID int

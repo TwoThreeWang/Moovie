@@ -34,7 +34,7 @@ ORDER BY CASE
     WHEN LOWER(media.original_title) = LOWER($5) THEN 1
     ELSE 2
 END, media.updated_at DESC, media.id
-LIMIT $6`, pattern, normalizedPattern, strings.TrimSpace(query.Year), normalizeUnifiedMediaType(query.MediaType), strings.TrimSpace(query.Keyword), query.Limit)
+LIMIT $6`, pattern, normalizedPattern, strings.TrimSpace(query.Year), normalizeMediaType(query.MediaType), strings.TrimSpace(query.Keyword), query.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("search unified media: %w", err)
 	}
@@ -54,6 +54,7 @@ LIMIT $6`, pattern, normalizedPattern, strings.TrimSpace(query.Year), normalizeU
 	return items, nil
 }
 
+// ListUnifiedResources 批量取出这些媒体下挂着的全部资源。
 func (store *PostgresStore) ListUnifiedResources(ctx context.Context, mediaIDs []int) ([]VodItem, error) {
 	if len(mediaIDs) == 0 {
 		return []VodItem{}, nil
@@ -62,13 +63,15 @@ func (store *PostgresStore) ListUnifiedResources(ctx context.Context, mediaIDs [
 	for index, mediaID := range mediaIDs {
 		identifiers[index] = int64(mediaID)
 	}
-	rows, err := store.database.Query(ctx, `SELECT link.media_id, `+vodItemColumns+`
-FROM resource_media_links link
-JOIN vod_items resource ON resource.source_key = link.source_key AND resource.vod_id = link.vod_id
-`+resourceQualityJoin+`
-WHERE link.media_id = ANY($1::bigint[])
+	// 别名必须叫 media_link：vodItemColumns 末尾三列读的就是 media_link.*。
+	// 这里已经 JOIN 了 resource_media_links，所以不再叠 resourceMediaLinkJoin
+	// 那个 LATERAL——同一张表查两遍纯属浪费。
+	rows, err := store.database.Query(ctx, `SELECT media_link.media_id, `+vodItemColumns+`
+FROM resource_media_links media_link
+JOIN vod_items resource ON resource.source_key = media_link.source_key AND resource.vod_id = media_link.vod_id
+WHERE media_link.media_id = ANY($1::bigint[])
   AND COALESCE(resource.resource_status, 'active') <> 'removed'
-ORDER BY link.media_id, resource.last_visited_at DESC`, identifiers)
+ORDER BY media_link.media_id, resource.last_visited_at DESC`, identifiers)
 	if err != nil {
 		return nil, fmt.Errorf("list unified resources: %w", err)
 	}
@@ -82,14 +85,14 @@ func (store *PostgresStore) ListResourcesByDoubanID(ctx context.Context, doubanI
        COALESCE(resource.vod_name, ''), COALESCE(resource.vod_pic, ''), COALESCE(resource.vod_year, ''),
        COALESCE(resource.vod_area, ''), COALESCE(resource.type_name, ''), COALESCE(resource.vod_actor, ''),
        COALESCE(resource.vod_remarks, ''), COALESCE(resource.vod_douban_id, ''),
-       COALESCE(resource_quality.avg_speed_ms, 0)::INTEGER,
-       COALESCE(resource_quality.sample_count, 0)::INTEGER,
-       COALESCE(resource_quality.failed_count, 0)::INTEGER
-FROM vod_items resource `+resourceQualityJoin+`
+       resource.avg_speed_ms,
+       (resource.success_count + resource.failure_count)::INTEGER,
+       resource.failure_count
+FROM vod_items resource
 WHERE resource.vod_douban_id = $1
   AND COALESCE(resource.resource_status, 'active') <> 'removed'
-ORDER BY CASE WHEN resource_quality.avg_speed_ms > 0 AND resource_quality.sample_count > 0 THEN 0 ELSE 1 END,
-         resource_quality.avg_speed_ms ASC NULLS LAST
+ORDER BY CASE WHEN resource.avg_speed_ms > 0 AND resource.success_count + resource.failure_count > 0 THEN 0 ELSE 1 END,
+         resource.avg_speed_ms ASC NULLS LAST
 LIMIT 10`, doubanID)
 	if err != nil {
 		return nil, fmt.Errorf("list resources by douban id: %w", err)
@@ -150,6 +153,7 @@ type LinkedResourceRow struct {
 	FailedCount int
 }
 
+// scanUnifiedResources 比 scanVodItems 多扫一列 media_id（查询里在最前面）。
 func scanUnifiedResources(rows database.Rows) ([]VodItem, error) {
 	defer rows.Close()
 	items := make([]VodItem, 0)

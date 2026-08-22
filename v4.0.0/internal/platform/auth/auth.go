@@ -1,3 +1,6 @@
+// Package auth 实现登录态：自签的 HS256 JWT 存在 token Cookie 里，
+// 中间件把 claims 解出来放进 gin.Context。
+// 注意这里只验签名和有效期，用户是否仍然存在由 identity.LoadUser 查库确认。
 package auth
 
 import (
@@ -14,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// gin.Context 里存放登录信息用的键名。
 const (
 	contextUserID            = "user_id"
 	contextIdentityValidated = "identity_validated"
@@ -21,6 +25,7 @@ const (
 	contextSessionRenewed    = "auth_session_renewed"
 )
 
+// Claims 是 token 里保存的登录信息快照。Issued/Expiry 用于滑动续期判断。
 type Claims struct {
 	UserID int    `json:"user_id"`
 	Email  string `json:"email"`
@@ -29,6 +34,8 @@ type Claims struct {
 	Issued int64  `json:"iat"`
 }
 
+// Optional 尝试解析 token：成功就把用户信息写进 context，失败就按匿名访问继续，不拦请求。
+// 页面路由用它来决定导航栏显示登录还是未登录状态。
 func Optional(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 数据库身份中间件可能已经验证或作废此 token。后续模块即使再次安装
@@ -44,6 +51,7 @@ func Optional(secret string) gin.HandlerFunc {
 	}
 }
 
+// Require 强制要求登录，未登录时 HTML 请求跳登录页、接口请求返回 401。
 func Require(secret string, secureCookie bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims, err := Extract(c.Request, secret, time.Now())
@@ -82,12 +90,14 @@ func InvalidateCurrentUser(c *gin.Context) {
 	c.Set(contextIdentityValidated, false)
 }
 
+// identityValidation 返回（是否通过库校验，是否已经查过库）两个标记。
 func identityValidation(c *gin.Context) (bool, bool) {
 	value, checked := c.Get(contextIdentityValidated)
 	validated, _ := value.(bool)
 	return validated, checked
 }
 
+// setClaims 把 claims 写入 gin.Context，供后续中间件和 Handler 读取。
 func setClaims(c *gin.Context, claims Claims) {
 	c.Set(contextUserID, claims.UserID)
 	c.Set("email", claims.Email)
@@ -106,12 +116,14 @@ func ClaimsFromContext(c *gin.Context) (Claims, bool) {
 	return claims, ok
 }
 
+// contextString 从 context 取字符串值，类型不符时返回空串。
 func contextString(c *gin.Context, key string) string {
 	value, _ := c.Get(key)
 	text, _ := value.(string)
 	return text
 }
 
+// rejectUnauthenticated 按请求类型分别返回跳转或 401 JSON。
 func rejectUnauthenticated(c *gin.Context) {
 	if strings.Contains(c.GetHeader("Accept"), "text/html") {
 		c.Redirect(http.StatusFound, "/auth/login?redirect="+c.Request.URL.Path)
@@ -150,6 +162,7 @@ func RefreshIfNeeded(c *gin.Context, claims Claims, secret string, secure bool) 
 	http.SetCookie(c.Writer, &http.Cookie{Name: "token", Value: token, Path: "/", MaxAge: int(total.Seconds()), HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 }
 
+// UserID 返回当前请求的登录用户 ID，未登录返回 0。
 func UserID(c *gin.Context) int {
 	value, found := c.Get(contextUserID)
 	if !found {
@@ -159,6 +172,7 @@ func UserID(c *gin.Context) int {
 	return userID
 }
 
+// Extract 从 Cookie 或 Authorization 头里取出 token 并解析。
 func Extract(request *http.Request, secret string, now time.Time) (Claims, error) {
 	token := ""
 	if cookie, err := request.Cookie("token"); err == nil {
@@ -169,6 +183,8 @@ func Extract(request *http.Request, secret string, now time.Time) (Claims, error
 	return Parse(token, secret, now)
 }
 
+// Parse 手写 JWT 校验：只接受 HS256，依次校验签名、过期时间和 nbf。
+// 没有引第三方 JWT 库，是因为需求只有这一种算法，几十行足够且没有依赖风险。
 func Parse(token, secret string, now time.Time) (Claims, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 || secret == "" {
@@ -217,6 +233,7 @@ func Parse(token, secret string, now time.Time) (Claims, error) {
 	return claims, nil
 }
 
+// Sign 用 AppSecret 签发 token。
 func Sign(claims Claims, secret string) (string, error) {
 	if claims.UserID <= 0 || claims.Expiry == 0 || secret == "" {
 		return "", errors.New("invalid claims")
@@ -232,16 +249,19 @@ func Sign(claims Claims, secret string) (string, error) {
 	return unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
+// stringClaim 安全读取字符串字段。
 func stringClaim(value any) string {
 	text, _ := value.(string)
 	return text
 }
 
+// intClaim 把 JSON 数字读成 int。
 func intClaim(value any) (int, error) {
 	parsed, err := int64Claim(value)
 	return int(parsed), err
 }
 
+// int64Claim 兼容 json.Number、float64 和字符串三种写法读取整数字段。
 func int64Claim(value any) (int64, error) {
 	switch typed := value.(type) {
 	case json.Number:

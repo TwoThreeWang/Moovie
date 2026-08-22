@@ -1,3 +1,5 @@
+// Package outbound 管理所有对外请求：带连接上限的 HTTP Client、共享限速器，
+// 以及防 SSRF 的目标地址校验。对外抓取一律走这里，不要各自 new http.Client。
 package outbound
 
 import (

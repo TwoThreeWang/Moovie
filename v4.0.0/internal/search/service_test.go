@@ -25,7 +25,7 @@ func TestServiceUsesLocalResultsFiltersCopyrightAndSortsBySpeed(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// 测速结果只存在于 playback_quality_rollups：a 3000ms、c 900ms，d 未测速。
+	// 测速结果写在 vod_items 上：a 3000ms、c 900ms，d 未测速。
 	seedPlaybackSpeed(t, "a", "1", 101, 1001, 3000)
 	seedPlaybackSpeed(t, "c", "3", 102, 1002, 900)
 	service := NewService(store, store, store, crawlerFunc(nil), nil, nil, ServiceConfig{})
@@ -505,24 +505,97 @@ func seedSites(t *testing.T, store *PostgresStore, sites ...Site) {
 	}
 }
 
-// seedPlaybackSpeed 为资源写入一条测速汇总，vod_items 本身不存速度，
-// 读取路径经 resource_play_lines → resource_episode_candidates → playback_quality_rollups。
-func seedPlaybackSpeed(t *testing.T, sourceKey, vodID string, mediaID, unitID, speedMs int) {
+func seedPlaybackSpeed(t *testing.T, sourceKey, vodID string, _, _, speedMs int) {
 	t.Helper()
 	pool := testdb.Pool(t)
-	testdb.MediaUnit(t, pool, unitID, mediaID)
-	var lineID, candidateID int
-	if err := pool.QueryRow(t.Context(), `INSERT INTO resource_play_lines (source_key, vod_id, line_key)
-VALUES ($1,$2,'default') RETURNING id`, sourceKey, vodID).Scan(&lineID); err != nil {
-		t.Fatalf("seed play line: %v", err)
+	if _, err := pool.Exec(t.Context(), `UPDATE vod_items SET avg_speed_ms = $3, success_count = 1
+WHERE source_key = $1 AND vod_id = $2`, sourceKey, vodID, speedMs); err != nil {
+		t.Fatalf("seed playback speed: %v", err)
 	}
-	if err := pool.QueryRow(t.Context(), `INSERT INTO resource_episode_candidates (line_id, media_id, media_unit_id, episode_key)
-VALUES ($1,$2,$3,'feature') RETURNING id`, lineID, mediaID, unitID).Scan(&candidateID); err != nil {
-		t.Fatalf("seed episode candidate: %v", err)
+}
+
+// TestListUnifiedResourcesRunsAgainstTheRealSchema 是这条 SQL 唯一的真库检查。
+// postgres_test.go 里那个同名测试用的是假数据库，只比对 SQL 文本，所以之前
+// 「SELECT 里引用了 media_link 但 FROM 里没有它」这种错误一直没被发现——
+// 假库不会解析 SQL。这里必须连真库跑，让语法/列名错误当场暴露。
+func TestListUnifiedResourcesRunsAgainstTheRealSchema(t *testing.T) {
+	pool := testdb.Pool(t)
+	store := NewPostgresStore(pool)
+	testdb.Media(t, pool, 7)
+	if err := store.Upsert(t.Context(), VodItem{SourceKey: "source", VodId: "42", VodName: "肖申克的救赎"}); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := pool.Exec(t.Context(), `INSERT INTO playback_quality_rollups
-(bucket, candidate_id, play_line_id, media_unit_id, media_id, first_frame_count, first_frame_total_ms)
-VALUES (date_trunc('hour', NOW()), $1, $2, $3, $4, 1, $5)`, candidateID, lineID, unitID, mediaID, speedMs); err != nil {
-		t.Fatalf("seed quality rollup: %v", err)
+	if _, err := pool.Exec(t.Context(), `INSERT INTO resource_media_links (source_key, vod_id, media_id, confidence, matched_by)
+VALUES ('source', '42', 7, 0.9, 'douban_id')`); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := store.ListUnifiedResources(t.Context(), []int{7})
+	if err != nil {
+		t.Fatalf("ListUnifiedResources() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("resources = %+v", items)
+	}
+	// MediaID 被扫描两次（SELECT 首列和 vodItemColumns 末尾的 media_link.media_id），
+	// 两处都必须指向同一条关联，否则统一搜索会把资源挂到错误的媒体下。
+	if items[0].MediaID != 7 || items[0].MediaMatch != "douban_id" {
+		t.Fatalf("resource identity = %+v", items[0])
+	}
+	if items[0].MediaConfidence < 0.89 || items[0].MediaConfidence > 0.91 {
+		t.Fatalf("confidence = %v", items[0].MediaConfidence)
+	}
+}
+
+// TestSearchReturnsLocalResultsWithoutWaitingForSlowSources 锁住「页面别干等上游」这条。
+// 老写法在本地已有结果时仍然同步等 fetchAndSave 跑完，预算是 30 秒，
+// 一个卡住的资源站就能让搜索页转半分钟圈。
+func TestSearchReturnsLocalResultsWithoutWaitingForSlowSources(t *testing.T) {
+	store := NewPostgresStore(testdb.Pool(t))
+	if err := store.Upsert(t.Context(), VodItem{SourceKey: "local", VodId: "1", VodName: "肖申克的救赎"}); err != nil {
+		t.Fatal(err)
+	}
+	seedSites(t, store, Site{Key: "slow", BaseURL: "https://slow.example", Enabled: true})
+
+	released := make(chan struct{})
+	crawler := crawlerFunc(func(ctx context.Context, _, _, _ string, _ []string) ([]VodItem, error) {
+		select {
+		case <-released:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return []VodItem{{SourceKey: "slow", VodId: "2", VodName: "肖申克的救赎 慢站"}}, nil
+	})
+	service := NewService(store, store, store, crawler, nil, immediateRunner{},
+		ServiceConfig{RefreshWait: 50 * time.Millisecond})
+
+	startedAt := time.Now()
+	result, err := service.Search(t.Context(), "肖申克", false)
+	elapsed := time.Since(startedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("本地已有结果却等了 %s，说明还在干等上游", elapsed)
+	}
+	if len(result.Items) != 1 || result.Items[0].VodId != "1" {
+		t.Fatalf("items = %+v", result.Items)
+	}
+
+	// 放行慢站：后台那半截刷新必须继续跑完并落库，否则等于白跑一趟。
+	close(released)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		stored, searchErr := store.Search(context.Background(), "肖申克")
+		if searchErr != nil {
+			t.Fatal(searchErr)
+		}
+		if len(stored) == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("后台刷新没有把慢站结果写进库：%+v", stored)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

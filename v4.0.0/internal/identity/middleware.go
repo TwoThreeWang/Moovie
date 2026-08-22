@@ -8,8 +8,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// UserInfoContextKey 是当前用户在 gin.Context 中的键名，模板通过它取用户信息。
 const UserInfoContextKey = "user_info"
 
+// UserReader 是中间件只需要的最小读接口。
 type UserReader interface {
 	FindByID(ctx context.Context, id int) (*User, error)
 }

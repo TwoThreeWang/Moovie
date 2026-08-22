@@ -15,6 +15,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Handler 提供登录注册页面和用户中心。
+// 四个匿名接口字段都是可选依赖，只为在用户中心显示计数，没注入就显示 0。
 type Handler struct {
 	config         config.Config
 	store          Store
@@ -33,32 +35,38 @@ type Handler struct {
 	}
 }
 
+// HandlerOption 用于注入可选的计数来源。
 type HandlerOption func(*Handler)
 
+// WithHistoryCounter 注入观看记录计数。
 func WithHistoryCounter(counter interface {
 	CountByUser(ctx context.Context, userID int) (int, error)
 }) HandlerOption {
 	return func(handler *Handler) { handler.historyCounter = counter }
 }
 
+// WithLibraryCounter 注入片单计数。
 func WithLibraryCounter(counter interface {
 	CountByUser(ctx context.Context, userID int, status string) (int, error)
 }) HandlerOption {
 	return func(handler *Handler) { handler.libraryCounter = counter }
 }
 
+// WithMonthlyReportReader 注入最新月报。
 func WithMonthlyReportReader(reader interface {
 	LatestForDashboard(ctx context.Context, userID int) (any, error)
 }) HandlerOption {
 	return func(handler *Handler) { handler.monthlyReports = reader }
 }
 
+// WithFeedbackCounter 注入反馈计数。
 func WithFeedbackCounter(counter interface {
 	CountByUser(ctx context.Context, userID int) (int, error)
 }) HandlerOption {
 	return func(handler *Handler) { handler.feedbackCounter = counter }
 }
 
+// NewHandler 创建账号处理器。
 func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handler {
 	handler := &Handler{config: cfg, store: store, now: time.Now}
 	for _, option := range options {
@@ -67,6 +75,7 @@ func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handl
 	return handler
 }
 
+// Register 注册登录注册路由（无需登录）和用户中心路由（必须登录）。
 func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/auth/login", handler.loginPage)
 	router.POST("/auth/login", handler.login)
@@ -83,10 +92,13 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/dashboard/settings/avatar", require, handler.updateAvatar)
 }
 
+// loginPage 渲染登录页。
 func (handler *Handler) loginPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "login.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "登录 - " + handler.config.SiteName}, gin.H{"Redirect": c.Query("redirect")}))
 }
 
+// login 校验邮箱密码并下发登录 Cookie。
+// 账号不存在和密码错误返回同一句提示，避免暴露哪些邮箱已注册。
 func (handler *Handler) login(c *gin.Context) {
 	email, password := c.PostForm("email"), c.PostForm("password")
 	redirect := safeRedirect(c.PostForm("redirect"))
@@ -102,10 +114,13 @@ func (handler *Handler) login(c *gin.Context) {
 	c.Redirect(http.StatusFound, redirect)
 }
 
+// registerPage 渲染注册页。
 func (handler *Handler) registerPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "register.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "注册 - " + handler.config.SiteName}, nil))
 }
 
+// register 注册新账号：校验邮箱格式、两次密码一致、长度至少 6 位，
+// 默认用户名取邮箱 @ 前的部分，注册成功直接登录。
 func (handler *Handler) register(c *gin.Context) {
 	email, password, confirmation := c.PostForm("email"), c.PostForm("password"), c.PostForm("confirm_password")
 	if !validEmail(email) {
@@ -142,11 +157,13 @@ func (handler *Handler) register(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/")
 }
 
+// logout 清除登录 Cookie。
 func (handler *Handler) logout(c *gin.Context) {
 	http.SetCookie(c.Writer, &http.Cookie{Name: "token", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: handler.config.Env == "production", SameSite: http.SameSiteLaxMode})
 	c.Redirect(http.StatusFound, "/")
 }
 
+// dashboard 渲染用户中心。
 func (handler *Handler) dashboard(c *gin.Context) {
 	user := handler.currentUser(c)
 	if user == nil {
@@ -189,6 +206,7 @@ func (handler *Handler) dashboard(c *gin.Context) {
 	}))
 }
 
+// settings 渲染账号设置页。
 func (handler *Handler) settings(c *gin.Context) {
 	user := handler.currentUser(c)
 	if user == nil {
@@ -198,6 +216,7 @@ func (handler *Handler) settings(c *gin.Context) {
 	handler.renderSettings(c, user, c.Query("success"), "")
 }
 
+// updateUsername 修改用户名（2-20 字符）。
 func (handler *Handler) updateUsername(c *gin.Context) {
 	username := strings.TrimSpace(c.PostForm("username"))
 	if len(username) < 2 || len(username) > 20 {
@@ -211,6 +230,7 @@ func (handler *Handler) updateUsername(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=username")
 }
 
+// updateEmail 修改邮箱，需检查未被其他账号占用。
 func (handler *Handler) updateEmail(c *gin.Context) {
 	email := strings.TrimSpace(c.PostForm("email"))
 	if email == "" || !strings.Contains(email, "@") {
@@ -229,6 +249,7 @@ func (handler *Handler) updateEmail(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=email")
 }
 
+// updatePassword 修改密码，必须先验证当前密码。
 func (handler *Handler) updatePassword(c *gin.Context) {
 	user := handler.currentUser(c)
 	if user == nil {
@@ -256,6 +277,7 @@ func (handler *Handler) updatePassword(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=password")
 }
 
+// updateShare 切换个人主页是否公开。
 func (handler *Handler) updateShare(c *gin.Context) {
 	if err := handler.store.UpdateIsPublic(c.Request.Context(), auth.UserID(c), c.PostForm("is_public") == "on"); err != nil {
 		handler.settingsError(c, "分享设置更新失败")
@@ -264,6 +286,7 @@ func (handler *Handler) updateShare(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=share")
 }
 
+// updateAvatar 修改头像（一个 emoji）。
 func (handler *Handler) updateAvatar(c *gin.Context) {
 	avatar := strings.TrimSpace(c.PostForm("avatar"))
 	if avatar == "" {
@@ -281,22 +304,26 @@ func (handler *Handler) updateAvatar(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=avatar")
 }
 
+// currentUser 从库中读取当前登录用户。
 func (handler *Handler) currentUser(c *gin.Context) *User {
 	user, _ := handler.store.FindByID(c.Request.Context(), auth.UserID(c))
 	return user
 }
 
+// settingsError 带错误信息重新渲染设置页。
 func (handler *Handler) settingsError(c *gin.Context, message string) {
 	user := handler.currentUser(c)
 	handler.renderSettings(c, user, "", message)
 }
 
+// renderSettings 渲染设置页。
 func (handler *Handler) renderSettings(c *gin.Context, user *User, success, message string) {
 	c.HTML(http.StatusOK, "settings.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "账号设置 - " + handler.config.SiteName}, gin.H{
 		"User": user, "UserInfo": user, "Success": success, "Error": message, "DoubanJob": nil,
 	}))
 }
 
+// issueToken 签发登录 JWT 并写入 Cookie。
 func (handler *Handler) issueToken(c *gin.Context, user *User) error {
 	now := handler.now()
 	token, err := auth.Sign(auth.Claims{UserID: user.ID, Email: user.Email, Role: user.Role, Issued: now.Unix(), Expiry: now.Add(handler.config.JWTExpiry).Unix()}, handler.config.AppSecret)
@@ -307,14 +334,17 @@ func (handler *Handler) issueToken(c *gin.Context, user *User) error {
 	return nil
 }
 
+// renderLoginError 带错误信息重新渲染登录页。
 func (handler *Handler) renderLoginError(c *gin.Context, status int, message string) {
 	c.HTML(status, "login.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "登录 - Moovie影牛"}, gin.H{"Error": message}))
 }
 
+// renderRegisterError 带错误信息重新渲染注册页。
 func (handler *Handler) renderRegisterError(c *gin.Context, status int, message string) {
 	c.HTML(status, "register.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "注册 - Moovie影牛"}, gin.H{"Error": message}))
 }
 
+// safeRedirect 只允许站内相对路径跳转，防止被构造成钓鱼跳转到外站。
 func safeRedirect(value string) string {
 	if value == "" || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
 		return "/"
@@ -322,6 +352,7 @@ func safeRedirect(value string) string {
 	return value
 }
 
+// validEmail 校验邮箱格式。
 func validEmail(value string) bool {
 	address, err := mail.ParseAddress(value)
 	return err == nil && address.Address == value && strings.Contains(value, "@")

@@ -19,12 +19,12 @@ func (function popularProviderFunc) Popular(ctx context.Context, mediaType strin
 	return function(ctx, mediaType)
 }
 
-func TestCompositePopularProviderDeduplicatesAndWeightsSources(t *testing.T) {
+func TestCompositePopularProviderDeduplicatesInPriorityOrder(t *testing.T) {
 	provider := NewCompositePopularProvider(
-		PopularSource{Name: "douban", Weight: 1, Provider: popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
+		PopularSource{Name: "douban", Provider: popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
 			return []PopularSubject{{ID: "129", Title: "同一部电影", Rate: "8.0", Cover: "douban"}, {ID: "130", Title: "另一部", Rate: "7.0"}}, nil
 		})},
-		PopularSource{Name: "tmdb", Weight: 0.8, Provider: popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
+		PopularSource{Name: "tmdb", Provider: popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
 			return []PopularSubject{{ID: "129", Title: "同一部电影", Rate: "8.5", Cover: "tmdb"}, {Title: "无外部ID", Year: "2026", Rate: "7.5"}}, nil
 		})},
 	)
@@ -32,26 +32,13 @@ func TestCompositePopularProviderDeduplicatesAndWeightsSources(t *testing.T) {
 	if err != nil || len(items) != 3 {
 		t.Fatalf("items/error = %+v/%v", items, err)
 	}
-	var merged PopularSubject
-	for _, item := range items {
-		if item.ID == "129" {
-			merged = item
-		}
-	}
-	if merged.Rate != "8.5" || merged.Cover != "douban" || merged.Score <= 0 {
-		t.Fatalf("merged subject = %+v", merged)
-	}
-	if merged.SourceRanks["douban"] != 1 || merged.SourceRanks["tmdb"] != 1 {
-		t.Fatalf("source explanation = %#v", merged.SourceRanks)
-	}
-	wantScore := (1.0 + 0.8) / 61.0
-	if merged.Score < wantScore-0.000001 || merged.Score > wantScore+0.000001 {
-		t.Fatalf("RRF score = %f, want %f", merged.Score, wantScore)
+	if items[0].ID != "129" || items[0].Cover != "douban" || items[0].Rate != "8.0" {
+		t.Fatalf("first source should win for duplicates: %+v", items[0])
 	}
 }
 
 func TestCompositePopularProviderKeepsStaleCacheWhenAllSourcesFail(t *testing.T) {
-	provider := NewCompositePopularProvider(PopularSource{Provider: popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
+	provider := NewCompositePopularProvider(PopularSource{Name: "douban", Provider: popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
 		return []PopularSubject{{ID: "1", Title: "缓存"}}, nil
 	})})
 	if _, err := provider.Popular(context.Background(), "movie"); err != nil {
@@ -70,7 +57,7 @@ func TestCompositePopularProviderCoalescesColdBurst(t *testing.T) {
 	var calls atomic.Int32
 	started := make(chan struct{})
 	release := make(chan struct{})
-	provider := NewCompositePopularProvider(PopularSource{Provider: popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
+	provider := NewCompositePopularProvider(PopularSource{Name: "douban", Provider: popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
 		if calls.Add(1) == 1 {
 			close(started)
 		}

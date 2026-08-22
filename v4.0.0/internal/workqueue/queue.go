@@ -1,3 +1,12 @@
+// Package workqueue 是全站唯一的后台任务队列，所有定时任务和手动触发的任务都走这里。
+//
+// 只涉及一张 worker_jobs 表。工作方式：
+//
+//	入队 → 工作协程抢锁（SELECT ... FOR UPDATE SKIP LOCKED）→ 执行 → 完成或按退避重试。
+//	抢到的任务带租约（默认 30 分钟），进程崩了租约到期会被自动回收重跑。
+//
+// 失败分三类，见 failure.go：普通重试、永久失败（不消耗重试预算直接判死）、
+// 上游限流（不消耗重试次数，另有独立计数上限）。
 package workqueue
 
 import (
@@ -9,6 +18,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// 任务的四种状态。
 const (
 	StatusPending   = "pending"
 	StatusRunning   = "running"
@@ -16,6 +26,8 @@ const (
 	StatusFailed    = "failed"
 )
 
+// Job 是队列中的一个任务。SubjectKey 是业务对象标识（比如媒体 ID），
+// 与 TaskType 一起用于去重和查询最近一次执行结果。
 type Job struct {
 	ID             int
 	TaskType       string
@@ -42,6 +54,7 @@ type Job struct {
 	UpdatedAt      time.Time
 }
 
+// Spec 是入队参数。
 type Spec struct {
 	TaskType    string
 	SubjectKey  string
@@ -53,6 +66,7 @@ type Spec struct {
 	AvailableAt time.Time
 }
 
+// Store 是队列的存储接口。
 type Store interface {
 	Enqueue(ctx context.Context, spec Spec) (int, error)
 	Claim(ctx context.Context, lease time.Duration) (*Job, error)
@@ -66,16 +80,20 @@ type Store interface {
 	Reset(ctx context.Context, jobID int) error
 }
 
+// PostgresStore 是队列的 PostgreSQL 实现。
 type PostgresStore struct{ database database.Executor }
 
+// NewPostgresStore 创建队列存储。
 func NewPostgresStore(executor database.Executor) *PostgresStore {
 	return &PostgresStore{database: executor}
 }
 
+// jobColumns 是各查询共用的字段列表。
 const jobColumns = `id, task_type, subject_key, payload, reason, COALESCE(requested_by, 0), status,
 priority, attempt_count, max_attempts, throttle_count, available_at, locked_by, locked_until, started_at, finished_at,
 progress_total, progress_done, progress_failed, progress_cursor, error_message, created_at, updated_at`
 
+// Enqueue 入队一个任务。同类型同对象已有待执行任务时不会重复入队。
 func (store *PostgresStore) Enqueue(ctx context.Context, spec Spec) (int, error) {
 	if spec.TaskType == "" || spec.SubjectKey == "" {
 		return 0, fmt.Errorf("task_type and subject_key required")
@@ -90,13 +108,16 @@ func (store *PostgresStore) Enqueue(ctx context.Context, spec Spec) (int, error)
 	if spec.MaxAttempts <= 0 {
 		spec.MaxAttempts = 5
 	}
-	if spec.AvailableAt.IsZero() {
-		spec.AvailableAt = time.Now()
+	// 不填就交给数据库的 NOW()，不要用本机时间：Claim 的判断条件是数据库时钟，
+	// 本机比数据库快哪怕几十毫秒，刚入队的任务在数据库眼里就还没到点，领不到。
+	var availableAt any
+	if !spec.AvailableAt.IsZero() {
+		availableAt = spec.AvailableAt
 	}
 	var jobID int
 	err = store.database.QueryRow(ctx, `INSERT INTO worker_jobs
 (task_type, subject_key, payload, reason, requested_by, priority, max_attempts, available_at)
-VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8)
+VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,COALESCE($8::timestamptz, NOW()))
 ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO UPDATE SET
 payload = EXCLUDED.payload, reason = EXCLUDED.reason,
 requested_by = COALESCE(EXCLUDED.requested_by, worker_jobs.requested_by),
@@ -104,13 +125,15 @@ priority = GREATEST(worker_jobs.priority, EXCLUDED.priority),
 available_at = CASE WHEN worker_jobs.status = 'pending' THEN LEAST(worker_jobs.available_at, EXCLUDED.available_at) ELSE worker_jobs.available_at END,
 updated_at = NOW()
 RETURNING id`, spec.TaskType, spec.SubjectKey, string(payload), spec.Reason, nullableID(spec.RequestedBy),
-		spec.Priority, spec.MaxAttempts, spec.AvailableAt).Scan(&jobID)
+		spec.Priority, spec.MaxAttempts, availableAt).Scan(&jobID)
 	if err != nil {
 		return 0, fmt.Errorf("enqueue worker job: %w", err)
 	}
 	return jobID, nil
 }
 
+// Claim 抢一个到期的任务并加租约。
+// 用 FOR UPDATE SKIP LOCKED，多个工作协程或多个进程可以安全地并发抢任务。
 func (store *PostgresStore) Claim(ctx context.Context, lease time.Duration) (*Job, error) {
 	if lease <= 0 {
 		lease = 30 * time.Minute
@@ -140,6 +163,7 @@ RETURNING `+jobColumns, lease.Seconds())
 	return &job, nil
 }
 
+// Complete 标记任务完成。
 func (store *PostgresStore) Complete(ctx context.Context, jobID int) error {
 	_, err := store.database.Exec(ctx, `UPDATE worker_jobs SET status = 'completed', finished_at = NOW(),
 locked_by = '', locked_until = NULL, error_message = '', updated_at = NOW()
@@ -178,6 +202,7 @@ WHERE id = $1 AND status = 'running'`,
 	return err
 }
 
+// Recover 把租约已过期仍在 running 的任务改回 pending，用于进程异常退出后的自愈。
 func (store *PostgresStore) Recover(ctx context.Context, before time.Time) error {
 	_, err := store.database.Exec(ctx, `UPDATE worker_jobs SET status = 'pending', locked_by = '', locked_until = NULL,
 available_at = NOW(), started_at = NULL, finished_at = NULL,
@@ -186,12 +211,14 @@ WHERE status = 'running' AND (locked_until IS NULL OR locked_until < $1)`, befor
 	return err
 }
 
+// UpdateProgress 更新长任务的进度，cursor 让任务可以断点续跑。
 func (store *PostgresStore) UpdateProgress(ctx context.Context, jobID, total, done, failed int, cursor string) error {
 	_, err := store.database.Exec(ctx, `UPDATE worker_jobs SET progress_total=$2, progress_done=$3,
 progress_failed=$4, progress_cursor=$5, updated_at=NOW() WHERE id=$1`, jobID, total, done, failed, cursor)
 	return err
 }
 
+// Get 按 ID 查任务。
 func (store *PostgresStore) Get(ctx context.Context, jobID int) (*Job, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+jobColumns+` FROM worker_jobs WHERE id=$1`, jobID)
 	if err != nil {
@@ -205,6 +232,7 @@ func (store *PostgresStore) Get(ctx context.Context, jobID int) (*Job, error) {
 	return &job, err
 }
 
+// Latest 查某个对象最近一次任务，用于展示上次执行结果。
 func (store *PostgresStore) Latest(ctx context.Context, taskType, subjectKey string) (*Job, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+jobColumns+` FROM worker_jobs
 WHERE task_type=$1 AND subject_key=$2 ORDER BY id DESC LIMIT 1`, taskType, subjectKey)
@@ -219,6 +247,7 @@ WHERE task_type=$1 AND subject_key=$2 ORDER BY id DESC LIMIT 1`, taskType, subje
 	return &job, err
 }
 
+// List 按类型和状态列出任务。
 func (store *PostgresStore) List(ctx context.Context, taskType, status string, before time.Time, limit int) ([]Job, error) {
 	if limit <= 0 {
 		limit = 50
@@ -247,6 +276,7 @@ const retryAssignments = `status = 'pending', available_at = NOW(), attempt_coun
 locked_by = '', locked_until = NULL, started_at = NULL, finished_at = NULL,
 error_message = '', updated_at = NOW()`
 
+// Reset 把失败任务重置为待执行，供后台手动重试。
 func (store *PostgresStore) Reset(ctx context.Context, jobID int) error {
 	_, err := store.RetryJob(ctx, jobID)
 	return err
@@ -294,6 +324,7 @@ FROM candidate WHERE worker_jobs.id = candidate.id`, taskType, limit)
 	return int(affected), nil
 }
 
+// scanJob 把一行扫成 Job。
 func scanJob(row interface{ Scan(...any) error }) (Job, error) {
 	var job Job
 	err := row.Scan(&job.ID, &job.TaskType, &job.SubjectKey, &job.Payload, &job.Reason, &job.RequestedBy,
@@ -303,6 +334,7 @@ func scanJob(row interface{ Scan(...any) error }) (Job, error) {
 	return job, err
 }
 
+// nullableID 把 0 转成 NULL。
 func nullableID(value int) any {
 	if value <= 0 {
 		return nil
@@ -310,6 +342,7 @@ func nullableID(value int) any {
 	return value
 }
 
+// nullableTime 把零值时间转成 NULL。
 func nullableTime(value time.Time) any {
 	if value.IsZero() {
 		return nil

@@ -1,0 +1,10 @@
+{{/* 播放页短评区：/play 和 /watch 共用，进页面后再异步拉，不占首屏。传入 douban ID 字符串。 */}}
+<div id="user-comments"
+     hx-get="/api/htmx/movie-comments?douban_id={{ . }}"
+     hx-trigger="load"
+     hx-indicator="#user-comments-loading">
+    <div id="user-comments-loading" class="htmx-indicator movie-search-loading-state">
+        <div class="loading-spinner"></div>
+        <p>正在加载短评...</p>
+    </div>
+</div>

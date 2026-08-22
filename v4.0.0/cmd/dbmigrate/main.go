@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// main 连上目标库执行结构迁移，可用 -through 只升到指定版本。
 func main() {
 	targetDSN := flag.String("target", strings.TrimSpace(os.Getenv("MIGRATION_TARGET_DSN")), "新 PostgreSQL DSN")
 	targetEnv := flag.String("target-env", "", "包含新库配置的 .env；设置后覆盖 -target")
@@ -57,6 +58,7 @@ func main() {
 	fmt.Printf("目标库 %s 结构已升级到 %s\n", parsed.Database, version)
 }
 
+// fatalf 打印错误并退出。
 func fatalf(format string, arguments ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", arguments...)
 	os.Exit(1)

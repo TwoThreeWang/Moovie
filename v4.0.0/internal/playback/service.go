@@ -9,6 +9,8 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// DetailService 取资源详情：库里有就直接返回并在后台顺手刷新一次，
+// 库里没有才同步去资源站抓。singleflight 保证同一条资源同时只抓一次。
 type DetailService struct {
 	catalog Catalog
 	sites   SiteCatalog
@@ -18,10 +20,12 @@ type DetailService struct {
 	group   singleflight.Group
 }
 
+// NewDetailService 创建详情服务。
 func NewDetailService(catalog Catalog, sites SiteCatalog, crawler DetailCrawler, runner BackgroundRunner, timeout time.Duration) *DetailService {
 	return &DetailService{catalog: catalog, sites: sites, crawler: crawler, runner: runner, timeout: timeout}
 }
 
+// Get 优先读库，读不到才回源抓取。
 func (service *DetailService) Get(ctx context.Context, sourceKey, vodID string) (*search.VodItem, error) {
 	item, err := service.catalog.FindBySourceID(ctx, sourceKey, vodID)
 	if err == nil && item != nil {
@@ -35,10 +39,12 @@ func (service *DetailService) Get(ctx context.Context, sourceKey, vodID string) 
 	return service.fetch(ctx, sourceKey, vodID)
 }
 
+// Refresh 强制回源抓取，忽略库里已有的数据。
 func (service *DetailService) Refresh(ctx context.Context, sourceKey, vodID string) (*search.VodItem, error) {
 	return service.fetch(ctx, sourceKey, vodID)
 }
 
+// fetch 回源抓详情并写库。
 func (service *DetailService) fetch(ctx context.Context, sourceKey, vodID string) (*search.VodItem, error) {
 	key := "detail:" + sourceKey + ":" + vodID
 	value, err, _ := service.group.Do(key, func() (any, error) {

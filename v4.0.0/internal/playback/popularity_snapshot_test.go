@@ -12,28 +12,6 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
-func TestSnapshotQualityPenaltyRequiresEnoughEvidence(t *testing.T) {
-	if got := qualityMultiplier(popularitySignal{attempts: 4, successes: 0}); got != 1 {
-		t.Fatalf("small-sample multiplier = %v", got)
-	}
-	if got := qualityMultiplier(popularitySignal{attempts: 10, successes: 1}); got != 0.7 {
-		t.Fatalf("low-quality multiplier = %v", got)
-	}
-	if got := qualityMultiplier(popularitySignal{attempts: 10, successes: 2}); got != 1 {
-		t.Fatalf("threshold multiplier = %v", got)
-	}
-}
-
-func TestSnapshotFreshnessBoostIsLimitedToCurrentTitles(t *testing.T) {
-	now := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
-	if got := freshnessBoost("2026", now); got <= 0 || got >= 0.001 {
-		t.Fatalf("current-title boost = %v", got)
-	}
-	if got := freshnessBoost("2025", now); got != 0 {
-		t.Fatalf("old-title boost = %v", got)
-	}
-}
-
 func TestSnapshotProviderFallsBackWhenNoReadySnapshotExists(t *testing.T) {
 	store := NewPopularitySnapshotStore(&emptySnapshotDatabase{})
 	fallback := popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
@@ -75,11 +53,6 @@ func TestPopularSubjectsKeepUnmatchedItemsAndCapAtFifty(t *testing.T) {
 	if len(items) != 50 || items[0].Title != "快照第一名" || items[1].ID != "1" {
 		t.Fatalf("merged popular items = %d/%+v", len(items), items[:2])
 	}
-
-	ranked := rankPopularitySubjects([]PopularSubject{{ID: "unmatched", Title: "未进入媒体库", Score: 1}}, nil, time.Now())
-	if len(ranked) != 1 || ranked[0].mediaID != nil || ranked[0].subject.QualityMultiplier != 1 {
-		t.Fatalf("unmatched popular item was discarded: %+v", ranked)
-	}
 }
 
 func TestSnapshotReplaceRejectsEmptyPublishedRuns(t *testing.T) {
@@ -87,10 +60,6 @@ func TestSnapshotReplaceRejectsEmptyPublishedRuns(t *testing.T) {
 	err := store.Replace(t.Context(), "tv", nil, time.Hour)
 	if !errors.Is(err, ErrEmptyPopularitySnapshot) {
 		t.Fatalf("Replace error = %v, want ErrEmptyPopularitySnapshot", err)
-	}
-	err = store.Replace(t.Context(), "tv", []PopularSubject{{ID: "external", Title: "未进入媒体库"}}, time.Hour)
-	if !errors.Is(err, ErrIncompletePopularitySnapshot) {
-		t.Fatalf("Replace error = %v, want ErrIncompletePopularitySnapshot", err)
 	}
 }
 

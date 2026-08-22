@@ -8,19 +8,24 @@ import (
 	"time"
 )
 
+// Handler 是一种任务的处理函数。
 type Handler func(context.Context, Job) error
 
+// handlerEntry 是处理函数及其超时时间。
 type handlerEntry struct {
 	run     Handler
 	timeout time.Duration
 }
 
+// Schedule 是一个周期任务：启动后先等 InitialDelay，之后每隔 Interval 入队一次。
 type Schedule struct {
 	Spec         Spec
 	Interval     time.Duration
 	InitialDelay time.Duration
 }
 
+// Dispatcher 是任务调度器：按并发数起若干工作协程轮询抢任务，
+// 同时负责周期任务入队和过期租约回收。
 type Dispatcher struct {
 	store       Store
 	concurrency int
@@ -34,6 +39,7 @@ type Dispatcher struct {
 	mu          sync.Mutex
 }
 
+// NewDispatcher 创建调度器，默认租约 30 分钟。
 func NewDispatcher(store Store, concurrency int, poll time.Duration) *Dispatcher {
 	if concurrency < 1 {
 		concurrency = 1
@@ -45,6 +51,7 @@ func NewDispatcher(store Store, concurrency int, poll time.Duration) *Dispatcher
 		handlers: make(map[string]handlerEntry), logger: slog.Default()}
 }
 
+// Handle 注册一种任务的处理函数，必须在 Start 之前调用。
 func (dispatcher *Dispatcher) Handle(taskType string, timeout time.Duration, handler Handler) {
 	if timeout <= 0 {
 		timeout = 30 * time.Minute
@@ -52,10 +59,12 @@ func (dispatcher *Dispatcher) Handle(taskType string, timeout time.Duration, han
 	dispatcher.handlers[taskType] = handlerEntry{run: handler, timeout: timeout}
 }
 
+// Schedule 注册一个周期任务，必须在 Start 之前调用。
 func (dispatcher *Dispatcher) Schedule(schedule Schedule) {
 	dispatcher.schedules = append(dispatcher.schedules, schedule)
 }
 
+// Start 启动调度器：先回收上次遗留的过期任务，再拉起工作协程和周期任务。
 func (dispatcher *Dispatcher) Start() error {
 	dispatcher.mu.Lock()
 	defer dispatcher.mu.Unlock()
@@ -84,6 +93,7 @@ func (dispatcher *Dispatcher) Start() error {
 	return nil
 }
 
+// recoverExpired 定期回收租约过期的任务。
 func (dispatcher *Dispatcher) recoverExpired(ctx context.Context) {
 	defer dispatcher.wait.Done()
 	interval := dispatcher.lease / 3
@@ -107,6 +117,7 @@ func (dispatcher *Dispatcher) recoverExpired(ctx context.Context) {
 	}
 }
 
+// Stop 停止调度器并等待在跑的任务结束。
 func (dispatcher *Dispatcher) Stop(ctx context.Context) error {
 	dispatcher.mu.Lock()
 	if dispatcher.cancel != nil {
@@ -124,6 +135,7 @@ func (dispatcher *Dispatcher) Stop(ctx context.Context) error {
 	}
 }
 
+// worker 是工作协程：不停抢任务，抢不到就等一个轮询间隔。
 func (dispatcher *Dispatcher) worker(ctx context.Context, workerID int) {
 	defer dispatcher.wait.Done()
 	for {
@@ -142,6 +154,7 @@ func (dispatcher *Dispatcher) worker(ctx context.Context, workerID int) {
 	}
 }
 
+// execute 执行一个任务，按超时时间限制并把错误交给 Classify 决定如何收尾。
 func (dispatcher *Dispatcher) execute(ctx context.Context, workerID int, job Job) {
 	entry, ok := dispatcher.handlers[job.TaskType]
 	if !ok {
@@ -180,6 +193,7 @@ func (dispatcher *Dispatcher) execute(ctx context.Context, workerID int, job Job
 	dispatcher.logger.Info("worker job completed", "worker", workerID, "job_id", job.ID, "task_type", job.TaskType, "duration_ms", time.Since(started).Milliseconds())
 }
 
+// schedule 按固定间隔重复入队一个周期任务。
 func (dispatcher *Dispatcher) schedule(ctx context.Context, schedule Schedule) {
 	defer dispatcher.wait.Done()
 	if schedule.Interval <= 0 {

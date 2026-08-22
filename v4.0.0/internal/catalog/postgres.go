@@ -13,12 +13,15 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// PostgresStore 是 catalog 各种存储接口的唯一实现。
 type PostgresStore struct{ database database.Executor }
 
+// NewPostgresStore 创建存储实现。
 func NewPostgresStore(executor database.Executor) *PostgresStore {
 	return &PostgresStore{database: executor}
 }
 
+// Count 返回媒体总数（后台首页用）。
 func (store *PostgresStore) Count(ctx context.Context) (int, error) {
 	var count int
 	if err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM media`).Scan(&count); err != nil {
@@ -27,6 +30,7 @@ func (store *PostgresStore) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// UpdateEmbedding 写入向量及其来源文本和语义哈希。
 func (store *PostgresStore) UpdateEmbedding(ctx context.Context, doubanID, content, semanticHash string, embedding []float32) error {
 	vector, err := vectorLiteral(embedding)
 	if err != nil {
@@ -41,6 +45,7 @@ updated_at = NOW() WHERE douban_id = $1`, doubanID, content, semanticHash, vecto
 	return nil
 }
 
+// vectorLiteral 把 float32 切片转成 pgvector 的文本字面量，并校验维度和数值合法性。
 func vectorLiteral(embedding []float32) (string, error) {
 	if len(embedding) != 768 {
 		return "", fmt.Errorf("embedding dimension mismatch: want 768, got %d", len(embedding))
@@ -65,6 +70,7 @@ m.media_type, m.series_status, m.backdrops, m.embedding_content, m.semantic_hash
 m.reviews_updated_at, m.metadata_status, m.completeness_score, m.next_refresh_at, m.updated_at,
 COALESCE(m.embedding::text, '')`
 
+// FindByDoubanID 按豆瓣 ID 取一部影片，不存在时返回 (nil, nil)。
 func (store *PostgresStore) FindByDoubanID(ctx context.Context, doubanID string) (*Movie, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+` FROM media m WHERE m.douban_id = $1 LIMIT 1`, doubanID)
 	if err != nil {
@@ -81,6 +87,7 @@ func (store *PostgresStore) FindByDoubanID(ctx context.Context, doubanID string)
 	return &movie, nil
 }
 
+// FindByID 按 media.id 取一部影片，不存在时返回 (nil, nil)。
 func (store *PostgresStore) FindByID(ctx context.Context, id int) (*Movie, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+` FROM media m WHERE m.id = $1 LIMIT 1`, id)
 	if err != nil {
@@ -97,6 +104,7 @@ func (store *PostgresStore) FindByID(ctx context.Context, id int) (*Movie, error
 	return &movie, nil
 }
 
+// FindSimilar 用向量距离找相似影片（详情页的「相关推荐」）。
 func (store *PostgresStore) FindSimilar(ctx context.Context, doubanID string, limit int) ([]Movie, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+`
 FROM media m
@@ -162,6 +170,8 @@ ORDER BY CAST(SUBSTRING(external.external_type FROM '^tv_season_([0-9]+)$') AS I
 	return seasons, nil
 }
 
+// Upsert 写入或更新一部影片，同时把 IMDb ID 写进外部 ID 表。
+// 标题里带「第 N 季」时，external_type 会写成 tv_season_N，季度导航靠它归拢。
 func (store *PostgresStore) Upsert(ctx context.Context, movie Movie) error {
 	if movie.ReviewsUpdatedAt.IsZero() {
 		movie.ReviewsUpdatedAt = time.Unix(0, 0).UTC()
@@ -242,6 +252,7 @@ WHERE `+imdbCandidatePredicate+`
 ORDER BY m.imdb_lookup_at NULLS FIRST, m.id LIMIT $1`, limit, retryAfter)
 }
 
+// pendingIMDbLookups 是上面两个待办队列的公共查询。
 func (store *PostgresStore) pendingIMDbLookups(ctx context.Context, query string, limit int, retryAfter time.Duration) ([]string, error) {
 	rows, err := store.database.Query(ctx, query, limit, retryAfter.Seconds())
 	if err != nil {
@@ -291,6 +302,7 @@ func (store *PostgresStore) MarkIMDbLookupAttempt(ctx context.Context, doubanIDs
 	return store.markIMDbAttempt(ctx, `UPDATE media SET imdb_lookup_at = NOW() WHERE douban_id = ANY($1)`, doubanIDs)
 }
 
+// markIMDbAttempt 是上面两个记账方法的公共实现。
 func (store *PostgresStore) markIMDbAttempt(ctx context.Context, query string, doubanIDs []string) error {
 	if len(doubanIDs) == 0 {
 		return nil
@@ -301,6 +313,7 @@ func (store *PostgresStore) markIMDbAttempt(ctx context.Context, query string, d
 	return nil
 }
 
+// DeleteByDoubanID 删除一部影片（详情页发现标题为空的脏数据时会调用）。
 func (store *PostgresStore) DeleteByDoubanID(ctx context.Context, doubanID string) error {
 	if _, err := store.database.Exec(ctx, `DELETE FROM media WHERE douban_id = $1`, doubanID); err != nil {
 		return fmt.Errorf("delete media: %w", err)
@@ -308,6 +321,7 @@ func (store *PostgresStore) DeleteByDoubanID(ctx context.Context, doubanID strin
 	return nil
 }
 
+// Latest 按更新时间倒序取影片。
 func (store *PostgresStore) Latest(ctx context.Context, limit int) ([]Movie, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+` FROM media m ORDER BY m.updated_at DESC LIMIT $1`, limit)
 	if err != nil {
@@ -350,6 +364,7 @@ func (store *PostgresStore) LatestForSitemap(ctx context.Context, limit int) ([]
 	return movies, nil
 }
 
+// Suggest 按标题模糊搜索，完全相同 > 前缀匹配 > 其他，同档再按年份和评分排。
 func (store *PostgresStore) Suggest(ctx context.Context, keyword string, limit int) ([]Movie, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+` FROM media m
 	WHERE m.title ILIKE $1 OR m.original_title ILIKE $1
@@ -377,6 +392,7 @@ func (store *PostgresStore) Suggest(ctx context.Context, keyword string, limit i
 	return movies, nil
 }
 
+// Popular 取有评分且已生成向量的影片，按评分倒序（上游热门接口挂了时兜底用）。
 func (store *PostgresStore) Popular(ctx context.Context, limit int) ([]Movie, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+` FROM media m
 WHERE m.rating_douban > 0 AND m.embedding IS NOT NULL ORDER BY m.rating_douban DESC, m.updated_at DESC LIMIT $1`, limit)
@@ -398,6 +414,7 @@ WHERE m.rating_douban > 0 AND m.embedding IS NOT NULL ORDER BY m.rating_douban D
 	return movies, nil
 }
 
+// scanMovie 按 movieColumns 的顺序扫描一行，字段顺序必须与该常量保持一致。
 func scanMovie(row interface{ Scan(...any) error }) (Movie, error) {
 	var movie Movie
 	var embeddingText string

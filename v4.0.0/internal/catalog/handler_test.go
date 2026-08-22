@@ -12,10 +12,11 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/cache"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestMoviePagePreservesIndexedSEOJSONLDAndUserSignals(t *testing.T) {
@@ -153,7 +154,7 @@ func TestMoviePageRendersSeriesNavigationAndExcludesSeasonsFromRecommendations(t
 
 func TestSimilarRecommendationsCoalesceAndCache(t *testing.T) {
 	finder := &countingSimilarFinder{movies: []Movie{{DoubanID: "target", Title: "相关推荐", Summary: "不进入卡片缓存"}}}
-	handler := &Handler{similar: finder}
+	handler := &Handler{similar: finder, similarCache: cache.New[[]Movie](similarCacheCapacity, similarCacheTTL)}
 	first := handler.findSimilar(t.Context(), "1292052", 6)
 	second := handler.findSimilar(t.Context(), "1292052", 6)
 	if len(first) != 1 || len(second) != 1 || finder.calls != 1 || first[0].Summary != "" {
@@ -253,7 +254,7 @@ func TestMissingAndDirtyMovieKeepFetchingPageAndDeduplicateWork(t *testing.T) {
 	}
 }
 
-func TestReviewsAndBackdropsUseStoredDataAndQueueStaleRefresh(t *testing.T) {
+func TestReviewsAndBackdropsUseStoredDataWithoutRefreshing(t *testing.T) {
 	store := NewPostgresStore(testdb.Pool(t))
 	reviewsJSON := `[{"title":"值得一看","author":"用户甲","link":"https://movie.douban.com/review/1","published":"2026-07-01","summary":"摘要"}]`
 	_ = store.Upsert(t.Context(), Movie{
@@ -267,12 +268,11 @@ func TestReviewsAndBackdropsUseStoredDataAndQueueStaleRefresh(t *testing.T) {
 
 	reviews := httptest.NewRecorder()
 	router.ServeHTTP(reviews, httptest.NewRequest(http.MethodGet, "/api/htmx/reviews?douban_id=1292052", nil))
-	if reviews.Code != http.StatusOK || !strings.Contains(reviews.Body.String(), "值得一看") || !strings.Contains(reviews.Body.String(), "用户甲") || len(runner.tasks) != 1 {
+	if reviews.Code != http.StatusOK || !strings.Contains(reviews.Body.String(), "值得一看") || !strings.Contains(reviews.Body.String(), "用户甲") || len(runner.tasks) != 0 {
 		t.Fatalf("reviews status/tasks/body = %d/%d/%s", reviews.Code, len(runner.tasks), reviews.Body.String())
 	}
-	runner.tasks[0](t.Context())
-	if len(reviewFetcher.ids) != 1 || reviewFetcher.ids[0] != "1292052" {
-		t.Fatalf("review refreshes = %#v", reviewFetcher.ids)
+	if len(reviewFetcher.ids) != 0 {
+		t.Fatalf("unexpected review refreshes = %#v", reviewFetcher.ids)
 	}
 
 	backdrops := httptest.NewRecorder()
@@ -283,8 +283,14 @@ func TestReviewsAndBackdropsUseStoredDataAndQueueStaleRefresh(t *testing.T) {
 }
 
 func TestReviewsAndBackdropsPreserveEmptyAndCollectingResponses(t *testing.T) {
-	store := NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克"})
+	pool := testdb.Pool(t)
+	store := NewPostgresStore(pool)
+	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克", IMDbID: "tt0111161"})
+	movie, _ := store.FindByDoubanID(t.Context(), "1292052")
+	if _, err := pool.Exec(t.Context(), `INSERT INTO media_external_ids
+(media_id, provider, external_type, external_id) VALUES ($1, 'tmdb', 'movie', '278')`, movie.ID); err != nil {
+		t.Fatal(err)
+	}
 	runner := &queuedRunner{}
 	backdropSyncer := &recordingBackdropSyncer{}
 	router := catalogTestRouterWithOptions(t, store, nil, WithBackgroundRunner(runner), WithBackdropSyncer(backdropSyncer))
@@ -307,7 +313,7 @@ func TestReviewsAndBackdropsPreserveEmptyAndCollectingResponses(t *testing.T) {
 
 func TestPageTriggeredCatalogWorkUsesPersistentRefreshQueue(t *testing.T) {
 	store := NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克"})
+	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克", IMDbID: "tt0111161"})
 	// metadata_status/completeness_score 由刷新流水线维护，Upsert 不写；
 	// 直接落库到「已就绪」状态，否则详情页会认为元数据不全而重复排队 douban_metadata。
 	if _, err := testdb.Pool(t).Exec(t.Context(),
@@ -341,7 +347,7 @@ func TestPageTriggeredCatalogWorkUsesPersistentRefreshQueue(t *testing.T) {
 
 func TestShedBackgroundTaskReturnsBusyAndClearsDeduplicationKey(t *testing.T) {
 	store := NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克"})
+	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克", IMDbID: "tt0111161"})
 	runner := &rejectingRunner{}
 	router := catalogTestRouterWithOptions(t, store, nil,
 		WithBackgroundRunner(runner), WithBackdropSyncer(&recordingBackdropSyncer{}), WithFetcher(&recordingFetcher{}, runner))

@@ -14,10 +14,10 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 type staticPopularProvider struct {
@@ -478,4 +478,154 @@ func decodeJSON(t *testing.T, recorder *httptest.ResponseRecorder) map[string]an
 		t.Fatalf("decode response: %v; body = %s", err, recorder.Body.String())
 	}
 	return payload
+}
+
+// indexingMediaResolver 既能按豆瓣 ID 解析媒体，又实现了 EpisodeWriter，
+// 用来验证 /watch 在查不到候选时会现场补录索引，而不是直接 302 回搜索页。
+type indexingMediaResolver struct {
+	media   mediaidentity.Media
+	indexed *bool
+}
+
+func (resolver indexingMediaResolver) FindByDoubanID(_ context.Context, doubanID string) (mediaidentity.Media, error) {
+	media := resolver.media
+	media.DoubanID = doubanID
+	return media, nil
+}
+
+func (resolver indexingMediaResolver) UpsertEpisodes(_ context.Context, episodes []mediaidentity.Episode) error {
+	if len(episodes) > 0 {
+		*resolver.indexed = true
+	}
+	return nil
+}
+
+// 豆瓣卡片直接链到 /watch 并带上 source_key/vod_id，但剧集索引只在搜索和 /play 时写入，
+// 所以卡片显示有来源、点进来却没有候选是常态。此时应当就地补录后继续播，而不是弹回搜索页。
+func TestWatchPageIndexesResourceFromQueryInsteadOfRedirecting(t *testing.T) {
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
+	_ = store.Upsert(t.Context(), search.VodItem{
+		SourceKey: "source", VodId: "42", VodName: "测试影片", VodDoubanId: "1292052",
+		VodPlayUrl: "正片$https://video.example/main.m3u8",
+	})
+	indexed := false
+	resolver := indexingMediaResolver{
+		media:   mediaidentity.Media{ID: 7, Title: "测试影片", MediaType: "movie"},
+		indexed: &indexed,
+	}
+	// 补录之前查不到任何候选，补录之后才返回，还原「卡片先出现、索引后落库」的真实时序。
+	reader := combinedEpisodeReader{
+		all: func(context.Context, int) ([]mediaidentity.EpisodeInfo, error) {
+			if !indexed {
+				return nil, nil
+			}
+			return []mediaidentity.EpisodeInfo{{SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片", SourceCount: 1}}, nil
+		},
+		byEpisode: episodeReaderFunc(func(context.Context, int, int, string) ([]mediaidentity.ResourceCandidate, error) {
+			if !indexed {
+				return nil, nil
+			}
+			return []mediaidentity.ResourceCandidate{{Episode: mediaidentity.Episode{
+				CandidateID: 9, LineID: 8, LineLabel: "默认源", SourceKey: "source", VodID: "42",
+				MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片",
+				PlayURL: "https://video.example/main.m3u8",
+			}, MappingConfidence: 1}}, nil
+		}),
+	}
+	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(resolver), WithEpisodeReader(reader))
+
+	response := performRequest(router, "/watch/1292052?source_key=source&vod_id=42", nil)
+	if response.Code != http.StatusOK || !indexed {
+		t.Fatalf("watch page did not index on demand: status=%d location=%s indexed=%v",
+			response.Code, response.Header().Get("Location"), indexed)
+	}
+
+	// 没有 source_key/vod_id 可补录时仍然回搜索页，原行为不变。
+	indexed = false
+	if plain := performRequest(router, "/watch/1292052", nil); plain.Code != http.StatusFound {
+		t.Fatalf("watch page without resource hints = %d, want 302", plain.Code)
+	}
+}
+
+// /watch 的媒体身份解析不出来时，只要 URL 指名了资源就该按 /play 播，而不是 302 回搜索页。
+// 关联不上豆瓣/TMDB 的资源本来就是 /play 负责的场景，这里只是把两个入口接起来。
+func TestWatchPageFallsBackToDirectResourcePlayWhenCanonicalMediaIsMissing(t *testing.T) {
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
+	_ = store.Upsert(t.Context(), search.VodItem{
+		SourceKey: "source", VodId: "42", VodName: "无元数据影片",
+		VodPlayUrl: "正片$https://video.example/orphan.m3u8",
+	})
+	// 库里没有这部片子的规范媒体，这正是 /watch 走不通的情形。
+	resolver := mediaResolverFunc(func(context.Context, string) (mediaidentity.Media, error) {
+		return mediaidentity.Media{}, nil
+	})
+	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(resolver))
+
+	response := performRequest(router, "/watch/1292052?source_key=source&vod_id=42", nil)
+	body := response.Body.String()
+	if response.Code != http.StatusOK {
+		t.Fatalf("watch fallback = %d (location=%s), want the play page",
+			response.Code, response.Header().Get("Location"))
+	}
+	// entryPage 区分两套播放页；豆瓣 ID 必须从路径上带过去，否则短评和推荐整块消失。
+	if !strings.Contains(body, "entryPage: 'play'") ||
+		!strings.Contains(body, `https:\/\/video.example\/orphan.m3u8`) ||
+		!strings.Contains(body, "douban_id=1292052") {
+		t.Fatalf("play fallback lost the resource or the douban id: %s", body)
+	}
+
+	// 资源本身不存在时没东西可播，仍然回搜索页。
+	missing := performRequest(router, "/watch/1292052?source_key=source&vod_id=999", nil)
+	if missing.Code != http.StatusFound {
+		t.Fatalf("watch with a dead resource = %d, want 302", missing.Code)
+	}
+}
+
+// 播放器容器、依赖库、短评和推荐这四块 /play 和 /watch 原本各写了一遍，现在抽成了公共片段。
+// 这个测试同时渲染两个页面，确保四块内容在两边都还在——片段掉了或者只挂到一边，这里必挂。
+func TestPlayerPagesShareTheSamePlayerAndLazySections(t *testing.T) {
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
+	_ = store.Upsert(t.Context(), search.VodItem{
+		SourceKey: "source", VodId: "42", VodName: "测试影片", VodDoubanId: "1292052",
+		VodPlayUrl: "正片$https://video.example/main.m3u8",
+	})
+	resolver := mediaResolverFunc(func(_ context.Context, doubanID string) (mediaidentity.Media, error) {
+		return mediaidentity.Media{ID: 7, DoubanID: doubanID, Title: "测试影片", MediaType: "movie"}, nil
+	})
+	reader := combinedEpisodeReader{
+		all: func(context.Context, int) ([]mediaidentity.EpisodeInfo, error) {
+			return []mediaidentity.EpisodeInfo{{SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片", SourceCount: 1}}, nil
+		},
+		byEpisode: episodeReaderFunc(func(context.Context, int, int, string) ([]mediaidentity.ResourceCandidate, error) {
+			return []mediaidentity.ResourceCandidate{{Episode: mediaidentity.Episode{
+				CandidateID: 9, LineID: 8, LineLabel: "默认源", SourceKey: "source", VodID: "42",
+				MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片",
+				PlayURL: "https://video.example/main.m3u8",
+			}, MappingConfidence: 1}}, nil
+		}),
+	}
+	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(resolver), WithEpisodeReader(reader))
+
+	shared := []string{
+		`<div id="artplayer-app"></div>`,                      // play_container.html
+		`class="play-disclaimer"`,                             // play_container.html 里挂的免责条
+		`src="/static/js/player.js?v=0.11"`,                   // play_scripts.html
+		`npm/artplayer-plugin-danmuku`,                        // play_scripts.html：弹幕插件
+		`hx-get="/api/htmx/movie-comments?douban_id=1292052"`, // play_comments.html
+		`hx-get="/api/htmx/similar?douban_id=1292052"`,        // play_similar.html
+	}
+	for _, path := range []string{"/play/source/42?douban_id=1292052", "/watch/1292052"} {
+		response := performRequest(router, path, nil)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s = %d, want 200", path, response.Code)
+		}
+		for _, fragment := range shared {
+			if !strings.Contains(response.Body.String(), fragment) {
+				t.Fatalf("%s is missing the shared fragment %q", path, fragment)
+			}
+		}
+	}
 }

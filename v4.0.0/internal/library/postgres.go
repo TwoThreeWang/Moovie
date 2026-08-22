@@ -8,8 +8,10 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// PostgresStore 是片单的 PostgreSQL 实现。
 type PostgresStore struct{ database database.Executor }
 
+// NewPostgresStore 创建存储实现。
 func NewPostgresStore(executor database.Executor) *PostgresStore {
 	return &PostgresStore{database: executor}
 }
@@ -21,8 +23,10 @@ COALESCE(NULLIF(media.poster, ''), um.poster),
 COALESCE(NULLIF(media.year, ''), um.year),
 um.status, um.rating, um.comment, um.created_at, um.updated_at`
 
+// recordSource 是各查询共用的表和关联，海报优先取 media 表的。
 const recordSource = ` FROM user_movies um LEFT JOIN media ON media.id = um.media_id`
 
+// Upsert 标记或更新一条片单记录，同一部片子换状态时覆盖原记录。
 func (store *PostgresStore) Upsert(ctx context.Context, record Record) error {
 	hasExternalTime := !record.CreatedAt.IsZero() || !record.UpdatedAt.IsZero()
 	if record.CreatedAt.IsZero() {
@@ -47,6 +51,7 @@ created_at = CASE WHEN $11 THEN EXCLUDED.created_at ELSE user_movies.created_at 
 	return nil
 }
 
+// ListByUserAndDateRange 按时间段列出记录，供月度报告使用。
 func (store *PostgresStore) ListByUserAndDateRange(ctx context.Context, userID int, status string, start, end time.Time) ([]Record, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+recordColumns+recordSource+`
 WHERE um.user_id = $1 AND um.status = $2 AND um.created_at >= $3 AND um.created_at < $4 ORDER BY um.updated_at DESC`, userID, status, start, end)
@@ -57,6 +62,7 @@ WHERE um.user_id = $1 AND um.status = $2 AND um.created_at >= $3 AND um.created_
 	return scanRecords(rows)
 }
 
+// CountWatchedByAllUsersInRange 统计所有用户在时间段内的看过数量，供月报排名使用。
 func (store *PostgresStore) CountWatchedByAllUsersInRange(ctx context.Context, start, end time.Time) (map[int]int, error) {
 	rows, err := store.database.Query(ctx, `SELECT user_id, COUNT(*) FROM user_movies
 WHERE status = 'watched' AND created_at >= $1 AND created_at < $2 GROUP BY user_id`, start, end)
@@ -78,6 +84,7 @@ WHERE status = 'watched' AND created_at >= $1 AND created_at < $2 GROUP BY user_
 	return counts, nil
 }
 
+// AvgRatingByUser 计算用户的平均评分和有效评分条数。
 func (store *PostgresStore) AvgRatingByUser(ctx context.Context, userID int) (float64, int, error) {
 	var average float64
 	var count int
@@ -88,6 +95,7 @@ WHERE user_id = $1 AND status = 'watched' AND rating > 0`, userID).Scan(&average
 	return average, count, nil
 }
 
+// CountOverlapWatched 统计两个用户看过的重合数量，供片友推荐使用。
 func (store *PostgresStore) CountOverlapWatched(ctx context.Context, userA, userB int) (int, error) {
 	if userA == userB {
 		return 0, nil
@@ -101,6 +109,7 @@ WHERE a.user_id = $1 AND a.status = 'watched'`, userA, userB).Scan(&count); err 
 	return count, nil
 }
 
+// CountByUserAndDateRange 统计用户在时间段内的记录数量。
 func (store *PostgresStore) CountByUserAndDateRange(ctx context.Context, userID int, status string, start, end time.Time) (int, error) {
 	var count int
 	if err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM user_movies
@@ -110,6 +119,7 @@ WHERE user_id = $1 AND status = $2 AND created_at >= $3 AND created_at < $4`, us
 	return count, nil
 }
 
+// scanRecords 把查询结果扫成片单记录。
 func scanRecords(rows interface {
 	Next() bool
 	Scan(...any) error
@@ -130,6 +140,7 @@ func scanRecords(rows interface {
 	return records, nil
 }
 
+// Remove 删除一条片单记录。
 func (store *PostgresStore) Remove(ctx context.Context, userID int, movieID string) error {
 	if _, err := store.database.Exec(ctx, `DELETE FROM user_movies WHERE user_id = $1 AND movie_id = $2`, userID, movieID); err != nil {
 		return fmt.Errorf("remove user movie: %w", err)
@@ -137,14 +148,17 @@ func (store *PostgresStore) Remove(ctx context.Context, userID int, movieID stri
 	return nil
 }
 
+// GetByUserAndMovie 查询某用户对某部片子的标记。
 func (store *PostgresStore) GetByUserAndMovie(ctx context.Context, userID int, movieID string) (*Record, error) {
 	return store.find(ctx, `SELECT `+recordColumns+recordSource+` WHERE um.user_id = $1 AND um.movie_id = $2 LIMIT 1`, userID, movieID)
 }
 
+// GetByID 按记录 ID 查询，同时校验归属用户。
 func (store *PostgresStore) GetByID(ctx context.Context, userID, id int) (*Record, error) {
 	return store.find(ctx, `SELECT `+recordColumns+recordSource+` WHERE um.user_id = $1 AND um.id = $2 LIMIT 1`, userID, id)
 }
 
+// IsMarked 判断是否已标记为某状态。
 func (store *PostgresStore) IsMarked(ctx context.Context, userID int, movieID, status string) (bool, error) {
 	var marked bool
 	if err := store.database.QueryRow(ctx, `SELECT EXISTS (
@@ -155,6 +169,7 @@ SELECT 1 FROM user_movies WHERE user_id = $1 AND movie_id = $2 AND status = $3
 	return marked, nil
 }
 
+// find 是单条查询的公共实现。
 func (store *PostgresStore) find(ctx context.Context, query string, arguments ...any) (*Record, error) {
 	rows, err := store.database.Query(ctx, query, arguments...)
 	if err != nil {
@@ -172,6 +187,7 @@ func (store *PostgresStore) find(ctx context.Context, query string, arguments ..
 	return &record, nil
 }
 
+// ListByUser 分页列出用户的片单。
 func (store *PostgresStore) ListByUser(ctx context.Context, userID int, status string, limit, offset int) ([]Record, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+recordColumns+recordSource+`
 WHERE um.user_id = $1 AND um.status = $2 ORDER BY um.updated_at DESC LIMIT $3 OFFSET $4`, userID, status, limit, offset)
@@ -194,6 +210,7 @@ WHERE um.user_id = $1 AND um.status = $2 ORDER BY um.updated_at DESC LIMIT $3 OF
 	return records, nil
 }
 
+// CountByUser 统计用户某状态的片单数量。
 func (store *PostgresStore) CountByUser(ctx context.Context, userID int, status string) (int, error) {
 	var count int64
 	if err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM user_movies WHERE user_id = $1 AND status = $2`, userID, status).Scan(&count); err != nil {
@@ -202,6 +219,7 @@ func (store *PostgresStore) CountByUser(ctx context.Context, userID int, status 
 	return int(count), nil
 }
 
+// CountByMovie 统计某部片子被标记的次数，用于详情页展示。
 func (store *PostgresStore) CountByMovie(ctx context.Context, movieID, status string) (int, error) {
 	var count int64
 	if err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM user_movies WHERE movie_id = $1 AND status = $2`, movieID, status).Scan(&count); err != nil {
@@ -210,6 +228,7 @@ func (store *PostgresStore) CountByMovie(ctx context.Context, movieID, status st
 	return int(count), nil
 }
 
+// UpdateRatingComment 修改评分和短评。
 func (store *PostgresStore) UpdateRatingComment(ctx context.Context, userID, id, rating int, comment string) error {
 	if _, err := store.database.Exec(ctx, `UPDATE user_movies SET rating = $3, comment = $4, updated_at = NOW()
 WHERE user_id = $1 AND id = $2`, userID, id, rating, comment); err != nil {

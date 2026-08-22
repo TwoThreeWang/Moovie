@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// PopularSubject 是热门榜里的一条，JSON 字段名要和前端、TVBox 保持兼容。
 type PopularSubject struct {
 	ID                 string         `json:"id"`
 	Title              string         `json:"title"`
@@ -26,30 +26,17 @@ type PopularSubject struct {
 	URL                string         `json:"url"`
 	IsNew              bool           `json:"is_new"`
 	EpisodesInfo       string         `json:"episodes_info"`
-	Year               string         `json:"year,omitempty"`
-	Score              float64        `json:"score,omitempty"`
-	SourceRanks        map[string]int `json:"source_ranks,omitempty"`
-	PlayableCandidates int            `json:"playable_candidates"`
-	QualityMultiplier  float64        `json:"quality_multiplier,omitempty"`
-	FreshnessBoost     float64        `json:"freshness_boost,omitempty"`
+	Year string `json:"year,omitempty"`
 }
 
-// PopularSource 标识一种热门信号。Provider 契约保持不变，因此可以独立增加豆瓣、
-// TMDB 或站内行为来源，而无需修改发现页、TVBox 或旧 JSON 字段名。
+// PopularSource 标识一种热门来源，来源按声明顺序决定优先级（靠前的优先）。
 type PopularSource struct {
 	Name     string
-	Weight   float64
 	Provider PopularProvider
 }
 
-type compositePopularItem struct {
-	subject PopularSubject
-	score   float64
-	seen    int
-}
-
-// CompositePopularProvider 合并多个独立热门流，先按外部 ID、再按规范标题去重。
-// 单个来源故障只造成部分降级，其他成功来源仍可使用；只配置豆瓣时保留旧单来源行为。
+// CompositePopularProvider 按优先级合并多个热门来源，先到先得去重。
+// 单个来源故障只造成部分降级，其他成功来源仍可使用。
 type CompositePopularProvider struct {
 	sources []PopularSource
 	mu      sync.Mutex
@@ -57,6 +44,7 @@ type CompositePopularProvider struct {
 	group   singleflight.Group
 }
 
+// NewCompositePopularProvider 创建组合来源，自动跳过没配置的来源。
 func NewCompositePopularProvider(sources ...PopularSource) *CompositePopularProvider {
 	valid := make([]PopularSource, 0, len(sources))
 	for _, source := range sources {
@@ -66,14 +54,12 @@ func NewCompositePopularProvider(sources ...PopularSource) *CompositePopularProv
 		if source.Name == "" {
 			source.Name = "source"
 		}
-		if source.Weight <= 0 {
-			source.Weight = 1
-		}
 		valid = append(valid, source)
 	}
 	return &CompositePopularProvider{sources: valid, cache: make(map[string]popularCacheEntry)}
 }
 
+// Popular 返回融合后的热门榜（结果缓存 15 分钟）。
 func (provider *CompositePopularProvider) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
 	value, err, _ := provider.group.Do(mediaType, func() (any, error) {
 		return provider.loadPopular(ctx, mediaType)
@@ -84,6 +70,8 @@ func (provider *CompositePopularProvider) Popular(ctx context.Context, mediaType
 	return append([]PopularSubject(nil), value.([]PopularSubject)...), err
 }
 
+// loadPopular 按来源声明顺序合并：靠前的来源优先，重复条目只保留先出现的。
+// 所有来源都失败时退回上一次的缓存，宁可旧也不要空榜。
 func (provider *CompositePopularProvider) loadPopular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
 	provider.mu.Lock()
 	cached, found := provider.cache[mediaType]
@@ -94,7 +82,7 @@ func (provider *CompositePopularProvider) loadPopular(ctx context.Context, media
 	}
 	provider.mu.Unlock()
 
-	merged := make(map[string]*compositePopularItem)
+	var result []PopularSubject
 	var lastErr error
 	for _, source := range provider.sources {
 		subjects, err := source.Provider.Popular(ctx, mediaType)
@@ -103,29 +91,9 @@ func (provider *CompositePopularProvider) loadPopular(ctx context.Context, media
 			lastErr = fmt.Errorf("%s popularity source: %w", source.Name, err)
 			continue
 		}
-		if len(subjects) == 0 {
-			slog.Warn("popularity source returned no mapped subjects", "source", source.Name, "media_type", mediaType)
-			continue
-		}
-		for rank, subject := range subjects {
-			key := popularIdentity(subject)
-			if key == "" {
-				continue
-			}
-			item := merged[key]
-			if item == nil {
-				item = &compositePopularItem{subject: subject}
-				item.subject.SourceRanks = make(map[string]int)
-				merged[key] = item
-			} else {
-				item.subject = mergePopularSubject(item.subject, subject)
-			}
-			item.subject.SourceRanks[source.Name] = rank + 1
-			item.score += source.Weight / (60 + float64(rank+1))
-			item.seen++
-		}
+		result = mergePopularSubjects(result, subjects, popularitySnapshotSize)
 	}
-	if len(merged) == 0 {
+	if len(result) == 0 {
 		if found && len(cached.subjects) > 0 {
 			return append([]PopularSubject(nil), cached.subjects...), nil
 		}
@@ -134,23 +102,13 @@ func (provider *CompositePopularProvider) loadPopular(ctx context.Context, media
 		}
 		return []PopularSubject{}, nil
 	}
-	result := make([]PopularSubject, 0, len(merged))
-	for _, item := range merged {
-		item.subject.Score = item.score
-		result = append(result, item.subject)
-	}
-	sort.SliceStable(result, func(i, j int) bool {
-		if result[i].Score == result[j].Score {
-			return result[i].Title < result[j].Title
-		}
-		return result[i].Score > result[j].Score
-	})
 	provider.mu.Lock()
 	provider.cache[mediaType] = popularCacheEntry{subjects: append([]PopularSubject(nil), result...), expiresAt: time.Now().Add(15 * time.Minute)}
 	provider.mu.Unlock()
 	return result, nil
 }
 
+// popularIdentity 去重键：优先用豆瓣 ID，没有就用「标题+年份」。
 func popularIdentity(subject PopularSubject) string {
 	if id := strings.TrimSpace(subject.ID); id != "" {
 		return "id:" + id
@@ -162,42 +120,18 @@ func popularIdentity(subject PopularSubject) string {
 	return "title:" + title + ":" + strings.TrimSpace(subject.Year)
 }
 
-func mergePopularSubject(current, incoming PopularSubject) PopularSubject {
-	if current.Title == "" {
-		current.Title = incoming.Title
-	}
-	if current.Cover == "" {
-		current.Cover = incoming.Cover
-	}
-	if current.Rate == "" || parsePopularRate(incoming.Rate) > parsePopularRate(current.Rate) {
-		current.Rate = incoming.Rate
-	}
-	if current.URL == "" {
-		current.URL = incoming.URL
-	}
-	if current.EpisodesInfo == "" {
-		current.EpisodesInfo = incoming.EpisodesInfo
-	}
-	if current.Year == "" {
-		current.Year = incoming.Year
-	}
-	return current
-}
-
-func parsePopularRate(value string) float64 {
-	rate, _ := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	return rate
-}
-
+// popularResponse 是豆瓣热门接口的返回结构。
 type popularResponse struct {
 	Subjects []PopularSubject `json:"subjects"`
 }
 
+// popularCacheEntry 是带过期时间的内存缓存条目。
 type popularCacheEntry struct {
 	subjects  []PopularSubject
 	expiresAt time.Time
 }
 
+// DoubanPopularProvider 抓豆瓣热门榜，结果缓存 12 小时。
 type DoubanPopularProvider struct {
 	client *http.Client
 	mu     sync.RWMutex
@@ -205,6 +139,7 @@ type DoubanPopularProvider struct {
 	group  singleflight.Group
 }
 
+// TMDBPopularProvider 抓 TMDB 热门榜，只保留能在站内找到对应豆瓣 ID 的条目。
 type TMDBPopularProvider struct {
 	client   *http.Client
 	token    string
@@ -212,6 +147,7 @@ type TMDBPopularProvider struct {
 	base     string
 }
 
+// NewTMDBPopularProvider 创建 TMDB 热门来源。
 func NewTMDBPopularProvider(client *http.Client, token string, resolver PopularIdentityResolver) *TMDBPopularProvider {
 	if client == nil {
 		client = http.DefaultClient
@@ -219,6 +155,7 @@ func NewTMDBPopularProvider(client *http.Client, token string, resolver PopularI
 	return &TMDBPopularProvider{client: client, token: strings.TrimSpace(token), resolver: resolver, base: "https://api.themoviedb.org"}
 }
 
+// Popular 拉 TMDB 热门并映射到站内媒体。
 func (provider *TMDBPopularProvider) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
 	if provider.token == "" {
 		return nil, fmt.Errorf("TMDB_API_TOKEN is not configured")
@@ -288,6 +225,7 @@ func (provider *TMDBPopularProvider) Popular(ctx context.Context, mediaType stri
 	return items, nil
 }
 
+// NewDoubanPopularProvider 创建豆瓣热门来源。
 func NewDoubanPopularProvider(client *http.Client) *DoubanPopularProvider {
 	if client == nil {
 		client = http.DefaultClient
@@ -295,6 +233,7 @@ func NewDoubanPopularProvider(client *http.Client) *DoubanPopularProvider {
 	return &DoubanPopularProvider{client: client, cache: make(map[string]popularCacheEntry)}
 }
 
+// Popular 返回豆瓣热门榜。
 func (provider *DoubanPopularProvider) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
 	value, err, _ := provider.group.Do(mediaType, func() (any, error) {
 		return provider.loadPopular(ctx, mediaType)
@@ -305,6 +244,7 @@ func (provider *DoubanPopularProvider) Popular(ctx context.Context, mediaType st
 	return append([]PopularSubject(nil), value.([]PopularSubject)...), err
 }
 
+// loadPopular 抓豆瓣 search_subjects 接口，失败时依次尝试 Rexxar 接口和陈旧缓存。
 func (provider *DoubanPopularProvider) loadPopular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
 	target, err := popularURL(mediaType)
 	if err != nil {
@@ -344,6 +284,7 @@ func (provider *DoubanPopularProvider) loadPopular(ctx context.Context, mediaTyp
 	return payload.Subjects, nil
 }
 
+// rexxarOrStale 是豆瓣主接口失败后的兜底：先试豆瓣 App 用的 Rexxar 接口，再退回旧缓存。
 func (provider *DoubanPopularProvider) rexxarOrStale(ctx context.Context, mediaType string, cached popularCacheEntry, found bool, primaryErr error) ([]PopularSubject, error) {
 	subjects, err := doubanpopular.FetchRexxar(ctx, provider.client, mediaType)
 	if err == nil {
@@ -362,6 +303,7 @@ func (provider *DoubanPopularProvider) rexxarOrStale(ctx context.Context, mediaT
 	return nil, fmt.Errorf("primary Douban popular: %v; Rexxar fallback: %w", primaryErr, err)
 }
 
+// popularURL 各分类对应的豆瓣榜单地址。
 func popularURL(mediaType string) (string, error) {
 	switch mediaType {
 	case "movie":
@@ -377,6 +319,7 @@ func popularURL(mediaType string) (string, error) {
 	}
 }
 
+// proxyImagePath 把外站图片地址转成本站图片代理路径（豆瓣图片有防盗链）。
 func proxyImagePath(rawURL string) string {
 	if rawURL == "" {
 		return ""
@@ -384,4 +327,5 @@ func proxyImagePath(rawURL string) string {
 	return "/api/proxy/image/r76RqSIVvUryzx" + base64.RawURLEncoding.EncodeToString([]byte(rawURL))
 }
 
+// providerUserAgent 抓豆瓣时伪装成普通浏览器。
 const providerUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

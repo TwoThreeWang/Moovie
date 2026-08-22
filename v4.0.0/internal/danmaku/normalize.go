@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// 弹幕归一化用到的正则：颜色校验、控制字符过滤、季号和集号识别、片名噪音清理。
 var (
 	hexColorPattern = regexp.MustCompile(`^#[0-9A-F]{6}$`)
 	controlPattern  = regexp.MustCompile(`[\x00-\x1F\x7F]`)
@@ -19,16 +20,20 @@ var (
 	episodeEnglish  = regexp.MustCompile(`(?i)^\s*e(?:p|pisode)?\.?\s*(\d{1,4})\s*$`)
 )
 
+// buildVodKey 生成弹幕归档键「片名|S01|E003」。
 func buildVodKey(title string, season, episode int) string {
 	return fmt.Sprintf("%s|S%02d|E%03d", strings.ToLower(title), season, episode)
 }
 
+// sanitizeText 去掉控制字符和零宽字符，合并连续空白。
+// 零宽字符必须过滤，否则可以用它绕过重复内容检测。
 func sanitizeText(value string) string {
 	value = controlPattern.ReplaceAllString(value, " ")
 	value = formatPattern.ReplaceAllString(value, "")
 	return strings.Join(strings.Fields(value), " ")
 }
 
+// splitSeason 从片名里分离季号，并清掉清晰度、语种等噪音标签。
 func splitSeason(title string) (int, string) {
 	season, clean := 1, title
 	if matches := seasonCJK.FindStringSubmatch(title); len(matches) == 2 {
@@ -50,6 +55,7 @@ func splitSeason(title string) (int, string) {
 	return season, clean
 }
 
+// parseEpisode 解析集号，支持纯数字、「第3集」、「E03」三种写法。
 func parseEpisode(raw string) int {
 	value := strings.TrimSpace(raw)
 	if matches := episodePure.FindStringSubmatch(value); len(matches) == 2 {
@@ -66,6 +72,7 @@ func parseEpisode(raw string) int {
 	return 0
 }
 
+// chineseNumber 解析中文数字（支持到百位）。
 func chineseNumber(value string) int {
 	if number, err := strconv.Atoi(strings.TrimSpace(value)); err == nil {
 		return number

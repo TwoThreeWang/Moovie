@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// JobStore 是同步任务的读写接口。
 type JobStore interface {
 	Create(ctx context.Context, userID int, syncType SyncType) (*Job, error)
 	LatestByUser(ctx context.Context, userID int) (*Job, error)

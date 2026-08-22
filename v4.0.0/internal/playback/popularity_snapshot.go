@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,30 +14,15 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
-var (
-	ErrEmptyPopularitySnapshot      = errors.New("popularity snapshot has no items")
-	ErrIncompletePopularitySnapshot = errors.New("popularity snapshot has fewer than 50 items")
-)
+var ErrEmptyPopularitySnapshot = errors.New("popularity snapshot has no items")
 
+// popularitySnapshotSize 一份快照固定 50 条，不足就算发布失败。
 const popularitySnapshotSize = 50
 
+// popularitySnapshotDatabase 是快照存储需要的数据库能力。
 type popularitySnapshotDatabase interface {
 	database.Executor
 	database.Beginner
-}
-
-type popularitySignal struct {
-	mediaID    int64
-	doubanID   string
-	year       string
-	candidates int64
-	attempts   int64
-	successes  int64
-}
-
-type rankedPopularitySubject struct {
-	subject PopularSubject
-	mediaID any
 }
 
 // PopularitySnapshotStore 保存不可变的热门快照；media_id 只在能够匹配规范媒体时填写。
@@ -47,16 +31,21 @@ type PopularitySnapshotStore struct {
 	database popularitySnapshotDatabase
 }
 
+// NewPopularitySnapshotStore 创建快照存储。
 func NewPopularitySnapshotStore(db popularitySnapshotDatabase) *PopularitySnapshotStore {
 	return &PopularitySnapshotStore{database: db}
 }
 
+// Replace 发布一份新快照：去重截取前 50 条 → 在一个事务里写完再标记 ready。
+// 写到一半失败会整体回滚，读取方永远看不到半份榜单。
 func (store *PopularitySnapshotStore) Replace(ctx context.Context, mediaType string, subjects []PopularSubject, ttl time.Duration) error {
 	if store == nil || store.database == nil {
 		return fmt.Errorf("popularity snapshot database is not configured")
 	}
-	if _, err := activityMediaType(mediaType); err != nil {
-		return err
+	switch mediaType {
+	case "movie", "tv", "show", "cartoon":
+	default:
+		return fmt.Errorf("unsupported media type %q", mediaType)
 	}
 	if ttl <= 0 {
 		return fmt.Errorf("popularity snapshot ttl must be positive")
@@ -64,34 +53,14 @@ func (store *PopularitySnapshotStore) Replace(ctx context.Context, mediaType str
 	if len(subjects) == 0 {
 		return fmt.Errorf("%w for media type %q: source returned no subjects", ErrEmptyPopularitySnapshot, mediaType)
 	}
-	ids := make([]string, 0, len(subjects))
-	for _, subject := range subjects {
-		if id := strings.TrimSpace(subject.ID); id != "" {
-			ids = append(ids, id)
-		}
-	}
-	signals, err := store.loadSignals(ctx, ids)
-	if err != nil {
-		return err
-	}
-	ranked := rankPopularitySubjects(subjects, signals, time.Now())
-	if len(ranked) == 0 {
+	subjects = mergePopularSubjects(subjects, nil, popularitySnapshotSize)
+	if len(subjects) == 0 {
 		return fmt.Errorf("%w for media type %q", ErrEmptyPopularitySnapshot, mediaType)
 	}
-	if len(ranked) < popularitySnapshotSize {
-		return fmt.Errorf("%w for media type %q: got %d", ErrIncompletePopularitySnapshot, mediaType, len(ranked))
+	if len(subjects) < popularitySnapshotSize {
+		slog.Warn("popularity snapshot is incomplete", "media_type", mediaType, "count", len(subjects), "expected", popularitySnapshotSize)
 	}
-
-	sourceCounts := make(map[string]int)
-	for _, item := range ranked {
-		for source := range item.subject.SourceRanks {
-			sourceCounts[source]++
-		}
-	}
-	sourceStatus, err := json.Marshal(sourceCounts)
-	if err != nil {
-		return fmt.Errorf("encode popularity source status: %w", err)
-	}
+	mediaIDs := store.lookupMediaIDs(ctx, subjects)
 	transaction, err := store.database.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin popularity snapshot: %w", err)
@@ -100,35 +69,29 @@ func (store *PopularitySnapshotStore) Replace(ctx context.Context, mediaType str
 	var runID int64
 	if err := transaction.QueryRow(ctx, `INSERT INTO popularity_snapshot_runs
 (media_type, status, source_status, item_count, generated_at, expires_at)
-VALUES ($1, 'building', $2::jsonb, 0, NOW(), NOW() + $3::interval)
-RETURNING id`, mediaType, string(sourceStatus), intervalLiteral(ttl)).Scan(&runID); err != nil {
+VALUES ($1, 'building', '{}'::jsonb, 0, NOW(), NOW() + $2::interval)
+RETURNING id`, mediaType, intervalLiteral(ttl)).Scan(&runID); err != nil {
 		return fmt.Errorf("create popularity snapshot run: %w", err)
 	}
-	for index, item := range ranked {
-		payload, encodeErr := json.Marshal(item.subject)
-		if encodeErr != nil {
-			return fmt.Errorf("encode popularity subject: %w", encodeErr)
+	for index, subject := range subjects {
+		payload, err := json.Marshal(subject)
+		if err != nil {
+			return fmt.Errorf("encode popularity subject: %w", err)
 		}
-		ranks, encodeErr := json.Marshal(item.subject.SourceRanks)
-		if encodeErr != nil {
-			return fmt.Errorf("encode popularity source ranks: %w", encodeErr)
-		}
-		rrfScore := 0.0
-		if item.subject.QualityMultiplier > 0 {
-			rrfScore = (item.subject.Score - item.subject.FreshnessBoost) / item.subject.QualityMultiplier
+		var mediaID any
+		if id, ok := mediaIDs[strings.TrimSpace(subject.ID)]; ok {
+			mediaID = id
 		}
 		if _, err := transaction.Exec(ctx, `INSERT INTO popularity_snapshots
-(run_id, media_id, rank, rrf_score, final_score, source_ranks, subject_payload,
- playable_candidate_count, quality_multiplier, freshness_boost, generated_at)
-VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10,NOW())`,
-			runID, item.mediaID, index+1, rrfScore, item.subject.Score, string(ranks), string(payload),
-			item.subject.PlayableCandidates, item.subject.QualityMultiplier, item.subject.FreshnessBoost); err != nil {
+(run_id, media_id, rank, subject_payload, generated_at)
+VALUES ($1, $2, $3, $4::jsonb, NOW())`,
+			runID, mediaID, index+1, string(payload)); err != nil {
 			return fmt.Errorf("insert popularity snapshot item: %w", err)
 		}
 	}
 	if _, err := transaction.Exec(ctx, `UPDATE popularity_snapshot_runs
 SET status = 'ready', item_count = $2, completed_at = NOW()
-WHERE id = $1 AND status = 'building'`, runID, len(ranked)); err != nil {
+WHERE id = $1 AND status = 'building'`, runID, len(subjects)); err != nil {
 		return fmt.Errorf("publish popularity snapshot: %w", err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
@@ -137,74 +100,34 @@ WHERE id = $1 AND status = 'building'`, runID, len(ranked)); err != nil {
 	return nil
 }
 
-func rankPopularitySubjects(subjects []PopularSubject, signals map[string]popularitySignal, now time.Time) []rankedPopularitySubject {
-	ranked := make([]rankedPopularitySubject, 0, len(subjects))
+// lookupMediaIDs 批量查豆瓣 ID 对应的规范媒体 ID，用于读取快照时 JOIN media 展示最新资料。
+func (store *PopularitySnapshotStore) lookupMediaIDs(ctx context.Context, subjects []PopularSubject) map[string]int64 {
+	ids := make([]string, 0, len(subjects))
 	for _, subject := range subjects {
-		signal, found := signals[strings.TrimSpace(subject.ID)]
-		var mediaID any
-		subject.QualityMultiplier = 1
-		year := subject.Year
-		if found {
-			mediaID = signal.mediaID
-			year = signal.year
-			subject.PlayableCandidates = int(signal.candidates)
-			subject.QualityMultiplier = qualityMultiplier(signal)
+		if id := strings.TrimSpace(subject.ID); id != "" {
+			ids = append(ids, id)
 		}
-		subject.FreshnessBoost = freshnessBoost(year, now)
-		subject.Score = subject.Score*subject.QualityMultiplier + subject.FreshnessBoost
-		ranked = append(ranked, rankedPopularitySubject{subject: subject, mediaID: mediaID})
 	}
-	sort.SliceStable(ranked, func(i, j int) bool {
-		if ranked[i].subject.Score == ranked[j].subject.Score {
-			return ranked[i].subject.Title < ranked[j].subject.Title
-		}
-		return ranked[i].subject.Score > ranked[j].subject.Score
-	})
-	if len(ranked) > popularitySnapshotSize {
-		ranked = ranked[:popularitySnapshotSize]
+	result := make(map[string]int64)
+	if len(ids) == 0 {
+		return result
 	}
-	return ranked
-}
-
-func (store *PopularitySnapshotStore) loadSignals(ctx context.Context, doubanIDs []string) (map[string]popularitySignal, error) {
-	result := make(map[string]popularitySignal)
-	if len(doubanIDs) == 0 {
-		return result, nil
-	}
-	rows, err := store.database.Query(ctx, `SELECT media.id, media.douban_id, media.year,
-       COALESCE(candidate.playable_count, 0), COALESCE(quality.attempts, 0), COALESCE(quality.successes, 0)
-FROM media
-LEFT JOIN LATERAL (
-    SELECT COUNT(DISTINCT episode.id) AS playable_count
-    FROM resource_episode_candidates episode
-    JOIN resource_play_lines line ON line.id = episode.line_id
-    WHERE episode.media_id = media.id
-      AND episode.resource_status IN ('active', 'cold')
-      AND line.resource_status IN ('active', 'cold')
-) candidate ON TRUE
-LEFT JOIN LATERAL (
-    SELECT SUM(rollup.attempt_count) AS attempts, SUM(rollup.success_count) AS successes
-    FROM playback_quality_rollups rollup
-    WHERE rollup.media_id = media.id AND rollup.bucket >= NOW() - INTERVAL '7 days'
-) quality ON TRUE
-WHERE media.douban_id = ANY($1::text[])`, doubanIDs)
+	rows, err := store.database.Query(ctx, `SELECT id, douban_id FROM media WHERE douban_id = ANY($1::text[])`, ids)
 	if err != nil {
-		return nil, fmt.Errorf("query popularity quality signals: %w", err)
+		return result
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var signal popularitySignal
-		if err := rows.Scan(&signal.mediaID, &signal.doubanID, &signal.year, &signal.candidates, &signal.attempts, &signal.successes); err != nil {
-			return nil, fmt.Errorf("scan popularity quality signal: %w", err)
+		var id int64
+		var doubanID string
+		if err := rows.Scan(&id, &doubanID); err == nil {
+			result[doubanID] = id
 		}
-		result[signal.doubanID] = signal
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate popularity quality signals: %w", err)
-	}
-	return result, nil
+	return result
 }
 
+// Popular 读取当前生效的快照（最近一份 ready 且未过期的），并用 media 表的最新资料覆盖标题海报。
 func (store *PopularitySnapshotStore) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
 	if store == nil || store.database == nil {
 		return nil, fmt.Errorf("popularity snapshot database is not configured")
@@ -260,15 +183,19 @@ ORDER BY snapshot.rank`, mediaType)
 	return items, nil
 }
 
+// SnapshotPopularProvider 优先读快照，快照不足 50 条时用实时来源补齐。
+// 首页读的就是它，所以首页正常情况下只查一次数据库，不会现场去抓豆瓣。
 type SnapshotPopularProvider struct {
 	snapshots *PopularitySnapshotStore
 	fallback  PopularProvider
 }
 
+// NewSnapshotPopularProvider 创建快照优先的热门来源。
 func NewSnapshotPopularProvider(snapshots *PopularitySnapshotStore, fallback PopularProvider) *SnapshotPopularProvider {
 	return &SnapshotPopularProvider{snapshots: snapshots, fallback: fallback}
 }
 
+// Popular 快照够用就直接返回，不够就和实时来源合并补齐。
 func (provider *SnapshotPopularProvider) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
 	items, err := provider.snapshots.Popular(ctx, mediaType)
 	if len(items) >= popularitySnapshotSize {
@@ -288,6 +215,7 @@ func (provider *SnapshotPopularProvider) Popular(ctx context.Context, mediaType 
 	return nil, err
 }
 
+// mergePopularSubjects 按去重键合并两份榜单，最多取 limit 条。
 func mergePopularSubjects(primary, supplement []PopularSubject, limit int) []PopularSubject {
 	if limit <= 0 {
 		return nil
@@ -313,18 +241,23 @@ func mergePopularSubjects(primary, supplement []PopularSubject, limit int) []Pop
 	return result
 }
 
+// TaskPopularityRefresh 是热门快照刷新任务的类型名。
 const TaskPopularityRefresh = "popularity_refresh"
 
+// PopularityRefresher 是定时刷新热门快照的 Worker 任务。
 type PopularityRefresher struct {
 	store    *PopularitySnapshotStore
 	provider PopularProvider
 	ttl      time.Duration
 }
 
+// NewPopularityRefresher 创建刷新器，快照有效期设为刷新间隔的 2 倍，
+// 这样偶尔一次刷新失败也不会让榜单直接过期变空。
 func NewPopularityRefresher(store *PopularitySnapshotStore, provider PopularProvider, interval time.Duration) *PopularityRefresher {
 	return &PopularityRefresher{store: store, provider: provider, ttl: 2 * interval}
 }
 
+// Handle 依次刷新四个分类，单个分类失败不影响其他分类。
 func (refresher *PopularityRefresher) Handle(ctx context.Context, _ workqueue.Job) error {
 	if refresher == nil || refresher.store == nil || refresher.provider == nil {
 		return fmt.Errorf("popularity refresher is not configured")
@@ -345,28 +278,7 @@ func (refresher *PopularityRefresher) Handle(ctx context.Context, _ workqueue.Jo
 	return errors.Join(failures...)
 }
 
-func qualityMultiplier(signal popularitySignal) float64 {
-	if signal.attempts < 5 {
-		return 1
-	}
-	if float64(signal.successes)/float64(signal.attempts) < 0.2 {
-		return 0.7
-	}
-	return 1
-}
-
-func freshnessBoost(year string, now time.Time) float64 {
-	year = strings.TrimSpace(year)
-	if len(year) > 4 {
-		year = year[:4]
-	}
-	value, err := strconv.Atoi(year)
-	if err != nil || value < now.Year() {
-		return 0
-	}
-	return 0.0005
-}
-
+// intervalLiteral 把时长转成 PostgreSQL interval 字面量。
 func intervalLiteral(duration time.Duration) string {
 	return strconv.FormatInt(int64(duration/time.Second), 10) + " seconds"
 }

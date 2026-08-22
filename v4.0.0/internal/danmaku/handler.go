@@ -10,20 +10,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Handler 提供弹幕的读写接口。
 type Handler struct {
 	config  config.Config
 	service *Service
 }
 
+// NewHandler 创建弹幕处理器。
 func NewHandler(cfg config.Config, service *Service) *Handler {
 	return &Handler{config: cfg, service: service}
 }
 
+// Register 注册路由：读弹幕不需要登录，发弹幕需要登录。
 func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/danmaku", handler.list)
 	router.POST("/api/danmaku", auth.Optional(handler.config.AppSecret), handler.send)
 }
 
+// list 返回某一集的弹幕（上游 + 站内合并）。
 func (handler *Handler) list(c *gin.Context) {
 	items := handler.service.List(c.Request.Context(), c.Query("title"), c.Query("episode"), c.ClientIP())
 	if items == nil {
@@ -32,6 +36,7 @@ func (handler *Handler) list(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
+// send 发送弹幕，请求体限制 16KB，各种拒绝原因映射成对应的中文提示。
 func (handler *Handler) send(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID <= 0 {

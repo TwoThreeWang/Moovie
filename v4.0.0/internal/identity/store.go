@@ -2,6 +2,7 @@ package identity
 
 import "context"
 
+// Store 是账号的读写接口。
 type Store interface {
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	FindByID(ctx context.Context, id int) (*User, error)

@@ -2,6 +2,7 @@ package catalog
 
 import "context"
 
+// Store 是 catalog 需要的存储能力集合，实现见 postgres.go。
 type Store interface {
 	FindByDoubanID(ctx context.Context, doubanID string) (*Movie, error)
 	FindByID(ctx context.Context, id int) (*Movie, error)

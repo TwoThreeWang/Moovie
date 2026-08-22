@@ -15,6 +15,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// 整个测试进程共用一个连接池，只初始化一次。
 var (
 	once     sync.Once
 	shared   *database.Pool
@@ -95,6 +96,7 @@ VALUES ($1,$2,'feature','feature') ON CONFLICT (id) DO NOTHING`, unitID, mediaID
 	}
 }
 
+// truncate 清空除 schema_migrations 外的所有表。
 func truncate(ctx context.Context, pool *database.Pool) error {
 	_, err := pool.Exec(ctx, `DO $$ DECLARE t text; BEGIN
 FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'schema_migrations'
@@ -102,6 +104,7 @@ LOOP EXECUTE 'TRUNCATE '||quote_ident(t)||' RESTART IDENTITY CASCADE'; END LOOP;
 	return err
 }
 
+// open 从当前目录逐级往上找 .env.local，用里面的连接串建连接池。
 func open() (*database.Pool, error) {
 	dir, _ := os.Getwd()
 	path := ""
@@ -131,6 +134,7 @@ func open() (*database.Pool, error) {
 	return pool, nil
 }
 
+// fileExists 判断文件是否存在。
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

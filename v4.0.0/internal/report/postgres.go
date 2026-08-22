@@ -8,16 +8,20 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// PostgresStore 是月报的 PostgreSQL 实现。
 type PostgresStore struct{ database database.Executor }
 
+// NewPostgresStore 创建存储实现。
 func NewPostgresStore(executor database.Executor) *PostgresStore {
 	return &PostgresStore{database: executor}
 }
 
+// reportColumns 是各查询共用的字段列表。
 const reportColumns = `id, user_id, year_month, watched_count, total_duration_minutes, avg_rating, genre_stats,
 top_movie_id, top_movie_title, top_movie_poster, top_movie_rating, continuous_days, persona_title, persona_line,
 percentile_rank, featured_quote, poster_wall, status, error_message, generated_at, created_at, updated_at`
 
+// Save 保存报告，同一用户同一月份覆盖写。
 func (store *PostgresStore) Save(ctx context.Context, report MonthlyReport) (*MonthlyReport, error) {
 	if report.Status == "" {
 		report.Status = StatusPending
@@ -58,19 +62,24 @@ updated_at=NOW() RETURNING `+reportColumns,
 	return &saved, nil
 }
 
+// GetByUserAndMonth 查某个月的报告。
 func (store *PostgresStore) GetByUserAndMonth(ctx context.Context, userID int, yearMonth string) (*MonthlyReport, error) {
 	return store.get(ctx, `SELECT `+reportColumns+` FROM monthly_reports WHERE user_id = $1 AND year_month = $2 LIMIT 1`, userID, yearMonth)
 }
 
+// LatestByUser 查最新一份报告。
 func (store *PostgresStore) LatestByUser(ctx context.Context, userID int) (*MonthlyReport, error) {
 	return store.get(ctx, `SELECT `+reportColumns+` FROM monthly_reports
 WHERE user_id = $1 AND status = 'generated' ORDER BY year_month DESC LIMIT 1`, userID)
 }
 
+// LatestForDashboard 给用户中心用，只返回已生成的报告。
+// 返回 any 是为了让 identity 包不用依赖 report 包。
 func (store *PostgresStore) LatestForDashboard(ctx context.Context, userID int) (any, error) {
 	return store.LatestByUser(ctx, userID)
 }
 
+// get 是单条查询的公共实现。
 func (store *PostgresStore) get(ctx context.Context, query string, arguments ...any) (*MonthlyReport, error) {
 	rows, err := store.database.Query(ctx, query, arguments...)
 	if err != nil {
@@ -87,6 +96,7 @@ func (store *PostgresStore) get(ctx context.Context, query string, arguments ...
 	return &report, nil
 }
 
+// ListByUser 分页列出用户的历史报告。
 func (store *PostgresStore) ListByUser(ctx context.Context, userID, limit, offset int) ([]MonthlyReport, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+reportColumns+` FROM monthly_reports
 WHERE user_id = $1 AND status = 'generated' ORDER BY year_month DESC LIMIT $2 OFFSET $3`, userID, limit, offset)
@@ -108,6 +118,7 @@ WHERE user_id = $1 AND status = 'generated' ORDER BY year_month DESC LIMIT $2 OF
 	return reports, nil
 }
 
+// UpdateStatus 更新报告状态和错误信息。
 func (store *PostgresStore) UpdateStatus(ctx context.Context, reportID int, status Status, message string) error {
 	_, err := store.database.Exec(ctx, `UPDATE monthly_reports SET status = $2, error_message = $3,
 generated_at = CASE WHEN $2 = 'generated' THEN NOW() ELSE generated_at END, updated_at = NOW() WHERE id = $1`, reportID, status, message)
@@ -117,6 +128,7 @@ generated_at = CASE WHEN $2 = 'generated' THEN NOW() ELSE generated_at END, upda
 	return nil
 }
 
+// scanReport 把一行扫成月报。
 func scanReport(row interface{ Scan(...any) error }) (MonthlyReport, error) {
 	var report MonthlyReport
 	err := row.Scan(&report.ID, &report.UserID, &report.YearMonth, &report.WatchedCount,

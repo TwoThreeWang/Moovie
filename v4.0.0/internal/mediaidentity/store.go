@@ -13,6 +13,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// Store 是规范媒体的核心读写接口。
 type Store interface {
 	Upsert(ctx context.Context, media Media) (Media, error)
 	FindByID(ctx context.Context, id int) (Media, error)
@@ -23,6 +24,7 @@ type Store interface {
 	WriteSourceSnapshot(ctx context.Context, mediaID int, provider string, payload []byte, success bool, errorMessage string) error
 }
 
+// ErrExternalIDConflict 表示这个外部 ID 已经绑在另一部作品上了，不允许悄悄改绑。
 var ErrExternalIDConflict = errors.New("external ID is already linked to another media")
 
 // Resolver 是播放和历史适配器使用的最小只读接口，单独定义可避免这些包依赖写入 API。
@@ -35,6 +37,7 @@ type SnapshotWriter interface {
 	WriteSourceSnapshot(ctx context.Context, mediaID int, provider string, payload []byte, success bool, errorMessage string) error
 }
 
+// EpisodeWriter 写入资源的剧集候选。
 type EpisodeWriter interface {
 	UpsertEpisodes(ctx context.Context, episodes []Episode) error
 }
@@ -47,23 +50,28 @@ type EpisodeInfo struct {
 	SourceCount  int
 }
 
+// EpisodeReader 读取播放候选和选集列表。
 type EpisodeReader interface {
 	ListResourceCandidates(ctx context.Context, mediaID, seasonNumber int, episodeKey string) ([]ResourceCandidate, error)
 	ListAllEpisodes(ctx context.Context, mediaID int) ([]EpisodeInfo, error)
 }
 
+// UnitEpisodeReader 按季集 ID 读取播放候选。
 type UnitEpisodeReader interface {
 	ListUnitResourceCandidates(ctx context.Context, mediaUnitID int) ([]ResourceCandidate, error)
 }
 
+// PlaybackEventWriter 写入播放埋点事件。
 type PlaybackEventWriter interface {
 	RecordPlaybackEvent(ctx context.Context, event PlaybackAttemptEvent) (bool, error)
 }
 
+// AliasWriter 写入别名。
 type AliasWriter interface {
 	UpsertAlias(ctx context.Context, alias Alias) error
 }
 
+// sourceField 是一次字段级合并的输入：写哪一列、写什么值、这个来源在该列上的优先级。
 type sourceField struct {
 	column   string
 	value    any
@@ -71,6 +79,7 @@ type sourceField struct {
 	priority int
 }
 
+// mergeRuleVersion 是合并规则的版本号，改优先级表时应当同步递增，便于识别历史数据。
 const mergeRuleVersion = 1
 
 // MergeSource 是规范数据的第二阶段写入路径。它为每个字段分别保留获胜来源，
@@ -147,6 +156,9 @@ WHERE EXCLUDED.priority >= media_field_sources.priority`, canonical.ID, field.co
 	return store.FindByID(ctx, canonical.ID)
 }
 
+// sourceFields 是字段级来源优先级表，也是整个合并机制的核心：
+// 谁在哪个字段上更权威，就由这张表说了算（数字越大越权威）。
+// 例如片名信豆瓣（100 > TMDB 的 50），原名和剧照信 TMDB，人工修改一律 1000 压过所有来源。
 func sourceFields(provider string, media Media) []sourceField {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	priorities := map[string]map[string]int{
@@ -186,6 +198,7 @@ func sourceFields(provider string, media Media) []sourceField {
 	}
 }
 
+// normalizeMediaType 把各种类型写法收敛成 movie / tv 两类，不认识的按电影处理。
 func normalizeMediaType(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "tv", "series", "season", "show", "animation", "cartoon":
@@ -195,6 +208,7 @@ func normalizeMediaType(value string) string {
 	}
 }
 
+// maxInt 取较大值。
 func maxInt(left, right int) int {
 	if left > right {
 		return left
@@ -202,6 +216,7 @@ func maxInt(left, right int) int {
 	return right
 }
 
+// nullableMediaID 把 0 转成 NULL 写库。
 func nullableMediaID(id int) any {
 	if id <= 0 {
 		return nil
@@ -209,8 +224,10 @@ func nullableMediaID(id int) any {
 	return id
 }
 
+// PostgresStore 是 mediaidentity 全部存储接口的唯一实现。
 type PostgresStore struct{ database database.Executor }
 
+// NewPostgresStore 创建存储实现。
 func NewPostgresStore(executor database.Executor) *PostgresStore {
 	return &PostgresStore{database: executor}
 }
@@ -250,6 +267,7 @@ ON CONFLICT (douban_id) WHERE douban_id <> '' DO NOTHING`, media.MediaType, medi
 	return canonical, nil
 }
 
+// prepareMedia 补齐写库前的默认值。
 func prepareMedia(media *Media) {
 	if media.MediaType == "" {
 		media.MediaType = "movie"
@@ -284,6 +302,8 @@ ON CONFLICT (media_id, field_name) DO NOTHING`, media.ID, field.column, field.pr
 	return nil
 }
 
+// Upsert 是第一阶段的写入路径：只填空，不覆盖已有的非空值（评分和票数取更优的那个）。
+// 需要按来源优先级覆盖时用 MergeSource。
 func (store *PostgresStore) Upsert(ctx context.Context, media Media) (Media, error) {
 	prepareMedia(&media)
 	row := store.database.QueryRow(ctx, `INSERT INTO media (
@@ -327,6 +347,7 @@ created_at, updated_at`, media.MediaType, media.DoubanID, media.Title, media.Ori
 	return media, nil
 }
 
+// FindByID 按主键取媒体。
 func (store *PostgresStore) FindByID(ctx context.Context, id int) (Media, error) {
 	row := store.database.QueryRow(ctx, mediaSelect+` WHERE id = $1`, id)
 	var media Media
@@ -336,6 +357,7 @@ func (store *PostgresStore) FindByID(ctx context.Context, id int) (Media, error)
 	return media, nil
 }
 
+// FindByDoubanID 按豆瓣 ID 取媒体。
 func (store *PostgresStore) FindByDoubanID(ctx context.Context, doubanID string) (Media, error) {
 	row := store.database.QueryRow(ctx, mediaSelect+` WHERE douban_id = $1`, doubanID)
 	var media Media
@@ -345,6 +367,7 @@ func (store *PostgresStore) FindByDoubanID(ctx context.Context, doubanID string)
 	return media, nil
 }
 
+// FindByTitleYear 按「标题 + 年份」取媒体，标题会同时在正名和别名里找。
 func (store *PostgresStore) FindByTitleYear(ctx context.Context, title, year string) (Media, error) {
 	row := store.database.QueryRow(ctx, mediaSelect+` WHERE year = $2 AND (
 LOWER(title) = LOWER($1) OR id IN (
@@ -357,6 +380,7 @@ LOWER(title) = LOWER($1) OR id IN (
 	return media, nil
 }
 
+// UpsertAlias 写入别名，归一化后的键 (media_id, normalized_alias) 唯一。
 func (store *PostgresStore) UpsertAlias(ctx context.Context, alias Alias) error {
 	alias.Alias = strings.TrimSpace(alias.Alias)
 	alias.Source = strings.ToLower(strings.TrimSpace(alias.Source))
@@ -389,6 +413,7 @@ alias_type = EXCLUDED.alias_type, updated_at = NOW()`,
 	return nil
 }
 
+// EnsureMediaUnit 确保某一集（或电影正片）在 media_units 里存在，返回它的 ID。
 func (store *PostgresStore) EnsureMediaUnit(ctx context.Context, unit MediaUnit) (MediaUnit, error) {
 	unit.UnitType = strings.ToLower(strings.TrimSpace(unit.UnitType))
 	unit.EpisodeKey = strings.ToUpper(strings.TrimSpace(unit.EpisodeKey))
@@ -445,6 +470,7 @@ WHERE x.provider = $1 AND x.external_type = $2 AND x.external_id = $3 LIMIT 1`, 
 	return media, nil
 }
 
+// UpsertExternalID 写入外部 ID 映射。已经绑在别的媒体上时返回 ErrExternalIDConflict，不做改绑。
 func (store *PostgresStore) UpsertExternalID(ctx context.Context, external ExternalID) error {
 	external.Provider = strings.ToLower(strings.TrimSpace(external.Provider))
 	external.ExternalType = normalizeExternalType(external.Provider, external.ExternalType, "")
@@ -470,6 +496,7 @@ WHERE media_external_ids.media_id = EXCLUDED.media_id`,
 	return nil
 }
 
+// normalizeExternalType 归一外部 ID 的命名空间；tv_season_N 这种分季命名空间原样保留。
 func normalizeExternalType(provider, externalType, mediaType string) string {
 	value := strings.ToLower(strings.TrimSpace(externalType))
 	if value == "" {
@@ -495,6 +522,7 @@ func normalizeExternalType(provider, externalType, mediaType string) string {
 	}
 }
 
+// mergedMetadataState 是合并完成后的资料快照，用来算内容哈希和完整度评分。
 type mergedMetadataState struct {
 	MediaType     string  `json:"media_type"`
 	Title         string  `json:"title"`
@@ -517,6 +545,8 @@ type mergedMetadataState struct {
 	MediaUnits    int     `json:"media_unit_count"`
 }
 
+// updateRefreshState 每次合并后重算：内容有没有变、完整度多少分、下次什么时候再刷。
+// 内容连续多次没变就逐步拉长间隔，今年/去年的新片则强制不超过 3 天/7 天。
 func (store *PostgresStore) updateRefreshState(ctx context.Context, mediaID int) error {
 	var state mergedMetadataState
 	var previousHash string
@@ -575,12 +605,14 @@ WHERE id = $1`, mediaID, contentHash,
 	return nil
 }
 
+// stableJSONHash 对结构体取稳定哈希（字段顺序固定，所以 JSON 序列化结果稳定）。
 func stableJSONHash(value any) string {
 	encoded, _ := json.Marshal(value)
 	hash := sha256.Sum256(encoded)
 	return hex.EncodeToString(hash[:])
 }
 
+// metadataRefreshDelay 退避表：连续没变化的次数越多，下次刷新隔得越久（1 天 → 3 → 7 → 14 → 30 → 90 天）。
 func metadataRefreshDelay(unchangedCount, completeness int) time.Duration {
 	var delay time.Duration
 	switch unchangedCount {
@@ -607,6 +639,8 @@ func metadataRefreshDelay(unchangedCount, completeness int) time.Duration {
 	return delay
 }
 
+// metadataCompleteness 给资料完整度打分（满分 100）：标题 15 分，海报/简介各 10 分，
+// 有两个以上外部 ID 加 8 分，有季集数据再加 8 分。低于 70 分算不完整。
 func metadataCompleteness(state mergedMetadataState) int {
 	score := 0
 	for _, field := range []struct {
@@ -630,6 +664,7 @@ func metadataCompleteness(state mergedMetadataState) int {
 	return score
 }
 
+// parseMediaYear 取年份的前四位数字。
 func parseMediaYear(year string) int {
 	year = strings.TrimSpace(year)
 	if len(year) < 4 {
@@ -645,6 +680,7 @@ func parseMediaYear(year string) int {
 	return y
 }
 
+// metadataValuePresent 判断字段是否真有内容（空 JSON 数组/对象不算）。
 func metadataValuePresent(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "[]", "{}", "null":
@@ -654,6 +690,7 @@ func metadataValuePresent(value string) bool {
 	}
 }
 
+// WriteSourceSnapshot 记录某个来源的最近一次抓取结果，并按内容是否变化调整该来源的下次抓取时间。
 func (store *PostgresStore) WriteSourceSnapshot(ctx context.Context, mediaID int, provider string, payload []byte, success bool, errorMessage string) error {
 	if mediaID <= 0 || provider == "" {
 		return fmt.Errorf("invalid source snapshot identity")
@@ -664,18 +701,20 @@ func (store *PostgresStore) WriteSourceSnapshot(ctx context.Context, mediaID int
 	if !json.Valid(payload) {
 		return fmt.Errorf("source snapshot payload is not valid JSON")
 	}
-	// 只有 payload_hash 有用：unchanged_count 和 next_refresh_at 全靠它比对，
-	// 而 hash 是在这里算好的。payload_json 本身全代码库没有任何 SELECT 读回去，
-	// 却要为每个 media × 每个 provider 存一份完整的上游 JSON。
-	// 这里改存空对象，列先留着——UPSERT 会让存量行在下次刷新时自然缩小，
-	// 不需要全表 UPDATE，也避免灰度期间旧进程写已删除的列。
-	// ponytail: 列还在，确认所有实例都升级后再单独发一个迁移 DROP COLUMN。
+	// 只有 payload_hash 有用：unchanged_count 靠它比对，而 hash 是在这里算好的。
+	// payload_json 本身全代码库没有任何 SELECT 读回去，却要为每个 media × 每个 provider
+	// 存一份完整的上游 JSON。这里改存空对象，列先留着——UPSERT 会让存量行在下次刷新时
+	// 自然缩小，不需要全表 UPDATE，也避免滚动发布期间旧进程写已删除的列。
+	// ponytail: payload_json 列还在，确认所有实例都升级后再单独发一个迁移 DROP COLUMN。
+	//
+	// 这里原本还算一条 3/7/14/30/90 天的 next_refresh_at 阶梯，但全代码库没有任何地方
+	// 读它——真正在调度的是 media.next_refresh_at（catalog/refresh.go 读的那条）。
+	// 两条阶梯并存只会让人以为刷新节奏是这条定的。写入和它的索引已随迁移 0045 删除。
 	hash := sha256.Sum256(payload)
 	_, err := store.database.Exec(ctx, `INSERT INTO media_source_snapshots
 (media_id, provider, payload_json, payload_hash, fetched_at, last_success_at, error_message,
- unchanged_count, next_refresh_at, changed_at)
+ unchanged_count, changed_at)
 VALUES ($1,$2,$3::jsonb,$4,NOW(),CASE WHEN $5 THEN NOW() ELSE NULL END,$6,0,
- CASE WHEN $5 THEN NOW() + INTERVAL '24 hours' ELSE NOW() + INTERVAL '15 minutes' END,
  CASE WHEN $5 THEN NOW() ELSE NULL END)
 ON CONFLICT (media_id, provider) DO UPDATE SET
 payload_json = CASE WHEN $5 THEN EXCLUDED.payload_json ELSE media_source_snapshots.payload_json END,
@@ -687,15 +726,6 @@ unchanged_count = CASE
     WHEN NOT $5 THEN media_source_snapshots.unchanged_count
     WHEN media_source_snapshots.payload_hash = EXCLUDED.payload_hash THEN media_source_snapshots.unchanged_count + 1
     ELSE 0 END,
-next_refresh_at = CASE
-    WHEN NOT $5 THEN NOW() + INTERVAL '15 minutes'
-    WHEN media_source_snapshots.payload_hash <> EXCLUDED.payload_hash THEN NOW() + INTERVAL '24 hours'
-    ELSE NOW() + CASE media_source_snapshots.unchanged_count + 1
-        WHEN 1 THEN INTERVAL '3 days'
-        WHEN 2 THEN INTERVAL '7 days'
-        WHEN 3 THEN INTERVAL '14 days'
-        WHEN 4 THEN INTERVAL '30 days'
-        ELSE INTERVAL '90 days' END END,
 changed_at = CASE
     WHEN $5 AND media_source_snapshots.payload_hash <> EXCLUDED.payload_hash THEN NOW()
     ELSE media_source_snapshots.changed_at END`, mediaID, provider, "{}", hex.EncodeToString(hash[:]), success, errorMessage)
@@ -705,6 +735,8 @@ changed_at = CASE
 	return nil
 }
 
+// LinkResource 建立「资源 → 媒体」的关联，并把该资源下所有剧集候选的 media_id 一起补上。
+// 已锁定（人工确认过）的关联不会被自动匹配改掉。
 func (store *PostgresStore) LinkResource(ctx context.Context, link ResourceLink) error {
 	if link.Confidence <= 0 {
 		link.Confidence = 1
@@ -732,6 +764,7 @@ WHERE candidate.line_id = line.id AND line.source_key = $1 AND line.vod_id = $2`
 	return nil
 }
 
+// RecordMatchCandidate 记录一条待复核候选（理由只有方法名和置信度）。
 func (store *PostgresStore) RecordMatchCandidate(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy string) error {
 	reason, err := json.Marshal(map[string]any{"match_method": matchedBy, "confidence": confidence})
 	if err != nil {
@@ -740,6 +773,8 @@ func (store *PostgresStore) RecordMatchCandidate(ctx context.Context, sourceKey,
 	return store.RecordDetailedMatchCandidate(ctx, sourceKey, vodID, mediaID, confidence, matchedBy, "review", string(reason))
 }
 
+// RecordDetailedMatchCandidate 记录带完整打分理由的待复核候选。
+// 已经人工判过（verified/rejected）的候选不会被自动写入改回 review。
 func (store *PostgresStore) RecordDetailedMatchCandidate(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy, status, reasonJSON string) error {
 	sourceKey, vodID = strings.TrimSpace(sourceKey), strings.TrimSpace(vodID)
 	matchedBy = strings.ToLower(strings.TrimSpace(matchedBy))
@@ -762,6 +797,8 @@ reason = EXCLUDED.reason, updated_at = NOW()`, sourceKey, vodID, mediaID, confid
 	return nil
 }
 
+// UpsertEpisodes 写入资源的播放线路和分集候选：
+// 先按需建 media_units，再写 resource_play_lines，最后写 resource_episode_candidates。
 func (store *PostgresStore) UpsertEpisodes(ctx context.Context, episodes []Episode) error {
 	for _, episode := range episodes {
 		if episode.SourceKey == "" || episode.VodID == "" || episode.EpisodeKey == "" || episode.PlayURL == "" {
@@ -834,6 +871,7 @@ resource_status = 'active', last_seen_at = EXCLUDED.last_seen_at, updated_at = N
 	return nil
 }
 
+// nullableUnitInt 把非正数转成 NULL 写库。
 func nullableUnitInt(value int) any {
 	if value <= 0 {
 		return nil
@@ -841,6 +879,7 @@ func nullableUnitInt(value int) any {
 	return value
 }
 
+// ListResourceCandidates 取某一集的所有播放候选（播放页换源用）。
 func (store *PostgresStore) ListResourceCandidates(ctx context.Context, mediaID, seasonNumber int, episodeKey string) ([]ResourceCandidate, error) {
 	if mediaID <= 0 || seasonNumber < 1 || episodeKey == "" {
 		return []ResourceCandidate{}, nil
@@ -852,6 +891,7 @@ WHERE candidate.media_id = $1 AND candidate.season_number = $2 AND candidate.epi
 ORDER BY line.sort_order ASC, candidate.sort_order ASC`, mediaID, seasonNumber, episodeKey)
 }
 
+// ListAllEpisodes 取某部作品的全部集次和各自的可用线路数（播放页选集网格用）。
 func (store *PostgresStore) ListAllEpisodes(ctx context.Context, mediaID int) ([]EpisodeInfo, error) {
 	if mediaID <= 0 {
 		return nil, nil
@@ -877,6 +917,7 @@ func (store *PostgresStore) ListAllEpisodes(ctx context.Context, mediaID int) ([
 	return result, rows.Err()
 }
 
+// ListUnitResourceCandidates 按季集 ID 取播放候选。
 func (store *PostgresStore) ListUnitResourceCandidates(ctx context.Context, mediaUnitID int) ([]ResourceCandidate, error) {
 	if mediaUnitID <= 0 {
 		return []ResourceCandidate{}, nil
@@ -892,23 +933,17 @@ const resourceCandidateSelect = `SELECT candidate.id, line.id, line.line_key, li
 line.source_key, line.vod_id, candidate.media_id, candidate.media_unit_id, candidate.season_number,
 candidate.episode_key, candidate.episode_label, candidate.play_url, candidate.sort_order, candidate.format, candidate.quality,
 candidate.resource_status, candidate.last_seen_at, candidate.last_accessed_at,
-COALESCE(quality.success_count, 0)::INTEGER,
-COALESCE(quality.failure_count, 0)::INTEGER,
-COALESCE(quality.avg_first_frame_ms, 0)::INTEGER,
+COALESCE(resource.success_count, 0)::INTEGER,
+COALESCE(resource.failure_count, 0)::INTEGER,
+COALESCE(resource.avg_speed_ms, 0)::INTEGER,
 COALESCE(link.confidence, 0)
 FROM resource_episode_candidates candidate
 JOIN resource_play_lines line ON line.id = candidate.line_id
-LEFT JOIN LATERAL (
-    SELECT SUM(success_count)::BIGINT AS success_count,
-           SUM(failure_count)::BIGINT AS failure_count,
-           CASE WHEN SUM(first_frame_count) > 0
-               THEN SUM(first_frame_total_ms) / SUM(first_frame_count) ELSE 0 END AS avg_first_frame_ms
-    FROM playback_quality_rollups
-    WHERE candidate_id = candidate.id AND bucket >= NOW() - INTERVAL '7 days'
-) quality ON quality.success_count + quality.failure_count > 0
+LEFT JOIN vod_items resource ON resource.source_key = line.source_key AND resource.vod_id = line.vod_id
 LEFT JOIN resource_media_links link ON link.source_key = line.source_key AND link.vod_id = line.vod_id
 `
 
+// listResourceCandidates 是上面几个查询的公共扫描逻辑。
 func (store *PostgresStore) listResourceCandidates(ctx context.Context, query string, arguments ...any) ([]ResourceCandidate, error) {
 	rows, err := store.database.Query(ctx, query, arguments...)
 	if err != nil {
@@ -947,6 +982,7 @@ func (store *PostgresStore) listResourceCandidates(ctx context.Context, query st
 	return result, nil
 }
 
+// FindResourceLink 取某条资源的媒体关联。
 func (store *PostgresStore) FindResourceLink(ctx context.Context, sourceKey, vodID string) (ResourceLink, error) {
 	row := store.database.QueryRow(ctx, `SELECT source_key, vod_id, media_id, confidence, matched_by, is_locked, verified_at
 FROM resource_media_links WHERE source_key = $1 AND vod_id = $2`, sourceKey, vodID)
@@ -971,6 +1007,7 @@ func (store *PostgresStore) FindResourceLinkID(ctx context.Context, sourceKey, v
 	return link.MediaID, link.Confidence, link.MatchedBy, nil
 }
 
+// FindMediaIDByDoubanID 按豆瓣 ID 取 media_id。
 func (store *PostgresStore) FindMediaIDByDoubanID(ctx context.Context, doubanID string) (int, error) {
 	media, err := store.FindByDoubanID(ctx, doubanID)
 	if err != nil {
@@ -979,6 +1016,7 @@ func (store *PostgresStore) FindMediaIDByDoubanID(ctx context.Context, doubanID 
 	return media.ID, nil
 }
 
+// FindMediaIDByTitleYear 按标题+年份取 media_id。
 func (store *PostgresStore) FindMediaIDByTitleYear(ctx context.Context, title, year string) (int, error) {
 	media, err := store.FindByTitleYear(ctx, title, year)
 	if err != nil {
@@ -1035,45 +1073,57 @@ func (store *PostgresStore) FindMediaIDByTitleYearType(ctx context.Context, titl
 	return media.ID, nil
 }
 
+// LinkResourceIdentity 是 LinkResource 的扁平参数版本，供 search 包调用。
 func (store *PostgresStore) LinkResourceIdentity(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy string) error {
 	return store.LinkResource(ctx, ResourceLink{SourceKey: sourceKey, VodID: vodID, MediaID: mediaID, Confidence: confidence, MatchedBy: matchedBy})
 }
 
+// SearchAdapter 把 PostgresStore 包装成 search 包声明的那组接口，
+// 这样 search 不必知道 mediaidentity 的模型类型。
 type SearchAdapter struct{ Store *PostgresStore }
 
+// 下面这些方法都是一行转发，只为满足 search 包的接口签名。
 func (adapter SearchAdapter) FindResourceLink(ctx context.Context, sourceKey, vodID string) (int, float64, string, error) {
 	return adapter.Store.FindResourceLinkID(ctx, sourceKey, vodID)
 }
 
+// FindByDoubanID 按豆瓣 ID 找媒体。
 func (adapter SearchAdapter) FindByDoubanID(ctx context.Context, doubanID string) (int, error) {
 	return adapter.Store.FindMediaIDByDoubanID(ctx, doubanID)
 }
 
+// FindByExternalID 按外部平台 ID 找媒体。
 func (adapter SearchAdapter) FindByExternalID(ctx context.Context, provider, externalID string) (int, error) {
 	return adapter.Store.FindMediaIDByProviderID(ctx, provider, externalID)
 }
 
+// FindByTitleYearType 按片名 + 年份 + 类型找媒体。
 func (adapter SearchAdapter) FindByTitleYearType(ctx context.Context, title, year, mediaType string) (int, error) {
 	return adapter.Store.FindMediaIDByTitleYearType(ctx, title, year, mediaType)
 }
 
+// FindByTitleYear 按片名 + 年份找媒体。
 func (adapter SearchAdapter) FindByTitleYear(ctx context.Context, title, year string) (int, error) {
 	return adapter.Store.FindMediaIDByTitleYear(ctx, title, year)
 }
 
+// LinkResource 把资源和媒体绑定起来。
 func (adapter SearchAdapter) LinkResource(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy string) error {
 	return adapter.Store.LinkResourceIdentity(ctx, sourceKey, vodID, mediaID, confidence, matchedBy)
 }
 
+// RecordMatchCandidate 记一条待人工复核的匹配候选。
 func (adapter SearchAdapter) RecordMatchCandidate(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy string) error {
 	return adapter.Store.RecordMatchCandidate(ctx, sourceKey, vodID, mediaID, confidence, matchedBy)
 }
 
+// mediaSelect 是媒体主表的公共查询列，字段顺序必须与 scanMedia 一致。
 const mediaSelect = `SELECT id, media_type, douban_id, title, original_title, year, poster, backdrops, summary,
 genres, countries, directors, actors, duration, rating_douban, rating_tmdb,
 vote_count_tmdb, series_status, metadata_version, metadata_status, last_metadata_sync_at,
 created_at, updated_at FROM media`
 
+// scanMedia 扫描一行媒体记录。
 func scanMedia(row database.Row, media *Media) error {
 	var lastSync *time.Time
 	if err := row.Scan(&media.ID, &media.MediaType, &media.DoubanID, &media.Title, &media.OriginalTitle,
@@ -1089,6 +1139,7 @@ func scanMedia(row database.Row, media *Media) error {
 	return nil
 }
 
+// nullableTime 把零值时间转成 NULL 写库。
 func nullableTime(value time.Time) any {
 	if value.IsZero() {
 		return nil

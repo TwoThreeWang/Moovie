@@ -17,12 +17,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// publicPageSize 是公开主页片单每页数量。
 const publicPageSize = 24
 
+// PublicUserStore 是公开主页需要的账号读接口。
 type PublicUserStore interface {
 	FindByID(ctx context.Context, userID int) (*identity.User, error)
 }
 
+// Handler 提供用户公开主页和月报页面。
 type Handler struct {
 	config  config.Config
 	users   PublicUserStore
@@ -31,10 +34,12 @@ type Handler struct {
 	service *Service
 }
 
+// NewHandler 创建月报处理器。
 func NewHandler(cfg config.Config, users PublicUserStore, libraryStore library.Store, reports Store, service *Service) *Handler {
 	return &Handler{config: cfg, users: users, library: libraryStore, reports: reports, service: service}
 }
 
+// Register 注册公开主页路由和后台的手动生成接口。
 func (handler *Handler) Register(router *gin.Engine) {
 	optional := auth.Optional(handler.config.AppSecret)
 	router.GET("/user/:user_id", optional, handler.publicProfile)
@@ -45,6 +50,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/admin/monthly-report/generate", require, requireAdmin, handler.adminGenerate)
 }
 
+// publicProfile 渲染用户公开主页，用户没开公开时按 404 处理。
 func (handler *Handler) publicProfile(c *gin.Context) {
 	user := handler.publicUser(c)
 	if user == nil {
@@ -67,6 +73,7 @@ func (handler *Handler) publicProfile(c *gin.Context) {
 		}))
 }
 
+// publicMonthly 渲染某个月的月报页。
 func (handler *Handler) publicMonthly(c *gin.Context) {
 	user := handler.publicUser(c)
 	if user == nil {
@@ -114,9 +121,11 @@ func (handler *Handler) publicMonthly(c *gin.Context) {
 		}))
 }
 
+// publicWish 和 publicWatched 分别渲染公开主页的想看和看过列表。
 func (handler *Handler) publicWish(c *gin.Context)    { handler.publicList(c, library.StatusWish) }
 func (handler *Handler) publicWatched(c *gin.Context) { handler.publicList(c, library.StatusWatched) }
 
+// publicList 是公开主页两个片单列表的公共实现。
 func (handler *Handler) publicList(c *gin.Context, status string) {
 	user := handler.publicUser(c)
 	if user == nil {
@@ -140,6 +149,7 @@ func (handler *Handler) publicList(c *gin.Context, status string) {
 	c.HTML(http.StatusOK, "partials/public_watched_grid.html", data)
 }
 
+// publicUser 读取并校验目标用户是否允许公开。
 func (handler *Handler) publicUser(c *gin.Context) *identity.User {
 	userID, err := strconv.Atoi(c.Param("user_id"))
 	if err != nil || userID <= 0 {
@@ -152,6 +162,7 @@ func (handler *Handler) publicUser(c *gin.Context) *identity.User {
 	return user
 }
 
+// adminGenerate 后台手动触发生成月报。
 func (handler *Handler) adminGenerate(c *gin.Context) {
 	userID, err := strconv.Atoi(c.PostForm("user_id"))
 	if err != nil || userID <= 0 {
@@ -181,6 +192,7 @@ func (handler *Handler) adminGenerate(c *gin.Context) {
 	}, "success": true})
 }
 
+// requireAdmin 是管理员校验中间件。
 func requireAdmin(c *gin.Context) {
 	if role, exists := c.Get("role"); !exists || role != "admin" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "需要管理员权限"})
@@ -190,10 +202,12 @@ func requireAdmin(c *gin.Context) {
 	c.Next()
 }
 
+// apiError 返回错误响应。
 func apiError(c *gin.Context, status int, message string) {
 	c.JSON(status, gin.H{"code": status, "message": message, "data": nil, "success": false})
 }
 
+// notFound 渲染 404。
 func (handler *Handler) notFound(c *gin.Context, title string) {
 	c.HTML(http.StatusNotFound, "404.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title}, gin.H{"Path": c.Request.URL.Path}))
 }

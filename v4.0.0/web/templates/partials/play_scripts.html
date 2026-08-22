@@ -1,0 +1,7 @@
+{{/* 播放器依赖库：/play 和 /watch 共用，改版本号只需要改这一处。
+     顺序不能动——player.js 依赖前面四个全局对象（Artplayer / Hls / flvjs / 弹幕插件）。 */}}
+<script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/artplayer-plugin-danmuku/dist/artplayer-plugin-danmuku.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
+<script src="/static/js/player.js?v=0.11"></script>

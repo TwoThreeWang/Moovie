@@ -1,3 +1,6 @@
+// Package doubanpopular 抓取豆瓣手机版（Rexxar）的热门榜单，用于首页热门推荐。
+// 这是非公开接口，需要伪装成手机浏览器并带上随机 bid Cookie，随时可能失效，
+// 所以调用方必须能容忍它返回错误（见 playback 的热门榜多级兜底）。
 package doubanpopular
 
 import (
@@ -9,6 +12,7 @@ import (
 	"net/url"
 )
 
+// Subject 是榜单里的一个条目。
 type Subject struct {
 	ID           string
 	Title        string
@@ -18,6 +22,7 @@ type Subject struct {
 	EpisodesInfo string
 }
 
+// item 是豆瓣接口的原始返回结构。
 type item struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -31,6 +36,8 @@ type item struct {
 	EpisodesInfo string `json:"episodes_info"`
 }
 
+// FetchRexxar 抓取指定类型的热门榜。
+// 电视剧要请求国产剧和美剧两个榜单，其中一个失败仍返回另一个的结果。
 func FetchRexxar(ctx context.Context, client *http.Client, mediaType string) ([]Subject, error) {
 	if client == nil {
 		client = http.DefaultClient
@@ -69,6 +76,7 @@ func FetchRexxar(ctx context.Context, client *http.Client, mediaType string) ([]
 	return result, nil
 }
 
+// rexxarEndpoints 返回该类型对应的接口地址，第二个返回值表示响应是不是「合集」格式。
 func rexxarEndpoints(mediaType string) ([]string, bool, error) {
 	const base = "https://m.douban.com/rexxar/api/v2/"
 	switch mediaType {
@@ -88,6 +96,7 @@ func rexxarEndpoints(mediaType string) ([]string, bool, error) {
 	}
 }
 
+// fetch 请求单个榜单接口，两种响应格式的字段名不同要分开解析。
 func fetch(ctx context.Context, client *http.Client, endpoint string, collection bool) ([]item, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -123,6 +132,7 @@ func fetch(ctx context.Context, client *http.Client, endpoint string, collection
 	return payload.Items, nil
 }
 
+// randomBid 生成随机 bid Cookie，豆瓣用它标识浏览器；固定值容易被风控。
 func randomBid() string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 	buffer := make([]byte, 11)

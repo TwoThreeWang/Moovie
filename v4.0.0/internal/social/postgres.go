@@ -8,18 +8,22 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// PostgresStore 是片场的 PostgreSQL 实现。
 type PostgresStore struct{ database database.Executor }
 
+// NewPostgresStore 创建存储实现。
 func NewPostgresStore(executor database.Executor) *PostgresStore {
 	return &PostgresStore{database: executor}
 }
 
+// activityColumns 是短评查询共用的字段（短评 + 作者信息）。
 const activityColumns = `um.id, um.user_id, um.movie_id,
 COALESCE(NULLIF(media.title, ''), um.title),
 COALESCE(NULLIF(media.poster, ''), um.poster),
 COALESCE(NULLIF(media.year, ''), um.year), um.status, um.rating, um.comment,
 um.created_at, um.updated_at, u.id, u.email, u.username, u.password_hash, u.role, u.douban_user_id, u.is_public, u.avatar, u.created_at`
 
+// ListCommentsByMovie 列出某部片子的短评。
 func (store *PostgresStore) ListCommentsByMovie(ctx context.Context, movieID string, limit int) ([]Activity, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+activityColumns+` FROM user_movies um
 LEFT JOIN media ON media.id = um.media_id
@@ -33,14 +37,17 @@ ORDER BY um.updated_at DESC LIMIT $2`, movieID, limit)
 	return scanActivities(rows)
 }
 
+// CountLikes 批量统计点赞数，一次查完避免每条短评一次查询。
 func (store *PostgresStore) CountLikes(ctx context.Context, ids []int) (map[int]int, error) {
 	return store.countByUserMovies(ctx, `SELECT user_movie_id, COUNT(*) FROM comment_likes WHERE user_movie_id = ANY($1) GROUP BY user_movie_id`, ids)
 }
 
+// CountReplies 批量统计回复数。
 func (store *PostgresStore) CountReplies(ctx context.Context, ids []int) (map[int]int, error) {
 	return store.countByUserMovies(ctx, `SELECT user_movie_id, COUNT(*) FROM comment_replies WHERE user_movie_id = ANY($1) GROUP BY user_movie_id`, ids)
 }
 
+// countByUserMovies 是两个批量统计的公共实现。
 func (store *PostgresStore) countByUserMovies(ctx context.Context, query string, ids []int) (map[int]int, error) {
 	counts := make(map[int]int, len(ids))
 	if len(ids) == 0 {
@@ -64,6 +71,7 @@ func (store *PostgresStore) countByUserMovies(ctx context.Context, query string,
 	return counts, nil
 }
 
+// LikedByUser 批量查询当前用户点过赞的短评。
 func (store *PostgresStore) LikedByUser(ctx context.Context, ids []int, userID int) (map[int]bool, error) {
 	liked := make(map[int]bool, len(ids))
 	if len(ids) == 0 || userID <= 0 {
@@ -84,6 +92,7 @@ func (store *PostgresStore) LikedByUser(ctx context.Context, ids []int, userID i
 	return liked, rows.Err()
 }
 
+// ToggleLike 点赞或取消点赞并返回最新数量。
 func (store *PostgresStore) ToggleLike(ctx context.Context, userMovieID, userID int) (int, bool, error) {
 	// 删除、插入和计数合并在一条 PostgreSQL 语句中，两个并发点击不会留下重复点赞。
 	row := store.database.QueryRow(ctx, `WITH deleted AS (
@@ -108,6 +117,7 @@ SELECT EXISTS (SELECT 1 FROM inserted)`, userMovieID, userID)
 	return count, liked, nil
 }
 
+// ListReplies 列出某条短评的全部回复。
 func (store *PostgresStore) ListReplies(ctx context.Context, userMovieID int) ([]Reply, error) {
 	rows, err := store.database.Query(ctx, `SELECT r.id, r.user_movie_id, r.user_id, r.content, r.created_at,
 u.id, u.email, u.username, u.password_hash, u.role, u.douban_user_id, u.is_public, u.avatar, u.created_at
@@ -133,6 +143,7 @@ WHERE r.user_movie_id = $1 ORDER BY r.created_at ASC`, userMovieID)
 	return replies, nil
 }
 
+// CreateReply 新建回复并带出作者信息。
 func (store *PostgresStore) CreateReply(ctx context.Context, userMovieID, userID int, content string) (*Reply, error) {
 	reply := &Reply{UserMovieID: userMovieID, UserID: userID, Content: content}
 	if err := store.database.QueryRow(ctx, `INSERT INTO comment_replies (user_movie_id, user_id, content)
@@ -142,6 +153,7 @@ VALUES ($1,$2,$3) RETURNING id, created_at`, userMovieID, userID, content).Scan(
 	return reply, nil
 }
 
+// ListWeeklyFilms 统计本周被标记最多的影片。
 func (store *PostgresStore) ListWeeklyFilms(ctx context.Context, since time.Time, limit int) ([]WeeklyFilm, error) {
 	rows, err := store.database.Query(ctx, `SELECT um.movie_id,
 COALESCE(NULLIF(media.title, ''), MAX(um.title)),
@@ -174,6 +186,7 @@ LIMIT $2`, since, limit)
 	return films, rows.Err()
 }
 
+// ListFeaturedComments 挑选精选短评。
 func (store *PostgresStore) ListFeaturedComments(ctx context.Context, limit int) ([]Activity, error) {
 	rows, err := store.database.Query(ctx, `WITH ranked AS (
   SELECT um.id, ROW_NUMBER() OVER (PARTITION BY um.user_id ORDER BY um.updated_at DESC, um.id DESC) AS user_rank
@@ -193,6 +206,7 @@ ORDER BY um.updated_at DESC, um.id DESC LIMIT $1`, limit)
 	return scanActivities(rows)
 }
 
+// ListFilmFriends 按活跃度和口味重合度推荐片友。
 func (store *PostgresStore) ListFilmFriends(ctx context.Context, currentUserID, limit int) ([]FilmFriend, error) {
 	rows, err := store.database.Query(ctx, `SELECT u.id, u.username, u.avatar,
 COUNT(um.id) AS watched_count,
@@ -223,6 +237,7 @@ LIMIT $2`, currentUserID, limit)
 	return friends, rows.Err()
 }
 
+// scanActivities 把查询结果扫成短评列表。
 func scanActivities(rows database.Rows) ([]Activity, error) {
 	activities := make([]Activity, 0)
 	for rows.Next() {

@@ -5,7 +5,7 @@
     {{ if .Result.Items }}
     <div class="search-result-grid">
     {{ range .Result.Items }}
-        {{ if .BestResource }}<a href="{{ if .DoubanID }}/watch/{{ .DoubanID }}{{ else }}/play/{{ .BestResource.SourceKey }}/{{ .BestResource.VodId }}{{ end }}" class="search-result-card" data-media-id="{{ .MediaID }}">{{ else }}<article class="search-result-card" data-media-id="{{ .MediaID }}">{{ end }}
+        {{ if .BestResource }}<a href="{{ if .DoubanID }}/watch/{{ .DoubanID }}?source_key={{ .BestResource.SourceKey }}&vod_id={{ .BestResource.VodId }}{{ else }}/play/{{ .BestResource.SourceKey }}/{{ .BestResource.VodId }}{{ end }}" class="search-result-card" data-media-id="{{ .MediaID }}">{{ else }}<article class="search-result-card" data-media-id="{{ .MediaID }}">{{ end }}
         <div class="card-poster">
             <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
             {{ with .BestResource }}{{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}{{ end }}

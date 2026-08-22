@@ -16,23 +16,8 @@
         {{ end }}
     </nav>
 
-    <!-- 视频区域 - 第一屏，全宽播放器 -->
-    <section class="video-section">
-        <div class="video-container" id="player-container">
-            {{ if .PlayURL }}
-            <div id="artplayer-app"></div>
-            {{ else }}
-            <div class="video-loading">
-                <span>暂无可用播放链接</span>
-            </div>
-            {{ end }}
-        </div>
-    </section>
-
-    <!-- 免责条：紧贴播放器下方，全程可见 -->
-    {{ if .PlayURL }}
-    {{ template "play_disclaimer.html" . }}
-    {{ end }}
+    <!-- 视频区域 - 第一屏，全宽播放器（含紧贴下方的免责条） -->
+    {{ template "play_container.html" . }}
 
     <!-- 广告横幅位：300x60 响应式居中换行 -->
     <div class="m-banner-row">
@@ -252,15 +237,7 @@
         {{ if ne .DoubanID "0" }}
         <div class="movie-section" style="margin-top: 40px;">
             <h2 class="section-title">站内用户短评</h2>
-            <div id="user-comments"
-                 hx-get="/api/htmx/movie-comments?douban_id={{ .DoubanID }}"
-                 hx-trigger="load"
-                 hx-indicator="#user-comments-loading">
-                <div id="user-comments-loading" class="htmx-indicator movie-search-loading-state">
-                    <div class="loading-spinner"></div>
-                    <p>正在加载短评...</p>
-                </div>
-            </div>
+            {{ template "play_comments.html" .DoubanID }}
         </div>
         {{ end }}
         {{ end }}
@@ -284,15 +261,7 @@
         <!-- 相似电影推荐 -->
         <div class="movie-section" style="margin-top: 40px;">
             <h2 class="section-title">喜欢这部剧集的人也喜欢</h2>
-            <div id="similar-movies"
-                 hx-get="/api/htmx/similar?douban_id={{ .DoubanID }}"
-                 hx-trigger="load"
-                 hx-indicator="#similar-loading">
-                <div id="similar-loading" class="htmx-indicator movie-search-loading-state">
-                    <div class="loading-spinner"></div>
-                    <p>正在加载相似电影...</p>
-                </div>
-            </div>
+            {{ template "play_similar.html" .DoubanID }}
         </div>
         {{ end }}
         {{ end }}
@@ -305,13 +274,7 @@
     </section>
 </div>
 
-<!-- 播放器依赖库 -->
-<script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/artplayer-plugin-danmuku/dist/artplayer-plugin-danmuku.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flv.js@latest/dist/flv.min.js"></script>
-<!-- 播放器初始化 -->
-	<script src="/static/js/player.js?v=0.11"></script>
+{{ template "play_scripts.html" . }}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // 构建剧集列表（供自动播放下一集使用）

@@ -13,14 +13,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Validator 校验豆瓣 ID 是否有效。
 type Validator interface {
 	ValidateUser(ctx context.Context, doubanUserID string) error
 }
 
+// JobEnqueuer 负责创建同步任务。
 type JobEnqueuer interface {
 	CreateFull(ctx context.Context, userID int) (int, error)
 }
 
+// Handler 提供设置页里的豆瓣绑定、解绑和手动同步。
 type Handler struct {
 	config    config.Config
 	users     UserStore
@@ -29,10 +32,12 @@ type Handler struct {
 	enqueuer  JobEnqueuer
 }
 
+// NewHandler 创建豆瓣处理器。
 func NewHandler(cfg config.Config, users UserStore, jobs JobStore, validator Validator, enqueuer JobEnqueuer) *Handler {
 	return &Handler{config: cfg, users: users, jobs: jobs, validator: validator, enqueuer: enqueuer}
 }
 
+// Register 注册路由，全部要求登录。
 func (handler *Handler) Register(router *gin.Engine) {
 	require := auth.Require(handler.config.AppSecret, handler.config.Env == "production")
 	router.POST("/dashboard/settings/douban/bind", require, handler.bind)
@@ -41,6 +46,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/htmx/douban-sync-status", auth.Optional(handler.config.AppSecret), handler.status)
 }
 
+// bind 绑定豆瓣账号，校验通过后立即排一次全量同步。
 func (handler *Handler) bind(c *gin.Context) {
 	userID := auth.UserID(c)
 	user, err := handler.users.FindByID(c.Request.Context(), userID)
@@ -65,6 +71,7 @@ func (handler *Handler) bind(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=douban_bind")
 }
 
+// unbind 解绑豆瓣账号（已同步的片单记录保留）。
 func (handler *Handler) unbind(c *gin.Context) {
 	if err := handler.users.UpdateDoubanUserID(c.Request.Context(), auth.UserID(c), ""); err != nil {
 		user, _ := handler.users.FindByID(c.Request.Context(), auth.UserID(c))
@@ -74,6 +81,7 @@ func (handler *Handler) unbind(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=douban_unbind")
 }
 
+// sync 手动触发一次增量同步。
 func (handler *Handler) sync(c *gin.Context) {
 	userID := auth.UserID(c)
 	user, err := handler.users.FindByID(c.Request.Context(), userID)
@@ -97,6 +105,7 @@ func (handler *Handler) sync(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=douban_sync")
 }
 
+// status 返回同步进度片段，供页面轮询。
 func (handler *Handler) status(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -116,14 +125,17 @@ func (handler *Handler) status(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/douban_sync_status.html", gin.H{"User": user, "DoubanJob": job})
 }
 
+// renderSettings 带提示信息重新渲染设置页。
 func (handler *Handler) renderSettings(c *gin.Context, user *identity.User, message string) {
 	c.HTML(http.StatusOK, "settings.html", platformweb.NewData(c, handler.config,
 		platformweb.Metadata{Title: "账号设置 - " + handler.config.SiteName},
 		gin.H{"User": user, "UserInfo": user, "Error": message, "DoubanJob": nil}))
 }
 
+// doubanUserIDPattern 从豆瓣主页链接里提取用户 ID。
 var doubanUserIDPattern = regexp.MustCompile(`(?:people|user)/(\d+)`)
 
+// extractUserID 支持用户直接填 ID 或粘贴主页链接。
 func extractUserID(input string) string {
 	input = strings.TrimSpace(input)
 	if input == "" {

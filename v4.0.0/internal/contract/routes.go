@@ -1,8 +1,10 @@
 // Package contract 记录新系统对外提供的最终 HTTP 契约，包内刻意不包含 Handler 实现。
 package contract
 
+// Surface 是路由的暴露面，决定它的鉴权要求和是否对外公开。
 type Surface string
 
+// 路由分类，用于给接口清单分组。
 const (
 	SurfaceOperational      Surface = "operational"
 	SurfacePublicPage       Surface = "public_page"
@@ -14,6 +16,7 @@ const (
 	SurfaceAdmin            Surface = "admin"
 )
 
+// Route 是一条契约路由。
 type Route struct {
 	Method  string
 	Path    string

@@ -30,6 +30,7 @@ func LoadDotEnv(path string) error {
 	return nil
 }
 
+// dotEnvEntry 是 .env 里的一行键值。
 type dotEnvEntry struct {
 	key   string
 	value string
@@ -112,6 +113,7 @@ func DatabaseConfigFromDotEnv(path string) (DatabaseConfig, error) {
 	}, nil
 }
 
+// parseDotEnvValue 处理引号和转义，双引号内按 Go 字符串规则解转义。
 func parseDotEnvValue(raw string) (string, error) {
 	if raw == "" {
 		return "", nil
@@ -135,6 +137,7 @@ func parseDotEnvValue(raw string) (string, error) {
 	return raw, nil
 }
 
+// validEnvKey 校验环境变量名合法。
 func validEnvKey(value string) bool {
 	if value == "" || !((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z') || value[0] == '_') {
 		return false

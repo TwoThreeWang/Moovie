@@ -1,3 +1,5 @@
+// Package compat 是给 cmd/burstcheck 用的线上巡检工具：抓取页面比对 SEO 元数据，
+// 以及做简单的并发压测。它不参与 Web 服务运行，只被独立的巡检命令引用。
 package compat
 
 import (
@@ -14,6 +16,7 @@ import (
 	"golang.org/x/net/html"
 )
 
+// maxResponseBytes 限制抓取的响应体大小。
 const maxResponseBytes = 8 << 20
 
 // Case 描述一次页面抓取：Kind 为 "html" 时额外解析 SEO 元数据。
@@ -23,6 +26,7 @@ type Case struct {
 	CompareBody bool
 }
 
+// Snapshot 是一次抓取的结果：状态码、各类 SEO 标签、正文文本、链接和结构化数据。
 type Snapshot struct {
 	Status             int
 	ContentType        string
@@ -47,6 +51,7 @@ type Snapshot struct {
 	Body               string
 }
 
+// Fetch 抓取一个页面并生成快照。
 func Fetch(ctx context.Context, client *http.Client, baseURL string, testCase Case) (Snapshot, error) {
 	base, err := url.Parse(strings.TrimRight(baseURL, "/"))
 	if err != nil {
@@ -102,6 +107,7 @@ func Fetch(ctx context.Context, client *http.Client, baseURL string, testCase Ca
 	return snapshot, nil
 }
 
+// extractHTML 遍历 DOM 提取 title、各类 meta、canonical、H1、链接和 JSON-LD。
 func extractHTML(body []byte) (Snapshot, error) {
 	document, err := html.Parse(strings.NewReader(string(body)))
 	if err != nil {
@@ -184,6 +190,7 @@ func extractHTML(body []byte) (Snapshot, error) {
 	return snapshot, nil
 }
 
+// indexableBodyText 提取可被搜索引擎索引的正文，跳过脚本和样式。
 func indexableBodyText(document *html.Node) string {
 	var body *html.Node
 	var find func(*html.Node)
@@ -224,6 +231,7 @@ func indexableBodyText(document *html.Node) string {
 	return normalizeText(builder.String())
 }
 
+// normalizedLink 归一化链接，丢掉锚点和 javascript: 伪链接。
 func normalizedLink(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" || strings.HasPrefix(value, "#") || strings.HasPrefix(strings.ToLower(value), "javascript:") {
@@ -237,6 +245,7 @@ func normalizedLink(value string) string {
 	return parsed.String()
 }
 
+// attribute 读取节点属性（大小写不敏感）。
 func attribute(node *html.Node, key string) string {
 	for _, attr := range node.Attr {
 		if strings.EqualFold(attr.Key, key) {
@@ -246,6 +255,7 @@ func attribute(node *html.Node, key string) string {
 	return ""
 }
 
+// nodeText 取节点下的全部文本。
 func nodeText(node *html.Node) string {
 	var builder strings.Builder
 	var walk func(*html.Node)
@@ -261,6 +271,7 @@ func nodeText(node *html.Node) string {
 	return normalizeText(builder.String())
 }
 
+// normalizeJSON 重新序列化 JSON 以消除格式差异，解析失败就按纯文本处理。
 func normalizeJSON(raw string) string {
 	var value any
 	if err := json.Unmarshal([]byte(raw), &value); err != nil {
@@ -273,10 +284,12 @@ func normalizeJSON(raw string) string {
 	return string(encoded)
 }
 
+// normalizeText 压缩连续空白，便于比对。
 func normalizeText(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
+// mediaType 从 Content-Type 中取出媒体类型。
 func mediaType(value string) string {
 	parsed, _, err := mime.ParseMediaType(value)
 	if err != nil {

@@ -7,13 +7,17 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// PostgresStore 是观看记录的 PostgreSQL 实现。
+// 拿得到事务能力时才启用（同步接口需要在一个事务里完成）。
 type PostgresStore struct {
 	database database.Executor
 	beginner database.Beginner
 }
 
+// PostgresOption 预留的可选配置。
 type PostgresOption func(*PostgresStore)
 
+// NewPostgresStore 创建存储实现。
 func NewPostgresStore(executor database.Executor, options ...PostgresOption) *PostgresStore {
 	store := &PostgresStore{database: executor}
 	if beginner, ok := executor.(database.Beginner); ok {
@@ -25,10 +29,12 @@ func NewPostgresStore(executor database.Executor, options ...PostgresOption) *Po
 	return store
 }
 
+// Upsert 写入一条进度（进度满 100 视为看完）。
 func (store *PostgresStore) Upsert(ctx context.Context, record Record) error {
 	return upsertRecord(ctx, store.database, record)
 }
 
+// upsertRecord 把 Record 转成同步操作再落库，保证两条写入路径行为一致。
 func upsertRecord(ctx context.Context, executor database.Executor, record Record) error {
 	operationType := "upsert"
 	if record.Progress >= 100 {
@@ -44,6 +50,7 @@ func upsertRecord(ctx context.Context, executor database.Executor, record Record
 	})
 }
 
+// ListByUser 按时间倒序列出用户的全部进度。
 func (store *PostgresStore) ListByUser(ctx context.Context, userID, limit, offset int) ([]Record, error) {
 	return queryPlaybackPositions(ctx, store.database,
 		`position.user_id = $1 AND position.deleted_at IS NULL

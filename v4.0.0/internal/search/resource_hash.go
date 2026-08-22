@@ -66,4 +66,5 @@ func StableResourceHash(item VodItem) string {
 	return hex.EncodeToString(digest[:])
 }
 
+// hashText 只去掉首尾空白，参与哈希前做归一化。
 func hashText(value string) string { return strings.TrimSpace(value) }

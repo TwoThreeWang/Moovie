@@ -14,6 +14,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/cache"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
@@ -21,47 +22,58 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// UserMovies 提供想看/看过的标记状态和人数（详情页按钮用）。
 type UserMovies interface {
 	IsMarked(ctx context.Context, userID int, movieID, status string) (bool, error)
 	CountByMovie(ctx context.Context, movieID, status string) (int, error)
 }
 
+// Fetcher 抓取影片主资料。
 type Fetcher interface {
 	Fetch(ctx context.Context, doubanID string, force bool) error
 }
 
+// ReviewFetcher 抓取豆瓣短评。
 type ReviewFetcher interface {
 	FetchReviews(ctx context.Context, doubanID string) error
 }
 
+// Suggester 提供搜索联想。
 type Suggester interface {
 	Suggest(ctx context.Context, keyword string) ([]Suggestion, error)
 }
 
+// externalSuggester 是可以走外部接口的搜索建议实现。
 type externalSuggester interface {
 	SuggestExternal(ctx context.Context, keyword string) ([]Suggestion, error)
 }
 
+// PopularProvider 提供发现页的热门榜单。
 type PopularProvider interface {
 	Popular(ctx context.Context, movieType string) ([]PopularSubject, error)
 }
 
+// SimilarFinder 提供相似影片。
 type SimilarFinder interface {
 	FindSimilar(ctx context.Context, doubanID string, limit int) ([]Movie, error)
 }
 
+// SeriesFinder 提供同系列的各季（详情页季度导航）。
 type SeriesFinder interface {
 	FindSeriesSeasons(ctx context.Context, doubanID string) ([]SeriesSeason, error)
 }
 
+// BackdropSyncer 同步 TMDB 剧照。
 type BackdropSyncer interface {
 	SyncBackdrops(ctx context.Context, doubanID string) error
 }
 
+// VectorEnricher 生成语义向量。
 type VectorEnricher interface {
 	Enrich(ctx context.Context, doubanID string) error
 }
 
+// Review 是一条豆瓣短评，以 JSON 数组形式存在 media.reviews_json。
 type Review struct {
 	Title     string `json:"title"`
 	Author    string `json:"author"`
@@ -70,10 +82,12 @@ type Review struct {
 	Summary   string `json:"summary"`
 }
 
+// BackgroundRunner 在请求之外跑后台任务（没有 Worker 时的兜底路径）。
 type BackgroundRunner interface {
 	Run(task func(context.Context))
 }
 
+// acceptingBackgroundRunner 能在提交前判断后台队列是否还收得下任务。
 type acceptingBackgroundRunner interface {
 	TryRun(task func(context.Context)) bool
 }
@@ -95,6 +109,7 @@ type LinkedResource struct {
 	FailedCount int
 }
 
+// SuccessRate 返回播放成功率（百分比）。
 func (r LinkedResource) SuccessRate() float64 {
 	if r.SampleCount <= 0 {
 		return 0
@@ -106,11 +121,13 @@ func (r LinkedResource) SuccessRate() float64 {
 	return float64(successes) / float64(r.SampleCount) * 100
 }
 
+// ResourceLister 查询某部影片有哪些可播放资源。
 type ResourceLister interface {
 	ListResourcesByDoubanID(ctx context.Context, doubanID string) ([]LinkedResource, error)
 	HasPlayableResource(ctx context.Context, mediaID int) (bool, error)
 }
 
+// DoubanMatch 是搜索框下方的影片候选卡；IsLocal=true 表示本地库已有资料。
 type DoubanMatch struct {
 	DoubanID      string
 	Title         string
@@ -127,6 +144,8 @@ type AirScheduleReader interface {
 	ListUpcomingUnits(ctx context.Context, mediaID, seasonNumber int, from time.Time, limit int) ([]mediaidentity.MediaUnit, error)
 }
 
+// Handler 提供影片详情页、发现页、图片代理和资料刷新接口。
+// 各种能力都通过 Option 注入，缺失时对应区块自动降级为不展示。
 type Handler struct {
 	config       config.Config
 	store        Store
@@ -137,6 +156,7 @@ type Handler struct {
 	vectors      VectorEnricher
 	suggester    Suggester
 	popular      PopularProvider
+	trending     PopularProvider
 	similar      SimilarFinder
 	resources    ResourceLister
 	airSchedule  AirScheduleReader
@@ -144,75 +164,96 @@ type Handler struct {
 	refreshQueue RefreshQueue
 	httpClient   *http.Client
 	crawling     sync.Map
-	similarMu    sync.Mutex
-	similarCache map[string]similarCacheEntry
+	similarCache *cache.TTL[[]Movie]
 	similarSF    singleflight.Group
 }
 
+// similarCacheTTL 是相似影片的缓存时长。
 const similarCacheTTL = 5 * time.Minute
+
+// similarCacheCapacity 是相似影片的缓存条数上限。
 const similarCacheCapacity = 256
 
-type similarCacheEntry struct {
-	movies    []Movie
-	expiresAt time.Time
-}
+// externalSuggestBudget 是搜索页豆瓣卡片等外部联想接口的最长时间。
+const externalSuggestBudget = 2 * time.Second
 
+// HandlerOption 是 Handler 的可选装配项，下面这一组 WithXxx 都只是往结构体里塞一个依赖。
 type HandlerOption func(*Handler)
 
+// WithUserMovies 注入片单存储，用于在详情页显示「想看/看过」状态。
 func WithUserMovies(store UserMovies) HandlerOption {
 	return func(handler *Handler) { handler.userMovies = store }
 }
 
+// WithFetcher 注入元数据抓取器和后台执行器。
 func WithFetcher(fetcher Fetcher, runner BackgroundRunner) HandlerOption {
 	return func(handler *Handler) { handler.fetcher, handler.runner = fetcher, runner }
 }
 
+// WithHTTPClient 注入图片代理用的 HTTP 客户端。
 func WithHTTPClient(client *http.Client) HandlerOption {
 	return func(handler *Handler) { handler.httpClient = client }
 }
 
+// WithBackgroundRunner 注入后台执行器。
 func WithBackgroundRunner(runner BackgroundRunner) HandlerOption {
 	return func(handler *Handler) { handler.runner = runner }
 }
 
+// WithRefreshQueue 注入元数据刷新队列。
 func WithRefreshQueue(queue RefreshQueue) HandlerOption {
 	return func(handler *Handler) { handler.refreshQueue = queue }
 }
 
+// WithReviewFetcher 注入短评抓取器。
 func WithReviewFetcher(fetcher ReviewFetcher) HandlerOption {
 	return func(handler *Handler) { handler.reviews = fetcher }
 }
 
+// WithBackdropSyncer 注入剧照同步器。
 func WithBackdropSyncer(syncer BackdropSyncer) HandlerOption {
 	return func(handler *Handler) { handler.backdrops = syncer }
 }
 
+// WithVectorEnricher 注入向量补全器。
 func WithVectorEnricher(enricher VectorEnricher) HandlerOption {
 	return func(handler *Handler) { handler.vectors = enricher }
 }
 
+// WithSuggester 注入搜索建议实现。
 func WithSuggester(suggester Suggester) HandlerOption {
 	return func(handler *Handler) { handler.suggester = suggester }
 }
 
+// WithPopularProvider 注入热门榜数据源。
 func WithPopularProvider(provider PopularProvider) HandlerOption {
 	return func(handler *Handler) { handler.popular = provider }
 }
 
+// WithSiteTrending 注入本站热播数据源。
+func WithSiteTrending(provider PopularProvider) HandlerOption {
+	return func(handler *Handler) { handler.trending = provider }
+}
+
+// WithSimilarFinder 注入相似影片查询。
 func WithSimilarFinder(finder SimilarFinder) HandlerOption {
 	return func(handler *Handler) { handler.similar = finder }
 }
 
+// WithResourceLister 注入资源列表查询，用于判断详情页能不能播。
 func WithResourceLister(lister ResourceLister) HandlerOption {
 	return func(handler *Handler) { handler.resources = lister }
 }
 
+// WithAirScheduleReader 注入播出时间表读取。
 func WithAirScheduleReader(reader AirScheduleReader) HandlerOption {
 	return func(handler *Handler) { handler.airSchedule = reader }
 }
 
+// NewHandler 构造详情页 Handler，并给出站 HTTP Client 套上图片代理的安全拦截。
 func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handler {
-	handler := &Handler{config: cfg, store: store, httpClient: &http.Client{Timeout: 15 * time.Second}}
+	handler := &Handler{config: cfg, store: store, httpClient: &http.Client{Timeout: 15 * time.Second},
+		similarCache: cache.New[[]Movie](similarCacheCapacity, similarCacheTTL)}
 	for _, option := range options {
 		option(handler)
 	}
@@ -220,6 +261,7 @@ func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handl
 	return handler
 }
 
+// Register 注册路由：详情页、发现页、图片代理、短评/剧照片段和资料刷新接口。
 func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/movie/:id", auth.Optional(handler.config.AppSecret), handler.movie)
 	router.GET("/api/proxy/image/:url", handler.proxyImage)
@@ -232,6 +274,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/htmx/douban-card", handler.doubanCard)
 }
 
+// discover 渲染发现页；HTMX 请求只返回卡片网格，整页请求会带上各分类专属的 SEO 文案。
 func (handler *Handler) discover(c *gin.Context) {
 	movieType := c.Param("type")
 	if strings.TrimSpace(movieType) == "" {
@@ -240,8 +283,12 @@ func (handler *Handler) discover(c *gin.Context) {
 	movieType = normalizeDiscoverType(movieType)
 	if c.GetHeader("HX-Request") != "" {
 		subjects := []PopularSubject{}
-		if handler.popular != nil {
-			subjects, _ = handler.popular.Popular(c.Request.Context(), movieType)
+		provider := handler.popular
+		if movieType == "trending" {
+			provider = handler.trending
+		}
+		if provider != nil {
+			subjects, _ = provider.Popular(c.Request.Context(), movieType)
 		}
 		c.HTML(http.StatusOK, "partials/discover_grid.html", gin.H{"Subjects": subjects, "CurrentType": movieType})
 		return
@@ -262,6 +309,10 @@ func (handler *Handler) discover(c *gin.Context) {
 		title = "2026热门动漫新番推荐 - 豆瓣高分动画榜单"
 		description = "发现本季最强新番及经典高分动漫，支持多线路高清搜索。"
 		keywords = "热门动漫,最新动漫,高分佳作,Moovie影牛发现"
+	case "trending":
+		title = "本站热播排行榜 - 最近7天站内最多人观看"
+		description = "最近一周站内观众正在看的热门影视作品，基于真实播放数据实时排行。"
+		keywords = "本站热播,热门影视,在线观看排行,Moovie影牛"
 	}
 	c.HTML(http.StatusOK, "discover.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
 		Title: title + " - " + handler.config.SiteName, Description: description, Keywords: keywords,
@@ -269,6 +320,7 @@ func (handler *Handler) discover(c *gin.Context) {
 	}, gin.H{"CurrentType": movieType}))
 }
 
+// normalizeDiscoverType 把类型参数限制在 movie/tv/show/cartoon/trending 五种。
 func normalizeDiscoverType(movieType string) string {
 	switch strings.ToLower(strings.TrimSpace(movieType)) {
 	case "tv":
@@ -277,11 +329,15 @@ func normalizeDiscoverType(movieType string) string {
 		return "show"
 	case "cartoon":
 		return "cartoon"
+	case "trending":
+		return "trending"
 	default:
 		return "movie"
 	}
 }
 
+// doubanCard 是搜索页顶部的影片卡：先查本地库，不足 5 条再问豆瓣联想接口，
+// 并把新发现的豆瓣 ID 排进资料抓取队列。
 func (handler *Handler) doubanCard(c *gin.Context) {
 	keyword := strings.TrimSpace(c.Query("kw"))
 	if keyword == "" {
@@ -305,7 +361,13 @@ func (handler *Handler) doubanCard(c *gin.Context) {
 	}
 	if len(matches) < 5 {
 		if suggester, ok := handler.suggester.(externalSuggester); ok {
-			if suggestions, suggestErr := suggester.SuggestExternal(c.Request.Context(), keyword); suggestErr == nil {
+			// 这是搜索页 hx-trigger="load" 的片段，用的又是 10 秒超时的公用 HTTP Client，
+			// 豆瓣一慢用户就盯着加载圈看 10 秒。本地已经有结果时它只是锦上添花，
+			// 所以给一个短超时：拿不到就只显示本地匹配，下次搜索会再试一次。
+			suggestCtx, cancelSuggest := context.WithTimeout(c.Request.Context(), externalSuggestBudget)
+			suggestions, suggestErr := suggester.SuggestExternal(suggestCtx, keyword)
+			cancelSuggest()
+			if suggestErr == nil {
 				for _, suggestion := range suggestions {
 					if len(matches) == 5 {
 						break
@@ -346,6 +408,7 @@ func (handler *Handler) doubanCard(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/douban_card.html", data)
 }
 
+// sortDoubanMatches 排序规则：片名完全相同 > 前缀匹配 > 其他，同档按年份升序、评分降序。
 func sortDoubanMatches(keyword string, matches []DoubanMatch) {
 	keyword = strings.TrimSpace(keyword)
 	rank := func(title string) int {
@@ -376,6 +439,7 @@ func sortDoubanMatches(keyword string, matches []DoubanMatch) {
 	})
 }
 
+// namesFromPeopleJSON 从导演/演员 JSON 里取前若干个人名。
 func namesFromPeopleJSON(value string, limit int) []string {
 	var people []Director
 	_ = json.Unmarshal([]byte(value), &people)
@@ -391,6 +455,7 @@ func namesFromPeopleJSON(value string, limit int) []string {
 	return names
 }
 
+// splitCommaValues 按逗号拆分并去掉空白项。
 func splitCommaValues(value string) []string {
 	parts := strings.Split(value, ",")
 	result := make([]string, 0, len(parts))
@@ -402,6 +467,7 @@ func splitCommaValues(value string) []string {
 	return result
 }
 
+// movieSuggest 返回搜索联想的 JSON。
 func (handler *Handler) movieSuggest(c *gin.Context) {
 	keyword := strings.TrimSpace(c.Query("q"))
 	if keyword == "" {
@@ -420,6 +486,7 @@ func (handler *Handler) movieSuggest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "success", "data": results, "success": true})
 }
 
+// refreshMediaV2 是手动触发资料刷新的接口，立即返回任务 ID，不等抓取完成。
 func (handler *Handler) refreshMediaV2(c *gin.Context) {
 	mediaID, err := strconv.Atoi(c.Param("media_id"))
 	if err != nil || mediaID <= 0 {
@@ -439,6 +506,8 @@ func (handler *Handler) refreshMediaV2(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"message": "已加入刷新队列", "job_id": jobID, "media_id": mediaID})
 }
 
+// reviewList 返回短评片段。只有本地短评为空时才排抓取任务；
+// 已经采集过的短评不做定时更新。没有任务队列就退回进程内后台抓取。
 func (handler *Handler) reviewList(c *gin.Context) {
 	doubanID := strings.TrimSpace(c.Query("douban_id"))
 	if doubanID == "" {
@@ -449,13 +518,6 @@ func (handler *Handler) reviewList(c *gin.Context) {
 	if err == nil && movie != nil && movie.ReviewsJSON != "" {
 		var reviews []Review
 		if json.Unmarshal([]byte(movie.ReviewsJSON), &reviews) == nil {
-			if time.Since(movie.ReviewsUpdatedAt) > 72*time.Hour {
-				if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderReviews, RefreshReasonStaleReviews); !queued {
-					handler.queueReviewRefresh(doubanID)
-				} else if queueErr != nil {
-					requestmeta.Logger(c.Request.Context()).Warn("queue stale Douban reviews", "douban_id", doubanID, "error", queueErr)
-				}
-			}
 			c.HTML(http.StatusOK, "partials/reviews.html", gin.H{"Reviews": reviews})
 			return
 		}
@@ -472,6 +534,7 @@ func (handler *Handler) reviewList(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/reviews.html", gin.H{"Reviews": nil, "Message": "正在从豆瓣采集精彩短评..."})
 }
 
+// backdropList 返回剧照片段，逻辑与 reviewList 相同：缺数据就排任务并提示稍后刷新。
 func (handler *Handler) backdropList(c *gin.Context) {
 	doubanID := c.Query("douban_id")
 	if doubanID == "" {
@@ -484,6 +547,17 @@ func (handler *Handler) backdropList(c *gin.Context) {
 		return
 	}
 	if movie.Backdrops == "" && handler.backdrops != nil && (handler.refreshQueue != nil || handler.runner != nil) {
+		if checker, ok := handler.store.(TMDBRefreshChecker); ok {
+			needed, checkErr := checker.NeedsTMDBRefresh(c.Request.Context(), doubanID)
+			if checkErr != nil {
+				c.String(http.StatusServiceUnavailable, `<div class="reviews-error">剧照采集状态读取失败，请稍后重试</div>`)
+				return
+			}
+			if !needed {
+				c.HTML(http.StatusOK, "partials/movie_backdrops.html", gin.H{"Backdrops": []string{}})
+				return
+			}
+		}
 		if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), doubanID, RefreshProviderTMDB, RefreshReasonMissingBackdrops); queued {
 			if queueErr != nil {
 				c.String(http.StatusServiceUnavailable, `<div class="reviews-error">剧照采集任务入队失败，请稍后重试</div>`)
@@ -513,6 +587,7 @@ func (handler *Handler) backdropList(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/movie_backdrops.html", gin.H{"Backdrops": backdrops})
 }
 
+// queueReviewRefresh 是没有任务队列时的兜底：进程内抓一次，用 crawling 这张表防止重复。
 func (handler *Handler) queueReviewRefresh(doubanID string) {
 	if handler.reviews == nil || handler.runner == nil {
 		return
@@ -529,6 +604,8 @@ func (handler *Handler) queueReviewRefresh(doubanID string) {
 	}
 }
 
+// movie 渲染影片详情页。本地没有资料时先渲染一个「正在抓取」的过渡页，
+// 资料不完整时顺手排一个补全任务；相似推荐、季度导航、更新时间表任一环节失败都只是少一个区块。
 func (handler *Handler) movie(c *gin.Context) {
 	doubanID, searchTitle := c.Param("id"), c.Query("title")
 	movie, err := handler.store.FindByDoubanID(c.Request.Context(), doubanID)
@@ -605,6 +682,7 @@ func (handler *Handler) movie(c *gin.Context) {
 	}))
 }
 
+// findSeriesSeasons 取同系列各季，少于两季就不展示导航。
 func (handler *Handler) findSeriesSeasons(ctx context.Context, doubanID string) []SeriesSeason {
 	finder, ok := handler.store.(SeriesFinder)
 	if !ok || doubanID == "" {
@@ -621,6 +699,7 @@ func (handler *Handler) findSeriesSeasons(ctx context.Context, doubanID string) 
 	return seasons
 }
 
+// excludeSeriesMovies 把同系列的其他季从「相似推荐」里剔除，避免推荐区全是自己。
 func excludeSeriesMovies(movies []Movie, seasons []SeriesSeason, seriesTitle string, limit int) []Movie {
 	if limit <= 0 {
 		return []Movie{}
@@ -646,6 +725,7 @@ func excludeSeriesMovies(movies []Movie, seasons []SeriesSeason, seriesTitle str
 	return filtered
 }
 
+// needsMetadataRefresh 判断资料是否需要补全：状态是 partial 或完整度低于 70 分，且已过下次刷新时间。
 func needsMetadataRefresh(movie *Movie, now time.Time) bool {
 	if movie == nil || movie.DoubanID == "" || (movie.MetadataStatus != "partial" && movie.CompletenessScore >= 70) {
 		return false
@@ -698,26 +778,7 @@ func (handler *Handler) findSimilar(ctx context.Context, doubanID string, limit 
 			return nil, err
 		}
 		copyMovies := compactSimilarMovies(movies)
-		handler.similarMu.Lock()
-		if handler.similarCache == nil {
-			handler.similarCache = make(map[string]similarCacheEntry)
-		}
-		if len(handler.similarCache) >= similarCacheCapacity {
-			now := time.Now()
-			for cachedKey, entry := range handler.similarCache {
-				if now.After(entry.expiresAt) {
-					delete(handler.similarCache, cachedKey)
-				}
-			}
-			if len(handler.similarCache) >= similarCacheCapacity {
-				for cachedKey := range handler.similarCache {
-					delete(handler.similarCache, cachedKey)
-					break
-				}
-			}
-		}
-		handler.similarCache[key] = similarCacheEntry{movies: copyMovies, expiresAt: time.Now().Add(similarCacheTTL)}
-		handler.similarMu.Unlock()
+		handler.similarCache.Set(key, copyMovies)
 		return copyMovies, nil
 	})
 	if err != nil || value == nil {
@@ -726,17 +787,13 @@ func (handler *Handler) findSimilar(ctx context.Context, doubanID string, limit 
 	return append([]Movie(nil), value.([]Movie)...)
 }
 
+// cachedSimilar 读相似推荐缓存。返回的是副本，防止调用方改到缓存里的数据。
 func (handler *Handler) cachedSimilar(key string) ([]Movie, bool) {
-	handler.similarMu.Lock()
-	defer handler.similarMu.Unlock()
-	entry, ok := handler.similarCache[key]
-	if !ok || time.Now().After(entry.expiresAt) {
-		if ok {
-			delete(handler.similarCache, key)
-		}
+	movies, ok := handler.similarCache.Get(key)
+	if !ok {
 		return nil, false
 	}
-	return append([]Movie(nil), entry.movies...), true
+	return append([]Movie(nil), movies...), true
 }
 
 // 相似卡片只渲染身份、标题、海报、评分和年份。
@@ -752,6 +809,7 @@ func compactSimilarMovies(movies []Movie) []Movie {
 	return compact
 }
 
+// queueEmbedding 为缺向量的影片排一个生成任务。
 func (handler *Handler) queueEmbedding(ctx context.Context, doubanID string) {
 	if queued, err := handler.enqueueRefresh(ctx, doubanID, RefreshProviderEmbedding, RefreshReasonMissingEmbedding); queued {
 		if err != nil {
@@ -774,6 +832,7 @@ func (handler *Handler) queueEmbedding(ctx context.Context, doubanID string) {
 	}
 }
 
+// fetchMissing 为本地没有资料的影片排一个抓取任务；第一个返回值表示是否走了任务队列。
 func (handler *Handler) fetchMissing(ctx context.Context, doubanID string) (bool, error) {
 	if queued, err := handler.enqueueRefresh(ctx, doubanID, RefreshProviderDouban, RefreshReasonMissingMetadata); queued {
 		return true, err
@@ -793,6 +852,7 @@ func (handler *Handler) fetchMissing(ctx context.Context, doubanID string) (bool
 	return false, nil
 }
 
+// enqueueRefresh 统一入队。第一个返回值表示「有队列可用」，第二个才是入队是否出错。
 func (handler *Handler) enqueueRefresh(ctx context.Context, doubanID, provider, reason string) (bool, error) {
 	if handler.refreshQueue == nil {
 		return false, nil
@@ -801,6 +861,7 @@ func (handler *Handler) enqueueRefresh(ctx context.Context, doubanID, provider, 
 	return true, err
 }
 
+// runBackground 提交后台任务，执行器支持拒绝时返回 false（此时页面会提示稍后重试）。
 func (handler *Handler) runBackground(task func(context.Context)) bool {
 	if accepting, ok := handler.runner.(acceptingBackgroundRunner); ok {
 		return accepting.TryRun(task)
@@ -809,6 +870,7 @@ func (handler *Handler) runBackground(task func(context.Context)) bool {
 	return true
 }
 
+// truncateDescription 按字符数截断简介（SEO 描述用），按 rune 计数以免截断汉字。
 func truncateDescription(summary string, limit int) string {
 	runes := []rune(strings.TrimSpace(summary))
 	if len(runes) <= limit {
@@ -817,6 +879,7 @@ func truncateDescription(summary string, limit int) string {
 	return string(runes[:limit]) + "..."
 }
 
+// proxyImageURL 把外站图片地址改写成本站图片代理地址（豆瓣图片有防盗链）。
 func proxyImageURL(value string) string {
 	if value == "" || strings.HasPrefix(value, "/api/proxy/image") {
 		return value

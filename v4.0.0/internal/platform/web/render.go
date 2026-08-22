@@ -1,3 +1,5 @@
+// Package web 提供服务端模板渲染和页面视图模型。
+// 每个页面单独解析一套模板（layout + 该页面 + 全部 partial），避免不同页面里同名 define 互相覆盖。
 package web
 
 import (
@@ -12,8 +14,10 @@ import (
 	"github.com/gin-gonic/gin/render"
 )
 
+// layoutName 是共享的页面框架模板。
 const layoutName = "base.html"
 
+// standalonePages 里的页面不套用共享框架，单独整页渲染（如播放器 iframe）。
 var standalonePages = map[string]struct{}{
 	"player_embed": {},
 }
@@ -24,11 +28,14 @@ type Renderer struct {
 	templates map[string]compiledTemplate
 }
 
+// compiledTemplate 保存已解析的模板集合和渲染入口名。
 type compiledTemplate struct {
 	template *template.Template
 	entry    string
 }
 
+// LoadRenderer 在启动阶段一次性解析全部页面模板和 partial。
+// 解析失败直接返回错误让进程退不来，好过等用户访问时才 500。
 func LoadRenderer(templatesDir string, pages []string) (Renderer, error) {
 	loaded := make(map[string]compiledTemplate, len(pages))
 	layoutPath := filepath.Join(templatesDir, "layouts", layoutName)
@@ -67,6 +74,7 @@ func LoadRenderer(templatesDir string, pages []string) (Renderer, error) {
 	return Renderer{templates: loaded}, nil
 }
 
+// Instance 实现 gin 的 HTMLRender 接口，按模板名取出对应的那一套。
 func (r Renderer) Instance(name string, data any) render.Render {
 	compiled := r.templates[name]
 	return render.HTML{
@@ -76,6 +84,7 @@ func (r Renderer) Instance(name string, data any) render.Render {
 	}
 }
 
+// templateFunctions 注册模板里可用的辅助函数（图片代理、数字运算、JSON 处理等）。
 func templateFunctions() template.FuncMap {
 	return template.FuncMap{
 		"jsonUnmarshal": func(value string) []any {

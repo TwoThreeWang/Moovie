@@ -43,6 +43,7 @@ func MergeContinue(records []Record) []Record {
 	return result
 }
 
+// recordTime 取记录的有效时间，优先 UpdatedAt。
 func recordTime(record Record) (value time.Time) {
 	if !record.UpdatedAt.IsZero() {
 		return record.UpdatedAt
@@ -50,6 +51,7 @@ func recordTime(record Record) (value time.Time) {
 	return record.WatchedAt
 }
 
+// itoa 是不依赖 strconv 的整数转字符串。
 func itoa(value int) string {
 	if value == 0 {
 		return "0"

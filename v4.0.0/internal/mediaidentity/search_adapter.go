@@ -6,6 +6,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 )
 
+// MatchResource 把 search 包的请求结构翻译成本包的结构，再调打分匹配。
 func (adapter SearchAdapter) MatchResource(ctx context.Context, request search.MediaMatchRequest) (search.MediaMatchResult, error) {
 	result, err := adapter.Store.MatchResource(ctx, MatchInput{Title: request.Title, OriginalTitle: request.OriginalTitle,
 		Year: request.Year, MediaType: request.MediaType, Actors: request.Actors, Directors: request.Directors})
@@ -16,10 +17,12 @@ func (adapter SearchAdapter) MatchResource(ctx context.Context, request search.M
 		Status: result.Status, ReasonJSON: result.ReasonJSON, HardConflict: result.HardConflict}, nil
 }
 
+// RecordDetailedMatchCandidate 记录一条待复核的匹配候选。
 func (adapter SearchAdapter) RecordDetailedMatchCandidate(ctx context.Context, sourceKey, vodID string, mediaID int, confidence float64, matchedBy, status, reasonJSON string) error {
 	return adapter.Store.RecordDetailedMatchCandidate(ctx, sourceKey, vodID, mediaID, confidence, matchedBy, status, reasonJSON)
 }
 
+// IndexResourceEpisodes 解析并写入某条资源的剧集候选。
 func (adapter SearchAdapter) IndexResourceEpisodes(ctx context.Context, item search.VodItem) error {
 	// 索引发生在 enrichMediaIdentity 之前，此时 item.MediaID 通常还是 0；
 	// 而第 0 层命中已有关联时不会再调 LinkResource 触发回填。

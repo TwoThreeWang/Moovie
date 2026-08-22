@@ -76,7 +76,7 @@ func TestCleanupUsesRetentionWindows(t *testing.T) {
 	}))
 	service.now = func() time.Time { return time.Date(2026, time.July, 30, 0, 0, 0, 0, time.UTC) }
 	_ = service.HandleCleanup(context.Background(), workqueue.Job{})
-	if store.inactiveDays != 10 || store.keywordDays != 30 || store.logDays != 30 || !store.healthBefore.Equal(service.now().AddDate(0, 0, -7)) {
+	if store.inactiveDays != 10 || store.logDays != 30 || !store.healthBefore.Equal(service.now().AddDate(0, 0, -7)) {
 		t.Fatalf("cleanup windows = %+v", store)
 	}
 	if !completedBefore.Equal(service.now().AddDate(0, 0, -30)) || !failedBefore.Equal(service.now().AddDate(0, 0, -90)) || cleanupLimit != 1000 {
@@ -91,7 +91,6 @@ func TestCleanupUsesRetentionWindows(t *testing.T) {
 
 type recordingStore struct {
 	inactiveDays int
-	keywordDays  int
 	logDays      int
 	healthBefore time.Time
 }
@@ -104,10 +103,7 @@ func (store *recordingStore) DeleteInactive(_ context.Context, days int) (int, e
 	store.inactiveDays = days
 	return 0, nil
 }
-func (store *recordingStore) DeleteOldKeywords(_ context.Context, days int) (int, error) {
-	store.keywordDays = days
-	return 0, nil
-}
+func (*recordingStore) PurgeStaleResources(context.Context, int) (int, error) { return 0, nil }
 func (store *recordingStore) DeleteOldSearchLogs(_ context.Context, days int) (int, error) {
 	store.logDays = days
 	return 0, nil

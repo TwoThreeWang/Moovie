@@ -6,12 +6,15 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/cache"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/ratelimit"
 	"golang.org/x/sync/singleflight"
 )
 
+// 弹幕相关的各种上限：上游最多保留 4000 条、站内最多读 2000 条、单条最多 50 字、
+// 每人每分钟最多发 10 条、5 分钟内不能发重复内容、上游请求超时 25 秒。
 const (
 	externalMaximum = 4000
 	localMaximum    = 2000
@@ -22,20 +25,23 @@ const (
 	upstreamTimeout = 25 * time.Second
 )
 
+// Service 组合上游弹幕和站内弹幕。
+// hits 缓存命中的弹幕（12 小时），misses 缓存查不到的键（20 分钟）避免反复问上游。
 type Service struct {
 	store    Store
 	upstream *upstreamClient
-	hits     *ttlCache[[]Item]
-	misses   *ttlCache[bool]
+	hits     *cache.TTL[[]Item]
+	misses   *cache.TTL[bool]
 	group    singleflight.Group
-	limiter  *ipLimiter
+	limiter  *ratelimit.PerIP
 	now      func() time.Time
 }
 
+// NewService 创建弹幕服务，没配上游地址时只用站内弹幕。
 func NewService(store Store, httpClient *http.Client, apiBase string) *Service {
 	service := &Service{
-		store: store, hits: newTTLCache[[]Item](80, 12*time.Hour), misses: newTTLCache[bool](500, 20*time.Minute),
-		limiter: newIPLimiter(20, time.Minute), now: time.Now,
+		store: store, hits: cache.New[[]Item](80, 12*time.Hour), misses: cache.New[bool](500, 20*time.Minute),
+		limiter: ratelimit.NewPerIP(20, time.Minute), now: time.Now,
 	}
 	if strings.TrimSpace(apiBase) != "" {
 		service.upstream = newUpstreamClient(httpClient, apiBase)
@@ -43,6 +49,7 @@ func NewService(store Store, httpClient *http.Client, apiBase string) *Service {
 	return service
 }
 
+// List 返回某一集的全部弹幕。
 func (service *Service) List(ctx context.Context, rawTitle, rawEpisode, clientIP string) []Item {
 	rawTitle = strings.TrimSpace(rawTitle)
 	if rawTitle == "" || len([]rune(rawTitle)) > 100 {
@@ -64,6 +71,8 @@ func (service *Service) List(ctx context.Context, rawTitle, rawEpisode, clientIP
 	return merged
 }
 
+// external 取上游弹幕：先查两级缓存，再按 IP 限流，最后 singleflight 去重回源。
+// 任何一步失败都返回 nil，弹幕拉不到不能影响播放。
 func (service *Service) external(vodKey, title string, season, episode int, clientIP string) []Item {
 	if service.upstream == nil {
 		return nil
@@ -97,6 +106,7 @@ func (service *Service) external(vodKey, title string, season, episode int, clie
 	return items
 }
 
+// SendInput 是发送弹幕的请求体。
 type SendInput struct {
 	Title   string  `json:"title"`
 	Episode string  `json:"episode"`
@@ -106,6 +116,7 @@ type SendInput struct {
 	Color   string  `json:"color"`
 }
 
+// Send 校验并发送弹幕，频率和重复检查在数据库事务里做（见 CreateGuarded）。
 func (service *Service) Send(ctx context.Context, userID int, input SendInput) error {
 	rawTitle := strings.TrimSpace(input.Title)
 	if rawTitle == "" || len([]rune(rawTitle)) > 100 {
@@ -139,103 +150,9 @@ func (service *Service) Send(ctx context.Context, userID int, input SendInput) e
 	return err
 }
 
+// 参数校验失败的几种内部错误。
 var (
 	errParameters = errors.New("invalid parameters")
 	errEmptyText  = errors.New("empty danmaku")
 	errLongText   = errors.New("danmaku too long")
 )
-
-type cacheValue[T any] struct {
-	value     T
-	expiresAt time.Time
-	sequence  uint64
-}
-
-type ttlCache[T any] struct {
-	mu       sync.Mutex
-	values   map[string]cacheValue[T]
-	capacity int
-	ttl      time.Duration
-	sequence uint64
-}
-
-func newTTLCache[T any](capacity int, ttl time.Duration) *ttlCache[T] {
-	return &ttlCache[T]{values: make(map[string]cacheValue[T]), capacity: capacity, ttl: ttl}
-}
-
-func (cache *ttlCache[T]) Get(key string) (T, bool) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	var zero T
-	entry, exists := cache.values[key]
-	if !exists || time.Now().After(entry.expiresAt) {
-		delete(cache.values, key)
-		return zero, false
-	}
-	cache.sequence++
-	entry.sequence = cache.sequence
-	cache.values[key] = entry
-	return entry.value, true
-}
-
-func (cache *ttlCache[T]) Set(key string, value T) {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	cache.sequence++
-	cache.values[key] = cacheValue[T]{value: value, expiresAt: time.Now().Add(cache.ttl), sequence: cache.sequence}
-	if len(cache.values) <= cache.capacity {
-		return
-	}
-	oldestKey := ""
-	oldest := ^uint64(0)
-	for candidate, entry := range cache.values {
-		if entry.sequence < oldest {
-			oldestKey, oldest = candidate, entry.sequence
-		}
-	}
-	delete(cache.values, oldestKey)
-}
-
-type ipCount struct {
-	count int
-	reset time.Time
-}
-
-type ipLimiter struct {
-	mu       sync.Mutex
-	max      int
-	window   time.Duration
-	counts   map[string]ipCount
-	capacity int
-}
-
-func newIPLimiter(maximum int, window time.Duration) *ipLimiter {
-	return &ipLimiter{max: maximum, window: window, counts: make(map[string]ipCount), capacity: 8192}
-}
-
-func (limiter *ipLimiter) Allow(ip string) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	now := time.Now()
-	entry, exists := limiter.counts[ip]
-	if !exists || now.After(entry.reset) {
-		if !exists && len(limiter.counts) >= limiter.capacity {
-			for key, candidate := range limiter.counts {
-				if now.After(candidate.reset) {
-					delete(limiter.counts, key)
-				}
-			}
-			if len(limiter.counts) >= limiter.capacity {
-				return false
-			}
-		}
-		limiter.counts[ip] = ipCount{count: 1, reset: now.Add(limiter.window)}
-		return true
-	}
-	if entry.count >= limiter.max {
-		return false
-	}
-	entry.count++
-	limiter.counts[ip] = entry
-	return true
-}

@@ -1,3 +1,5 @@
+// Package mediatitle 只做一件事：把片名归一化成用于比对的键。
+// 媒体匹配和统一搜索都用它，保证两边的判重口径完全一致。
 package mediatitle
 
 import (

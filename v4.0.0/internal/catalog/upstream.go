@@ -22,6 +22,7 @@ type upstreamStatusError struct {
 	status int
 }
 
+// Error 返回上游状态码描述。
 func (err *upstreamStatusError) Error() string {
 	return fmt.Sprintf("%s returned HTTP %d", err.source, err.status)
 }
@@ -39,6 +40,7 @@ func classifyUpstreamStatus(source string, response *http.Response) error {
 	}
 }
 
+// upstreamStatus 取出错误里保留的 HTTP 状态码。
 func upstreamStatus(err error) (int, bool) {
 	var statusError *upstreamStatusError
 	if errors.As(err, &statusError) {
@@ -62,6 +64,7 @@ func parseRetryAfter(value string) time.Duration {
 	return 0
 }
 
+// capRetryAfter 把等待时间限制在 maxRetryAfter 以内。
 func capRetryAfter(value time.Duration) time.Duration {
 	if value <= 0 {
 		return 0

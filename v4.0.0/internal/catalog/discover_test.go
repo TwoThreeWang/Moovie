@@ -30,7 +30,7 @@ func TestDiscoverRoutesPreserveSEOHTMXAndDoubanCard(t *testing.T) {
 	}
 	router := gin.New()
 	router.HTMLRender = renderer
-	NewHandler(cfg, store, WithPopularProvider(popularStub{})).Register(router)
+	NewHandler(cfg, store, WithPopularProvider(popularStub{}), WithSiteTrending(trendingStub{})).Register(router)
 
 	page := httptest.NewRecorder()
 	router.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/discover/tv", nil))
@@ -54,6 +54,20 @@ func TestDiscoverRoutesPreserveSEOHTMXAndDoubanCard(t *testing.T) {
 	if query.Code != http.StatusOK || !strings.Contains(query.Body.String(), "热门剧集") || strings.Contains(query.Body.String(), "热门电影") {
 		t.Fatalf("discover HTMX query category = %d/%s", query.Code, query.Body.String())
 	}
+	trendingRequest := httptest.NewRequest(http.MethodGet, "/discover/trending", nil)
+	trendingRequest.Header.Set("HX-Request", "true")
+	trending := httptest.NewRecorder()
+	router.ServeHTTP(trending, trendingRequest)
+	if trending.Code != http.StatusOK || !strings.Contains(trending.Body.String(), "本站热播片") {
+		t.Fatalf("discover trending HTMX = %d/%s", trending.Code, trending.Body.String())
+	}
+
+	trendingPage := httptest.NewRecorder()
+	router.ServeHTTP(trendingPage, httptest.NewRequest(http.MethodGet, "/discover/trending", nil))
+	if trendingPage.Code != http.StatusOK || !strings.Contains(trendingPage.Body.String(), "本站热播排行榜") {
+		t.Fatalf("discover trending page = %d/%s", trendingPage.Code, trendingPage.Body.String())
+	}
+
 	card := httptest.NewRecorder()
 	router.ServeHTTP(card, httptest.NewRequest(http.MethodGet, "/api/htmx/douban-card?kw=肖申克", nil))
 	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), "肖申克的救赎") || !strings.Contains(card.Body.String(), "弗兰克·德拉邦特") || !strings.Contains(card.Body.String(), "/movie/1292052") {
@@ -66,6 +80,12 @@ type popularStub struct{}
 func (popularStub) Popular(_ context.Context, movieType string) ([]PopularSubject, error) {
 	titles := map[string]string{"movie": "热门电影", "tv": "热门剧集", "show": "热门综艺", "cartoon": "热门动画"}
 	return []PopularSubject{{ID: "1", Title: titles[movieType], Rate: "9.0", Cover: "/poster.jpg"}}, nil
+}
+
+type trendingStub struct{}
+
+func (trendingStub) Popular(context.Context, string) ([]PopularSubject, error) {
+	return []PopularSubject{{ID: "99", Title: "本站热播片", Rate: "8.5", Cover: "/trending.jpg"}}, nil
 }
 
 func TestPopularSubjectHasRating(t *testing.T) {

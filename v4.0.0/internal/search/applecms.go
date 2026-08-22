@@ -12,13 +12,18 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/outbound"
 )
 
+// crawlerUserAgent 伪装成浏览器，部分资源站会拒绝默认的 Go UA。
 const crawlerUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+// maxAppleCMSResponseBytes 限制单次响应体大小，防止上游返回超大内容打爆内存。
 const maxAppleCMSResponseBytes = 4 << 20
 
+// AppleCMSCrawler 按 AppleCMS v10 的接口约定抓取资源站（ac=videolist 搜索、ac=detail 详情）。
 type AppleCMSCrawler struct {
 	client *http.Client
 }
 
+// NewAppleCMSCrawler 创建抓取器，client 应当是进程内共享的出站 Client。
 func NewAppleCMSCrawler(client *http.Client) *AppleCMSCrawler {
 	if client == nil {
 		client = http.DefaultClient
@@ -26,10 +31,13 @@ func NewAppleCMSCrawler(client *http.Client) *AppleCMSCrawler {
 	return &AppleCMSCrawler{client: client}
 }
 
+// appleCMSResponse 只解析 list 字段，其余字段各站差异太大，一律按 map 读。
 type appleCMSResponse struct {
 	List []map[string]any `json:"list"`
 }
 
+// Search 向单个资源站发起搜索。目标地址会先做公网校验（防 SSRF），
+// 没有播放地址或命中分类屏蔽词的条目直接丢弃。
 func (crawler *AppleCMSCrawler) Search(ctx context.Context, baseURL, keyword, sourceKey string, restrictedCategories []string) ([]VodItem, error) {
 	target := fmt.Sprintf("%s?ac=videolist&pg=1&wd=%s", baseURL, url.QueryEscape(keyword))
 	if err := outbound.ValidatePublicHTTPURL(target); err != nil {
@@ -100,6 +108,7 @@ func (crawler *AppleCMSCrawler) GetDetail(ctx context.Context, baseURL, vodID, s
 	return &item, nil
 }
 
+// decodeAppleCMSResponse 限制响应体最大 4MB，防止个别站返回超大 JSON 打爆内存。
 func decodeAppleCMSResponse(reader io.Reader, destination *appleCMSResponse) error {
 	limited := &io.LimitedReader{R: reader, N: maxAppleCMSResponseBytes + 1}
 	if err := json.NewDecoder(limited).Decode(destination); err != nil {
@@ -114,6 +123,7 @@ func decodeAppleCMSResponse(reader io.Reader, destination *appleCMSResponse) err
 	return nil
 }
 
+// categoryBlocked 判断分类名是否命中屏蔽词（如伦理片等不予收录的分类）。
 func categoryBlocked(typeName string, restricted []string) bool {
 	for _, keyword := range restricted {
 		if strings.Contains(typeName, keyword) {
@@ -123,6 +133,7 @@ func categoryBlocked(typeName string, restricted []string) bool {
 	return false
 }
 
+// mapAppleCMSItem 把资源站返回的松散 JSON 映射成 VodItem。
 func mapAppleCMSItem(item map[string]any, sourceKey string) VodItem {
 	return VodItem{
 		SourceKey:   sourceKey,
@@ -152,6 +163,7 @@ func mapAppleCMSItem(item map[string]any, sourceKey string) VodItem {
 	}
 }
 
+// stringify 把任意 JSON 值转成字符串：各站同一个字段可能给数字也可能给字符串。
 func stringify(value any) string {
 	if value == nil {
 		return ""

@@ -1,12 +1,17 @@
+// Package playurl 解析 AppleCMS 的播放地址字段。
+// 格式：源之间用 $$$ 分隔，集之间用 #，集内用 $ 分「集名$播放地址」。
+// 只保留 .m3u8 地址，其他格式（mp4 直链、网页播放器）一律丢弃。
 package playurl
 
 import "strings"
 
+// Source 是一个播放源（一部片子可能有多个源）。
 type Source struct {
 	Name     string
 	Episodes []Episode
 }
 
+// Episode 是一集及其播放地址。
 type Episode struct {
 	Title string
 	URL   string

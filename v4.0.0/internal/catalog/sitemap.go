@@ -6,10 +6,13 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/content"
 )
 
+// SitemapProvider 给 SEO 站点地图提供影片列表。
 type SitemapProvider struct{ store Store }
 
+// NewSitemapProvider 创建站点地图数据源。
 func NewSitemapProvider(store Store) SitemapProvider { return SitemapProvider{store: store} }
 
+// LatestForSitemap 优先用只查两列的轻量实现；存储层不支持时才退回加载完整影片。
 func (provider SitemapProvider) LatestForSitemap(ctx context.Context, limit int) ([]content.SitemapMovie, error) {
 	if optimized, ok := provider.store.(interface {
 		LatestForSitemap(context.Context, int) ([]content.SitemapMovie, error)

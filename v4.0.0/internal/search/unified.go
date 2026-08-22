@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// UnifiedQuery 是统一搜索的入参。
 type UnifiedQuery struct {
 	Keyword          string
 	Year             string
@@ -19,6 +20,7 @@ type UnifiedQuery struct {
 	Limit            int
 }
 
+// UnifiedItem 是按规范媒体聚合后的一条结果，底下挂着来自各资源站的播放资源。
 type UnifiedItem struct {
 	MediaID       int               `json:"media_id"`
 	Title         string            `json:"title"`
@@ -53,6 +55,8 @@ type UnifiedResource struct {
 	ResourceStatus string  `json:"resource_status,omitempty"`
 }
 
+// UnifiedResult 是统一搜索的返回值。Unmatched 是没能归到任何媒体的裸资源；
+// 几个 Duration/Fallback 字段用于观测两条支路各自的耗时与降级情况。
 type UnifiedResult struct {
 	Items               []UnifiedItem     `json:"items"`
 	Unmatched           []UnifiedResource `json:"unmatched"`
@@ -64,26 +68,32 @@ type UnifiedResult struct {
 	CatalogFallback     bool              `json:"catalog_fallback"`
 }
 
+// UnifiedSearcher 是统一搜索接口。
 type UnifiedSearcher interface {
 	SearchUnified(ctx context.Context, query UnifiedQuery) (UnifiedResult, error)
 }
 
+// UnifiedCatalog 是媒体库一侧的检索能力（按标题/别名查 media 表，再批量取其资源）。
 type UnifiedCatalog interface {
 	SearchUnifiedMedia(ctx context.Context, query UnifiedQuery) ([]UnifiedItem, error)
 	ListUnifiedResources(ctx context.Context, mediaIDs []int) ([]VodItem, error)
 }
 
+// UnifiedSearchOption 是统一搜索服务的可选装配项。
 type UnifiedSearchOption func(*UnifiedSearchService)
 
+// WithUnifiedCatalog 注入媒体库检索；不注入时只返回资源侧结果。
 func WithUnifiedCatalog(catalog UnifiedCatalog) UnifiedSearchOption {
 	return func(service *UnifiedSearchService) { service.catalog = catalog }
 }
 
+// UnifiedSearchService 把「资源站搜索」和「媒体库检索」两条支路的结果合并成一份列表。
 type UnifiedSearchService struct {
 	resources Searcher
 	catalog   UnifiedCatalog
 }
 
+// NewUnifiedSearchService 创建统一搜索服务。
 func NewUnifiedSearchService(resources Searcher, options ...UnifiedSearchOption) *UnifiedSearchService {
 	service := &UnifiedSearchService{resources: resources}
 	for _, option := range options {
@@ -92,8 +102,10 @@ func NewUnifiedSearchService(resources Searcher, options ...UnifiedSearchOption)
 	return service
 }
 
+// SearchUnified 并发跑两条支路：资源站搜索 + 媒体库检索，然后按 media_id 分组合并。
+// 任一支路失败都尽量降级返回另一侧的结果，只有两边都不可用才返回错误。
 func (service *UnifiedSearchService) SearchUnified(ctx context.Context, query UnifiedQuery) (UnifiedResult, error) {
-	query.Keyword, query.Year, query.MediaType = strings.TrimSpace(query.Keyword), strings.TrimSpace(query.Year), normalizeUnifiedMediaType(query.MediaType)
+	query.Keyword, query.Year, query.MediaType = strings.TrimSpace(query.Keyword), strings.TrimSpace(query.Year), normalizeMediaType(query.MediaType)
 	if query.Limit <= 0 || query.Limit > 100 {
 		query.Limit = 20
 	}
@@ -191,7 +203,7 @@ func (service *UnifiedSearchService) SearchUnified(ctx context.Context, query Un
 		if query.Year != "" && strings.TrimSpace(resource.VodYear) != query.Year {
 			continue
 		}
-		if query.MediaType != "" && normalizeUnifiedMediaType(resource.TypeName) != query.MediaType {
+		if query.MediaType != "" && normalizeMediaType(resource.TypeName) != query.MediaType {
 			continue
 		}
 		if resource.MediaID <= 0 {
@@ -230,6 +242,7 @@ func (service *UnifiedSearchService) SearchUnified(ctx context.Context, query Un
 		CatalogDurationMS: catalogDuration, CatalogFallback: catalogFallback}, nil
 }
 
+// maxAliasResourceSearches 限制用别名再搜几轮，避免一个词发散成大量上游请求。
 const maxAliasResourceSearches = 3
 
 // appendAliasResourceMatches 只为没有资源的规范媒体补搜豆瓣别名。
@@ -298,12 +311,14 @@ func (query UnifiedQuery) excludes(sourceKey, vodID string) bool {
 		query.ExcludeSourceKey == sourceKey && query.ExcludeVodID == vodID
 }
 
+// unifiedItemFromResource 用资源信息临时拼一个媒体分组（媒体库里没有这条记录时用）。
 func unifiedItemFromResource(resource VodItem) *UnifiedItem {
 	return &UnifiedItem{MediaID: resource.MediaID, Title: resource.VodName, OriginalTitle: firstNonEmpty(resource.VodEn, resource.VodSub),
-		Year: resource.VodYear, MediaType: normalizeUnifiedMediaType(resource.TypeName), Poster: resource.VodPic,
+		Year: resource.VodYear, MediaType: normalizeMediaType(resource.TypeName), Poster: resource.VodPic,
 		DoubanID: resource.VodDoubanId, Resources: make([]UnifiedResource, 0)}
 }
 
+// appendUniqueUnifiedResource 按 source_key+vod_id 去重后追加资源。
 func appendUniqueUnifiedResource(group *UnifiedItem, resource VodItem) {
 	for _, existing := range group.Resources {
 		if existing.SourceKey == resource.SourceKey && existing.VodId == resource.VodId {
@@ -313,13 +328,15 @@ func appendUniqueUnifiedResource(group *UnifiedItem, resource VodItem) {
 	group.Resources = append(group.Resources, newUnifiedResource(resource))
 }
 
+// newUnifiedResource 把内部资源模型裁剪成对外返回的精简结构。
 func newUnifiedResource(item VodItem) UnifiedResource {
 	return UnifiedResource{MediaID: item.MediaID, SourceKey: item.SourceKey, VodId: item.VodId, VodName: item.VodName,
-		VodRemarks: item.VodRemarks, VodYear: item.VodYear, TypeName: normalizeUnifiedMediaType(item.TypeName), VodPic: item.VodPic,
+		VodRemarks: item.VodRemarks, VodYear: item.VodYear, TypeName: normalizeMediaType(item.TypeName), VodPic: item.VodPic,
 		AvgSpeedMs: item.AvgSpeedMs, SampleCount: item.SampleCount, FailedCount: item.FailedCount,
 		SuccessRate: resourceSuccessRate(item.SampleCount, item.FailedCount), ResourceStatus: item.ResourceStatus}
 }
 
+// resourceIsBetter 排序规则：先看成功率，再看首帧速度；没有样本的排在后面。
 func resourceIsBetter(left, right UnifiedResource) bool {
 	leftSuccess, rightSuccess := left.SuccessRate, right.SuccessRate
 	if leftSuccess != rightSuccess {
@@ -334,6 +351,7 @@ func resourceIsBetter(left, right UnifiedResource) bool {
 	return left.AvgSpeedMs < right.AvgSpeedMs
 }
 
+// resourceSuccessRate 计算播放成功率（0~1）。
 func resourceSuccessRate(sampleCount, failedCount int) float64 {
 	if sampleCount <= 0 {
 		return 0
@@ -345,7 +363,10 @@ func resourceSuccessRate(sampleCount, failedCount int) float64 {
 	return float64(successes) / float64(sampleCount)
 }
 
-func normalizeUnifiedMediaType(value string) string {
+// normalizeMediaType 把资源站五花八门的分类名归一成 movie / tv 两类，识别不了返回空串。
+// 搜索和聚合搜索两条路径共用这一份，不能各自分化：
+// 过滤用的归一跟写入用的归一一旦不一致，搜出来的片就会被自己的类型筛掉。
+func normalizeMediaType(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch {
 	case value == "movie" || value == "film" || strings.Contains(value, "电影"):

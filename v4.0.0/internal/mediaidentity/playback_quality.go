@@ -7,8 +7,12 @@ import (
 	"strings"
 )
 
+// ErrInvalidPlaybackEvent 表示上报的播放事件字段不合法，直接丢弃。
 var ErrInvalidPlaybackEvent = errors.New("invalid playback attempt event")
 
+const TaskQualityRefresh = "quality_refresh"
+
+// playbackEventTypes 是允许上报的事件类型白名单（这个接口对外开放，必须严格限制取值）。
 var playbackEventTypes = map[string]bool{
 	"attempt_started": true,
 	"manifest_loaded": true,
@@ -21,6 +25,8 @@ var playbackEventTypes = map[string]bool{
 	"abandoned":       true,
 }
 
+// RecordPlaybackEvent 记录一次播放事件，更新资源访问时间，并在质量统计过期时投一个重算任务。
+// (attempt_id, event_type) 唯一，重复上报会被忽略；返回值表示是否真的写入了新记录。
 func (store *PostgresStore) RecordPlaybackEvent(ctx context.Context, event PlaybackAttemptEvent) (bool, error) {
 	event.AttemptID = strings.TrimSpace(event.AttemptID)
 	event.CandidateSessionID = strings.TrimSpace(event.CandidateSessionID)
@@ -42,12 +48,11 @@ func (store *PostgresStore) RecordPlaybackEvent(ctx context.Context, event Playb
 	if event.ElapsedMs > 24*60*60*1000 {
 		event.ElapsedMs = 24 * 60 * 60 * 1000
 	}
-	reasonClass := playbackFailureClass(event.Reason)
 	updated, err := store.database.Exec(ctx, `WITH inserted AS (
     INSERT INTO playback_attempt_events
     (attempt_id, candidate_session_id, event_type, candidate_id, play_line_id, media_unit_id, media_id,
      source_key, vod_id, elapsed_ms, failure_reason, created_at)
-    SELECT $1, $10, $2, candidate.id, candidate.line_id, candidate.media_unit_id, candidate.media_id,
+    SELECT $1, $9, $2, candidate.id, candidate.line_id, candidate.media_unit_id, candidate.media_id,
            line.source_key, line.vod_id, $7, $8, NOW()
     FROM resource_episode_candidates candidate
     JOIN resource_play_lines line ON line.id = candidate.line_id
@@ -58,53 +63,16 @@ func (store *PostgresStore) RecordPlaybackEvent(ctx context.Context, event Playb
     ON CONFLICT (attempt_id, event_type) DO NOTHING
     RETURNING candidate_id, play_line_id, media_unit_id, media_id, source_key, vod_id, candidate_session_id,
               event_type, elapsed_ms, failure_reason, created_at
-), rolled_up AS (
-INSERT INTO playback_quality_rollups
-(bucket, candidate_id, play_line_id, media_unit_id, media_id, attempt_count,
- manifest_count, first_frame_count, first_frame_total_ms, success_count,
- failure_count, rebuffer_count, switched_count, ended_count, abandoned_count,
- timeout_count, network_count, decode_count, http_count, unknown_failure_count,
- last_success_at, last_failure_at, updated_at)
-SELECT date_trunc('hour', created_at), candidate_id, play_line_id, media_unit_id, media_id,
-       CASE WHEN event_type = 'attempt_started' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'manifest_loaded' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'first_frame' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'first_frame' THEN elapsed_ms ELSE 0 END,
-       CASE WHEN event_type = 'played_10s' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'fatal_error' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'rebuffer' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'source_switched' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'ended' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'abandoned' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'fatal_error' AND $9 = 'timeout' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'fatal_error' AND $9 = 'network' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'fatal_error' AND $9 = 'decode' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'fatal_error' AND $9 = 'http' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'fatal_error' AND $9 = 'unknown' THEN 1 ELSE 0 END,
-       CASE WHEN event_type = 'played_10s' THEN created_at ELSE NULL END,
-       CASE WHEN event_type = 'fatal_error' THEN created_at ELSE NULL END,
-       NOW()
-FROM inserted
-ON CONFLICT (bucket, candidate_id) DO UPDATE SET
-attempt_count = playback_quality_rollups.attempt_count + EXCLUDED.attempt_count,
-manifest_count = playback_quality_rollups.manifest_count + EXCLUDED.manifest_count,
-first_frame_count = playback_quality_rollups.first_frame_count + EXCLUDED.first_frame_count,
-first_frame_total_ms = playback_quality_rollups.first_frame_total_ms + EXCLUDED.first_frame_total_ms,
-success_count = playback_quality_rollups.success_count + EXCLUDED.success_count,
-failure_count = playback_quality_rollups.failure_count + EXCLUDED.failure_count,
-rebuffer_count = playback_quality_rollups.rebuffer_count + EXCLUDED.rebuffer_count,
-switched_count = playback_quality_rollups.switched_count + EXCLUDED.switched_count,
-ended_count = playback_quality_rollups.ended_count + EXCLUDED.ended_count,
-abandoned_count = playback_quality_rollups.abandoned_count + EXCLUDED.abandoned_count,
-timeout_count = playback_quality_rollups.timeout_count + EXCLUDED.timeout_count,
-network_count = playback_quality_rollups.network_count + EXCLUDED.network_count,
-decode_count = playback_quality_rollups.decode_count + EXCLUDED.decode_count,
-http_count = playback_quality_rollups.http_count + EXCLUDED.http_count,
-unknown_failure_count = playback_quality_rollups.unknown_failure_count + EXCLUDED.unknown_failure_count,
-last_success_at = COALESCE(EXCLUDED.last_success_at, playback_quality_rollups.last_success_at),
-last_failure_at = COALESCE(EXCLUDED.last_failure_at, playback_quality_rollups.last_failure_at),
-updated_at = NOW()
-RETURNING candidate_id
+), enqueued AS (
+    INSERT INTO worker_jobs (task_type, subject_key, payload, reason, max_attempts, available_at)
+    SELECT 'quality_refresh', inserted.source_key || ':' || inserted.vod_id,
+           JSONB_BUILD_OBJECT('source_key', inserted.source_key, 'vod_id', inserted.vod_id),
+           'playback_event', 3, NOW()
+    FROM inserted
+    JOIN vod_items resource ON resource.source_key = inserted.source_key AND resource.vod_id = inserted.vod_id
+    WHERE resource.quality_refreshed_at IS NULL OR resource.quality_refreshed_at < NOW() - INTERVAL '1 hour'
+    ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO NOTHING
+    RETURNING 1
 )
 UPDATE vod_items resource
 SET last_accessed_at = inserted.created_at,
@@ -112,32 +80,37 @@ SET last_accessed_at = inserted.created_at,
                           THEN inserted.created_at ELSE resource.last_played_at END,
     last_success_at = CASE WHEN inserted.event_type = 'played_10s'
                            THEN inserted.created_at ELSE resource.last_success_at END,
-    resource_status = CASE WHEN resource.resource_status = 'cold' THEN 'active' ELSE resource.resource_status END,
-    cold_at = CASE WHEN resource.resource_status = 'cold' THEN NULL ELSE resource.cold_at END,
-    lifecycle_batch_id = CASE WHEN resource.resource_status = 'cold' THEN NULL ELSE resource.lifecycle_batch_id END,
     updated_at = NOW()
-FROM inserted, rolled_up
-WHERE resource.source_key = inserted.source_key AND resource.vod_id = inserted.vod_id
-  AND rolled_up.candidate_id = inserted.candidate_id`, event.AttemptID, event.EventType, event.CandidateID, event.MediaUnitID,
-		event.SourceKey, event.VodID, event.ElapsedMs, event.Reason, reasonClass, event.CandidateSessionID)
+FROM inserted
+WHERE resource.source_key = inserted.source_key AND resource.vod_id = inserted.vod_id`,
+		event.AttemptID, event.EventType, event.CandidateID, event.MediaUnitID,
+		event.SourceKey, event.VodID, event.ElapsedMs, event.Reason, event.CandidateSessionID)
 	if err != nil {
 		return false, fmt.Errorf("record playback attempt event: %w", err)
 	}
 	return updated > 0, nil
 }
 
-func playbackFailureClass(reason string) string {
-	reason = strings.ToLower(strings.TrimSpace(reason))
-	switch {
-	case strings.Contains(reason, "timeout") || strings.Contains(reason, "超时"):
-		return "timeout"
-	case strings.Contains(reason, "network") || strings.Contains(reason, "manifest") || strings.Contains(reason, "fetch"):
-		return "network"
-	case strings.Contains(reason, "decode") || strings.Contains(reason, "codec") || strings.Contains(reason, "media"):
-		return "decode"
-	case strings.Contains(reason, "http") || strings.Contains(reason, "403") || strings.Contains(reason, "404") || strings.Contains(reason, "5xx"):
-		return "http"
-	default:
-		return "unknown"
+// RefreshQuality 从 7 天明细窗口重算一条资源的播放质量统计。
+func (store *PostgresStore) RefreshQuality(ctx context.Context, sourceKey, vodID string) error {
+	_, err := store.database.Exec(ctx, `UPDATE vod_items SET
+    avg_speed_ms = COALESCE(q.avg, 0),
+    success_count = COALESCE(q.sc, 0),
+    failure_count = COALESCE(q.fc, 0),
+    quality_refreshed_at = NOW()
+FROM (
+    SELECT COUNT(*) FILTER (WHERE e.event_type = 'played_10s')::INT AS sc,
+           COUNT(*) FILTER (WHERE e.event_type = 'fatal_error')::INT AS fc,
+           COALESCE(AVG(e.elapsed_ms) FILTER (WHERE e.event_type = 'first_frame'), 0)::INT AS avg
+    FROM playback_attempt_events e
+    JOIN resource_episode_candidates c ON c.id = e.candidate_id
+    JOIN resource_play_lines line ON line.id = c.line_id
+    WHERE line.source_key = $1 AND line.vod_id = $2
+      AND e.created_at >= NOW() - INTERVAL '7 days'
+) q
+WHERE source_key = $1 AND vod_id = $2`, sourceKey, vodID)
+	if err != nil {
+		return fmt.Errorf("refresh playback quality: %w", err)
 	}
+	return nil
 }

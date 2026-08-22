@@ -27,11 +27,14 @@ func TestPostgresStoreSearchUsesPlaybackQualityAndPreservesMapping(t *testing.T)
 	if len(items) != 1 || items[0].VodId != "42" || items[0].AvgSpeedMs != 800 || !items[0].LastVisitedAt.Equal(visitedAt) {
 		t.Fatalf("items = %+v", items)
 	}
-	if !strings.Contains(database.query, "resource.vod_name LIKE $1 OR resource.vod_sub LIKE $1 OR resource.vod_en LIKE $1") ||
-		!strings.Contains(database.query, "ORDER BY resource.last_visited_at DESC") || !strings.Contains(database.query, "playback_quality_rollups") {
+	if !strings.Contains(database.query, "vod_name LIKE $1 OR vod_sub LIKE $1 OR vod_en LIKE $1") ||
+		!strings.Contains(database.query, "ORDER BY resource.last_visited_at DESC") {
 		t.Fatalf("resource search query changed: %s", database.query)
 	}
-	if len(database.arguments) != 1 || database.arguments[0] != "%肖申克%" {
+	if !strings.Contains(database.query, "LIMIT $2\n) resource") {
+		t.Fatalf("row budget is not applied in subquery: %s", database.query)
+	}
+	if len(database.arguments) != 2 || database.arguments[0] != "%肖申克%" || database.arguments[1] != searchRowBudget {
 		t.Fatalf("query arguments = %v", database.arguments)
 	}
 }
@@ -72,7 +75,7 @@ func TestPostgresStoreListsOnlyLinkedNonRemovedResources(t *testing.T) {
 	if len(items) != 1 || items[0].MediaID != 7 || items[0].VodId != "42" || items[0].AvgSpeedMs != 120 {
 		t.Fatalf("resources = %+v", items)
 	}
-	for _, expected := range []string{"resource_media_links", "link.media_id = ANY($1::bigint[])", "resource.resource_status", "<> 'removed'"} {
+	for _, expected := range []string{"resource_media_links", "media_link.media_id = ANY($1::bigint[])", "resource.resource_status", "<> 'removed'"} {
 		if !strings.Contains(database.query, expected) {
 			t.Fatalf("resource query missing %q: %s", expected, database.query)
 		}
@@ -194,10 +197,8 @@ func TestPostgresStoreReadsLoadSpeedFromQualityRollups(t *testing.T) {
 	if err != nil || stats.AvgSpeedMs != 1200 || stats.SampleCount != 4 || stats.FailedCount != 1 || stats.SuccessRate != 75 {
 		t.Fatalf("stats/error = %+v/%v", stats, err)
 	}
-	for _, expected := range []string{"playback_quality_rollups", "resource_episode_candidates", "resource_play_lines", "INTERVAL '7 days'"} {
-		if !strings.Contains(database.query, expected) {
-			t.Fatalf("load stats query missing %q: %s", expected, database.query)
-		}
+	if !strings.Contains(database.query, "vod_items") {
+		t.Fatalf("load stats query should read from vod_items: %s", database.query)
 	}
 }
 
@@ -207,7 +208,7 @@ func TestPostgresStoreLogsAndAggregatesTrendingKeywords(t *testing.T) {
 	if err := store.Log(context.Background(), "肖申克", nil, "hash"); err != nil {
 		t.Fatalf("Log() error = %v", err)
 	}
-	if len(database.execQueries) != 2 || !strings.Contains(database.execQueries[0], "INSERT INTO search_logs") || !strings.Contains(database.execQueries[1], "ON CONFLICT (keyword)") {
+	if len(database.execQueries) != 1 || !strings.Contains(database.execQueries[0], "INSERT INTO search_logs") {
 		t.Fatalf("log queries = %v", database.execQueries)
 	}
 	now := time.Now()
@@ -253,44 +254,12 @@ func TestPostgresStoreSummarizesRecentHealthStats(t *testing.T) {
 func TestPostgresStoreCleanupUsesBoundedRetentionPredicates(t *testing.T) {
 	database := &fakeSQLDatabase{}
 	store := NewPostgresStore(database)
-	if _, err := store.DeleteOldKeywords(context.Background(), 30); err != nil || !strings.Contains(database.execQuery, "DELETE FROM trending_keywords WHERE last_searched_at <") || !reflect.DeepEqual(database.arguments, []any{30}) {
-		t.Fatalf("keyword cleanup = %s / %v / %v", database.execQuery, database.arguments, err)
-	}
 	if _, err := store.DeleteOldSearchLogs(context.Background(), 30); err != nil || !strings.Contains(database.execQuery, "DELETE FROM search_logs WHERE created_at <") || !reflect.DeepEqual(database.arguments, []any{30}) {
 		t.Fatalf("log cleanup = %s / %v / %v", database.execQuery, database.arguments, err)
 	}
 	before := time.Now().Add(-7 * 24 * time.Hour)
 	if _, err := store.DeleteHealthBefore(context.Background(), before); err != nil || database.execQuery != "DELETE FROM site_stats WHERE bucket < $1" || !reflect.DeepEqual(database.arguments, []any{before}) {
 		t.Fatalf("health cleanup = %s / %v / %v", database.execQuery, database.arguments, err)
-	}
-}
-
-func TestPostgresStoreCoolingRequiresFrozenPreviewAndConfirmation(t *testing.T) {
-	expiresAt := time.Now().Add(time.Hour)
-	database := &fakeSQLDatabase{row: fakeSQLRow{values: []any{int64(17), 2, []byte(`{"demo":2}`), []byte(`{"stale":2}`), 3, 1, []byte(`[{"source_key":"demo","vod_id":"42"}]`), int64(4096), expiresAt}}}
-	store := NewPostgresStore(database)
-	preview, err := store.PreviewCooling(context.Background(), 90)
-	if err != nil || preview.Eligible != 2 || preview.BatchID != 17 || preview.SourceDistribution["demo"] != 2 || preview.EstimatedBytes != 4096 {
-		t.Fatalf("preview = %+v/%v", preview, err)
-	}
-	if !strings.Contains(database.query, "resource_lifecycle_batches") || !strings.Contains(database.query, "resource_lifecycle_batch_items") || !strings.Contains(database.query, "playback_positions") || !strings.Contains(database.query, "is_unique") || !strings.Contains(database.query, "last_success_at") {
-		t.Fatalf("preview query lost safety predicates: %s", database.query)
-	}
-	if _, err := store.ApplyCooling(context.Background(), 17, false); err == nil {
-		t.Fatal("ApplyCooling() without confirmation succeeded")
-	}
-	database.row = fakeSQLRow{value: 1}
-	if affected, err := store.ApplyCooling(context.Background(), 17, true); err != nil || affected != 1 {
-		t.Fatalf("cool = %d/%v", affected, err)
-	}
-	if !strings.Contains(database.query, "resource_status = 'cold'") || !strings.Contains(database.query, "status = 'previewed'") || !strings.Contains(database.query, "expires_at > NOW()") || !strings.Contains(database.query, "item.previous_status") || !strings.Contains(database.query, "applied_count") {
-		t.Fatalf("cool query lost frozen-batch safety: %s", database.query)
-	}
-	if affected, err := store.RestoreCold(context.Background(), "source", "42"); err != nil || affected != 1 {
-		t.Fatalf("restore = %d/%v", affected, err)
-	}
-	if !strings.Contains(database.execQuery, "resource_status = 'active'") || !strings.Contains(database.execQuery, "cold_at = NULL") || !strings.Contains(database.execQuery, "lifecycle_batch_id = NULL") {
-		t.Fatalf("restore query = %s", database.execQuery)
 	}
 }
 

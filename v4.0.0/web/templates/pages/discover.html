@@ -37,6 +37,14 @@
        class="tab-btn {{ if eq .CurrentType "cartoon" }}active{{ end }}"
        {{ if eq .CurrentType "cartoon" }}aria-current="page"{{ end }}
        onclick="updateActiveTab(this)">日本动画</a>
+    <a href="/discover/trending"
+       hx-get="/discover/trending"
+       hx-target="#discover-content"
+       hx-push-url="true"
+       hx-on:click="showDiscoverLoading()"
+       class="tab-btn {{ if eq .CurrentType "trending" }}active{{ end }}"
+       {{ if eq .CurrentType "trending" }}aria-current="page"{{ end }}
+       onclick="updateActiveTab(this)">本站热播</a>
 </div>
 
 <div id="discover-content-wrapper" class="discover-content-wrapper">
@@ -60,7 +68,7 @@
     }
 
     function syncDiscoverActiveTab() {
-        const match = window.location.pathname.match(/^\/discover\/(movie|tv|show|cartoon)$/);
+        const match = window.location.pathname.match(/^\/discover\/(movie|tv|show|cartoon|trending)$/);
         const currentPath = '/discover/' + (match ? match[1] : 'movie');
         document.querySelectorAll('.discover-tab-nav .tab-btn').forEach(btn => {
             const active = new URL(btn.href, window.location.origin).pathname === currentPath;

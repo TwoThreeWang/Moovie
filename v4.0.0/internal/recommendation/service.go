@@ -1,3 +1,11 @@
+// Package recommendation 是推荐：相似影片、为你推荐、经典重温。
+//
+// 它自己不建表，数据全部来自 catalog（media 表和 pgvector 向量列）、
+// library（片单）和 history（观看记录）。
+//
+// 相似推荐分两层：
+//
+//	数据库向量检索给出候选，再在内存里用类型/导演/演员/评分/年代算一个可解释的理由。
 package recommendation
 
 import (
@@ -12,6 +20,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 )
 
+// SimilarMovie 是带推荐理由的相似影片。
 type SimilarMovie struct {
 	Movie      catalog.Movie
 	Reason     string  `json:"reason"`
@@ -19,6 +28,7 @@ type SimilarMovie struct {
 	Similarity float64 `json:"similarity"`
 }
 
+// Store 是推荐需要的影片读接口，由 catalog 实现。
 type Store interface {
 	FindByDoubanID(ctx context.Context, doubanID string) (*catalog.Movie, error)
 	FindByID(ctx context.Context, id int) (*catalog.Movie, error)
@@ -26,23 +36,28 @@ type Store interface {
 	Popular(ctx context.Context, limit int) ([]catalog.Movie, error)
 }
 
+// Personalizer 是个性化推荐接口，没有注入时相关板块返回空列表。
 type Personalizer interface {
 	UserRecommendations(ctx context.Context, userID, limit int) ([]catalog.Movie, error)
 	ReliveClassics(ctx context.Context, userID, limit int) ([]catalog.Movie, error)
 	RecentSimilar(ctx context.Context, userID, limit int) ([]catalog.Movie, string, error)
 }
 
+// Service 是推荐服务。
 type Service struct {
 	store        Store
 	personalizer Personalizer
 }
 
+// ServiceOption 用于注入个性化推荐。
 type ServiceOption func(*Service)
 
+// WithPersonalizer 注入个性化推荐实现。
 func WithPersonalizer(personalizer Personalizer) ServiceOption {
 	return func(service *Service) { service.personalizer = personalizer }
 }
 
+// NewService 创建推荐服务。
 func NewService(store Store, options ...ServiceOption) *Service {
 	service := &Service{store: store}
 	for _, option := range options {
@@ -51,14 +66,17 @@ func NewService(store Store, options ...ServiceOption) *Service {
 	return service
 }
 
+// FindSimilar 返回相似影片（走数据库向量检索）。
 func (service *Service) FindSimilar(ctx context.Context, doubanID string, limit int) ([]catalog.Movie, error) {
 	return service.store.FindSimilar(ctx, doubanID, limit)
 }
 
+// FindByID 按主键查影片。
 func (service *Service) FindByID(ctx context.Context, id int) (*catalog.Movie, error) {
 	return service.store.FindByID(ctx, id)
 }
 
+// UserRecommendations 返回个性化推荐。
 func (service *Service) UserRecommendations(ctx context.Context, userID, limit int) ([]catalog.Movie, error) {
 	if service.personalizer == nil {
 		return []catalog.Movie{}, nil
@@ -66,6 +84,7 @@ func (service *Service) UserRecommendations(ctx context.Context, userID, limit i
 	return service.personalizer.UserRecommendations(ctx, userID, limit)
 }
 
+// ReliveClassics 返回值得重温的老片。
 func (service *Service) ReliveClassics(ctx context.Context, userID, limit int) ([]catalog.Movie, error) {
 	if service.personalizer == nil {
 		return []catalog.Movie{}, nil
@@ -73,6 +92,7 @@ func (service *Service) ReliveClassics(ctx context.Context, userID, limit int) (
 	return service.personalizer.ReliveClassics(ctx, userID, limit)
 }
 
+// RecentSimilar 返回与最近看过那部相似的影片，第二个返回值是那部片子的名字。
 func (service *Service) RecentSimilar(ctx context.Context, userID, limit int) ([]catalog.Movie, string, error) {
 	if service.personalizer == nil {
 		return []catalog.Movie{}, "", nil
@@ -80,10 +100,12 @@ func (service *Service) RecentSimilar(ctx context.Context, userID, limit int) ([
 	return service.personalizer.RecentSimilar(ctx, userID, limit)
 }
 
+// Popular 返回热门影片，用于没有个人数据时兜底。
 func (service *Service) Popular(ctx context.Context, limit int) ([]catalog.Movie, error) {
 	return service.store.Popular(ctx, limit)
 }
 
+// FindSimilarWithReasons 在相似影片基础上补上推荐理由并按相似度重排。
 func (service *Service) FindSimilarWithReasons(ctx context.Context, doubanID string, limit int) ([]SimilarMovie, *catalog.Movie, error) {
 	source, err := service.store.FindByDoubanID(ctx, doubanID)
 	if err != nil || source == nil {
@@ -101,6 +123,7 @@ func (service *Service) FindSimilarWithReasons(ctx context.Context, doubanID str
 	return result, source, nil
 }
 
+// features 是算理由时用到的影片特征。
 type features struct {
 	genres, directors, actors map[string]bool
 	year                      int
@@ -108,6 +131,7 @@ type features struct {
 	title                     string
 }
 
+// extract 从影片里抽取特征。
 func extract(movie catalog.Movie) features {
 	return features{
 		genres: peopleOrList(movie.Genres), directors: peopleOrList(movie.Directors), actors: peopleOrList(movie.Actors),
@@ -115,6 +139,9 @@ func extract(movie catalog.Movie) features {
 	}
 }
 
+// GenerateReason 生成推荐理由和相似度。
+// 相似度权重：类型 0.40、导演 0.25、演员 0.20、评分 0.10、年代 0.05。
+// 理由从多个候选里挑分数最高的一条，系列续作优先级最高，都不满足时用通用话术兜底。
 func GenerateReason(source, target catalog.Movie) (string, string, float64) {
 	src, dst := extract(source), extract(target)
 	genreScore, commonGenres := overlap(src.genres, dst.genres)
@@ -156,6 +183,7 @@ func GenerateReason(source, target catalog.Movie) (string, string, float64) {
 	return best.text, best.kind, similarity
 }
 
+// peopleOrList 把逗号分隔的人名或类型拆成集合。
 func peopleOrList(value string) map[string]bool {
 	result := make(map[string]bool)
 	if strings.HasPrefix(strings.TrimSpace(value), "[") {
@@ -180,6 +208,7 @@ func peopleOrList(value string) map[string]bool {
 	return result
 }
 
+// overlap 计算两个集合的重合度，同时返回重合的元素。
 func overlap(left, right map[string]bool) (float64, []string) {
 	common := make([]string, 0)
 	for item := range right {
@@ -195,8 +224,10 @@ func overlap(left, right map[string]bool) (float64, []string) {
 	return float64(len(common)) / maximum, common
 }
 
+// parseYear 解析年份，解析不出来算 0。
 func parseYear(value string) int { year, _ := strconv.Atoi(value); return year }
 
+// ratingSimilarity 评分越接近得分越高。
 func ratingSimilarity(left, right float64) float64 {
 	if left <= 0 || right <= 0 {
 		return 0.5
@@ -211,6 +242,7 @@ func ratingSimilarity(left, right float64) float64 {
 	return 1 - (difference-1)/1.5*0.7
 }
 
+// eraSimilarity 年代越接近得分越高。
 func eraSimilarity(left, right int) float64 {
 	if left == 0 || right == 0 {
 		return 0.5
@@ -230,6 +262,7 @@ func eraSimilarity(left, right int) float64 {
 	}
 }
 
+// semanticKeywords 从简介里挑几个关键词拼进推荐理由。
 func semanticKeywords(value string) []string {
 	patterns := []string{"爱情", "友情", "亲情", "成长", "奋斗", "梦想", "现实", "社会", "人性", "犯罪", "悬疑", "科幻", "家庭", "战争"}
 	result := make([]string, 0, 3)

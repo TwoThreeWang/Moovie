@@ -14,8 +14,10 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 )
 
+// posterWallSize 是海报墙的影片数量。
 const posterWallSize = 4
 
+// Service 负责生成月报。
 type Service struct {
 	store   Store
 	library library.Store
@@ -23,10 +25,12 @@ type Service struct {
 	now     func() time.Time
 }
 
+// NewService 创建月报服务。
 func NewService(store Store, libraryStore library.Store, catalogStore catalog.Store) *Service {
 	return &Service{store: store, library: libraryStore, catalog: catalogStore, now: time.Now}
 }
 
+// reportData 是算好但还没落库的报告内容。
 type reportData struct {
 	WatchedCount   int
 	AvgRating      float64
@@ -39,6 +43,8 @@ type reportData struct {
 	PosterWall     []PosterWallItem
 }
 
+// Generate 生成某个用户某个月的报告，本月没有观影记录时标记为失败。
+// allCounts 是所有用户当月的观影数量，用来算排名百分位。
 func (service *Service) Generate(ctx context.Context, userID int, yearMonth string, allCounts map[int]int) error {
 	start, end, err := monthRange(yearMonth)
 	if err != nil {
@@ -95,6 +101,7 @@ func (service *Service) Generate(ctx context.Context, userID int, yearMonth stri
 	return nil
 }
 
+// GeneratePreviousMonth 给所有有记录的用户批量生成上个月的报告，由每日任务触发。
 func (service *Service) GeneratePreviousMonth(ctx context.Context) error {
 	now := service.now()
 	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local).AddDate(0, -1, 0)
@@ -112,6 +119,7 @@ func (service *Service) GeneratePreviousMonth(ctx context.Context) error {
 	return generationError
 }
 
+// monthRange 把 2026-01 这样的月份转成起止时间。
 func monthRange(yearMonth string) (time.Time, time.Time, error) {
 	parsed, err := time.Parse("2006-01", yearMonth)
 	if err != nil {
@@ -121,6 +129,7 @@ func monthRange(yearMonth string) (time.Time, time.Time, error) {
 	return start, start.AddDate(0, 1, 0), nil
 }
 
+// calculateStats 统计数量、平均分、类型分布、最爱影片、人格标签、金句和海报墙。
 func (service *Service) calculateStats(ctx context.Context, watched []library.Record) reportData {
 	data := reportData{WatchedCount: len(watched)}
 	genreCounts := make(map[string]int)
@@ -158,6 +167,7 @@ func (service *Service) calculateStats(ctx context.Context, watched []library.Re
 	return data
 }
 
+// continuousDays 算最长连续观影天数。
 func (service *Service) continuousDays(ctx context.Context, userID int, end time.Time) int {
 	days := 0
 	current := end.AddDate(0, 0, -1)
@@ -176,6 +186,7 @@ func (service *Service) continuousDays(ctx context.Context, userID int, end time
 	return days
 }
 
+// percentile 算用户在所有人中的排名百分位。
 func percentile(userID, myCount int, allCounts map[int]int) int {
 	if len(allCounts) < 5 {
 		return 0
@@ -196,11 +207,13 @@ func percentile(userID, myCount int, allCounts map[int]int) int {
 	return value
 }
 
+// personaCombo 是「两个类型组合」对应的人格标签。
 type personaCombo struct {
 	genres [2]string
 	title  string
 }
 
+// personaCombos 是组合型人格标签表。
 var personaCombos = []personaCombo{
 	{[2]string{"悬疑", "犯罪"}, "深夜悬疑侦探"},
 	{[2]string{"悬疑", "惊悚"}, "心跳过山车玩家"},
@@ -214,6 +227,7 @@ var personaCombos = []personaCombo{
 	{[2]string{"音乐", "歌舞"}, "浪漫主义者"},
 }
 
+// personaSingles 是单一类型对应的人格标签表。
 var personaSingles = map[string]string{
 	"剧情": "文艺片鉴赏家", "喜剧": "快乐制造机", "动作": "肾上腺素依赖者", "爱情": "感情充沛玩家",
 	"科幻": "未来主义者", "动画": "造梦者", "悬疑": "推理爱好者", "惊悚": "刺激感猎人", "犯罪": "案件旁观者",
@@ -221,6 +235,7 @@ var personaSingles = map[string]string{
 	"歌舞": "浪漫主义者", "奇幻": "造梦者", "冒险": "造梦者", "传记": "现实观察员",
 }
 
+// personaTitle 按类型分布挑一个人格标签，先看组合再看单一类型。
 func personaTitle(stats []GenreStat) string {
 	if len(stats) == 0 {
 		return "全能观众"
@@ -240,6 +255,7 @@ func personaTitle(stats []GenreStat) string {
 	return "全能观众"
 }
 
+// buildPersona 生成人格标题和描述句，深夜观影多的会额外提一句。
 func buildPersona(data reportData, watched []library.Record) (string, string) {
 	title := personaTitle(data.GenreStats)
 	nightCount, latestHour, hasNight := nightOwlStats(watched)
@@ -263,6 +279,7 @@ func buildPersona(data reportData, watched []library.Record) (string, string) {
 	}
 }
 
+// nightOwlStats 统计深夜观影次数和最晚的时间点。
 func nightOwlStats(watched []library.Record) (count, latestHour int, has bool) {
 	bestScore := -1
 	for _, record := range watched {
@@ -281,6 +298,7 @@ func nightOwlStats(watched []library.Record) (count, latestHour int, has bool) {
 	return count, latestHour, has
 }
 
+// formatHourZH 把小时数写成中文时间说法。
 func formatHourZH(hour int) string {
 	switch {
 	case hour < 6:
@@ -296,6 +314,7 @@ func formatHourZH(hour int) string {
 	}
 }
 
+// featuredQuote 从本月短评里挑一条当金句。
 func featuredQuote(top *TopMovie, watched []library.Record) string {
 	if top != nil {
 		for _, record := range watched {
@@ -313,6 +332,7 @@ func featuredQuote(top *TopMovie, watched []library.Record) string {
 	return longest
 }
 
+// samplePosterWall 挑几部片子组成海报墙，最爱的那部排第一。
 func samplePosterWall(top *TopMovie, watched []library.Record) []PosterWallItem {
 	candidates := make([]library.Record, 0, len(watched))
 	for _, record := range watched {
@@ -348,6 +368,7 @@ func samplePosterWall(top *TopMovie, watched []library.Record) []PosterWallItem 
 	return result
 }
 
+// posterItems 把记录转成海报墙条目。
 func posterItems(records []library.Record) []PosterWallItem {
 	items := make([]PosterWallItem, 0, len(records))
 	for _, record := range records {
@@ -356,6 +377,7 @@ func posterItems(records []library.Record) []PosterWallItem {
 	return items
 }
 
+// splitGenres 拆分类型字符串。
 func splitGenres(genres string) []string {
 	result := make([]string, 0)
 	current := ""

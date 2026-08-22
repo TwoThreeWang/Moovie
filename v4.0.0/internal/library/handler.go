@@ -8,17 +8,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// dashboardGridPageSize 是用户中心片单每页数量。
 const dashboardGridPageSize = 24
 
+// Handler 提供片单的标记操作和用户中心的片单列表，全部返回 HTMX 片段。
 type Handler struct {
 	store  Store
 	secret string
 }
 
+// NewHandler 创建片单处理器。
 func NewHandler(store Store, secret string) *Handler {
 	return &Handler{store: store, secret: secret}
 }
 
+// Register 注册路由。用 Optional 鉴权是因为按钮要对游客也渲染出来（点了才提示登录）。
 func (handler *Handler) Register(router *gin.Engine) {
 	optional := auth.Optional(handler.secret)
 	router.POST("/api/user-movies/:id/wish", optional, handler.markWish)
@@ -32,6 +36,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/htmx/dashboard/watched", optional, handler.dashboardWatched)
 }
 
+// markWish 标记想看。
 func (handler *Handler) markWish(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -49,6 +54,7 @@ func (handler *Handler) markWish(c *gin.Context) {
 	handler.renderButtons(c, movieID, true, false, true)
 }
 
+// markWatched 标记看过，可带评分和短评。
 func (handler *Handler) markWatched(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -71,6 +77,7 @@ func (handler *Handler) markWatched(c *gin.Context) {
 	handler.renderButtons(c, movieID, false, true, true)
 }
 
+// remove 取消标记。来自用户中心时返回空串让 HTMX 直接移除卡片。
 func (handler *Handler) remove(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -88,6 +95,7 @@ func (handler *Handler) remove(c *gin.Context) {
 	handler.renderButtons(c, c.Param("id"), false, false, true)
 }
 
+// update 修改评分和短评（评分限制 0-5）。
 func (handler *Handler) update(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -114,6 +122,7 @@ func (handler *Handler) update(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/dashboard_watched_item.html", record)
 }
 
+// editForm 返回编辑短评的表单片段。
 func (handler *Handler) editForm(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -129,6 +138,7 @@ func (handler *Handler) editForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/user_movie_edit_form.html", gin.H{"Record": record})
 }
 
+// markWatchedForm 返回标记看过的表单片段。
 func (handler *Handler) markWatchedForm(c *gin.Context) {
 	if auth.UserID(c) == 0 {
 		c.String(http.StatusOK, "")
@@ -142,6 +152,7 @@ func (handler *Handler) markWatchedForm(c *gin.Context) {
 	})
 }
 
+// buttons 返回某部片子当前的标记按钮状态。
 func (handler *Handler) buttons(c *gin.Context) {
 	userID := auth.UserID(c)
 	movieID := c.Query("douban_id")
@@ -154,14 +165,17 @@ func (handler *Handler) buttons(c *gin.Context) {
 	handler.renderButtons(c, movieID, isWish, isWatched, userID > 0)
 }
 
+// dashboardWish 渲染用户中心的想看列表。
 func (handler *Handler) dashboardWish(c *gin.Context) {
 	handler.dashboardList(c, StatusWish)
 }
 
+// dashboardWatched 渲染用户中心的看过列表。
 func (handler *Handler) dashboardWatched(c *gin.Context) {
 	handler.dashboardList(c, StatusWatched)
 }
 
+// dashboardList 是两个列表的公共实现，第一页返回整块、翻页只返回网格部分。
 func (handler *Handler) dashboardList(c *gin.Context, status string) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -190,6 +204,7 @@ func (handler *Handler) dashboardList(c *gin.Context, status string) {
 	c.HTML(http.StatusOK, "partials/"+partial+".html", data)
 }
 
+// renderButtons 渲染标记按钮。
 func (handler *Handler) renderButtons(c *gin.Context, movieID string, isWish, isWatched, loggedIn bool) {
 	variant := userMovieVariant(c)
 	c.HTML(http.StatusOK, userMovieButtonTemplate(variant), gin.H{
@@ -199,6 +214,7 @@ func (handler *Handler) renderButtons(c *gin.Context, movieID string, isWish, is
 	})
 }
 
+// formOrQuery 先取表单再取查询串，同一个 Handler 要同时服务表单提交和 HTMX 链接。
 func formOrQuery(c *gin.Context, key string) string {
 	if value := c.PostForm(key); value != "" {
 		return value
@@ -206,6 +222,7 @@ func formOrQuery(c *gin.Context, key string) string {
 	return c.Query(key)
 }
 
+// userMovieVariant 区分详情页和播放页两套按钮样式。
 func userMovieVariant(c *gin.Context) string {
 	if formOrQuery(c, "variant") == "play" {
 		return "play"
@@ -213,6 +230,7 @@ func userMovieVariant(c *gin.Context) string {
 	return ""
 }
 
+// userMovieButtonTemplate 返回该样式对应的模板。
 func userMovieButtonTemplate(variant string) string {
 	if variant == "play" {
 		return "partials/play_watched_button.html"
@@ -220,6 +238,7 @@ func userMovieButtonTemplate(variant string) string {
 	return "partials/user_movie_buttons.html"
 }
 
+// userMovieActionsTargetID 返回 HTMX 要替换的容器 ID。
 func userMovieActionsTargetID(variant, movieID string) string {
 	if variant == "play" {
 		return "play-actions-" + movieID

@@ -129,32 +129,6 @@ func TestAdminPagesAndMutationsRequireRoleAndPreserveMainFlows(t *testing.T) {
 	if cleaned.Code != http.StatusOK || !strings.Contains(cleaned.Body.String(), `"affected":1`) {
 		t.Fatalf("clean = %d/%s", cleaned.Code, cleaned.Body.String())
 	}
-	_ = searchStore.Upsert(t.Context(), search.VodItem{SourceKey: "demo", VodId: "very-old", VodName: "待退役", LastVisitedAt: time.Now().Add(-100 * 24 * time.Hour)})
-	// 退役预览以 last_discovered_at 优先判断「多久没被发现」，需要把三个时间统一设老。
-	if _, err := testdb.Pool(t).Exec(t.Context(), `UPDATE vod_items SET last_seen_at = last_visited_at, last_discovered_at = last_visited_at WHERE source_key = 'demo' AND vod_id = 'very-old'`); err != nil {
-		t.Fatal(err)
-	}
-	_ = request(router, http.MethodPost, "/admin/data/clean", adminToken, false)
-	preview := request(router, http.MethodGet, "/admin/data/retire-preview?days=90", adminToken, false)
-	if preview.Code != http.StatusOK || !strings.Contains(preview.Body.String(), `"dry_run":true`) || !strings.Contains(preview.Body.String(), `"eligible":1`) {
-		t.Fatalf("retirement preview = %d/%s", preview.Code, preview.Body.String())
-	}
-	withoutConfirmation := request(router, http.MethodPost, "/admin/data/retire?days=90", adminToken, false)
-	if withoutConfirmation.Code != http.StatusBadRequest || !strings.Contains(withoutConfirmation.Body.String(), "confirm=true") {
-		t.Fatalf("retirement confirmation = %d/%s", withoutConfirmation.Code, withoutConfirmation.Body.String())
-	}
-	retired := request(router, http.MethodPost, "/admin/data/retire?batch_id=1&confirm=true", adminToken, false)
-	if retired.Code != http.StatusOK || !strings.Contains(retired.Body.String(), `"affected":1`) {
-		t.Fatalf("retire = %d/%s", retired.Code, retired.Body.String())
-	}
-	restored := request(router, http.MethodPost, "/admin/data/restore?source_key=demo&vod_id=very-old", adminToken, false)
-	if restored.Code != http.StatusOK || !strings.Contains(restored.Body.String(), `"affected":1`) {
-		t.Fatalf("restore = %d/%s", restored.Code, restored.Body.String())
-	}
-	restoredItem, _ := searchStore.FindBySourceID(t.Context(), "demo", "very-old")
-	if restoredItem == nil || restoredItem.ResourceStatus != "active" {
-		t.Fatalf("restored item = %+v", restoredItem)
-	}
 	if pending, _ := feedbackStore.CountPending(t.Context()); pending != 1 {
 		t.Fatalf("pending feedback = %d", pending)
 	}

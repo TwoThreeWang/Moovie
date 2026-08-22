@@ -11,21 +11,26 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
+// TaskDaily 是每日定时同步在任务队列中的类型名。
 const TaskDaily = "douban_daily"
 
+// UserStore 是同步需要的账号接口。
 type UserStore interface {
 	FindByID(ctx context.Context, userID int) (*identity.User, error)
 	UpdateDoubanUserID(ctx context.Context, userID int, doubanUserID string) error
 	ListBoundDoubanUsers(ctx context.Context) ([]identity.User, error)
 }
 
+// SyncExecutor 是实际执行同步的接口。
 type SyncExecutor interface {
 	SyncFull(ctx context.Context, userID int, doubanUserID string, jobID int) error
 	SyncIncremental(ctx context.Context, userID int, doubanUserID string, jobID int) error
 }
 
+// MonthlyGenerator 是可选的月报生成器，每日任务顺带触发上月月报。
 type MonthlyGenerator interface{ GeneratePreviousMonth(context.Context) error }
 
+// TaskHandler 是豆瓣同步的任务处理器。
 type TaskHandler struct {
 	jobs     JobStore
 	users    UserStore
@@ -35,11 +40,15 @@ type TaskHandler struct {
 	logger   *slog.Logger
 }
 
+// TaskHandlerOption 用于注入可选依赖。
 type TaskHandlerOption func(*TaskHandler)
 
+// WithMonthlyGenerator 注入月报生成器。
 func WithMonthlyGenerator(generator MonthlyGenerator) TaskHandlerOption {
 	return func(handler *TaskHandler) { handler.monthly = generator }
 }
+
+// WithLogger 替换日志器。
 func WithLogger(logger *slog.Logger) TaskHandlerOption {
 	return func(handler *TaskHandler) {
 		if logger != nil {
@@ -48,6 +57,7 @@ func WithLogger(logger *slog.Logger) TaskHandlerOption {
 	}
 }
 
+// NewTaskHandler 创建任务处理器。
 func NewTaskHandler(jobs JobStore, users UserStore, executor SyncExecutor, options ...TaskHandlerOption) *TaskHandler {
 	handler := &TaskHandler{jobs: jobs, users: users, executor: executor, now: time.Now, logger: slog.Default()}
 	for _, option := range options {
@@ -56,12 +66,17 @@ func NewTaskHandler(jobs JobStore, users UserStore, executor SyncExecutor, optio
 	return handler
 }
 
+// CreateFull 创建全量同步任务。
 func (handler *TaskHandler) CreateFull(ctx context.Context, userID int) (int, error) {
 	return handler.create(ctx, userID, TypeFull)
 }
+
+// CreateIncremental 创建增量同步任务。
 func (handler *TaskHandler) CreateIncremental(ctx context.Context, userID int) (int, error) {
 	return handler.create(ctx, userID, TypeIncremental)
 }
+
+// create 是两种任务创建的公共实现，已有进行中的任务时直接复用。
 func (handler *TaskHandler) create(ctx context.Context, userID int, syncType SyncType) (int, error) {
 	job, err := handler.jobs.Create(ctx, userID, syncType)
 	if err != nil {
@@ -70,6 +85,7 @@ func (handler *TaskHandler) create(ctx context.Context, userID int, syncType Syn
 	return job.ID, nil
 }
 
+// Handle 执行一个同步任务。
 func (handler *TaskHandler) Handle(ctx context.Context, job workqueue.Job) error {
 	userID, err := strconv.Atoi(job.SubjectKey)
 	if err != nil {
@@ -94,6 +110,7 @@ func (handler *TaskHandler) Handle(ctx context.Context, job workqueue.Job) error
 	return err
 }
 
+// HandleDaily 是每日定时任务：给所有绑定豆瓣的用户排增量同步，并触发上月月报。
 func (handler *TaskHandler) HandleDaily(ctx context.Context, _ workqueue.Job) error {
 	failed, err := handler.jobs.RetryableBefore(ctx, handler.now().Add(-24*time.Hour), 50)
 	if err != nil {

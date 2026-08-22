@@ -193,6 +193,22 @@ func TestPostgresMetadataRefreshQueueUsesUnifiedWorkerJobs(t *testing.T) {
 	}
 }
 
+func TestPostgresNeedsTMDBRefreshRequiresIMDbAndMissingIdentityOrBackdrops(t *testing.T) {
+	fake := &catalogFakeDatabase{row: catalogFakeRow{values: []any{true}}}
+	needed, err := NewPostgresStore(fake).NeedsTMDBRefresh(t.Context(), "1292052")
+	if err != nil || !needed {
+		t.Fatalf("needed/error = %v/%v", needed, err)
+	}
+	for _, expected := range []string{"provider = 'imdb'", "provider = 'tmdb'", "m.backdrops = ''", "NOT EXISTS"} {
+		if !strings.Contains(fake.query, expected) {
+			t.Fatalf("TMDB refresh query missing %q: %s", expected, fake.query)
+		}
+	}
+	if !reflect.DeepEqual(fake.arguments, []any{"1292052"}) {
+		t.Fatalf("arguments = %#v", fake.arguments)
+	}
+}
+
 func TestPostgresPersonalizationUsesCanonicalMediaAndPositions(t *testing.T) {
 	fake := &catalogFakeDatabase{rows: &catalogFakeRows{}}
 	store := NewPostgresStore(fake)

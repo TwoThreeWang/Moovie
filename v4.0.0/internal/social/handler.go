@@ -12,22 +12,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 片场各板块的展示数量。
 const (
 	weeklyFilmLimit      = 6
 	featuredCommentLimit = 6
 	filmFriendLimit      = 5
 )
 
+// Handler 提供片场页面和短评互动接口。
 type Handler struct {
 	config config.Config
 	store  Store
 	now    func() time.Time
 }
 
+// NewHandler 创建片场处理器。
 func NewHandler(cfg config.Config, store Store) *Handler {
 	return &Handler{config: cfg, store: store, now: time.Now}
 }
 
+// Register 注册片场路由，全部用 Optional 鉴权（游客可看不可互动）。
 func (handler *Handler) Register(router *gin.Engine) {
 	optional := auth.Optional(handler.config.AppSecret)
 	router.GET("/cinema", optional, handler.cinema)
@@ -37,6 +41,8 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/api/comments/:id/replies", optional, handler.createReply)
 }
 
+// cinema 渲染片场首页：本周热门 + 精选短评 + 片友推荐。
+// 三个查询任一失败就整页报错，因为少一块内容页面就不成立了。
 func (handler *Handler) cinema(c *gin.Context) {
 	now := handler.now()
 	weekStart := startOfWeek(now)
@@ -75,6 +81,7 @@ func (handler *Handler) cinema(c *gin.Context) {
 	}))
 }
 
+// movieComments 返回详情页的短评列表片段。
 func (handler *Handler) movieComments(c *gin.Context) {
 	movieID := c.Query("douban_id")
 	if movieID == "" {
@@ -99,6 +106,7 @@ func (handler *Handler) movieComments(c *gin.Context) {
 	})
 }
 
+// toggleLike 点赞或取消点赞。
 func (handler *Handler) toggleLike(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -118,6 +126,7 @@ func (handler *Handler) toggleLike(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/comment_like_button.html", gin.H{"UserMovieID": userMovieID, "LikeCount": count, "Liked": liked})
 }
 
+// replies 返回某条短评的回复列表。
 func (handler *Handler) replies(c *gin.Context) {
 	userMovieID, err := positiveID(c.Param("id"))
 	if err != nil {
@@ -127,6 +136,7 @@ func (handler *Handler) replies(c *gin.Context) {
 	handler.renderReplies(c, userMovieID, auth.UserID(c))
 }
 
+// createReply 发表回复。
 func (handler *Handler) createReply(c *gin.Context) {
 	userID := auth.UserID(c)
 	if userID == 0 {
@@ -154,6 +164,7 @@ func (handler *Handler) createReply(c *gin.Context) {
 	handler.renderReplies(c, userMovieID, userID)
 }
 
+// renderReplies 渲染回复列表片段。
 func (handler *Handler) renderReplies(c *gin.Context, userMovieID, userID int) {
 	replies, err := handler.store.ListReplies(c.Request.Context(), userMovieID)
 	if err != nil {
@@ -163,12 +174,14 @@ func (handler *Handler) renderReplies(c *gin.Context, userMovieID, userID int) {
 	c.HTML(http.StatusOK, "partials/comment_replies.html", gin.H{"UserMovieID": userMovieID, "Replies": replies, "CurrentUserID": userID})
 }
 
+// startOfWeek 取本周一零点，作为「本周」的起点。
 func startOfWeek(value time.Time) time.Time {
 	daysSinceMonday := (int(value.Weekday()) + 6) % 7
 	year, month, day := value.Date()
 	return time.Date(year, month, day-daysSinceMonday, 0, 0, 0, 0, value.Location())
 }
 
+// positiveID 解析并校验正整数 ID。
 func positiveID(value string) (int, error) {
 	id, err := strconv.Atoi(value)
 	if err != nil || id <= 0 {

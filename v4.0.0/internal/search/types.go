@@ -1,3 +1,15 @@
+// Package search 负责资源侧搜索：向各个 AppleCMS 资源站并发抓取、落库 vod_items、
+// 把资源匹配到规范媒体（media 表），再按媒体聚合成统一搜索结果。
+//
+// 主要涉及的表：
+//
+//	vod_items              资源条目（来源站原始字段）
+//	sites                  资源站清单
+//	copyright_filters      版权屏蔽关键词      category_filters 分类屏蔽关键词
+//	search_logs            搜索日志（热搜从此表实时聚合）
+//	site_stats             资源站健康统计（熔断依据）
+//	resource_media_links   资源 → 规范媒体的关联
+//	resource_match_candidates  待人工复核的匹配（复核留痕走日志，不再有审计表）
 package search
 
 import (
@@ -5,6 +17,7 @@ import (
 	"time"
 )
 
+// Site 是一个 AppleCMS 资源站配置。
 type Site struct {
 	ID        uint
 	Key       string
@@ -14,8 +27,10 @@ type Site struct {
 	UpdatedAt int64
 }
 
+// BaseUrl 提供给模板使用的取值方法。
 func (site Site) BaseUrl() string { return site.BaseURL }
 
+// Filter 是一条屏蔽关键词（版权屏蔽和分类屏蔽共用这个结构）。
 type Filter struct {
 	ID        uint
 	Keyword   string
@@ -60,10 +75,14 @@ type VodItem struct {
 	MediaConfidence float64 `json:"media_confidence,omitempty"`
 }
 
-func (item *VodItem) GetGenres() []string    { return splitMetadata(item.VodClass) }
+// GetGenres/GetDirectors/GetActors 把逗号分隔的字段拆成切片，供模板渲染。
+func (item *VodItem) GetGenres() []string { return splitMetadata(item.VodClass) }
+
+// GetDirectors 和 GetActors 把逗号分隔的字段拆成列表。
 func (item *VodItem) GetDirectors() []string { return splitMetadata(item.VodDirector) }
 func (item *VodItem) GetActors() []string    { return splitMetadata(item.VodActor) }
 
+// splitMetadata 按逗号拆分并去掉空白项。
 func splitMetadata(value string) []string {
 	if value == "" {
 		return nil
@@ -78,6 +97,7 @@ func splitMetadata(value string) []string {
 	return result
 }
 
+// LoadStats 是某条资源的播放质量统计（首帧耗时、样本数、失败数）。
 type LoadStats struct {
 	AvgSpeedMs  int     `json:"avg_speed_ms"`
 	SampleCount int     `json:"sample_count"`
@@ -85,17 +105,20 @@ type LoadStats struct {
 	SuccessRate float64 `json:"success_rate"`
 }
 
+// Result 是一次资源搜索的结果，FilteredCount 表示被版权关键词过滤掉的条数。
 type Result struct {
 	Items         []VodItem
 	FilteredCount int
 }
 
+// TrendingKeyword 是热搜榜的原始统计行。
 type TrendingKeyword struct {
 	Keyword        string
 	Count          int
 	LastSearchedAt time.Time
 }
 
+// TrendItem 是热搜榜渲染用的条目，Tag 是“热/新/爆”这类角标。
 type TrendItem struct {
 	Keyword  string
 	Count    int
@@ -103,6 +126,7 @@ type TrendItem struct {
 	TagClass string
 }
 
+// HealthStat 是资源站在某个小时桶内的抓取结果计数，落在 site_stats 表。
 type HealthStat struct {
 	SiteKey      string
 	Bucket       time.Time
@@ -113,6 +137,7 @@ type HealthStat struct {
 	TotalMs      int64
 }
 
+// HealthSummary 是后台展示用的资源站健康汇总，附带熔断状态。
 type HealthSummary struct {
 	SiteKey      string
 	OKCount      int
@@ -124,6 +149,7 @@ type HealthSummary struct {
 	TrippedUntil time.Time
 }
 
+// Total 返回样本总数，下面几个比率方法都以它为分母。
 func (summary *HealthSummary) Total() int {
 	if summary == nil {
 		return 0
@@ -131,8 +157,10 @@ func (summary *HealthSummary) Total() int {
 	return summary.OKCount + summary.EmptyCount + summary.TimeoutCount + summary.ErrorCount
 }
 
+// HasData 判断是否有统计样本。
 func (summary *HealthSummary) HasData() bool { return summary.Total() > 0 }
 
+// OKRate 返回有结果的比例（百分比）。
 func (summary *HealthSummary) OKRate() float64 {
 	if summary.Total() == 0 {
 		return 0
@@ -140,6 +168,7 @@ func (summary *HealthSummary) OKRate() float64 {
 	return float64(summary.OKCount) * 100 / float64(summary.Total())
 }
 
+// EmptyRate 返回返回空列表的比例（百分比）。
 func (summary *HealthSummary) EmptyRate() float64 {
 	if summary.Total() == 0 {
 		return 0
@@ -147,6 +176,7 @@ func (summary *HealthSummary) EmptyRate() float64 {
 	return float64(summary.EmptyCount) * 100 / float64(summary.Total())
 }
 
+// FailRate 返回超时与报错合计的比例（百分比）。
 func (summary *HealthSummary) FailRate() float64 {
 	if summary.Total() == 0 {
 		return 0
@@ -154,6 +184,7 @@ func (summary *HealthSummary) FailRate() float64 {
 	return float64(summary.TimeoutCount+summary.ErrorCount) * 100 / float64(summary.Total())
 }
 
+// AvgMs 返回平均响应耗时。
 func (summary *HealthSummary) AvgMs() int {
 	if summary.Total() == 0 {
 		return 0
@@ -161,6 +192,7 @@ func (summary *HealthSummary) AvgMs() int {
 	return int(summary.TotalMs / int64(summary.Total()))
 }
 
+// Level 把比率折算成 good/warn/bad 三档，供后台用颜色展示。
 func (summary *HealthSummary) Level() string {
 	if !summary.HasData() {
 		return "none"
@@ -175,8 +207,10 @@ func (summary *HealthSummary) Level() string {
 	}
 }
 
+// Outcome 是一次资源站抓取的结果分类，同时用于健康统计和熔断判断。
 type Outcome string
 
+// 一次资源站请求的四种结果。
 const (
 	OutcomeOK      Outcome = "ok"
 	OutcomeEmpty   Outcome = "empty"

@@ -6,17 +6,21 @@ import (
 	"time"
 )
 
+// 熔断参数：连续失败 3 次熔断，冷却 5 分钟。
 const (
 	breakerFailureThreshold = 3
 	breakerCooldown         = 5 * time.Minute
 )
 
+// breakerState 是单个资源站的熔断状态：连续失败达到阈值就熔断一段时间，
+// 熔断期内每轮只放一个探测请求过去（probing）。
 type breakerState struct {
 	consecutiveFailures int
 	openUntil           time.Time
 	probing             bool
 }
 
+// Health 同时做两件事：资源站熔断判断，以及按小时聚合健康统计并定期落库 site_stats。
 type Health struct {
 	enabled       bool
 	now           func() time.Time
@@ -31,6 +35,7 @@ type Health struct {
 	wait     sync.WaitGroup
 }
 
+// NewHealth 创建只在内存里做熔断的健康监控（不落库）。
 func NewHealth(enabled bool) *Health {
 	return &Health{
 		enabled:       enabled,
@@ -42,12 +47,14 @@ func NewHealth(enabled bool) *Health {
 	}
 }
 
+// NewHealthWithStore 创建带持久化的健康监控，统计每分钟批量写一次。
 func NewHealthWithStore(enabled bool, store HealthStatStore) *Health {
 	health := NewHealth(enabled)
 	health.store = store
 	return health
 }
 
+// Record 记录一次抓取结果：累加计数，并更新熔断状态。
 func (health *Health) Record(siteKey string, outcome Outcome, elapsedMilliseconds int64) {
 	if health == nil || siteKey == "" {
 		return
@@ -96,6 +103,7 @@ func (health *Health) Record(siteKey string, outcome Outcome, elapsedMillisecond
 	}
 }
 
+// Start 启动后台定时落库。
 func (health *Health) Start() {
 	if health == nil || health.store == nil {
 		return
@@ -124,6 +132,7 @@ func (health *Health) Start() {
 	}()
 }
 
+// Stop 停止定时器并把内存里剩余的统计刷进数据库。
 func (health *Health) Stop(ctx context.Context) error {
 	if health == nil || health.store == nil {
 		return nil
@@ -148,6 +157,7 @@ func (health *Health) Stop(ctx context.Context) error {
 	return health.flush(ctx)
 }
 
+// flush 把内存计数按小时桶写入 site_stats，写完清零。
 func (health *Health) flush(ctx context.Context) error {
 	health.mu.Lock()
 	if len(health.counters) == 0 {
@@ -166,6 +176,8 @@ func (health *Health) flush(ctx context.Context) error {
 	return health.store.AddHealthStats(ctx, stats)
 }
 
+// FilterAvailable 过滤掉处于熔断中的资源站。
+// 兜底：如果全部被熔断，则退回原始列表，宁可慢也不能一条结果都搜不到。
 func (health *Health) FilterAvailable(sites []Site) (available []Site, skipped []string) {
 	if health == nil || !health.enabled || len(sites) == 0 {
 		return sites, nil
@@ -192,6 +204,7 @@ func (health *Health) FilterAvailable(sites []Site) (available []Site, skipped [
 	return available, skipped
 }
 
+// TrippedUntil 返回熔断到期时间，供后台页面展示。
 func (health *Health) TrippedUntil(siteKey string) time.Time {
 	if health == nil || !health.enabled {
 		return time.Time{}
@@ -205,6 +218,7 @@ func (health *Health) TrippedUntil(siteKey string) time.Time {
 	return state.openUntil
 }
 
+// classifyOutcome 把抓取结果分成 ok/empty/timeout/error 四类。
 func classifyOutcome(ctx context.Context, err error, itemCount int) Outcome {
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {

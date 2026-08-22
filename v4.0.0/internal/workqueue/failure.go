@@ -10,6 +10,7 @@ import (
 // 本身的上游限流。这两类共用一套退避阶梯时，限流风暴会在几小时内把整批任务判死。
 type Outcome int
 
+// 失败的三种处理方式：普通重试、永久失败、上游限流。
 const (
 	OutcomeRetry Outcome = iota
 	OutcomeTerminal
@@ -27,8 +28,10 @@ type Failure struct {
 	RetryAfter time.Duration
 }
 
+// terminalError 包装永久失败的错误。
 type terminalError struct{ err error }
 
+// Error 和 Unwrap 透传被包装的错误。
 func (wrapper *terminalError) Error() string { return wrapper.err.Error() }
 func (wrapper *terminalError) Unwrap() error { return wrapper.err }
 
@@ -40,16 +43,19 @@ func Terminal(err error) error {
 	return &terminalError{err: err}
 }
 
+// IsTerminal 判断是不是永久失败。
 func IsTerminal(err error) bool {
 	var terminal *terminalError
 	return errors.As(err, &terminal)
 }
 
+// throttleError 包装上游限流错误并携带建议等待时长。
 type throttleError struct {
 	err        error
 	retryAfter time.Duration
 }
 
+// Error 和 Unwrap 透传被包装的错误。
 func (wrapper *throttleError) Error() string { return wrapper.err.Error() }
 func (wrapper *throttleError) Unwrap() error { return wrapper.err }
 
@@ -74,6 +80,7 @@ func RetryAfter(err error) (time.Duration, bool) {
 	return 0, false
 }
 
+// IsThrottled 判断是不是上游限流。
 func IsThrottled(err error) bool {
 	_, ok := RetryAfter(err)
 	return ok

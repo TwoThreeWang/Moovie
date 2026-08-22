@@ -1,3 +1,6 @@
+// Package database 封装 PostgreSQL 连接池与数据库迁移。
+// 这里把 pgx 的类型收敛成 Row/Rows/Executor 三个小接口，业务层的 Store 只依赖这些接口，
+// 因此单元测试可以替换实现，业务代码也不会散落 pgx 的具体类型。
 package database
 
 import (
@@ -73,22 +76,29 @@ func Connect(ctx context.Context, dsn string, maximumConnections ...int) (*Pool,
 	return &Pool{pool: pool}, nil
 }
 
+// Ping 探活，供 /ready 就绪探针使用。
 func (pool *Pool) Ping(ctx context.Context) error { return pool.pool.Ping(ctx) }
-func (pool *Pool) Close()                         { pool.pool.Close() }
 
+// Close 关闭连接池。
+func (pool *Pool) Close() { pool.pool.Close() }
+
+// Query 执行多行查询；调用方必须 Close 返回的 Rows。
 func (pool *Pool) Query(ctx context.Context, query string, arguments ...any) (Rows, error) {
 	return pool.pool.Query(ctx, query, arguments...)
 }
 
+// QueryRow 执行单行查询，错误会在 Scan 时返回。
 func (pool *Pool) QueryRow(ctx context.Context, query string, arguments ...any) Row {
 	return pool.pool.QueryRow(ctx, query, arguments...)
 }
 
+// Exec 执行写操作并返回影响行数。
 func (pool *Pool) Exec(ctx context.Context, query string, arguments ...any) (int64, error) {
 	tag, err := pool.pool.Exec(ctx, query, arguments...)
 	return tag.RowsAffected(), err
 }
 
+// Begin 开启事务，返回的 Transaction 与 Pool 用同一套接口，业务代码在事务内外可以复用。
 func (pool *Pool) Begin(ctx context.Context) (Transaction, error) {
 	transaction, err := pool.pool.Begin(ctx)
 	if err != nil {
@@ -97,27 +107,33 @@ func (pool *Pool) Begin(ctx context.Context) (Transaction, error) {
 	return pgxTransaction{transaction: transaction}, nil
 }
 
+// pgxTransaction 把 pgx.Tx 适配成本包的 Transaction 接口。
 type pgxTransaction struct {
 	transaction pgx.Tx
 }
 
+// Query 在事务里执行查询。
 func (transaction pgxTransaction) Query(ctx context.Context, query string, arguments ...any) (Rows, error) {
 	return transaction.transaction.Query(ctx, query, arguments...)
 }
 
+// QueryRow 在事务里查一行。
 func (transaction pgxTransaction) QueryRow(ctx context.Context, query string, arguments ...any) Row {
 	return transaction.transaction.QueryRow(ctx, query, arguments...)
 }
 
+// Exec 在事务里执行写操作，返回影响行数。
 func (transaction pgxTransaction) Exec(ctx context.Context, query string, arguments ...any) (int64, error) {
 	tag, err := transaction.transaction.Exec(ctx, query, arguments...)
 	return tag.RowsAffected(), err
 }
 
+// Commit 提交事务。
 func (transaction pgxTransaction) Commit(ctx context.Context) error {
 	return transaction.transaction.Commit(ctx)
 }
 
+// Rollback 回滚事务，已提交时返回的错误可以忽略。
 func (transaction pgxTransaction) Rollback(ctx context.Context) error {
 	return transaction.transaction.Rollback(ctx)
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 三类并发额度的名字，用于日志和指标。
 const (
 	overloadGlobal = "global"
 	overloadHeavy  = "heavy"
@@ -29,6 +30,7 @@ type overloadController struct {
 	lastLogUnix  atomic.Int64
 }
 
+// newOverloadController 按配置创建三个并发额度。
 func newOverloadController(cfg config.HTTPConfig) *overloadController {
 	return &overloadController{
 		global:       make(chan struct{}, cfg.MaxInFlight),
@@ -69,6 +71,7 @@ func (controller *overloadController) middleware() gin.HandlerFunc {
 	}
 }
 
+// acquireSlot 先尝试非阻塞占位，占不到再带超时排队。
 func acquireSlot(ctx context.Context, slots chan struct{}) bool {
 	if ctx.Err() != nil {
 		return false
@@ -86,6 +89,7 @@ func acquireSlot(ctx context.Context, slots chan struct{}) bool {
 	}
 }
 
+// tryAcquireSlot 只做一次非阻塞尝试。
 func tryAcquireSlot(slots chan struct{}) bool {
 	select {
 	case slots <- struct{}{}:
@@ -95,8 +99,10 @@ func tryAcquireSlot(slots chan struct{}) bool {
 	}
 }
 
+// releaseSlot 归还槽位。
 func releaseSlot(slots chan struct{}) { <-slots }
 
+// requestResourceClass 判断请求属于哪一类资源（图片代理 / 重请求 / 普通），返回对应的信号量。
 func requestResourceClass(path string, controller *overloadController) (string, chan struct{}) {
 	if strings.HasPrefix(path, "/api/proxy/image/") {
 		return overloadImage, controller.image
@@ -107,6 +113,8 @@ func requestResourceClass(path string, controller *overloadController) (string, 
 	return "", nil
 }
 
+// isHeavyRequestPath 列出会打上游接口或查大表的路径。
+// 注意：这是一份硬编码的路径前缀清单，新增这类接口时需要同步维护，否则限流分类会漏。
 func isHeavyRequestPath(path string) bool {
 	if path == "/sitemap.xml" || path == "/discover" || path == "/trends" ||
 		strings.HasPrefix(path, "/movie/") || strings.HasPrefix(path, "/discover/") {
@@ -127,8 +135,10 @@ func isHeavyRequestPath(path string) bool {
 	return false
 }
 
+// isProbePath 判断是否为健康检查路径，这类请求不限流也不记日志。
 func isProbePath(path string) bool { return path == "/health" || path == "/ready" }
 
+// reject 返回 503 并带上 Retry-After，HTML 请求返回文案、接口请求返回 JSON。
 func (controller *overloadController) reject(c *gin.Context, class string) {
 	total := controller.rejected.Add(1)
 	c.Header("Retry-After", "1")
@@ -145,6 +155,7 @@ func (controller *overloadController) reject(c *gin.Context, class string) {
 	})
 }
 
+// logRejection 每秒最多写一条过载日志，避免拒绝风暴时日志反过来加重负载。
 func (controller *overloadController) logRejection(class string, total uint64) {
 	now := time.Now().Unix()
 	previous := controller.lastLogUnix.Load()
@@ -163,6 +174,7 @@ func (controller *overloadController) logRejection(class string, total uint64) {
 	)
 }
 
+// requestTimeout 给每个请求的 context 加统一超时，防止慢上游把连接一直占住。
 func requestTimeout(timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if timeout <= 0 || isProbePath(c.Request.URL.Path) {
@@ -176,6 +188,7 @@ func requestTimeout(timeout time.Duration) gin.HandlerFunc {
 	}
 }
 
+// requestBodyLimit 限制请求体大小，先看 Content-Length 快速拒绝，再用 MaxBytesReader 兜底。
 func requestBodyLimit(maxBytes int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if maxBytes <= 0 || c.Request.Body == nil {
@@ -193,6 +206,7 @@ func requestBodyLimit(maxBytes int64) gin.HandlerFunc {
 	}
 }
 
+// staticCacheHeaders 给 /static/ 下的资源加长缓存。
 func staticCacheHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/static/") {
@@ -202,6 +216,8 @@ func staticCacheHeaders() gin.HandlerFunc {
 	}
 }
 
+// normalizedHTTPConfig 给未配置的项补默认值，并保证分类上限不超过全局上限。
+// 测试里可以直接传零值 HTTPConfig 而不必逐项填写。
 func normalizedHTTPConfig(value config.HTTPConfig, environment string) config.HTTPConfig {
 	wasEmpty := value.MaxInFlight <= 0 && value.MaxHeavyInFlight <= 0 && value.MaxImageInFlight <= 0 &&
 		value.QueueTimeout <= 0 && value.RequestTimeout <= 0 && value.MaxBodyBytes <= 0 &&

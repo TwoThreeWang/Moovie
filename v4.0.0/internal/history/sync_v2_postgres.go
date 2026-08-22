@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// SyncV2 在一个事务里完成整轮同步：补齐历史事件 → 逐条占位并应用操作 → 返回增量。
 func (store *PostgresStore) SyncV2(ctx context.Context, userID int, request SyncV2Request, _ time.Time) (SyncV2Result, error) {
 	executor := store.database
 	var transaction database.Transaction
@@ -56,6 +57,11 @@ func (store *PostgresStore) SyncV2(ctx context.Context, userID int, request Sync
 	return result, nil
 }
 
+// bootstrapSyncEvents 给还没进过事件账本的老进度补一条 upsert 事件，
+// 否则新设备第一次同步会拿不到这些历史记录。
+// 每次同步都跑，不能改成「只在游标为 0 时执行」：保留期清理删掉旧事件后，
+// 正是靠这里把事件补回来（见 DeleteExpiredSyncEvents），按游标跳过就补不回来了。
+// 反查走 history_sync_events_bootstrap_idx，代价是每条进度一次索引命中。
 func bootstrapSyncEvents(ctx context.Context, executor database.Executor, userID int) error {
 	records, err := listSyncRecords(ctx, executor, userID)
 	if err != nil {
@@ -91,6 +97,7 @@ func bootstrapSyncEvents(ctx context.Context, executor database.Executor, userID
 	return nil
 }
 
+// finalizeSyncEvent 把操作结果写回事件账本（此时才知道服务端最终的记录 ID 和身份）。
 func finalizeSyncEvent(ctx context.Context, executor database.Executor, userID int, version int64, operation SyncOperation, payload syncEventPayload) error {
 	var current *Record
 	if payload.Change != nil {
@@ -125,12 +132,14 @@ episode_key = $8, source_key = $9, vod_id = $10 WHERE version = $1 AND user_id =
 	return nil
 }
 
+// listSyncRecords 找出还没有对应成功事件的进度记录。
 func listSyncRecords(ctx context.Context, executor database.Executor, userID int) ([]Record, error) {
 	return queryPlaybackPositions(ctx, executor, `position.user_id = $1 AND position.deleted_at IS NULL
 AND NOT EXISTS (SELECT 1 FROM history_sync_events event WHERE event.user_id = position.user_id
   AND event.record_id = position.id AND event.conflict_reason = '')`, userID)
 }
 
+// reserveSyncOperation 为一条操作占一个版本号；已经处理过的操作返回 false 直接跳过（幂等）。
 func reserveSyncOperation(ctx context.Context, executor database.Executor, userID int, deviceID string, operation SyncOperation) (int64, bool, error) {
 	// 先查后插：BIGSERIAL 的 version 在 ON CONFLICT DO NOTHING 命中时也会自增，
 	// 幂等重试会在只追加账本里烧出空洞游标。
@@ -160,6 +169,9 @@ ON CONFLICT (user_id, device_id, operation_id) DO NOTHING
 	return version, true, nil
 }
 
+// applySyncOperation 应用一条操作：先锁住并读取服务端当前记录，
+// 服务端记录更新就判为冲突不改；否则写库并返回变更。
+// 删除是软删除（打 deleted_at），不真删行。
 func applySyncOperation(ctx context.Context, executor database.Executor, userID int, version int64, operation SyncOperation) (syncEventPayload, error) {
 	current, err := findOperationRecord(ctx, executor, userID, operation, true)
 	if err != nil {
@@ -209,6 +221,7 @@ func applySyncOperation(ctx context.Context, executor database.Executor, userID 
 		Type: operation.Type, Record: current}}, nil
 }
 
+// findOperationRecord 按四种身份之一定位服务端记录，lock 为 true 时加行锁。
 func findOperationRecord(ctx context.Context, executor database.Executor, userID int, operation SyncOperation, lock bool) (*Record, error) {
 	predicate := `position.user_id = $1 AND (
 ($2 > 0 AND position.id = $2) OR
@@ -230,6 +243,7 @@ ORDER BY position.activity_at DESC LIMIT 1`
 	return &records[0], nil
 }
 
+// listSyncResult 返回大于客户端游标的事件。客户端游标比服务端最大值还大时要求全量重同步。
 func listSyncResult(ctx context.Context, executor database.Executor, userID int, cursor int64) (SyncV2Result, error) {
 	var maxVersion int64
 	if err := executor.QueryRow(ctx, `SELECT COALESCE(MAX(version), 0) FROM history_sync_events
@@ -278,6 +292,41 @@ WHERE user_id = $1 AND version > $2 ORDER BY version ASC LIMIT $3`, userID, curs
 	return result, nil
 }
 
+// syncEventDeleteChunk 是保留期清理每条 DELETE 的行数上限，别一次删太多把表锁久了。
+const syncEventDeleteChunk = 5000
+
+// DeleteExpiredSyncEvents 清掉过了保留期的同步事件。这本账只追加，此前从来没清过。
+//
+// 删旧事件不会丢进度：进度本体在 playback_positions 里，账本只是给客户端增量拉取用的游标流。
+// 某条进度对应的事件被删掉之后，bootstrapSyncEvents 那条 NOT EXISTS 会重新成立，
+// 下次同步自动补一条新事件回来——所以这个清理是自愈的，删过头最多让停用很久的客户端多收一份全量。
+// 也正因为会自愈，账本会稳定在「保留期内的事件 + 每条存量进度一条」，不再无限涨。
+func (store *PostgresStore) DeleteExpiredSyncEvents(ctx context.Context, before time.Time, budget int) (int, error) {
+	if store == nil || store.database == nil {
+		return 0, nil
+	}
+	if budget < 1 {
+		budget = syncEventDeleteChunk
+	}
+	total := 0
+	for deleted := 0; deleted < budget; {
+		chunk := min(syncEventDeleteChunk, budget-deleted)
+		affected, err := store.database.Exec(ctx, `WITH expired AS (
+    SELECT version FROM history_sync_events WHERE created_at < $1 ORDER BY created_at LIMIT $2
+)
+DELETE FROM history_sync_events events USING expired WHERE events.version = expired.version`, before, chunk)
+		if err != nil {
+			return total, fmt.Errorf("delete expired history sync events: %w", err)
+		}
+		deleted, total = deleted+int(affected), total+int(affected)
+		if int(affected) < chunk {
+			break
+		}
+	}
+	return total, nil
+}
+
+// nullablePositive 把非正数转成 NULL 写库。
 func nullablePositive(value int) any {
 	if value <= 0 {
 		return nil

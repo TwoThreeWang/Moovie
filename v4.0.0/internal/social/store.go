@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Store 是片场的读写接口。
 type Store interface {
 	ListCommentsByMovie(ctx context.Context, movieID string, limit int) ([]Activity, error)
 	CountLikes(ctx context.Context, userMovieIDs []int) (map[int]int, error)

@@ -1,3 +1,6 @@
+// Package config 负责把环境变量（含 .env 文件）读成一份进程级配置，并在启动时一次性校验完毕。
+// 约定：所有可调参数都必须先在这里声明并给出默认值，业务代码不允许自己去读 os.Getenv。
+// 这样做的好处是配置错误在进程启动阶段就会直接失败退出，而不是等线上跑到某个分支才报错。
 package config
 
 import (
@@ -11,7 +14,10 @@ import (
 	"time"
 )
 
+// defaultProductionSecret 是配置模板里的占位密钥，生产环境用它会直接启动失败。
 const defaultProductionSecret = "replace-with-a-long-random-secret"
+
+// minimumProductionSecretBytes 是生产环境密钥的最短长度。
 const minimumProductionSecretBytes = 32
 
 // Config 保存重构应用运行所需的进程级配置，各功能模块的配置也会在加载时统一校验。
@@ -35,6 +41,7 @@ type Config struct {
 	Worker                  WorkerConfig
 }
 
+// WorkerConfig 控制后台任务进程（cmd/worker）的并发数和轮询间隔。
 type WorkerConfig struct {
 	Concurrency int
 	Poll        time.Duration
@@ -101,10 +108,13 @@ type DatabaseConfig struct {
 	MaxConns int
 }
 
-// SearchConfig 保存上游搜索预算、缓存、熔断和媒体匹配灰度参数。
+// SearchConfig 保存上游搜索预算、缓存、熔断和媒体匹配策略。
 type SearchConfig struct {
-	SourceTimeout             time.Duration
-	TotalTimeout              time.Duration
+	SourceTimeout time.Duration
+	TotalTimeout  time.Duration
+	// RefreshWait：本地已有结果时最多再等上游多久。等不到就先返回本地结果，
+	// 刷新继续在后台跑完。它只影响「等多久」，不影响「刷不刷新」。
+	RefreshWait               time.Duration
 	CacheTTL                  time.Duration
 	CacheEntries              int
 	SourceMaxConcurrency      int
@@ -134,6 +144,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	totalTimeoutSeconds, err := positiveIntEnv("SEARCH_TOTAL_TIMEOUT_SECONDS", 30)
+	if err != nil {
+		return Config{}, err
+	}
+	refreshWaitSeconds, err := positiveIntEnv("SEARCH_REFRESH_WAIT_SECONDS", 3)
 	if err != nil {
 		return Config{}, err
 	}
@@ -284,6 +298,7 @@ func Load() (Config, error) {
 		Search: SearchConfig{
 			SourceTimeout:             time.Duration(sourceTimeoutSeconds) * time.Second,
 			TotalTimeout:              time.Duration(totalTimeoutSeconds) * time.Second,
+			RefreshWait:               time.Duration(refreshWaitSeconds) * time.Second,
 			CacheTTL:                  time.Duration(cacheMinutes) * time.Minute,
 			CacheEntries:              cacheEntries,
 			SourceMaxConcurrency:      sourceMaxConcurrency,
@@ -333,6 +348,9 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// Validate 做跨字段的安全校验，任何一条不通过都会让进程直接启动失败。
+// 这里的上限（并发、请求体大小、连接数等）是人工评审过的安全边界，
+// 目的是防止误配一个超大数值把单机资源打爆。生产环境还会额外强制 https 与强密钥。
 func (c Config) Validate() error {
 	if c.Port == "" {
 		return errors.New("PORT must not be empty")
@@ -409,6 +427,8 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// DSN 拼出 PostgreSQL 连接串。用 url.URL 拼接而不是字符串拼接，
+// 是为了让密码里的特殊字符被正确转义。
 func (c DatabaseConfig) DSN() string {
 	query := url.Values{}
 	query.Set("sslmode", c.SSLMode)
@@ -422,6 +442,7 @@ func (c DatabaseConfig) DSN() string {
 	}).String()
 }
 
+// env 读取环境变量，空值（含只有空格）一律按未设置处理，回退到默认值。
 func env(key, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
 		return value
@@ -429,6 +450,7 @@ func env(key, fallback string) string {
 	return fallback
 }
 
+// positiveIntEnv 读取必须为正整数的配置项，0 和负数都视为配置错误。
 func positiveIntEnv(key string, fallback int) (int, error) {
 	raw := env(key, strconv.Itoa(fallback))
 	value, err := strconv.Atoi(raw)
@@ -438,6 +460,7 @@ func positiveIntEnv(key string, fallback int) (int, error) {
 	return value, nil
 }
 
+// nonNegativeIntEnv 读取允许为 0 的整数配置项（例如日志采样比例 0 表示完全不采样）。
 func nonNegativeIntEnv(key string, fallback int) (int, error) {
 	raw := env(key, strconv.Itoa(fallback))
 	value, err := strconv.Atoi(raw)
@@ -447,6 +470,7 @@ func nonNegativeIntEnv(key string, fallback int) (int, error) {
 	return value, nil
 }
 
+// probabilityEnv 读取取值范围为 (0,1] 的小数配置项，用于各类匹配阈值。
 func probabilityEnv(key string, fallback float64) (float64, error) {
 	raw := env(key, strconv.FormatFloat(fallback, 'f', -1, 64))
 	value, err := strconv.ParseFloat(raw, 64)

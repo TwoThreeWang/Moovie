@@ -145,14 +145,6 @@ func TestExternalOriginRateLimitOnlyAppliesToCacheMisses(t *testing.T) {
 	}
 }
 
-func TestExternalIPLimiterBoundsDistinctClientMemory(t *testing.T) {
-	limiter := newIPLimiter(1, time.Minute)
-	limiter.capacity = 2
-	if !limiter.Allow("192.0.2.1") || !limiter.Allow("192.0.2.2") || limiter.Allow("192.0.2.3") || len(limiter.counts) != 2 {
-		t.Fatalf("bounded limiter counts = %d", len(limiter.counts))
-	}
-}
-
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

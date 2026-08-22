@@ -7,7 +7,10 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/playurl"
 )
 
+// PlaySource / PlayEpisode 是 playurl 包类型的别名，避免上层到处 import playurl。
 type PlaySource = playurl.Source
+
+// PlayEpisode 是 playurl.Episode 的别名。
 type PlayEpisode = playurl.Episode
 
 // selectEpisode 先匹配旧展示标签，再匹配规范季集身份。
@@ -32,6 +35,8 @@ func selectEpisode(episodes []PlayEpisode, requested string) (PlayEpisode, bool)
 	return PlayEpisode{}, false
 }
 
+// formatTVBoxPlayURL 把播放地址转成 TVBox 要求的格式：
+// 线路名用 $$$ 分隔，每条线路里再用 # 分隔各集，集名和地址用 $ 连接。
 func formatTVBoxPlayURL(raw string) (string, string) {
 	sources := parsePlayURL(raw)
 	if len(sources) == 0 {
@@ -54,6 +59,7 @@ func formatTVBoxPlayURL(raw string) (string, string) {
 	return strings.Join(names, "$$$"), strings.Join(urls, "$$$")
 }
 
+// parsePlayURL 解析资源站的播放地址串。
 func parsePlayURL(raw string) []PlaySource {
 	return playurl.Parse(raw)
 }

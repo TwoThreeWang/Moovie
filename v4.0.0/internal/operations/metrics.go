@@ -10,10 +10,12 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
+// MetricsReader 是指标读取接口。
 type MetricsReader interface {
 	Snapshot(ctx context.Context) (MetricsSnapshot, error)
 }
 
+// MetricsSnapshot 是一次系统指标快照，覆盖媒体、匹配、搜索、观看、播放、刷新、资源和热门榜。
 type MetricsSnapshot struct {
 	GeneratedAt string                       `json:"generated_at"`
 	WindowHours int                          `json:"window_hours"`
@@ -27,6 +29,7 @@ type MetricsSnapshot struct {
 	Popularity  map[string]PopularityMetrics `json:"popularity"`
 }
 
+// MediaMetrics 是媒体总量和元数据完整度分档。
 type MediaMetrics struct {
 	Total              int64 `json:"total"`
 	CompletenessLow    int64 `json:"completeness_low"`
@@ -34,6 +37,7 @@ type MediaMetrics struct {
 	CompletenessHigh   int64 `json:"completeness_high"`
 }
 
+// MatchMetrics 是资源与媒体的匹配状态分布。
 type MatchMetrics struct {
 	Exact     int64 `json:"exact"`
 	Auto      int64 `json:"automatic"`
@@ -42,6 +46,7 @@ type MatchMetrics struct {
 	Unmatched int64 `json:"unmatched_resources"`
 }
 
+// SearchMetrics 是搜索结果分布（成功、空结果、超时、错误）。
 type SearchMetrics struct {
 	OK      int64 `json:"ok"`
 	Empty   int64 `json:"empty"`
@@ -49,6 +54,7 @@ type SearchMetrics struct {
 	Error   int64 `json:"error"`
 }
 
+// HistoryMetrics 是观看记录相关的量级统计。
 type HistoryMetrics struct {
 	Total        int64 `json:"total"`
 	Active       int64 `json:"active"`
@@ -58,6 +64,7 @@ type HistoryMetrics struct {
 	SyncEvents   int64 `json:"sync_events"`
 }
 
+// PlaybackMetrics 是播放质量指标：首帧率、播满 10 秒率、换源成功率、启动耗时分位数。
 type PlaybackMetrics struct {
 	Attempts               int64   `json:"attempts"`
 	FirstFrames            int64   `json:"first_frames"`
@@ -73,6 +80,7 @@ type PlaybackMetrics struct {
 	StartupP90Milliseconds int64   `json:"startup_p90_ms"`
 }
 
+// RefreshMetrics 是元数据刷新的积压和成功率。
 type RefreshMetrics struct {
 	DueMedia             int64 `json:"due_media"`
 	Pending              int64 `json:"pending"`
@@ -84,16 +92,14 @@ type RefreshMetrics struct {
 	ProviderUnchanged    int64 `json:"provider_unchanged"`
 }
 
+// ResourceMetrics 是资源条目的存活状态分布。
 type ResourceMetrics struct {
-	Active           int64 `json:"active"`
-	Cold             int64 `json:"cold"`
-	Removed          int64 `json:"removed"`
-	Broken           int64 `json:"broken"`
-	PreviewBatches   int64 `json:"preview_batches"`
-	AppliedBatches   int64 `json:"applied_batches"`
-	DryRunApplyDelta int64 `json:"dry_run_apply_delta"`
+	Active  int64 `json:"active"`
+	Removed int64 `json:"removed"`
+	Broken  int64 `json:"broken"`
 }
 
+// PopularityMetrics 是热门榜快照的条数、生成时间和来源构成。
 type PopularityMetrics struct {
 	ItemCount  int64          `json:"item_count"`
 	AgeSeconds int64          `json:"age_seconds"`
@@ -101,6 +107,8 @@ type PopularityMetrics struct {
 	Sources    map[string]int `json:"sources"`
 }
 
+// MetricsStore 生成指标快照，结果在内存缓存 15 秒。
+// 这条 SQL 很重（几十个子查询），没有缓存的话监控页刷新会直接压到库上。
 type MetricsStore struct {
 	database database.Executor
 	mu       sync.Mutex
@@ -110,10 +118,12 @@ type MetricsStore struct {
 	cacheTTL time.Duration
 }
 
+// NewMetricsStore 创建指标存储。
 func NewMetricsStore(executor database.Executor) *MetricsStore {
 	return &MetricsStore{database: executor, now: time.Now, cacheTTL: 15 * time.Second}
 }
 
+// Snapshot 返回指标快照，优先返回缓存。
 func (store *MetricsStore) Snapshot(ctx context.Context) (MetricsSnapshot, error) {
 	if store == nil || store.database == nil {
 		return MetricsSnapshot{GeneratedAt: time.Now().UTC().Format(time.RFC3339), WindowHours: 24,
@@ -140,19 +150,9 @@ func (store *MetricsStore) Snapshot(ctx context.Context) (MetricsSnapshot, error
 	return snapshot, nil
 }
 
-// DeleteExpiredTelemetry 清理只在近期窗口内被读取的遥测数据。
-// 这三张表原本没有任何保留策略，只增不减：playback_attempt_events 每次播放尝试最多写 9 行、
-// 带 3 个索引，还被 ScheduleActiveContentRefreshes 定期扫描，表一大调度先慢下来。
-// 所有读取方的窗口都不超过 7 天（activity_popular 7 天、rollup 全部 7 天、
-// refresh 与 metrics 24 小时），rollup 又是和事件同一条语句里算出来的、不依赖原始事件，
-// 所以按 before 删除历史行不改变任何查询结果。
-// popularity 只读「每个 media_type 最新的 ready 快照」，但那一行必须留着：
-// 运维面板靠它显示上次快照时间，删了会让面板误报从未生成。
-// budget 是每张表每次清理的上限。清理任务 24 小时才跑一次，所以不能只删一批就收工，
-// 否则存量积压永远排不空；但一次性删几百万行又会长时间持锁。这里分小批循环，
-// 每条 DELETE 都只碰 telemetryDeleteChunk 行。
 const telemetryDeleteChunk = 20000
 
+// DeleteExpiredTelemetry 分批删除过期的播放埋点和快照运行记录。
 func (store *MetricsStore) DeleteExpiredTelemetry(ctx context.Context, before time.Time, budget int) (int, error) {
 	if store == nil || store.database == nil {
 		return 0, nil
@@ -169,11 +169,6 @@ func (store *MetricsStore) DeleteExpiredTelemetry(ctx context.Context, before ti
     SELECT id FROM playback_attempt_events WHERE created_at < $1 ORDER BY id LIMIT $2
 )
 DELETE FROM playback_attempt_events events USING expired WHERE events.id = expired.id`},
-		{"playback rollups", `WITH expired AS (
-    SELECT bucket, candidate_id FROM playback_quality_rollups WHERE bucket < $1 LIMIT $2
-)
-DELETE FROM playback_quality_rollups rollups USING expired
-WHERE rollups.bucket = expired.bucket AND rollups.candidate_id = expired.candidate_id`},
 	} {
 		for deleted := 0; deleted < budget; {
 			chunk := min(telemetryDeleteChunk, budget-deleted)
@@ -201,6 +196,7 @@ WHERE generated_at < $1 AND id NOT IN (SELECT id FROM latest)`, before)
 	return total + int(runs), nil
 }
 
+// metricsSnapshotSQL 是指标快照的大查询，用一次往返取全部指标。
 const metricsSnapshotSQL = `WITH event_window AS (
     SELECT * FROM playback_attempt_events WHERE created_at >= NOW() - INTERVAL '24 hours'
 ), event_totals AS (
@@ -286,12 +282,8 @@ SELECT JSONB_BUILD_OBJECT(
     ),
     'resources', JSONB_BUILD_OBJECT(
         'active', (SELECT COUNT(*) FROM vod_items WHERE resource_status = 'active'),
-        'cold', (SELECT COUNT(*) FROM vod_items WHERE resource_status = 'cold'),
         'removed', (SELECT COUNT(*) FROM vod_items WHERE resource_status IN ('removed', 'retired')),
-        'broken', (SELECT COUNT(*) FROM vod_items WHERE resource_status IN ('broken', 'stale')),
-        'preview_batches', (SELECT COUNT(*) FROM resource_lifecycle_batches WHERE status = 'previewed'),
-        'applied_batches', (SELECT COUNT(*) FROM resource_lifecycle_batches WHERE status = 'applied'),
-        'dry_run_apply_delta', (SELECT COALESCE(SUM(ABS(candidate_count - COALESCE(applied_count, 0))), 0) FROM resource_lifecycle_batches WHERE status = 'applied')
+        'broken', (SELECT COUNT(*) FROM vod_items WHERE resource_status IN ('broken', 'stale'))
     ),
     'popularity', COALESCE((SELECT JSONB_OBJECT_AGG(media_type, JSONB_BUILD_OBJECT(
         'item_count', item_count,

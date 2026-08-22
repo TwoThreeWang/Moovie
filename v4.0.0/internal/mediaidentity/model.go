@@ -1,3 +1,17 @@
+// Package mediaidentity 是「规范媒体身份」层，解决同一部作品在不同来源下名字、ID 各不相同的问题。
+// 它给资料、资源、播放、历史提供统一的 media_id。
+//
+// 主要涉及的表：
+//
+//	media                 规范媒体主表
+//	media_external_ids    外部 ID（douban / imdb / tmdb）
+//	media_aliases         别名（精确匹配和模糊匹配都靠它）
+//	media_units           季集（一集/一部电影是一个 unit）
+//	media_field_sources   字段级来源优先级（谁写的这个字段、优先级多少）
+//	media_source_snapshots 各来源最近一次抓取的记录
+//	resource_media_links  资源 → 媒体的关联
+//	resource_play_lines / resource_episode_candidates  资源的播放线路与分集候选
+//	playback_attempt_events  播放质量埋点
 package mediaidentity
 
 import "time"
@@ -33,6 +47,7 @@ type Media struct {
 	UpdatedAt          time.Time
 }
 
+// ExternalID 是一条外部 ID 映射。(provider, external_type, external_id) 三元组唯一。
 type ExternalID struct {
 	MediaID      int
 	Provider     string
@@ -43,6 +58,7 @@ type ExternalID struct {
 	VerifiedAt   time.Time
 }
 
+// Alias 是媒体的一个别名，NormalizedAlias 是归一化后的匹配键。
 type Alias struct {
 	MediaID         int
 	Alias           string
@@ -52,6 +68,7 @@ type Alias struct {
 	AliasType       string
 }
 
+// MediaUnit 是可播放的最小单位：电影是一个 feature，剧集是每一集 episode。
 type MediaUnit struct {
 	ID             int
 	MediaID        int
@@ -65,6 +82,8 @@ type MediaUnit struct {
 	RuntimeMinutes int
 }
 
+// ResourceLink 是「某个资源站的某条资源」到规范媒体的关联。
+// IsLocked 表示人工确认过，自动匹配不能再改它。
 type ResourceLink struct {
 	SourceKey  string
 	VodID      string
@@ -75,6 +94,7 @@ type ResourceLink struct {
 	VerifiedAt time.Time
 }
 
+// Episode 是一条播放候选：某个资源站、某条线路、某一集的播放地址。
 type Episode struct {
 	CandidateID    int
 	LineID         int
@@ -98,6 +118,7 @@ type Episode struct {
 	LastAccessedAt time.Time
 }
 
+// PlaybackAttemptEvent 是播放器上报的一次播放事件（开始/首帧/卡顿/失败等）。
 type PlaybackAttemptEvent struct {
 	AttemptID          string
 	CandidateSessionID string
@@ -110,6 +131,7 @@ type PlaybackAttemptEvent struct {
 	Reason             string
 }
 
+// ResourceCandidate 是带质量统计的播放候选，播放页按这些数据给线路排序。
 type ResourceCandidate struct {
 	Episode
 	SuccessCount      int

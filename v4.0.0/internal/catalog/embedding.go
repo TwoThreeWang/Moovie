@@ -15,12 +15,14 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// embeddingDimensions 是向量维度，必须和数据库里 vector 列的维度一致。
 const embeddingDimensions = 768
 
 // bge-base-zh-v1.5 的最大序列长度是 512 token，中文大约一字一 token。超出部分会被
 // 模型静默丢弃，所以送进去的文本必须留足余量，不能按字符数随手截。
 const maxEmbeddingRunes = 450
 
+// EmbeddingConfig 是向量生成的配置：Ollama 是必需的，AI Gateway 是可选的语义改写层。
 type EmbeddingConfig struct {
 	OllamaHost  string
 	OllamaModel string
@@ -31,6 +33,8 @@ type EmbeddingConfig struct {
 	CFAIModel    string
 }
 
+// EmbeddingService 给影片生成语义向量，供「相似推荐」和「猜你喜欢」使用。
+// 流程：元数据 →（可选）AI 改写成高密度描述 → Ollama 生成 768 维向量 → 写回 media.embedding。
 type EmbeddingService struct {
 	client *http.Client
 	// aiClient 专供 AI Gateway。它必须和抓取用的 Client 分开：后者的超时是按搜索源
@@ -45,6 +49,7 @@ type EmbeddingService struct {
 	retryDelays []time.Duration
 }
 
+// EmbeddingOption 是向量服务的可选装配项。
 type EmbeddingOption func(*EmbeddingService)
 
 // WithEmbeddingAIClient 指定调用 AI Gateway 的 Client，超时应当按 LLM 的响应时间配置。
@@ -56,6 +61,7 @@ func WithEmbeddingAIClient(client *http.Client) EmbeddingOption {
 	}
 }
 
+// NewEmbeddingService 创建向量服务，未配置时默认连本机 Ollama。
 func NewEmbeddingService(client *http.Client, store Store, cfg EmbeddingConfig, options ...EmbeddingOption) *EmbeddingService {
 	cfg.OllamaHost = strings.TrimRight(cfg.OllamaHost, "/")
 	if cfg.OllamaHost == "" {
@@ -72,6 +78,7 @@ func NewEmbeddingService(client *http.Client, store Store, cfg EmbeddingConfig, 
 	return service
 }
 
+// Enrich 为一部影片生成向量，同一条目的并发调用会被合并成一次。
 func (service *EmbeddingService) Enrich(ctx context.Context, doubanID string) error {
 	_, err, _ := service.group.Do(doubanID, func() (any, error) {
 		return nil, service.enrich(ctx, doubanID)
@@ -79,6 +86,7 @@ func (service *EmbeddingService) Enrich(ctx context.Context, doubanID string) er
 	return err
 }
 
+// enrich 先比对语义哈希：元数据没变且向量维度正确就直接跳过，不重复调用模型。
 func (service *EmbeddingService) enrich(ctx context.Context, doubanID string) error {
 	movie, err := service.store.FindByDoubanID(ctx, doubanID)
 	if err != nil {
@@ -139,6 +147,7 @@ func fallbackContent(movie Movie) string {
 	return truncateRunes(strings.Join(parts, "\n"), maxEmbeddingRunes)
 }
 
+// joinNonEmpty 拼接非空片段。
 func joinNonEmpty(values []string, separator string) string {
 	kept := make([]string, 0, len(values))
 	for _, value := range values {
@@ -177,6 +186,8 @@ func (service *EmbeddingService) semanticContent(ctx context.Context, movie Movi
 	}
 }
 
+// semanticPrompt 是让大模型把影片元数据改写成一段高密度描述的提示词，
+// 改写结果再交给向量模型，比直接拿简介做向量效果好。
 const semanticPrompt = `**Role:** 你是一位精通影视社会学和推荐算法的专家。你的任务是将碎片化的电影元数据重构成一段**极高语义密度的描述文本**，专供向量嵌入（Embedding）模型使用。
 
 **Task:** 请根据提供的原始数据，撰写一段 150-200 字的语义特征文本。
@@ -235,11 +246,13 @@ func (service *EmbeddingService) generateSemanticSummary(ctx context.Context, me
 	return response.Choices[0].Message.Content, nil
 }
 
+// contentHash 取内容的 SHA-256，用于判断元数据是否变化。
 func contentHash(content string) string {
 	hash := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(hash[:])
 }
 
+// peopleNames 从导演/演员 JSON 里取人名，limit<=0 表示不限。
 func peopleNames(encoded string, limit int) []string {
 	var people []Director
 	if json.Unmarshal([]byte(encoded), &people) != nil {
@@ -257,6 +270,7 @@ func peopleNames(encoded string, limit int) []string {
 	return names
 }
 
+// generateVector 调 Ollama 生成向量。
 func (service *EmbeddingService) generateVector(ctx context.Context, content string) ([]float32, error) {
 	payload := struct {
 		Model  string `json:"model"`
@@ -271,6 +285,7 @@ func (service *EmbeddingService) generateVector(ctx context.Context, content str
 	return response.Embedding, nil
 }
 
+// postJSON 是 Ollama 和 AI Gateway 共用的 POST 封装。
 func (service *EmbeddingService) postJSON(ctx context.Context, client *http.Client, endpoint string, payload, destination any, bearerToken string) error {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -301,6 +316,7 @@ func (service *EmbeddingService) postJSON(ctx context.Context, client *http.Clie
 	return nil
 }
 
+// truncateRunes 按字符数截断，避免把汉字截半。
 func truncateRunes(value string, limit int) string {
 	runes := []rune(value)
 	if len(runes) <= limit {

@@ -1,3 +1,5 @@
+// Package operations 是运维面：数据清理、站点健康检查、系统指标快照和任务队列查询。
+// 它自己不存数据，只读别的模块的表并做汇总，输出给后台监控页和 /metrics 接口。
 package operations
 
 import (
@@ -12,7 +14,9 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
+// 各类数据的保留天数与清理批量上限，以及两个后台任务的类型名。
 const (
+	stalePurgeDays            = 90
 	siteStatRetentionDays     = 7
 	completedJobRetentionDays = 30
 	failedJobRetentionDays    = 90
@@ -21,21 +25,28 @@ const (
 	telemetryRetentionDays = 30
 	// 每天每张表最多删 100 万行：够排空存量积压，又不会让一次清理跑太久。
 	telemetryCleanupBudget = 1_000_000
+	// 同步账本留 30 天。停用超过 30 天的客户端本来就会走全量重同步，
+	// 留更久也没人读；删过头也不会丢进度（见 history.DeleteExpiredSyncEvents）。
+	syncEventRetentionDays = 30
+	syncEventCleanupBudget = 1_000_000
 	siteAlertMinSamples    = 5
 	siteAlertCooldown      = 24 * time.Hour
 	TaskCleanup            = "operations_cleanup"
 	TaskHealthCheck        = "site_health_check"
 )
 
+// Store 是清理任务需要的接口，由 search 的站点存储实现。
 type Store interface {
 	ListEnabled(ctx context.Context) ([]search.Site, error)
 	SummaryHealthSince(ctx context.Context, since time.Time) (map[string]*search.HealthSummary, error)
 	DeleteInactive(ctx context.Context, days int) (int, error)
-	DeleteOldKeywords(ctx context.Context, days int) (int, error)
+	PurgeStaleResources(ctx context.Context, staleDays int) (int, error)
 	DeleteOldSearchLogs(ctx context.Context, days int) (int, error)
 	DeleteHealthBefore(ctx context.Context, before time.Time) (int, error)
 }
 
+// Service 执行运维类后台任务。
+// lastAlert 记录每个站点上次告警时间，用于 24 小时内不重复告警。
 type Service struct {
 	store Store
 	now   func() time.Time
@@ -44,18 +55,28 @@ type Service struct {
 	lastAlert        map[string]time.Time
 	jobCleanup       func(context.Context, time.Time, time.Time, int) (int, error)
 	telemetryCleanup func(context.Context, time.Time, int) (int, error)
+	syncEventCleanup func(context.Context, time.Time, int) (int, error)
 }
 
+// ServiceOption 用于注入可选的清理能力。
 type ServiceOption func(*Service)
 
+// WithJobQueueCleanup 注入任务队列清理。
 func WithJobQueueCleanup(cleanup func(context.Context, time.Time, time.Time, int) (int, error)) ServiceOption {
 	return func(service *Service) { service.jobCleanup = cleanup }
 }
 
+// WithTelemetryCleanup 注入播放埋点清理。
 func WithTelemetryCleanup(cleanup func(context.Context, time.Time, int) (int, error)) ServiceOption {
 	return func(service *Service) { service.telemetryCleanup = cleanup }
 }
 
+// WithSyncEventCleanup 注入观影历史同步账本清理。
+func WithSyncEventCleanup(cleanup func(context.Context, time.Time, int) (int, error)) ServiceOption {
+	return func(service *Service) { service.syncEventCleanup = cleanup }
+}
+
+// NewService 创建运维服务。
 func NewService(store Store, options ...ServiceOption) *Service {
 	service := &Service{
 		store: store, now: time.Now, lastAlert: make(map[string]time.Time),
@@ -66,6 +87,7 @@ func NewService(store Store, options ...ServiceOption) *Service {
 	return service
 }
 
+// HandleCleanup 是清理任务：逐项清理过期数据，某一项失败不影响其他项继续。
 func (service *Service) HandleCleanup(ctx context.Context, _ workqueue.Job) error {
 	type cleanupOperation struct {
 		name string
@@ -73,7 +95,7 @@ func (service *Service) HandleCleanup(ctx context.Context, _ workqueue.Job) erro
 	}
 	operations := []cleanupOperation{
 		{name: "inactive VOD items", run: func() (int, error) { return service.store.DeleteInactive(ctx, 10) }},
-		{name: "old trending keywords", run: func() (int, error) { return service.store.DeleteOldKeywords(ctx, 30) }},
+		{name: "stale VOD items", run: func() (int, error) { return service.store.PurgeStaleResources(ctx, stalePurgeDays) }},
 		{name: "old search logs", run: func() (int, error) { return service.store.DeleteOldSearchLogs(ctx, 30) }},
 		{name: "old site health stats", run: func() (int, error) {
 			return service.store.DeleteHealthBefore(ctx, service.now().AddDate(0, 0, -siteStatRetentionDays))
@@ -91,6 +113,12 @@ func (service *Service) HandleCleanup(ctx context.Context, _ workqueue.Job) erro
 			return service.telemetryCleanup(ctx, before, telemetryCleanupBudget)
 		}})
 	}
+	if service.syncEventCleanup != nil {
+		before := service.now().AddDate(0, 0, -syncEventRetentionDays)
+		operations = append(operations, cleanupOperation{name: "expired history sync events", run: func() (int, error) {
+			return service.syncEventCleanup(ctx, before, syncEventCleanupBudget)
+		}})
+	}
 	var failures []error
 	for _, operation := range operations {
 		affected, err := operation.run()
@@ -104,6 +132,7 @@ func (service *Service) HandleCleanup(ctx context.Context, _ workqueue.Job) erro
 	return errors.Join(failures...)
 }
 
+// HandleHealthCheck 检查各资源站的健康度，异常时写一条系统告警反馈。
 func (service *Service) HandleHealthCheck(ctx context.Context, _ workqueue.Job) error {
 	sites, err := service.store.ListEnabled(ctx)
 	if err != nil || len(sites) == 0 {
@@ -140,6 +169,7 @@ func (service *Service) HandleHealthCheck(ctx context.Context, _ workqueue.Job) 
 	return nil
 }
 
+// shouldAlert 判断该站点是否已过告警冷却期，避免同一个站反复刷告警。
 func (service *Service) shouldAlert(siteKey string) bool {
 	service.mu.Lock()
 	defer service.mu.Unlock()

@@ -15,19 +15,23 @@ import (
 	"time"
 )
 
+// 豆瓣的两个域名：手机版接口和 RSS。
 const (
 	defaultRexxarBase = "https://m.douban.com"
 	defaultRSSBase    = "https://www.douban.com"
 )
 
+// Client 是豆瓣接口客户端，同样用的是手机版非公开接口。
 type Client struct {
 	httpClient *http.Client
 	rexxarBase string
 	rssBase    string
 }
 
+// ClientOption 用于测试时替换域名。
 type ClientOption func(*Client)
 
+// WithBases 覆盖接口域名。
 func WithBases(rexxarBase, rssBase string) ClientOption {
 	return func(client *Client) {
 		client.rexxarBase = strings.TrimRight(rexxarBase, "/")
@@ -35,6 +39,7 @@ func WithBases(rexxarBase, rssBase string) ClientOption {
 	}
 }
 
+// NewClient 创建豆瓣客户端。
 func NewClient(httpClient *http.Client, options ...ClientOption) *Client {
 	client := &Client{httpClient: httpClient, rexxarBase: defaultRexxarBase, rssBase: defaultRSSBase}
 	for _, option := range options {
@@ -43,11 +48,13 @@ func NewClient(httpClient *http.Client, options ...ClientOption) *Client {
 	return client
 }
 
+// interestsResponse 是标记列表接口的返回。
 type interestsResponse struct {
 	Total     int        `json:"total"`
 	Interests []Interest `json:"interests"`
 }
 
+// Interest 是一条豆瓣标记（想看或看过，可能带评分和短评）。
 type Interest struct {
 	Status     string `json:"status"`
 	Comment    string `json:"comment"`
@@ -58,6 +65,7 @@ type Interest struct {
 	Subject Subject `json:"subject"`
 }
 
+// Subject 是标记指向的条目。
 type Subject struct {
 	ID       json.Number `json:"id"`
 	Title    string      `json:"title"`
@@ -70,11 +78,13 @@ type Subject struct {
 	} `json:"pic"`
 }
 
+// ValidateUser 用取一条标记的方式验证豆瓣 ID 是否存在且资料公开。
 func (client *Client) ValidateUser(ctx context.Context, doubanUserID string) error {
 	_, _, err := client.Interests(ctx, doubanUserID, "movie", "mark", 0, 1)
 	return err
 }
 
+// Interests 分页读取用户的标记列表，返回本页数据和总数。
 func (client *Client) Interests(ctx context.Context, doubanUserID, itemType, status string, start, count int) ([]Interest, int, error) {
 	endpoint := fmt.Sprintf("%s/rexxar/api/v2/user/%s/interests?type=%s&status=%s&start=%d&count=%d&ck=&for_mobile=1",
 		client.rexxarBase, url.PathEscape(doubanUserID), url.QueryEscape(itemType), url.QueryEscape(status), start, count)
@@ -107,6 +117,8 @@ func (client *Client) Interests(ctx context.Context, doubanUserID, itemType, sta
 	return result.Interests, result.Total, nil
 }
 
+// RSSSubjects 读取用户 RSS，返回最近变动的条目 ID 集合和其中最早的时间。
+// 增量同步靠它决定翻到哪一页可以停。
 func (client *Client) RSSSubjects(ctx context.Context, doubanUserID string) (map[string]bool, time.Time, error) {
 	endpoint := client.rssBase + "/feed/people/" + url.PathEscape(doubanUserID) + "/interests"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -158,8 +170,10 @@ func (client *Client) RSSSubjects(ctx context.Context, doubanUserID string) (map
 	return subjects, earliest, nil
 }
 
+// subjectIDPattern 从豆瓣链接里提取条目 ID。
 var subjectIDPattern = regexp.MustCompile(`/(?:subject|movie|tv)/(\d+)`)
 
+// extractSubjectID 从链接提取条目 ID。
 func extractSubjectID(link string) string {
 	matches := subjectIDPattern.FindStringSubmatch(link)
 	if len(matches) < 2 {
@@ -168,6 +182,7 @@ func extractSubjectID(link string) string {
 	return matches[1]
 }
 
+// randomBid 生成随机 bid Cookie，降低被风控的概率。
 func randomBid() string {
 	buffer := make([]byte, 9)
 	if _, err := rand.Read(buffer); err != nil {

@@ -20,18 +20,18 @@ func TestRecordPlaybackEventIsCandidateBoundAndIdempotent(t *testing.T) {
 		"candidate.id = $3 AND candidate.media_unit_id = $4",
 		"line.source_key = $5 AND line.vod_id = $6",
 		"ON CONFLICT (attempt_id, event_type) DO NOTHING",
-		"INSERT INTO playback_quality_rollups",
+		"INSERT INTO worker_jobs",
+		"quality_refreshed_at",
 		"candidate_session_id",
 		"UPDATE vod_items resource",
 		"last_played_at = CASE WHEN inserted.event_type IN ('played_10s', 'ended')",
-		"resource.resource_status = 'cold' THEN 'active'",
 	} {
 		if !strings.Contains(query, expected) {
 			t.Fatalf("event query missing %q: %s", expected, query)
 		}
 	}
 	arguments := executor.execArguments[0]
-	if len(arguments) != 10 || arguments[0] != "attempt-123456" || arguments[8] != "timeout" || arguments[9] != "session-123456" {
+	if len(arguments) != 9 || arguments[0] != "attempt-123456" || arguments[8] != "session-123456" {
 		t.Fatalf("event arguments = %#v", arguments)
 	}
 }
@@ -41,22 +41,15 @@ func TestRecordPlaybackEventRejectsUnboundIdentity(t *testing.T) {
 	if _, err := store.RecordPlaybackEvent(t.Context(), PlaybackAttemptEvent{AttemptID: "short"}); err == nil {
 		t.Fatal("invalid playback event was accepted")
 	}
-	for input, expected := range map[string]string{
-		"segment timeout": "timeout", "manifest fetch": "network", "codec decode": "decode",
-		"HTTP 403": "http", "other": "unknown",
-	} {
-		if actual := playbackFailureClass(input); actual != expected {
-			t.Errorf("playbackFailureClass(%q) = %q, want %q", input, actual, expected)
-		}
-	}
 }
 
-func TestResourceCandidateQueryUsesExactCandidateRollups(t *testing.T) {
+func TestResourceCandidateQueryReadsFromVodItems(t *testing.T) {
 	for _, expected := range []string{
 		"SELECT candidate.id, line.id",
-		"playback_quality_rollups",
-		"WHERE candidate_id = candidate.id",
-		"INTERVAL '7 days'",
+		"LEFT JOIN vod_items resource",
+		"resource.success_count",
+		"resource.failure_count",
+		"resource.avg_speed_ms",
 		"resource_media_links",
 	} {
 		if !strings.Contains(resourceCandidateSelect, expected) {
