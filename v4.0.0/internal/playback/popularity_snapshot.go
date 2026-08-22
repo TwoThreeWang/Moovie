@@ -124,7 +124,8 @@ func (store *PopularitySnapshotStore) lookupMediaIDs(ctx context.Context, subjec
 	return result
 }
 
-// Popular 读取当前生效的快照（最近一份 ready 且未过期的），并用 media 表的最新资料覆盖标题海报。
+// Popular 读取最近一份 ready 快照，优先未过期的，没有则退回最近一份已过期的，
+// 避免刷新任务排队期间页面显示空白。
 func (store *PopularitySnapshotStore) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
 	if store == nil || store.database == nil {
 		return nil, fmt.Errorf("popularity snapshot database is not configured")
@@ -137,8 +138,8 @@ JOIN popularity_snapshots snapshot ON snapshot.run_id = run.id
 LEFT JOIN media ON media.id = snapshot.media_id
 WHERE run.id = (
     SELECT latest.id FROM popularity_snapshot_runs latest
-    WHERE latest.media_type = $1 AND latest.status = 'ready' AND latest.expires_at > NOW()
-    ORDER BY latest.generated_at DESC LIMIT 1
+    WHERE latest.media_type = $1 AND latest.status = 'ready'
+    ORDER BY (latest.expires_at > NOW()) DESC, latest.generated_at DESC LIMIT 1
 )
 ORDER BY snapshot.rank`, mediaType)
 	if err != nil {

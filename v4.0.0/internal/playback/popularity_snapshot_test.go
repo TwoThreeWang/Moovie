@@ -47,8 +47,8 @@ func TestTrendingSnapshotAcceptsFewerThanFiftyItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	items, err = store.Popular(t.Context(), "trending")
-	if err != nil || len(items) != 0 {
-		t.Fatalf("expired trending snapshot items/error = %+v/%v", items, err)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("expired trending snapshot should still return stale data, got items/error = %+v/%v", items, err)
 	}
 }
 
