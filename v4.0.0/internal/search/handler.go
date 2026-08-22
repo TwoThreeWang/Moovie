@@ -277,7 +277,7 @@ func (handler *Handler) refreshInBackground(cacheKey string, query UnifiedQuery)
 		defer handler.refreshing.Delete(cacheKey)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if result, err := handler.unified.SearchUnified(ctx, query); err == nil {
+		if result, err := handler.unified.SearchUnified(ctx, query); err == nil && (len(result.Items) > 0 || len(result.Unmatched) > 0) {
 			handler.cache.Set(cacheKey, result)
 		}
 	}()
