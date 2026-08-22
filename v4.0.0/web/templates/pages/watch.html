@@ -24,6 +24,36 @@
     <!-- 播放器（含紧贴下方的免责条） -->
     {{ template "play_container.html" . }}
 
+    <!-- 广告横幅位：300x60 响应式居中换行 -->
+    <div class="m-banner-row">
+        <div data-monoo-slot="1"></div>
+        <div data-monoo-slot="2"></div>
+        <div data-monoo-slot="3"></div>
+        <div data-monoo-slot="4"></div>
+    </div>
+       <style>
+.m-banner-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.2rem;
+}
+
+/* 平板：一行2个 */
+@media (max-width: 1024px) {
+  .m-banner-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 手机：一行1个 */
+@media (max-width: 576px) {
+  .m-banner-row {
+    grid-template-columns: 1fr;
+  }
+}
+    </style>
+    <script src="https://monoo.c2v2.com/loader.js?v=0.2" async></script>
+
     <div class="watch-content">
 
         <!-- 信息卡片（全宽横排） -->
@@ -130,6 +160,12 @@
             {{ template "play_similar.html" .DoubanID }}
         </div>
         {{ end }}{{ end }}
+
+        <div class="ad-slot">
+        <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>
+        <ins class="eas6a97888e20" data-zoneid="5863824"></ins>
+        <script>(AdProvider = window.AdProvider || []).push({"serve": {}});</script>
+        </div>
 
     </div>
 </div>
