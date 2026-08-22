@@ -4,6 +4,55 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v4.0.1 -->
+    <section class="changelog-item">
+      <div class="version-badge">v4.0.1 <small>2026-08-22</small></div>
+      <div class="changelog-details">
+        <p>
+          <strong>4.0 上线后的首个稳定性更新。</strong>这一版集中处理真实运行中暴露出的任务堆积、资源关联、跨设备进度和搜索性能问题，同时移除切流完成后不再需要的代码与数据结构，让系统更轻、更稳。
+        </p>
+        <h3>🚀 性能与稳定性 (Performance &amp; Stability)</h3>
+        <ul>
+          <li>
+            <strong>资料刷新更克制</strong>：豆瓣短评只在内容为空时采集，TMDB 剧照仅在缺失时补齐；详情页自动任务增加冷却时间，迁移影片的刷新日期分批错峰，避免访问流量反复制造相同任务。
+          </li>
+          <li>
+            <strong>Worker 限流不再误伤任务</strong>：上游限流拥有独立计数，不再消耗普通失败的重试预算；队列增加终态任务冷却索引，降低上游异常时的重复请求压力。
+          </li>
+          <li>
+            <strong>搜索热路径提速</strong>：为片名模糊搜索、豆瓣资源匹配和播放质量查询补齐索引，数据增长后仍能保持稳定响应。
+          </li>
+          <li>
+            <strong>后台刷新有界执行</strong>：短评、剧照等机会型刷新统一受并发数和超时保护，繁忙时优先保障正在访问页面的用户。
+          </li>
+        </ul>
+        <h3>🛠️ 修复 (Fixed)</h3>
+        <ul>
+          <li>
+            <strong>修复「有资源却打不开」</strong>：补齐并持续维护播放候选与影片的关联，避免 <code>/watch</code> 找不到已存在的资源后跳回搜索页。
+          </li>
+          <li>
+            <strong>修复跨设备进度冲突</strong>：同步以设备上报的实际活动时间判断新旧操作，幂等重试不再产生无效版本空洞，离线设备的旧进度不会覆盖较新的观看记录。
+          </li>
+          <li>
+            <strong>修复向量资料重复生成</strong>：影片读取现在会正确带回已保存的向量，避免重复调用 AI 与向量服务。
+          </li>
+          <li>
+            <strong>完善 IMDb / TMDB 补全链路</strong>：IMDb 映射拆为批量查询与兜底查询两阶段，已查无结果的影片不会一直阻塞后续任务；已有 TMDB 映射但剧照为空的影片仍会继续补图。
+          </li>
+        </ul>
+        <h3>🧹 精简 (Simplified)</h3>
+        <ul>
+          <li>
+            <strong>收起一次性迁移路径</strong>：4.0 切流完成后，移除旧库迁移、旧站兼容检查和无数据库内存回退等不再使用的生产路径，只保留日常运行与发布仍需要的命令。
+          </li>
+          <li>
+            <strong>精简数据库结构</strong>：移除没有读取方或未实际生效的匹配审计、热词快照、资源生命周期等结构，并将播放质量汇总直接收敛到资源记录，减少重复表与重复状态。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v4.0.0 -->
     <section class="changelog-item changelog-item--major">
       <div class="version-badge">v4.0.0 <small>2026-08-16</small></div>

@@ -297,7 +297,7 @@ func isReviewedHTMXLoadingFile(relativePath string) bool {
 }
 
 // reviewedTemplateDrift 列出经过审阅、允许与冻结源不一致的模板。
-// changelog.html 承载发布公告（v4.0.0 条目），内容更新本就该与旧站分叉，
+// changelog.html 承载 4.0 系列发布公告，内容更新本就该与旧站分叉，
 // 不属于重构漂移；air_schedule 与 today_updates 是追剧更新时间的新增 partial，
 // 旧站不存在同名文件，没有可比对的冻结源。
 // play_container / play_scripts / play_comments / play_similar 同理：它们是从
@@ -452,7 +452,7 @@ func TestLayoutDiffIsLimitedToReviewedRuntimeExtensionPoints(t *testing.T) {
 	normalized = normalizeReviewedLayoutAccessibility(normalized)
 	normalized = strings.ReplaceAll(normalized, ` onerror="this.onerror=null;this.src='/static/img/placeholder.svg'"`, "")
 	// 页脚版本号随发布走，新旧两站各自准确即可，不要求同步。
-	normalized = strings.ReplaceAll(normalized, "Moovie 影牛(v4.0.0)", "Moovie 影牛(v3.4.0)")
+	normalized = strings.ReplaceAll(normalized, "Moovie 影牛(v4.0.1)", "Moovie 影牛(v3.4.0)")
 	if normalized != legacyLayout {
 		t.Fatal("shared layout contains changes beyond the reviewed SEO, CSRF, history-sync and accessibility extension points")
 	}
