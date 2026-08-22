@@ -16,7 +16,7 @@ import (
 
 var ErrEmptyPopularitySnapshot = errors.New("popularity snapshot has no items")
 
-// popularitySnapshotSize 一份快照固定 50 条，不足就算发布失败。
+// popularitySnapshotSize 是一份快照最多保留的条数，不要求必须填满。
 const popularitySnapshotSize = 50
 
 // popularitySnapshotDatabase 是快照存储需要的数据库能力。
@@ -43,7 +43,7 @@ func (store *PopularitySnapshotStore) Replace(ctx context.Context, mediaType str
 		return fmt.Errorf("popularity snapshot database is not configured")
 	}
 	switch mediaType {
-	case "movie", "tv", "show", "cartoon":
+	case "movie", "tv", "show", "cartoon", "trending":
 	default:
 		return fmt.Errorf("unsupported media type %q", mediaType)
 	}
@@ -56,9 +56,6 @@ func (store *PopularitySnapshotStore) Replace(ctx context.Context, mediaType str
 	subjects = mergePopularSubjects(subjects, nil, popularitySnapshotSize)
 	if len(subjects) == 0 {
 		return fmt.Errorf("%w for media type %q", ErrEmptyPopularitySnapshot, mediaType)
-	}
-	if len(subjects) < popularitySnapshotSize {
-		slog.Warn("popularity snapshot is incomplete", "media_type", mediaType, "count", len(subjects), "expected", popularitySnapshotSize)
 	}
 	mediaIDs := store.lookupMediaIDs(ctx, subjects)
 	transaction, err := store.database.Begin(ctx)
@@ -183,38 +180,6 @@ ORDER BY snapshot.rank`, mediaType)
 	return items, nil
 }
 
-// SnapshotPopularProvider 优先读快照，快照不足 50 条时用实时来源补齐。
-// 首页读的就是它，所以首页正常情况下只查一次数据库，不会现场去抓豆瓣。
-type SnapshotPopularProvider struct {
-	snapshots *PopularitySnapshotStore
-	fallback  PopularProvider
-}
-
-// NewSnapshotPopularProvider 创建快照优先的热门来源。
-func NewSnapshotPopularProvider(snapshots *PopularitySnapshotStore, fallback PopularProvider) *SnapshotPopularProvider {
-	return &SnapshotPopularProvider{snapshots: snapshots, fallback: fallback}
-}
-
-// Popular 快照够用就直接返回，不够就和实时来源合并补齐。
-func (provider *SnapshotPopularProvider) Popular(ctx context.Context, mediaType string) ([]PopularSubject, error) {
-	items, err := provider.snapshots.Popular(ctx, mediaType)
-	if len(items) >= popularitySnapshotSize {
-		return items[:popularitySnapshotSize], nil
-	}
-	if provider.fallback == nil {
-		return items, err
-	}
-	fallback, fallbackErr := provider.fallback.Popular(ctx, mediaType)
-	items = mergePopularSubjects(items, fallback, popularitySnapshotSize)
-	if len(items) > 0 {
-		return items, nil
-	}
-	if fallbackErr != nil {
-		return nil, fallbackErr
-	}
-	return nil, err
-}
-
 // mergePopularSubjects 按去重键合并两份榜单，最多取 limit 条。
 func mergePopularSubjects(primary, supplement []PopularSubject, limit int) []PopularSubject {
 	if limit <= 0 {
@@ -241,20 +206,38 @@ func mergePopularSubjects(primary, supplement []PopularSubject, limit int) []Pop
 	return result
 }
 
-// TaskPopularityRefresh 是热门快照刷新任务的类型名。
-const TaskPopularityRefresh = "popularity_refresh"
+const (
+	// TaskPopularityRefresh 是外部热门快照刷新任务的类型名。
+	TaskPopularityRefresh = "popularity_refresh"
+	// TaskSiteTrendingRefresh 是本站热播快照刷新任务的类型名。
+	TaskSiteTrendingRefresh     = "site_trending_refresh"
+	SiteTrendingRefreshInterval = 10 * time.Minute
+)
 
 // PopularityRefresher 是定时刷新热门快照的 Worker 任务。
 type PopularityRefresher struct {
 	store    *PopularitySnapshotStore
 	provider PopularProvider
+	trending PopularProvider
 	ttl      time.Duration
 }
 
 // NewPopularityRefresher 创建刷新器，快照有效期设为刷新间隔的 2 倍，
 // 这样偶尔一次刷新失败也不会让榜单直接过期变空。
-func NewPopularityRefresher(store *PopularitySnapshotStore, provider PopularProvider, interval time.Duration) *PopularityRefresher {
-	return &PopularityRefresher{store: store, provider: provider, ttl: 2 * interval}
+func NewPopularityRefresher(store *PopularitySnapshotStore, provider, trending PopularProvider, interval time.Duration) *PopularityRefresher {
+	return &PopularityRefresher{store: store, provider: provider, trending: trending, ttl: 2 * interval}
+}
+
+// HandleSiteTrending 每 10 分钟从播放事件生成一次本站热播快照。
+func (refresher *PopularityRefresher) HandleSiteTrending(ctx context.Context, _ workqueue.Job) error {
+	if refresher == nil || refresher.store == nil || refresher.trending == nil {
+		return fmt.Errorf("site trending refresher is not configured")
+	}
+	items, err := refresher.trending.Popular(ctx, "trending")
+	if err != nil {
+		return err
+	}
+	return refresher.store.Replace(ctx, "trending", items, 2*SiteTrendingRefreshInterval)
 }
 
 // Handle 依次刷新四个分类，单个分类失败不影响其他分类。

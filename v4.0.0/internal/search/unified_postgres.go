@@ -21,9 +21,10 @@ func (store *PostgresStore) SearchUnifiedMedia(ctx context.Context, query Unifie
        COALESCE(ARRAY(SELECT alias.alias FROM media_aliases alias
          WHERE alias.media_id = media.id AND alias.alias_type = 'aka' ORDER BY alias.id), ARRAY[]::text[]), media.year,
        media.media_type, media.poster, media.douban_id,
-       COALESCE(media.rating_douban, 0), COALESCE(LEFT(media.summary, 120), '')
+       COALESCE(media.rating_douban, 0), COALESCE(LEFT(media.summary, 120), ''),
+       media.genres, media.countries, media.directors, media.actors, media.duration
 FROM media
-WHERE (media.title ILIKE $1 OR media.original_title ILIKE $1 OR EXISTS (
+WHERE media.douban_id <> '' AND (media.title ILIKE $1 OR media.original_title ILIKE $1 OR EXISTS (
     SELECT 1 FROM media_aliases alias
     WHERE alias.media_id = media.id AND $2 <> '' AND alias.normalized_alias LIKE $2
 ))
@@ -42,7 +43,8 @@ LIMIT $6`, pattern, normalizedPattern, strings.TrimSpace(query.Year), normalizeM
 	items := make([]UnifiedItem, 0)
 	for rows.Next() {
 		var item UnifiedItem
-		if err := rows.Scan(&item.MediaID, &item.Title, &item.OriginalTitle, &item.SearchAliases, &item.Year, &item.MediaType, &item.Poster, &item.DoubanID, &item.RatingDouban, &item.Summary); err != nil {
+		if err := rows.Scan(&item.MediaID, &item.Title, &item.OriginalTitle, &item.SearchAliases, &item.Year, &item.MediaType, &item.Poster, &item.DoubanID, &item.RatingDouban, &item.Summary,
+			&item.Genres, &item.Countries, &item.Directors, &item.Actors, &item.Duration); err != nil {
 			return nil, fmt.Errorf("scan unified media: %w", err)
 		}
 		item.Resources = make([]UnifiedResource, 0)
@@ -78,40 +80,6 @@ ORDER BY media_link.media_id, resource.last_visited_at DESC`, identifiers)
 	return scanUnifiedResources(rows)
 }
 
-// ListResourcesByDoubanID 返回适合嵌入豆瓣卡片的精简资源信息。
-// 它按 vod_douban_id 直接查询 vod_items，因此不依赖 resource_media_links 是否已经回填。
-func (store *PostgresStore) ListResourcesByDoubanID(ctx context.Context, doubanID string) ([]LinkedResourceRow, error) {
-	rows, err := store.database.Query(ctx, `SELECT resource.source_key, resource.vod_id,
-       COALESCE(resource.vod_name, ''), COALESCE(resource.vod_pic, ''), COALESCE(resource.vod_year, ''),
-       COALESCE(resource.vod_area, ''), COALESCE(resource.type_name, ''), COALESCE(resource.vod_actor, ''),
-       COALESCE(resource.vod_remarks, ''), COALESCE(resource.vod_douban_id, ''),
-       resource.avg_speed_ms,
-       (resource.success_count + resource.failure_count)::INTEGER,
-       resource.failure_count
-FROM vod_items resource
-WHERE resource.vod_douban_id = $1
-  AND COALESCE(resource.resource_status, 'active') <> 'removed'
-ORDER BY CASE WHEN resource.avg_speed_ms > 0 AND resource.success_count + resource.failure_count > 0 THEN 0 ELSE 1 END,
-         resource.avg_speed_ms ASC NULLS LAST
-LIMIT 10`, doubanID)
-	if err != nil {
-		return nil, fmt.Errorf("list resources by douban id: %w", err)
-	}
-	defer rows.Close()
-	items := make([]LinkedResourceRow, 0, 6)
-	for rows.Next() {
-		var r LinkedResourceRow
-		if err := rows.Scan(&r.SourceKey, &r.VodID,
-			&r.VodName, &r.VodPic, &r.VodYear, &r.VodArea, &r.TypeName, &r.VodActor,
-			&r.VodRemarks, &r.VodDoubanID,
-			&r.AvgSpeedMs, &r.SampleCount, &r.FailedCount); err != nil {
-			return nil, fmt.Errorf("scan linked resource: %w", err)
-		}
-		items = append(items, r)
-	}
-	return items, rows.Err()
-}
-
 // HasPlayableResource 与 /watch 的输入保持一致：只有已经建立剧集候选、线路仍有效，
 // 且资源详情包含播放地址时，详情页才展示“立即播放”。
 func (store *PostgresStore) HasPlayableResource(ctx context.Context, mediaID int) (bool, error) {
@@ -134,23 +102,6 @@ func (store *PostgresStore) HasPlayableResource(ctx context.Context, mediaID int
 		return false, fmt.Errorf("check playable resource: %w", err)
 	}
 	return playable, nil
-}
-
-// LinkedResourceRow 保存豆瓣卡片中渲染搜索结果样式资源卡所需的完整 vod_item 信息。
-type LinkedResourceRow struct {
-	SourceKey   string
-	VodID       string
-	VodName     string
-	VodPic      string
-	VodYear     string
-	VodArea     string
-	TypeName    string
-	VodActor    string
-	VodRemarks  string
-	VodDoubanID string
-	AvgSpeedMs  int
-	SampleCount int
-	FailedCount int
 }
 
 // scanUnifiedResources 比 scanVodItems 多扫一列 media_id（查询里在最前面）。

@@ -720,9 +720,8 @@ func (handler *Handler) watch(c *gin.Context) {
 	ranked = RankSameEpisode(ranked, seasonNumber, episodeKey)
 
 	// 5. 没有候选时，先用 URL 上的 source_key/vod_id 现场补一次索引再重试。
-	//    剧集索引只在搜索和 /play 时写入，而豆瓣卡片是直接链到 /watch 的，
-	//    于是会出现「卡片显示有 N 个来源、点进来却查不到候选」，白白 302 回搜索页。
-	//    卡片本来就把要播的那条资源写在了 URL 上，这里按 /play 的做法补录后再查一遍。
+	//    剧集索引只在搜索和 /play 时写入，而搜索结果可以直接链到 /watch，
+	//    因此用 URL 里已选中的资源现场补录后再查一遍。
 	if len(ranked) == 0 && handler.indexWatchResource(c.Request.Context(), canonical, c.Query("source_key"), c.Query("vod_id")) {
 		if epParam == "" {
 			episodeInfos, _ = handler.episodes.ListAllEpisodes(c.Request.Context(), canonical.ID)
@@ -871,8 +870,7 @@ func (handler *Handler) watch(c *gin.Context) {
 }
 
 // indexWatchResource 为 /watch 现场补录一条资源的剧集索引，真正写入了才返回 true。
-// 平时索引只有两个入口：搜索时回填，以及用户访问 /play。豆瓣卡片绕开了这两个入口
-// 直接链到 /watch，所以新资源在被索引之前点进来必然查不到候选。
+// 搜索结果可以在索引回填完成前直接进入 /watch。
 // 这里复用 /play 的做法，用 URL 带来的 source_key/vod_id 取详情并解析入库。
 func (handler *Handler) indexWatchResource(ctx context.Context, media mediaidentity.Media, sourceKey, vodID string) bool {
 	if sourceKey == "" || vodID == "" || media.ID <= 0 || handler.episodes == nil || handler.details == nil {
@@ -899,7 +897,7 @@ func (handler *Handler) indexWatchResource(ctx context.Context, media mediaident
 }
 
 // fallbackToPlay 在 /watch 走不通时改用 /play 的资源直连方式渲染，真渲染了才返回 true。
-// URL 上带了 source_key+vod_id，就说明来源（豆瓣卡片、换源链接）已经指名了要播哪条资源，
+// URL 上带了 source_key+vod_id，就说明来源（搜索结果、换源链接）已经指名了要播哪条资源，
 // 而这两个参数正好是 /play 需要的全部输入。此时把人 302 回搜索页是纯亏：
 // 手上明明攥着一条能播的资源。关联不上元数据的资源本来就该走 /play。
 //

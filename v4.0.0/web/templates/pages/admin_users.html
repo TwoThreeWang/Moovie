@@ -45,7 +45,7 @@
                         </td>
                         <td>{{ .Email }}</td>
                         <td>
-                            <select class="role-select" onchange="updateUserRole({{ .ID }}, this.value)" data-current="{{ .Role }}">
+                            <select class="admin-select" onchange="updateUserRole({{ .ID }}, this.value)" data-current="{{ .Role }}">
                                 <option value="user" {{ if eq .Role "user" }}selected{{ end }}>普通用户</option>
                                 <option value="admin" {{ if eq .Role "admin" }}selected{{ end }}>管理员</option>
                             </select>

@@ -51,7 +51,8 @@
     <!-- 内容区域 -->
     <div id="discover-content"
          hx-get="/discover/{{ .CurrentType }}"
-         hx-trigger="load">
+         hx-trigger="load"
+         hx-on::response-error="showDiscoverError(event)">
         <!-- 初始加载通过 htmx 触发 -->
         <div class="discover-loading" role="status" aria-label="正在加载热门内容"><div class="discover-spinner" aria-hidden="true"></div></div>
     </div>
@@ -83,6 +84,14 @@
         if (content) {
             content.innerHTML = '<div class="discover-loading" role="status" aria-label="正在加载热门内容"><div class="discover-spinner" aria-hidden="true"></div></div>';
         }
+    }
+
+    function showDiscoverError(event) {
+        const content = document.getElementById('discover-content');
+        if (!content) return;
+        const retryPath = event.detail?.requestConfig?.path || content.getAttribute('hx-get');
+        content.innerHTML = '<div class="empty-state"><p>加载失败，请稍后重试</p><button type="button" class="btn btn-secondary">重新加载</button></div>';
+        content.querySelector('button').addEventListener('click', () => htmx.ajax('GET', retryPath, { target: content }));
     }
 
     document.addEventListener('htmx:historyRestore', syncDiscoverActiveTab);

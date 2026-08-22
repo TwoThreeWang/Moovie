@@ -22,6 +22,7 @@ const (
 	RefreshReasonMissingReviews   = "missing_reviews"
 	RefreshReasonMissingBackdrops = "missing_backdrops"
 	RefreshReasonMissingEmbedding = "missing_embedding"
+	RefreshReasonSearchDiscovery  = "search_discovery"
 )
 
 // autoRefreshCooldowns 是详情页自动入队的冷却时间。这些入队条件都挂在「某个字段还是空的」

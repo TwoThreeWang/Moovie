@@ -491,7 +491,7 @@ flowchart TD
 | 单次搜索来源并发 | 6 | 其余来源等待或受总超时取消 |
 | 搜索后台补全并发 | 8 | 无槽位时放弃可重试的非关键异步工作 |
 | 搜索缓存 | 500 条 | 按 LRU 淘汰旧条目（`internal/platform/cache`，搜索、弹幕、相似推荐共用一份实现） |
-| 个性化推荐缓存 | 512 用户 / 1 小时 | 防止用户量直接变成无界内存 |
+| 个性化推荐快照 | 每用户 1 行 / 6 小时 | Web 只读 PostgreSQL 快照；缺失或过期时通过 Worker 去重刷新 |
 | AppleCMS 单响应 | 4MiB | 超限响应被拒绝 |
 | 生产成功访问日志 | 10%，最多 20 条/秒 | 错误和慢请求仍然记录 |
 
@@ -503,9 +503,9 @@ flowchart TD
 
 ## 数据库和 migration
 
-### 全部 29 张业务表
+### 全部 30 张业务表
 
-除 `schema_migrations` 外，运行时一共 29 张表。按用途分成七组，同一组内的表通常在同一个模块里读写：
+除 `schema_migrations` 外，运行时一共 30 张表。按用途分成七组，同一组内的表通常在同一个模块里读写：
 
 | 组 | 表 | 一句话说明 |
 | --- | --- | --- |
@@ -515,6 +515,7 @@ flowchart TD
 | | `comment_replies` | 短评回复，同样挂在 `user_movie_id` 上 |
 | | `feedbacks` | 用户反馈 |
 | | `monthly_reports` | 月度观影报告，每人每月一行，由定时任务算好存起来 |
+| | `user_recommendation_snapshots` | 个性化推荐快照，每用户一行；过期先返回旧结果，再由 Worker 刷新 |
 | **观看记录** | `playback_positions` | 唯一的服务端播放进度表 |
 | | `history_sync_events` | 多设备同步的事件账本，只追加，客户端按游标增量拉取；保留 30 天，过期由每日清理删掉 |
 | **影片身份** | `media` | 一部电影或剧集的统一身份，全站围绕它组织 |
@@ -531,7 +532,7 @@ flowchart TD
 | | `resource_episode_candidates` | 具体到某一季某一集的可播放候选，换源就在这一层选 |
 | | `site_stats` | 各资源站按时间桶的成功 / 空 / 超时 / 失败次数 |
 | **播放质量与热度** | `playback_attempt_events` | 播放埋点原始事件 |
-| | `popularity_snapshots` | 热门榜快照 |
+| | `popularity_snapshots` | 热门榜与本站热播快照；Web 只读当前未过期批次 |
 | | `popularity_snapshot_runs` | 每次重算热门榜的记录 |
 | **搜索与过滤** | `search_logs` | 搜索日志 |
 | | `copyright_filters` | 版权屏蔽词，命中的影片不出现在搜索结果 |

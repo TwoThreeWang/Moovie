@@ -4,52 +4,51 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/sync/singleflight"
 )
 
-// forYouCacheCapacity 是「为你推荐」结果的缓存条数上限。
-const forYouCacheCapacity = 512
-
 // Handler 提供相似影片页和「为你推荐」。
-// 推荐计算比较重，结果按用户缓存一段时间，并用 singleflight 防止同一用户并发重算。
+// 推荐计算比较重，Web 只读持久化快照，实际计算交给统一 Worker 队列。
 type Handler struct {
-	config        config.Config
-	service       *Service
-	mu            sync.Mutex
-	cache         map[int]forYouCache
-	cacheCapacity int
-	cacheFlight   singleflight.Group
-	now           func() time.Time
+	config    config.Config
+	service   *Service
+	snapshots *SnapshotStore
+	queue     interface {
+		Enqueue(context.Context, workqueue.Spec) (int, error)
+	}
 }
 
 // NewHandler 创建推荐处理器。
-func NewHandler(cfg config.Config, service *Service) *Handler {
-	return &Handler{config: cfg, service: service, cache: make(map[int]forYouCache), cacheCapacity: forYouCacheCapacity, now: time.Now}
+func NewHandler(cfg config.Config, service *Service, snapshots *SnapshotStore) *Handler {
+	return &Handler{config: cfg, service: service, snapshots: snapshots}
+}
+
+// WithRefreshQueue 注入统一 Worker 队列。
+func (handler *Handler) WithRefreshQueue(queue interface {
+	Enqueue(context.Context, workqueue.Spec) (int, error)
+}) *Handler {
+	handler.queue = queue
+	return handler
 }
 
 // forYouData 是「为你推荐」页面的全部内容。
 type forYouData struct {
-	Personalized, ReliveClassics, SimilarToLast []catalog.Movie
-	LastMovieTitle                              string
-	HeroMovie                                   *catalog.Movie
-	NoPersonalData                              bool
-}
-
-// forYouCache 是一个用户的推荐缓存。
-type forYouCache struct {
-	data    forYouData
-	expires time.Time
+	Personalized   []catalog.Movie `json:"personalized"`
+	ReliveClassics []catalog.Movie `json:"relive_classics"`
+	SimilarToLast  []catalog.Movie `json:"similar_to_last"`
+	LastMovieTitle string          `json:"last_movie_title"`
+	HeroMovie      *catalog.Movie  `json:"hero_movie"`
+	NoPersonalData bool            `json:"no_personal_data"`
 }
 
 // Register 注册推荐相关路由。
@@ -86,7 +85,7 @@ func (handler *Handler) forYou(c *gin.Context) {
 	}
 	const pageSize = 12
 	start, end := (page-1)*pageSize, page*pageSize
-	if start >= len(data.Personalized) {
+	if start >= len(data.Personalized) && page > 1 {
 		c.String(http.StatusOK, "")
 		return
 	}
@@ -105,31 +104,45 @@ func (handler *Handler) forYou(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/foryou_movies.html", view)
 }
 
-// loadForYou 先查缓存，没有再用 singleflight 计算一次。
+// loadForYou 只读持久化快照；过期时先返回旧数据并去重入队刷新。
 func (handler *Handler) loadForYou(ctx context.Context, userID int) forYouData {
-	if data, ok := handler.cachedForYou(userID); ok {
+	if handler.snapshots == nil {
+		return forYouData{NoPersonalData: true}
+	}
+	data, fresh, found, err := handler.snapshots.Load(ctx, userID)
+	if err != nil {
+		slog.Warn("load recommendation snapshot", "user_id", userID, "error", err)
+	}
+	if found {
+		if !fresh {
+			handler.enqueueRefresh(ctx, userID, "expired")
+		}
 		return data
 	}
-	value, _, _ := handler.cacheFlight.Do(strconv.Itoa(userID), func() (any, error) {
-		if data, ok := handler.cachedForYou(userID); ok {
-			return data, nil
-		}
-		data := handler.buildForYou(ctx, userID)
-		if data.HeroMovie != nil {
-			data = handler.storeForYou(userID, data)
-		}
-		return data, nil
-	})
-	data, _ := value.(forYouData)
-	return data
+	handler.enqueueRefresh(ctx, userID, "missing")
+	popular, err := handler.snapshots.PopularFallback(ctx, 60)
+	if err != nil {
+		slog.Warn("load recommendation popularity fallback", "user_id", userID, "error", err)
+	}
+	return fallbackForYou(popular)
 }
 
-// buildForYou 组装推荐内容，没有个人数据时退回热门影片。
-func (handler *Handler) buildForYou(ctx context.Context, userID int) forYouData {
-	personalized, _ := handler.service.UserRecommendations(ctx, userID, 60)
+func (handler *Handler) enqueueRefresh(ctx context.Context, userID int, reason string) {
+	if handler.queue == nil {
+		return
+	}
+	if _, err := handler.queue.Enqueue(ctx, workqueue.Spec{TaskType: TaskRefresh,
+		SubjectKey: strconv.Itoa(userID), Payload: map[string]int{"user_id": userID}, Reason: reason, RequestedBy: userID}); err != nil {
+		slog.Warn("enqueue recommendation refresh", "user_id", userID, "error", err)
+	}
+}
+
+// buildForYou 供 Worker 组装推荐内容，没有个人数据时退回评分热门影片。
+func buildForYou(ctx context.Context, service *Service, userID int) forYouData {
+	personalized, _ := service.UserRecommendations(ctx, userID, 60)
 	hadPersonalData := len(personalized) > 0
-	relive, _ := handler.service.ReliveClassics(ctx, userID, 12)
-	recent, lastTitle, _ := handler.service.RecentSimilar(ctx, userID, 12)
+	relive, _ := service.ReliveClassics(ctx, userID, 12)
+	recent, lastTitle, _ := service.RecentSimilar(ctx, userID, 12)
 	var hero *catalog.Movie
 	if len(personalized) > 0 {
 		hero = &personalized[0]
@@ -138,7 +151,7 @@ func (handler *Handler) buildForYou(ctx context.Context, userID int) forYouData 
 		hero = &relive[0]
 	}
 	if len(personalized) < 24 {
-		popular, _ := handler.service.Popular(ctx, 60)
+		popular, _ := service.Popular(ctx, 60)
 		exists := make(map[int]bool)
 		if hero != nil {
 			exists[hero.ID] = true
@@ -163,51 +176,15 @@ func (handler *Handler) buildForYou(ctx context.Context, userID int) forYouData 
 	return forYouData{Personalized: personalized, ReliveClassics: relive, SimilarToLast: recent, LastMovieTitle: lastTitle, HeroMovie: hero, NoPersonalData: !hadPersonalData}
 }
 
-// cachedForYou 读缓存。
-func (handler *Handler) cachedForYou(userID int) (forYouData, bool) {
-	handler.mu.Lock()
-	defer handler.mu.Unlock()
-	entry, ok := handler.cache[userID]
-	if !ok {
-		return forYouData{}, false
+func fallbackForYou(popular []catalog.Movie) forYouData {
+	if len(popular) == 0 {
+		return forYouData{NoPersonalData: true}
 	}
-	if !handler.now().Before(entry.expires) {
-		delete(handler.cache, userID)
-		return forYouData{}, false
-	}
-	return entry.data, true
+	hero := popular[0]
+	return forYouData{Personalized: popular[1:], HeroMovie: &hero, NoPersonalData: true}
 }
 
-// storeForYou 写缓存，超容量时清理过期条目。
-func (handler *Handler) storeForYou(userID int, data forYouData) forYouData {
-	data = compactForYouData(data)
-	handler.mu.Lock()
-	defer handler.mu.Unlock()
-	now := handler.now()
-	for cachedUserID, entry := range handler.cache {
-		if !now.Before(entry.expires) {
-			delete(handler.cache, cachedUserID)
-		}
-	}
-	capacity := handler.cacheCapacity
-	if capacity <= 0 {
-		capacity = forYouCacheCapacity
-	}
-	if _, exists := handler.cache[userID]; !exists && len(handler.cache) >= capacity {
-		oldestUserID := 0
-		var oldestExpiry time.Time
-		for cachedUserID, entry := range handler.cache {
-			if oldestUserID == 0 || entry.expires.Before(oldestExpiry) {
-				oldestUserID, oldestExpiry = cachedUserID, entry.expires
-			}
-		}
-		delete(handler.cache, oldestUserID)
-	}
-	handler.cache[userID] = forYouCache{data: data, expires: now.Add(time.Hour)}
-	return data
-}
-
-// compactForYouData 缓存前裁掉用不到的大字段（简介、向量文本），控制内存占用。
+// compactForYouData 写快照前裁掉用不到的大字段（简介、向量文本），控制存储体积。
 func compactForYouData(data forYouData) forYouData {
 	data.Personalized = compactForYouMovies(data.Personalized)
 	data.ReliveClassics = compactForYouMovies(data.ReliveClassics)

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/cache"
@@ -27,13 +28,14 @@ type Searcher interface {
 
 // Handler 提供搜索页、统一搜索接口和热搜榜。结果和热搜都带进程内缓存。
 type Handler struct {
-	config  config.Config
-	unified UnifiedSearcher
-	cache   *cache.TTL[UnifiedResult]
-	logger  SearchLogStore
-	runner  BackgroundRunner
-	trends  *cache.TTL[[]TrendItem]
-	now     func() time.Time
+	config     config.Config
+	unified    UnifiedSearcher
+	cache      *cache.TTL[UnifiedResult]
+	refreshing sync.Map // key → struct{}，防止同一缓存键并发刷新
+	logger     SearchLogStore
+	runner     BackgroundRunner
+	trends     *cache.TTL[[]TrendItem]
+	now        func() time.Time
 }
 
 // HandlerOption 是 Handler 的可选装配项。
@@ -91,7 +93,7 @@ func (handler *Handler) unifiedSearchAPI(c *gin.Context) {
 		"catalog_fallback":    result.CatalogFallback})
 }
 
-// unifiedSearchHTMX 返回 HTMX 片段；只展示有可用资源的条目，并记录一次搜索日志。
+// unifiedSearchHTMX 返回 HTMX 片段并记录一次搜索日志。
 func (handler *Handler) unifiedSearchHTMX(c *gin.Context) {
 	result, ok := handler.runUnifiedSearch(c)
 	if !ok {
@@ -100,13 +102,15 @@ func (handler *Handler) unifiedSearchHTMX(c *gin.Context) {
 	if len(result.Items) > 0 || len(result.Unmatched) > 0 {
 		handler.recordSearch(c, strings.TrimSpace(c.Query("q")))
 	}
-	items := make([]UnifiedItem, 0, len(result.Items))
-	for _, item := range result.Items {
-		if item.ResourceCount > 0 {
-			items = append(items, item)
+	if doubanID := strings.TrimSpace(c.Query("douban_id")); doubanID != "" {
+		items := make([]UnifiedItem, 0, len(result.Items))
+		for _, item := range result.Items {
+			if item.DoubanID != doubanID || item.ResourceCount > 0 {
+				items = append(items, item)
+			}
 		}
+		result.Items = items
 	}
-	result.Items = items
 	c.HTML(http.StatusOK, "partials/unified_search_results.html", gin.H{"Result": result, "Keyword": c.Query("q")})
 }
 
@@ -132,7 +136,10 @@ func (handler *Handler) runUnifiedSearch(c *gin.Context) (UnifiedResult, bool) {
 		ExcludeSourceKey: excludeSourceKey, ExcludeVodID: excludeVodID,
 		BypassFilter: c.Query("bypass") == "1", Limit: limit}
 	cacheKey := unifiedSearchCacheKey(query)
-	if cached, found := handler.cache.Get(cacheKey); found {
+	if cached, stale, found := handler.cache.GetStale(cacheKey); found {
+		if stale {
+			handler.refreshInBackground(cacheKey, query)
+		}
 		return cached, true
 	}
 	if handler.unified == nil {
@@ -245,7 +252,43 @@ func (handler *Handler) trendItems(ctx context.Context, cacheKey string, hours, 
 		}
 	}
 	handler.trends.Set(cacheKey, items)
+	if cacheKey == "24h" && len(items) > 0 {
+		handler.warmTrendingCache(items)
+	}
 	return items
+}
+
+// refreshInBackground 异步刷新一条过期的搜索缓存，同一 key 不会并发刷新。
+func (handler *Handler) refreshInBackground(cacheKey string, query UnifiedQuery) {
+	if handler.unified == nil {
+		return
+	}
+	if _, loaded := handler.refreshing.LoadOrStore(cacheKey, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		defer handler.refreshing.Delete(cacheKey)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if result, err := handler.unified.SearchUnified(ctx, query); err == nil {
+			handler.cache.Set(cacheKey, result)
+		}
+	}()
+}
+
+// warmTrendingCache 把热搜关键词预热到搜索缓存里，缓存中已有的跳过。
+func (handler *Handler) warmTrendingCache(items []TrendItem) {
+	if handler.unified == nil {
+		return
+	}
+	for _, item := range items {
+		query := UnifiedQuery{Keyword: item.Keyword, Limit: 20}
+		cacheKey := unifiedSearchCacheKey(query)
+		if _, _, found := handler.cache.GetStale(cacheKey); found {
+			continue
+		}
+		handler.refreshInBackground(cacheKey, query)
+	}
 }
 
 // hashIP 对来源 IP 做单向哈希后只取前 8 字节，避免明文存储访客 IP。

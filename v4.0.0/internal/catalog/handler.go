@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,11 +40,6 @@ type ReviewFetcher interface {
 // Suggester 提供搜索联想。
 type Suggester interface {
 	Suggest(ctx context.Context, keyword string) ([]Suggestion, error)
-}
-
-// externalSuggester 是可以走外部接口的搜索建议实现。
-type externalSuggester interface {
-	SuggestExternal(ctx context.Context, keyword string) ([]Suggestion, error)
 }
 
 // PopularProvider 提供发现页的热门榜单。
@@ -92,50 +86,9 @@ type acceptingBackgroundRunner interface {
 	TryRun(task func(context.Context)) bool
 }
 
-// LinkedResource 保存豆瓣卡片中渲染搜索结果样式资源卡所需的 vod_item 信息。
-type LinkedResource struct {
-	SourceKey   string
-	VodID       string
-	VodName     string
-	VodPic      string
-	VodYear     string
-	VodArea     string
-	TypeName    string
-	VodActor    string
-	VodRemarks  string
-	VodDoubanID string
-	AvgSpeedMs  int
-	SampleCount int
-	FailedCount int
-}
-
-// SuccessRate 返回播放成功率（百分比）。
-func (r LinkedResource) SuccessRate() float64 {
-	if r.SampleCount <= 0 {
-		return 0
-	}
-	successes := r.SampleCount - r.FailedCount
-	if successes < 0 {
-		successes = 0
-	}
-	return float64(successes) / float64(r.SampleCount) * 100
-}
-
-// ResourceLister 查询某部影片有哪些可播放资源。
+// ResourceLister 判断某部影片是否已有可播放资源。
 type ResourceLister interface {
-	ListResourcesByDoubanID(ctx context.Context, doubanID string) ([]LinkedResource, error)
 	HasPlayableResource(ctx context.Context, mediaID int) (bool, error)
-}
-
-// DoubanMatch 是搜索框下方的影片候选卡；IsLocal=true 表示本地库已有资料。
-type DoubanMatch struct {
-	DoubanID      string
-	Title         string
-	OriginalTitle string
-	Year          string
-	Poster        string
-	Rating        float64
-	IsLocal       bool
 }
 
 // AirScheduleReader 提供某部作品尚未播出的剧集，用于详情页展示更新时间。
@@ -173,9 +126,6 @@ const similarCacheTTL = 5 * time.Minute
 
 // similarCacheCapacity 是相似影片的缓存条数上限。
 const similarCacheCapacity = 256
-
-// externalSuggestBudget 是搜索页豆瓣卡片等外部联想接口的最长时间。
-const externalSuggestBudget = 2 * time.Second
 
 // HandlerOption 是 Handler 的可选装配项，下面这一组 WithXxx 都只是往结构体里塞一个依赖。
 type HandlerOption func(*Handler)
@@ -240,7 +190,7 @@ func WithSimilarFinder(finder SimilarFinder) HandlerOption {
 	return func(handler *Handler) { handler.similar = finder }
 }
 
-// WithResourceLister 注入资源列表查询，用于判断详情页能不能播。
+// WithResourceLister 注入资源可播性查询，用于判断详情页能不能播。
 func WithResourceLister(lister ResourceLister) HandlerOption {
 	return func(handler *Handler) { handler.resources = lister }
 }
@@ -271,7 +221,6 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/v2/media/suggest", handler.movieSuggest)
 	router.GET("/discover", handler.discover)
 	router.GET("/discover/:type", handler.discover)
-	router.GET("/api/htmx/douban-card", handler.doubanCard)
 }
 
 // discover 渲染发现页；HTMX 请求只返回卡片网格，整页请求会带上各分类专属的 SEO 文案。
@@ -288,7 +237,13 @@ func (handler *Handler) discover(c *gin.Context) {
 			provider = handler.trending
 		}
 		if provider != nil {
-			subjects, _ = provider.Popular(c.Request.Context(), movieType)
+			var err error
+			subjects, err = provider.Popular(c.Request.Context(), movieType)
+			if err != nil {
+				requestmeta.Logger(c.Request.Context()).Warn("discover snapshot unavailable", "media_type", movieType, "error", err)
+				c.Status(http.StatusServiceUnavailable)
+				return
+			}
 		}
 		c.HTML(http.StatusOK, "partials/discover_grid.html", gin.H{"Subjects": subjects, "CurrentType": movieType})
 		return
@@ -334,137 +289,6 @@ func normalizeDiscoverType(movieType string) string {
 	default:
 		return "movie"
 	}
-}
-
-// doubanCard 是搜索页顶部的影片卡：先查本地库，不足 5 条再问豆瓣联想接口，
-// 并把新发现的豆瓣 ID 排进资料抓取队列。
-func (handler *Handler) doubanCard(c *gin.Context) {
-	keyword := strings.TrimSpace(c.Query("kw"))
-	if keyword == "" {
-		c.String(http.StatusOK, "")
-		return
-	}
-	movies, err := handler.store.Suggest(c.Request.Context(), keyword, 5)
-	if err != nil {
-		c.String(http.StatusOK, "")
-		return
-	}
-	matches := make([]DoubanMatch, 0, 5)
-	seen := make(map[string]bool, 5)
-	for _, movie := range movies {
-		if movie.DoubanID == "" || seen[movie.DoubanID] {
-			continue
-		}
-		seen[movie.DoubanID] = true
-		matches = append(matches, DoubanMatch{DoubanID: movie.DoubanID, Title: movie.Title,
-			OriginalTitle: movie.OriginalTitle, Year: movie.Year, Poster: movie.Poster, Rating: movie.Rating, IsLocal: true})
-	}
-	if len(matches) < 5 {
-		if suggester, ok := handler.suggester.(externalSuggester); ok {
-			// 这是搜索页 hx-trigger="load" 的片段，用的又是 10 秒超时的公用 HTTP Client，
-			// 豆瓣一慢用户就盯着加载圈看 10 秒。本地已经有结果时它只是锦上添花，
-			// 所以给一个短超时：拿不到就只显示本地匹配，下次搜索会再试一次。
-			suggestCtx, cancelSuggest := context.WithTimeout(c.Request.Context(), externalSuggestBudget)
-			suggestions, suggestErr := suggester.SuggestExternal(suggestCtx, keyword)
-			cancelSuggest()
-			if suggestErr == nil {
-				for _, suggestion := range suggestions {
-					if len(matches) == 5 {
-						break
-					}
-					if !validDoubanID(suggestion.ID) || suggestion.Title == "" || seen[suggestion.ID] {
-						continue
-					}
-					seen[suggestion.ID] = true
-					matches = append(matches, DoubanMatch{DoubanID: suggestion.ID, Title: suggestion.Title,
-						OriginalTitle: suggestion.SubTitle, Year: suggestion.Year, Poster: suggestion.Img})
-					if queued, queueErr := handler.enqueueRefresh(c.Request.Context(), suggestion.ID, RefreshProviderDouban, "search_discovery"); queued && queueErr != nil {
-						requestmeta.Logger(c.Request.Context()).Warn("queue discovered metadata", "douban_id", suggestion.ID, "error", queueErr)
-					}
-				}
-			}
-		}
-	}
-	if len(matches) == 0 {
-		c.String(http.StatusOK, "")
-		return
-	}
-	sortDoubanMatches(keyword, matches)
-	data := gin.H{"Matches": matches, "Multiple": len(matches) > 1 || len(movies) == 0}
-	if len(matches) == 1 && len(movies) == 1 {
-		movie := movies[0]
-		data["Movie"] = &movie
-		data["DirectorNames"] = namesFromPeopleJSON(movie.Directors, 3)
-		data["ActorNames"] = namesFromPeopleJSON(movie.Actors, 4)
-		data["SummaryShort"] = truncateDescription(movie.Summary, 120)
-		data["Genres"] = splitCommaValues(movie.Genres)
-		data["Countries"] = splitCommaValues(movie.Countries)
-		if handler.resources != nil && movie.DoubanID != "" {
-			if linked, listErr := handler.resources.ListResourcesByDoubanID(c.Request.Context(), movie.DoubanID); listErr == nil && len(linked) > 0 {
-				data["Resources"] = linked
-			}
-		}
-	}
-	c.HTML(http.StatusOK, "partials/douban_card.html", data)
-}
-
-// sortDoubanMatches 排序规则：片名完全相同 > 前缀匹配 > 其他，同档按年份升序、评分降序。
-func sortDoubanMatches(keyword string, matches []DoubanMatch) {
-	keyword = strings.TrimSpace(keyword)
-	rank := func(title string) int {
-		switch {
-		case strings.EqualFold(strings.TrimSpace(title), keyword):
-			return 0
-		case strings.HasPrefix(strings.ToLower(strings.TrimSpace(title)), strings.ToLower(keyword)):
-			return 1
-		default:
-			return 2
-		}
-	}
-	sort.SliceStable(matches, func(i, j int) bool {
-		leftRank, rightRank := rank(matches[i].Title), rank(matches[j].Title)
-		if leftRank != rightRank {
-			return leftRank < rightRank
-		}
-		if matches[i].Year != matches[j].Year {
-			if matches[i].Year == "" {
-				return false
-			}
-			if matches[j].Year == "" {
-				return true
-			}
-			return matches[i].Year < matches[j].Year
-		}
-		return matches[i].Rating > matches[j].Rating
-	})
-}
-
-// namesFromPeopleJSON 从导演/演员 JSON 里取前若干个人名。
-func namesFromPeopleJSON(value string, limit int) []string {
-	var people []Director
-	_ = json.Unmarshal([]byte(value), &people)
-	names := make([]string, 0, limit)
-	for _, person := range people {
-		if len(names) >= limit {
-			break
-		}
-		if person.Name != "" {
-			names = append(names, person.Name)
-		}
-	}
-	return names
-}
-
-// splitCommaValues 按逗号拆分并去掉空白项。
-func splitCommaValues(value string) []string {
-	parts := strings.Split(value, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			result = append(result, part)
-		}
-	}
-	return result
 }
 
 // movieSuggest 返回搜索联想的 JSON。

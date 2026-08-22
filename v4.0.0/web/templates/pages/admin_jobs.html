@@ -40,7 +40,7 @@
     <div class="admin-card">
         <div class="admin-card-header"><h3>批量重试</h3><span class="badge">当前失败 {{ .Queue.Counts.Failed }} 条</span></div>
         <div class="admin-card-body queue-retry-bar">
-            <select id="retry-task-type" class="filter-select">
+            <select id="retry-task-type" class="admin-select">
                 <option value="">全部类型</option>
                 <option value="douban_metadata">豆瓣主资料</option>
                 <option value="tmdb">TMDB 资料与剧照</option>
@@ -65,7 +65,7 @@
                     <tr>
                         <td><strong>#{{ .ID }}</strong><div class="match-detail">对象 {{ .SubjectKey }}</div></td>
                         <td>
-                            <strong>{{ if eq .TaskType "douban_metadata" }}豆瓣主资料{{ else if eq .TaskType "douban_reviews" }}豆瓣精彩短评{{ else if eq .TaskType "tmdb" }}TMDB 资料与剧照{{ else if eq .TaskType "embedding" }}向量补全{{ else if eq .TaskType "douban_sync" }}豆瓣账号同步{{ else if eq .TaskType "popularity_refresh" }}热门榜单刷新{{ else if eq .TaskType "imdb_backfill" }}IMDb 映射回填{{ else if eq .TaskType "metadata_schedule" }}资料刷新调度{{ else if eq .TaskType "douban_daily" }}每日豆瓣同步调度{{ else if eq .TaskType "operations_cleanup" }}数据清理{{ else if eq .TaskType "site_health_check" }}站点健康检查{{ else }}{{ .TaskType }}{{ end }}</strong>
+                            <strong>{{ if eq .TaskType "douban_metadata" }}豆瓣主资料{{ else if eq .TaskType "douban_reviews" }}豆瓣精彩短评{{ else if eq .TaskType "tmdb" }}TMDB 资料与剧照{{ else if eq .TaskType "embedding" }}向量补全{{ else if eq .TaskType "douban_sync" }}豆瓣账号同步{{ else if eq .TaskType "popularity_refresh" }}热门榜单刷新{{ else if eq .TaskType "site_trending_refresh" }}本站热播刷新{{ else if eq .TaskType "imdb_backfill" }}IMDb 映射回填{{ else if eq .TaskType "metadata_schedule" }}资料刷新调度{{ else if eq .TaskType "douban_daily" }}每日豆瓣同步调度{{ else if eq .TaskType "operations_cleanup" }}数据清理{{ else if eq .TaskType "site_health_check" }}站点健康检查{{ else }}{{ .TaskType }}{{ end }}</strong>
                             <div class="match-detail">{{ .Reason }}</div>
                         </td>
                         <td><span class="status-badge status-{{ .Status }}">{{ if eq .Status "pending" }}等待中{{ else if eq .Status "running" }}执行中{{ else if eq .Status "completed" }}已完成{{ else }}失败{{ end }}</span><div class="match-detail">尝试 {{ .AttemptCount }}/{{ .MaxAttempts }}</div></td>

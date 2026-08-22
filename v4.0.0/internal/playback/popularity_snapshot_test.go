@@ -10,18 +10,8 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
-
-func TestSnapshotProviderFallsBackWhenNoReadySnapshotExists(t *testing.T) {
-	store := NewPopularitySnapshotStore(&emptySnapshotDatabase{})
-	fallback := popularProviderFunc(func(context.Context, string) ([]PopularSubject, error) {
-		return []PopularSubject{{ID: "129", Title: "豆瓣回退"}}, nil
-	})
-	items, err := NewSnapshotPopularProvider(store, fallback).Popular(context.Background(), "movie")
-	if err != nil || len(items) != 1 || items[0].Title != "豆瓣回退" {
-		t.Fatalf("fallback items/error = %+v/%v", items, err)
-	}
-}
 
 func TestSnapshotReadPrefersCanonicalDisplayFields(t *testing.T) {
 	payload := []byte(`{"id":"external","title":"外部标题","year":"2020","cover":"external-poster","rate":"6.0"}`)
@@ -40,6 +30,25 @@ func TestSnapshotReadPrefersCanonicalDisplayFields(t *testing.T) {
 		if !strings.Contains(database.query, expected) {
 			t.Fatalf("snapshot query missing %q: %s", expected, database.query)
 		}
+	}
+}
+
+func TestTrendingSnapshotAcceptsFewerThanFiftyItems(t *testing.T) {
+	pool := testdb.Pool(t)
+	store := NewPopularitySnapshotStore(pool)
+	if err := store.Replace(t.Context(), "trending", []PopularSubject{{ID: "129", Title: "本站热播"}}, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.Popular(t.Context(), "trending")
+	if err != nil || len(items) != 1 || items[0].Title != "本站热播" {
+		t.Fatalf("trending snapshot items/error = %+v/%v", items, err)
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE popularity_snapshot_runs SET expires_at = NOW() - INTERVAL '1 second' WHERE media_type = 'trending'`); err != nil {
+		t.Fatal(err)
+	}
+	items, err = store.Popular(t.Context(), "trending")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("expired trending snapshot items/error = %+v/%v", items, err)
 	}
 }
 

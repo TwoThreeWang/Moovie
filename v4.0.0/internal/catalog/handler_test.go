@@ -84,28 +84,8 @@ func TestMoviePageOnlyShowsDirectPlayForIndexedPlayableResources(t *testing.T) {
 	fallback := httptest.NewRecorder()
 	router.ServeHTTP(fallback, httptest.NewRequest(http.MethodGet, "/movie/1292052", nil))
 	fallbackBody := fallback.Body.String()
-	if fallback.Code != http.StatusOK || strings.Contains(fallbackBody, "立即播放") || !strings.Contains(fallbackBody, "查找在线播放资源") || !strings.Contains(fallbackBody, `hx-get="/api/htmx/search`) {
+	if fallback.Code != http.StatusOK || strings.Contains(fallbackBody, "立即播放") || !strings.Contains(fallbackBody, "查找在线播放资源") || !strings.Contains(fallbackBody, `&douban_id=1292052`) {
 		t.Fatalf("resource fallback page = %d/%s", fallback.Code, fallbackBody)
-	}
-}
-
-func TestDoubanCardCombinesSeasonsAndQueuesMissingMetadata(t *testing.T) {
-	store := NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "first", Title: "末日地堡 第一季", Year: "2023", Rating: 0})
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "second", Title: "末日地堡 第二季", Year: "2024", Rating: 7.5})
-	queue := &recordingRefreshQueue{jobID: 43}
-	suggester := staticExternalSuggester{{ID: "first", Title: "末日地堡 第一季", Year: "2023"}, {ID: "12345678", Title: "末日地堡 第三季", Year: "2025"}}
-	router := catalogTestRouterWithOptions(t, store, nil, WithSuggester(suggester), WithRefreshQueue(queue))
-
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/htmx/douban-card?kw=%E6%9C%AB%E6%97%A5%E5%9C%B0%E5%A0%A1", nil))
-	body := response.Body.String()
-	firstIndex, secondIndex, thirdIndex := strings.Index(body, "末日地堡 第一季"), strings.Index(body, "末日地堡 第二季"), strings.Index(body, "末日地堡 第三季")
-	if response.Code != http.StatusOK || firstIndex < 0 || secondIndex <= firstIndex || thirdIndex <= secondIndex || !strings.Contains(body, "3 部相关作品") || !strings.Contains(body, "资料补全中") {
-		t.Fatalf("multi-season Douban card = %d/%s", response.Code, body)
-	}
-	if !reflect.DeepEqual(queue.doubanIDs, []string{"12345678"}) || !reflect.DeepEqual(queue.reasons, []string{"search_discovery"}) {
-		t.Fatalf("queued discovered metadata = %#v/%#v", queue.doubanIDs, queue.reasons)
 	}
 }
 
@@ -479,21 +459,7 @@ func (suggestions staticSuggester) Suggest(context.Context, string) ([]Suggestio
 	return suggestions, nil
 }
 
-type staticExternalSuggester []Suggestion
-
-func (suggestions staticExternalSuggester) Suggest(context.Context, string) ([]Suggestion, error) {
-	return suggestions, nil
-}
-
-func (suggestions staticExternalSuggester) SuggestExternal(context.Context, string) ([]Suggestion, error) {
-	return suggestions, nil
-}
-
 type staticResourceLister struct{ playable bool }
-
-func (resources *staticResourceLister) ListResourcesByDoubanID(context.Context, string) ([]LinkedResource, error) {
-	return nil, nil
-}
 
 func (resources *staticResourceLister) HasPlayableResource(context.Context, int) (bool, error) {
 	return resources.playable, nil

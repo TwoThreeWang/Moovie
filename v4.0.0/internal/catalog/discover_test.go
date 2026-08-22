@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,12 +11,12 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
-func TestDiscoverRoutesPreserveSEOHTMXAndDoubanCard(t *testing.T) {
+func TestDiscoverRoutesPreserveSEOAndHTMX(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{
@@ -68,11 +69,17 @@ func TestDiscoverRoutesPreserveSEOHTMXAndDoubanCard(t *testing.T) {
 		t.Fatalf("discover trending page = %d/%s", trendingPage.Code, trendingPage.Body.String())
 	}
 
-	card := httptest.NewRecorder()
-	router.ServeHTTP(card, httptest.NewRequest(http.MethodGet, "/api/htmx/douban-card?kw=肖申克", nil))
-	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), "肖申克的救赎") || !strings.Contains(card.Body.String(), "弗兰克·德拉邦特") || !strings.Contains(card.Body.String(), "/movie/1292052") {
-		t.Fatalf("Douban card = %d/%s", card.Code, card.Body.String())
+	failedRouter := gin.New()
+	failedRouter.HTMLRender = renderer
+	NewHandler(cfg, store, WithPopularProvider(errorPopularStub{})).Register(failedRouter)
+	failedRequest := httptest.NewRequest(http.MethodGet, "/discover/movie", nil)
+	failedRequest.Header.Set("HX-Request", "true")
+	failed := httptest.NewRecorder()
+	failedRouter.ServeHTTP(failed, failedRequest)
+	if failed.Code != http.StatusServiceUnavailable {
+		t.Fatalf("failed discover status = %d, want %d", failed.Code, http.StatusServiceUnavailable)
 	}
+
 }
 
 type popularStub struct{}
@@ -86,6 +93,12 @@ type trendingStub struct{}
 
 func (trendingStub) Popular(context.Context, string) ([]PopularSubject, error) {
 	return []PopularSubject{{ID: "99", Title: "本站热播片", Rate: "8.5", Cover: "/trending.jpg"}}, nil
+}
+
+type errorPopularStub struct{}
+
+func (errorPopularStub) Popular(context.Context, string) ([]PopularSubject, error) {
+	return nil, errors.New("snapshot unavailable")
 }
 
 func TestPopularSubjectHasRating(t *testing.T) {

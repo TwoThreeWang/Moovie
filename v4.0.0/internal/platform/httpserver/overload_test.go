@@ -187,7 +187,7 @@ func TestHeavyRequestPathCoversResourceAmplifyingRoutes(t *testing.T) {
 		"/api/watch/resolve", "/api/tvbox.json", "/api/vod", "/api/v2/media/1/resources",
 		"/api/v2/media-units/1/playback-candidates", "/api/htmx/foryou", "/api/htmx/similar",
 		"/api/htmx/reviews", "/api/htmx/movie-backdrops", "/api/v2/media/suggest",
-		"/api/htmx/douban-card", "/api/danmaku", "/sitemap.xml",
+		"/api/danmaku", "/sitemap.xml",
 	} {
 		if !isHeavyRequestPath(path) {
 			t.Errorf("expected heavy path: %s", path)

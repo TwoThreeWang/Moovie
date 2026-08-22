@@ -58,6 +58,24 @@ func TestUnifiedSearchHonorsLimitWithoutMergingUnmatched(t *testing.T) {
 	}
 }
 
+func TestUnifiedSearchFallsBackToDoubanSuggestionsWithoutCanonicalItems(t *testing.T) {
+	resources := &recordingUnifiedResources{result: Result{Items: []VodItem{}}}
+	service := NewUnifiedSearchService(resources, WithUnifiedSuggestions(func(_ context.Context, keyword string, limit int) ([]UnifiedItem, error) {
+		if keyword != "未收录影片" || limit != maxUnifiedSuggestions {
+			t.Fatalf("suggestion query = %q/%d", keyword, limit)
+		}
+		return []UnifiedItem{{DoubanID: "12345678", Title: "未收录影片", Resources: []UnifiedResource{}}}, nil
+	}))
+
+	result, err := service.SearchUnified(t.Context(), UnifiedQuery{Keyword: "未收录影片", Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].DoubanID != "12345678" || result.Items[0].ResourceCount != 0 {
+		t.Fatalf("suggested items = %+v", result.Items)
+	}
+}
+
 func TestUnifiedSearchExcludesCurrentPlaybackResource(t *testing.T) {
 	resources := &recordingUnifiedResources{result: Result{Items: []VodItem{
 		{SourceKey: "current", VodId: "1", VodName: "影片", MediaID: 7, SampleCount: 10, AvgSpeedMs: 20},

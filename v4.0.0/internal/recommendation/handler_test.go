@@ -8,17 +8,16 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
-	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
-	"github.com/gin-gonic/gin"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
+	"github.com/gin-gonic/gin"
 )
 
 func TestRecommendationsPagePreservesPathSEOJSONLDAndReasons(t *testing.T) {
@@ -96,62 +95,70 @@ func TestForYouHeroPaginationSectionsAndCache(t *testing.T) {
 	}
 }
 
-func TestForYouColdCacheRequestsAreCoalesced(t *testing.T) {
-	testdb.User(t, testdb.Pool(t), 7)
-	personalizer := &concurrentPersonalizer{}
-	for index := 1; index <= 26; index++ {
-		personalizer.movies = append(personalizer.movies, catalog.Movie{ID: index, DoubanID: strconv.Itoa(index), Title: fmt.Sprintf("影片%02d", index)})
+func TestForYouMissingSnapshotEnqueuesRefreshWithoutRealtimeCalculation(t *testing.T) {
+	pool := testdb.Pool(t)
+	testdb.User(t, pool, 7)
+	catalogStore := catalog.NewPostgresStore(pool)
+	if err := catalogStore.Upsert(t.Context(), catalog.Movie{DoubanID: "popular", Title: "热门兜底", Rating: 9.2}); err != nil {
+		t.Fatal(err)
 	}
-	handler := NewHandler(config.Config{}, NewService(catalog.NewPostgresStore(testdb.Pool(t)), WithPersonalizer(personalizer)))
-	var group sync.WaitGroup
-	for index := 0; index < 20; index++ {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			if data := handler.loadForYou(t.Context(), 7); data.HeroMovie == nil {
-				t.Error("coalesced result has no hero movie")
-			}
-		}()
+	popular, err := catalogStore.FindByDoubanID(t.Context(), "popular")
+	if err != nil {
+		t.Fatal(err)
 	}
-	group.Wait()
-	if calls := personalizer.calls.Load(); calls != 1 {
-		t.Fatalf("personalizer calls = %d, want 1", calls)
+	var runID int64
+	if err := pool.QueryRow(t.Context(), `INSERT INTO popularity_snapshot_runs
+(media_type, status, item_count, generated_at, expires_at) VALUES ('movie', 'ready', 1, NOW(), NOW() + INTERVAL '1 hour') RETURNING id`).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO popularity_snapshots
+(run_id, media_id, rank, subject_payload) VALUES ($1, $2, 1, '{}'::jsonb)`, runID, popular.ID); err != nil {
+		t.Fatal(err)
+	}
+	personalizer := &fakePersonalizer{personalized: []catalog.Movie{{ID: 1, Title: "不应实时查询"}}}
+	queue := &recordingRecommendationQueue{}
+	handler := NewHandler(config.Config{}, NewService(catalogStore, WithPersonalizer(personalizer)), NewSnapshotStore(pool)).WithRefreshQueue(queue)
+	data := handler.loadForYou(t.Context(), 7)
+	if data.HeroMovie == nil || data.HeroMovie.Title != "热门兜底" {
+		t.Fatalf("fallback hero = %+v", data.HeroMovie)
+	}
+	if personalizer.recommendationCalls != 0 {
+		t.Fatalf("realtime recommendation calls = %d, want 0", personalizer.recommendationCalls)
+	}
+	if len(queue.specs) != 1 || queue.specs[0].TaskType != TaskRefresh || queue.specs[0].SubjectKey != "7" {
+		t.Fatalf("queued specs = %+v", queue.specs)
 	}
 }
 
-func TestForYouCacheIsBoundedExpiresAndDropsNonRenderFields(t *testing.T) {
-	now := time.Unix(100, 0)
-	handler := NewHandler(config.Config{}, nil)
-	handler.cacheCapacity = 2
-	handler.now = func() time.Time { return now }
+func TestForYouSnapshotPersistsExpiresAndDropsNonRenderFields(t *testing.T) {
+	pool := testdb.Pool(t)
+	testdb.User(t, pool, 7)
+	store := NewSnapshotStore(pool)
 	rich := catalog.Movie{
 		ID: 1, DoubanID: "1", Title: "影片", Summary: strings.Repeat("摘", 700),
 		ReviewsJSON: strings.Repeat("review", 1000), EmbeddingContent: strings.Repeat("vector", 1000),
 		Embedding: make([]float32, 768), Backdrops: strings.Repeat("backdrop", 1000),
 	}
-	for userID := 1; userID <= 3; userID++ {
-		handler.storeForYou(userID, forYouData{Personalized: []catalog.Movie{rich}, HeroMovie: &rich})
+	if err := store.Save(t.Context(), 7, forYouData{Personalized: []catalog.Movie{rich}, HeroMovie: &rich}); err != nil {
+		t.Fatal(err)
 	}
-	if len(handler.cache) != 2 {
-		t.Fatalf("cache size = %d, want 2", len(handler.cache))
+	data, fresh, found, err := NewSnapshotStore(pool).Load(t.Context(), 7)
+	if err != nil || !found || !fresh {
+		t.Fatalf("load snapshot found/fresh/error = %v/%v/%v", found, fresh, err)
 	}
-	for _, entry := range handler.cache {
-		movie := entry.data.Personalized[0]
-		if movie.ReviewsJSON != "" || movie.EmbeddingContent != "" || movie.Embedding != nil || movie.Backdrops != "" {
-			t.Fatalf("non-render fields retained: %+v", movie)
-		}
-		if len([]rune(movie.Summary)) != 600 {
-			t.Fatalf("summary length = %d, want 600", len([]rune(movie.Summary)))
-		}
+	movie := data.Personalized[0]
+	if movie.ReviewsJSON != "" || movie.EmbeddingContent != "" || movie.Embedding != nil || movie.Backdrops != "" {
+		t.Fatalf("non-render fields retained: %+v", movie)
 	}
-	now = now.Add(2 * time.Hour)
-	for userID := range handler.cache {
-		if _, ok := handler.cachedForYou(userID); ok {
-			t.Fatalf("expired user %d remained available", userID)
-		}
+	if len([]rune(movie.Summary)) != 600 {
+		t.Fatalf("summary length = %d, want 600", len([]rune(movie.Summary)))
 	}
-	if len(handler.cache) != 0 {
-		t.Fatalf("expired cache size = %d, want 0", len(handler.cache))
+	if _, err := pool.Exec(t.Context(), `UPDATE user_recommendation_snapshots SET expires_at = NOW() - INTERVAL '1 second' WHERE user_id = 7`); err != nil {
+		t.Fatal(err)
+	}
+	_, fresh, found, err = store.Load(t.Context(), 7)
+	if err != nil || !found || fresh {
+		t.Fatalf("expired snapshot found/fresh/error = %v/%v/%v", found, fresh, err)
 	}
 }
 
@@ -172,7 +179,7 @@ func recommendationTestRouter(t *testing.T) (*gin.Engine, int) {
 	}
 	router := gin.New()
 	router.HTMLRender = renderer
-	NewHandler(cfg, NewService(store)).Register(router)
+	NewHandler(cfg, NewService(store), nil).Register(router)
 	return router, source.ID
 }
 
@@ -187,6 +194,11 @@ func forYouTestRouter(t *testing.T) (*gin.Engine, *fakePersonalizer) {
 	}
 	personalizer.relive = []catalog.Movie{{ID: 101, DoubanID: "classic", Title: "经典电影", Rating: 9}}
 	personalizer.recent = []catalog.Movie{{ID: 102, DoubanID: "recent", Title: "关联电影", Rating: 8}}
+	service := NewService(store, WithPersonalizer(personalizer))
+	snapshots := NewSnapshotStore(testdb.Pool(t))
+	if err := NewRefresher(snapshots, service).Refresh(t.Context(), 7); err != nil {
+		t.Fatal(err)
+	}
 	cfg := config.Config{SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"foryou", "recommendations", "404"})
 	if err != nil {
@@ -194,7 +206,7 @@ func forYouTestRouter(t *testing.T) (*gin.Engine, *fakePersonalizer) {
 	}
 	router := gin.New()
 	router.HTMLRender = renderer
-	NewHandler(cfg, NewService(store, WithPersonalizer(personalizer))).Register(router)
+	NewHandler(cfg, service, snapshots).Register(router)
 	return router, personalizer
 }
 
@@ -203,21 +215,11 @@ type fakePersonalizer struct {
 	recommendationCalls, reliveCalls, recentCalls int
 }
 
-type concurrentPersonalizer struct {
-	movies []catalog.Movie
-	calls  atomic.Int32
-}
+type recordingRecommendationQueue struct{ specs []workqueue.Spec }
 
-func (personalizer *concurrentPersonalizer) UserRecommendations(context.Context, int, int) ([]catalog.Movie, error) {
-	personalizer.calls.Add(1)
-	time.Sleep(20 * time.Millisecond)
-	return personalizer.movies, nil
-}
-func (*concurrentPersonalizer) ReliveClassics(context.Context, int, int) ([]catalog.Movie, error) {
-	return nil, nil
-}
-func (*concurrentPersonalizer) RecentSimilar(context.Context, int, int) ([]catalog.Movie, string, error) {
-	return nil, "", nil
+func (queue *recordingRecommendationQueue) Enqueue(_ context.Context, spec workqueue.Spec) (int, error) {
+	queue.specs = append(queue.specs, spec)
+	return len(queue.specs), nil
 }
 
 func (fake *fakePersonalizer) UserRecommendations(context.Context, int, int) ([]catalog.Movie, error) {

@@ -77,6 +77,22 @@ func (cache *TTL[T]) Set(key string, value T) {
 	delete(cache.entries, oldestKey)
 }
 
+// GetStale 读缓存，过期的记录仍然返回（stale=true），只有完全不存在才返回 false。
+func (cache *TTL[T]) GetStale(key string) (value T, stale bool, ok bool) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	var zero T
+	e, exists := cache.entries[key]
+	if !exists {
+		return zero, false, false
+	}
+	expired := cache.clock().After(e.expiresAt)
+	cache.sequence++
+	e.usedAt = cache.sequence
+	cache.entries[key] = e
+	return e.value, expired, true
+}
+
 // Len 返回当前缓存条数。
 func (cache *TTL[T]) Len() int {
 	cache.mu.Lock()

@@ -17,30 +17,13 @@
     <p class="search-result-hint">「{{ .Keyword }}」的搜索结果</p>
 </div>
 
-<!-- 豆瓣电影卡片 -->
-<div id="douban-card-container"
-     hx-get="/api/htmx/douban-card?kw={{ urlquery .Keyword }}"
-     hx-trigger="load"
-     hx-indicator="#douban-card-loading"
-     hx-swap="outerHTML">
-    <div id="douban-card-loading" class="htmx-card-indicator htmx-indicator" role="status" aria-live="polite">
-        <div class="htmx-skeleton-poster" aria-hidden="true"></div>
-        <div class="htmx-skeleton-copy" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-        </div>
-        <span class="htmx-loading-label" aria-label="正在匹配影片信息..." aria-hidden="true"></span>
-    </div>
-</div>
-
 <div id="search-results-container"
 	 hx-get="/api/htmx/search?q={{ urlquery .Keyword }}{{ if .Bypass }}&bypass=1{{ end }}"
 	 hx-trigger="load"
      hx-indicator="#search-loading">
     <div id="search-loading" class="htmx-indicator search-loading-state">
         <div class="search-loading-spinner" aria-hidden="true"></div>
-        <p>正在搜索全网资源，请稍候...</p>
+        <p>正在匹配影片与播放资源...</p>
     </div>
 </div>
 <div class="ad-slot">

@@ -640,6 +640,10 @@ func (handler *Handler) deleteFilter(c *gin.Context, remove func(context.Context
 
 // page 渲染后台页面。
 func (handler *Handler) page(c *gin.Context, templateName, title string, extra gin.H) {
+	if extra == nil {
+		extra = gin.H{}
+	}
+	extra["ContentClass"] = "full-width"
 	c.HTML(http.StatusOK, templateName, platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title}, extra))
 }
 

@@ -115,6 +115,7 @@ var RequestInputs = []RequestInput{
 	{Method: "GET", Path: "/api/htmx/search", Name: "q", Location: InputQuery},
 	{Method: "GET", Path: "/api/htmx/search", Name: "bypass", Location: InputQuery},
 	{Method: "GET", Path: "/api/htmx/search", Name: "year", Location: InputQuery},
+	{Method: "GET", Path: "/api/htmx/search", Name: "douban_id", Location: InputQuery},
 	{Method: "GET", Path: "/api/htmx/search", Name: "type", Location: InputQuery},
 	{Method: "GET", Path: "/api/htmx/search", Name: "limit", Location: InputQuery, Default: "20"},
 	{Method: "GET", Path: "/api/v2/search", Name: "q", Location: InputQuery},
@@ -150,8 +151,6 @@ var RequestInputs = []RequestInput{
 	{Method: "GET", Path: "/api/htmx/dashboard/feedback", Name: "page", Location: InputQuery, Default: "1"},
 	{Method: "GET", Path: "/api/htmx/public/:user_id/wish", Name: "page", Location: InputQuery, Default: "1"},
 	{Method: "GET", Path: "/api/htmx/public/:user_id/watched", Name: "page", Location: InputQuery, Default: "1"},
-	{Method: "GET", Path: "/api/htmx/douban-card", Name: "kw", Location: InputQuery},
-
 	{Method: "GET", Path: "/api/danmaku", Name: "title", Location: InputQuery},
 	{Method: "GET", Path: "/api/danmaku", Name: "episode", Location: InputQuery},
 	{Method: "POST", Path: "/api/danmaku", Name: "title", Location: InputJSON},

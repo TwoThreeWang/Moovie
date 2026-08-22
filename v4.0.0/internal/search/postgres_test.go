@@ -40,16 +40,16 @@ func TestPostgresStoreSearchUsesPlaybackQualityAndPreservesMapping(t *testing.T)
 }
 
 func TestPostgresStoreSearchesCanonicalMediaAndAliases(t *testing.T) {
-	database := &fakeSQLDatabase{rows: &fakeSQLRows{values: [][]any{{int64(7), "流浪地球", "The Wandering Earth", []string{"流浪地球别名"}, "2019", "movie", "poster", "26266893", 9.7, "一部关于..."}}}}
+	database := &fakeSQLDatabase{rows: &fakeSQLRows{values: [][]any{{int64(7), "流浪地球", "The Wandering Earth", []string{"流浪地球别名"}, "2019", "movie", "poster", "26266893", 9.7, "一部关于...", "科幻,冒险", "中国", `[{"name":"导演甲"}]`, `[{"name":"演员甲"}]`, "125分钟"}}}}
 	store := NewPostgresStore(database)
 	items, err := store.SearchUnifiedMedia(t.Context(), UnifiedQuery{Keyword: "流浪", Year: "2019", MediaType: "film", Limit: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].MediaID != 7 || items[0].Title != "流浪地球" || len(items[0].SearchAliases) != 1 || items[0].Resources == nil {
+	if len(items) != 1 || items[0].MediaID != 7 || items[0].Title != "流浪地球" || len(items[0].SearchAliases) != 1 || items[0].Resources == nil || len(items[0].ActorNames()) != 1 {
 		t.Fatalf("items = %+v", items)
 	}
-	for _, expected := range []string{"FROM media", "media_aliases", "$2 <> '' AND alias.normalized_alias LIKE $2", "media.media_type = $4", "LIMIT $6"} {
+	for _, expected := range []string{"FROM media", "media.douban_id <> ''", "media_aliases", "$2 <> '' AND alias.normalized_alias LIKE $2", "media.media_type = $4", "LIMIT $6"} {
 		if !strings.Contains(database.query, expected) {
 			t.Fatalf("canonical query missing %q: %s", expected, database.query)
 		}

@@ -251,7 +251,7 @@
         {{ else }}
         <h2 class="section-title">查找在线播放资源</h2>
         <div id="movie-search-results"
-             hx-get="/api/htmx/search?q={{if .SearchTitle }}{{ urlquery .SearchTitle }}{{else}}{{ urlquery .Movie.Title }}{{end}}&year={{ urlquery .Movie.Year }}"
+             hx-get="/api/htmx/search?q={{if .SearchTitle }}{{ urlquery .SearchTitle }}{{else}}{{ urlquery .Movie.Title }}{{end}}&year={{ urlquery .Movie.Year }}&douban_id={{ urlquery .Movie.DoubanID }}"
              hx-trigger="load"
              hx-indicator="#movie-search-loading">
             <div id="movie-search-loading" class="htmx-indicator movie-search-loading-state">

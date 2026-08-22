@@ -1,17 +1,13 @@
 package catalog
 
 import (
-	"html/template"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
-	"github.com/gin-gonic/gin"
 )
 
 func TestDoubanProviderFallsBackAcrossMediaTypesAndMapsMovie(t *testing.T) {
@@ -196,33 +192,5 @@ func TestDoubanPopularServesStaleCacheWhileRefreshingInBackground(t *testing.T) 
 			t.Fatal("background refresh never updated the cache")
 		}
 		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-// 搜索页的豆瓣卡片不能被慢豆瓣拖住：超时后只显示本地匹配，而不是干等 10 秒。
-func TestDoubanCardFallsBackToLocalWhenExternalSuggestIsSlow(t *testing.T) {
-	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		<-request.Context().Done()
-		return nil, request.Context().Err()
-	})}
-	store := NewPostgresStore(testdb.Pool(t))
-	if err := store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", Genres: "剧情", Rating: 9.7}); err != nil {
-		t.Fatalf("seed movie: %v", err)
-	}
-	provider := NewDoubanProvider(client, store)
-	router := gin.New()
-	router.SetHTMLTemplate(template.Must(template.New("partials/douban_card.html").Parse(`{{ range .Matches }}{{ .DoubanID }};{{ end }}`)))
-	NewHandler(config.Config{}, store, WithSuggester(provider)).Register(router)
-
-	recorder := httptest.NewRecorder()
-	started := time.Now()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/htmx/douban-card?kw=肖申克", nil))
-	elapsed := time.Since(started)
-
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "1292052") {
-		t.Fatalf("status/body = %d/%q", recorder.Code, recorder.Body.String())
-	}
-	if elapsed > externalSuggestBudget+2*time.Second {
-		t.Fatalf("douban card waited on the slow upstream: %s", elapsed)
 	}
 }

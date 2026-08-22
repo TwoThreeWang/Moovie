@@ -35,6 +35,7 @@ func TestCriticalRequestFieldsRemainInContract(t *testing.T) {
 	required := []string{
 		"GET /search query doubanId",
 		"GET /api/htmx/search query q",
+		"GET /api/htmx/search query douban_id",
 		"POST /api/user-movies/:id/watched form_or_query rating",
 		"POST /api/v2/history/sync json operations[].occurred_at",
 		"POST /api/v2/playback/events json source_key",

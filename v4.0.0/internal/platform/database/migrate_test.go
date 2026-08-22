@@ -17,14 +17,18 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		versions = append(versions, migration.version)
 	}
-	if !reflect.DeepEqual(versions, []string{"0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0036", "0037", "0038", "0039", "0040", "0041", "0042", "0043", "0044", "0045", "0046"}) {
+	expectedVersions := make([]string, 52)
+	for index := range expectedVersions {
+		expectedVersions[index] = fmt.Sprintf("%04d", index+1)
+	}
+	if !reflect.DeepEqual(versions, expectedVersions) {
 		t.Fatalf("migrations = %+v", migrations)
 	}
 	upperSQL := ""
 	for _, migration := range migrations {
 		upperSQL += "\n" + strings.ToUpper(migration.sql)
 	}
-	for _, required := range []string{"CREATE TABLE SITES", "CREATE TABLE VOD_ITEMS", "CREATE TABLE COPYRIGHT_FILTERS", "CREATE TABLE CATEGORY_FILTERS", "CREATE TABLE SEARCH_LOGS", "CREATE TABLE SITE_STATS", "CREATE TABLE WATCH_HISTORIES", "CREATE TABLE USERS", "CREATE TABLE USER_MOVIES", "CREATE TABLE MOVIES", "CREATE TABLE DOUBAN_SYNC_JOBS", "CREATE TABLE MONTHLY_REPORTS", "CREATE TABLE COMMENT_LIKES", "CREATE TABLE COMMENT_REPLIES", "CREATE TABLE FEEDBACKS", "CREATE TABLE DANMAKUS", "CREATE TABLE IF NOT EXISTS MEDIA_FIELD_SOURCES", "ALTER TABLE VOD_ITEMS ADD COLUMN IF NOT EXISTS RESOURCE_STATUS", "CREATE TABLE IF NOT EXISTS RESOURCE_PLAYBACK_HEALTH", "CREATE TABLE IF NOT EXISTS HISTORY_SYNC_EVENTS"} {
+	for _, required := range []string{"CREATE TABLE SITES", "CREATE TABLE VOD_ITEMS", "CREATE TABLE COPYRIGHT_FILTERS", "CREATE TABLE CATEGORY_FILTERS", "CREATE TABLE SEARCH_LOGS", "CREATE TABLE SITE_STATS", "CREATE TABLE WATCH_HISTORIES", "CREATE TABLE USERS", "CREATE TABLE USER_MOVIES", "CREATE TABLE MOVIES", "CREATE TABLE DOUBAN_SYNC_JOBS", "CREATE TABLE MONTHLY_REPORTS", "CREATE TABLE COMMENT_LIKES", "CREATE TABLE COMMENT_REPLIES", "CREATE TABLE FEEDBACKS", "CREATE TABLE DANMAKUS", "CREATE TABLE IF NOT EXISTS MEDIA_FIELD_SOURCES", "ALTER TABLE VOD_ITEMS ADD COLUMN IF NOT EXISTS RESOURCE_STATUS", "CREATE TABLE IF NOT EXISTS RESOURCE_PLAYBACK_HEALTH", "CREATE TABLE IF NOT EXISTS HISTORY_SYNC_EVENTS", "CREATE TABLE USER_RECOMMENDATION_SNAPSHOTS", "PLAYBACK_ATTEMPT_EVENTS_TRENDING_IDX"} {
 		if !strings.Contains(upperSQL, required) {
 			t.Fatalf("migration missing %q", required)
 		}
@@ -116,14 +120,14 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	// 迁移编号在 0031 之后仍会继续增长，因此这里按版本号定位割接迁移，
 	// 而不是取最后一个文件——否则每加一条新迁移都会误报。
 	const cutoverVersion = "0031"
-	allowedTableDrops := map[string]bool{"0036": true, "0044": true}
+	allowedTableDrops := map[string]bool{"0036": true, "0044": true, "0047": true, "0048": true, "0050": true}
 	cutoverSQL := ""
 	for _, migration := range migrations {
 		if migration.version == cutoverVersion {
 			cutoverSQL = strings.ToUpper(migration.sql)
 			continue
 		}
-		// 删表必须是刻意的：0036 合并任务队列、0044 删只写不读的审计表，
+		// 删表必须是刻意的：0036 合并任务队列，0044/0047/0048/0050 删除已退役结构，
 		// 其余迁移一律不许出现 DROP TABLE，防止误删。
 		if !allowedTableDrops[migration.version] && strings.Contains(strings.ToUpper(migration.sql), "DROP TABLE") {
 			t.Fatalf("only explicit cutover migrations may drop retired tables: version=%s", migration.version)

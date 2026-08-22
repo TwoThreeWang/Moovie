@@ -110,7 +110,6 @@ var Routes = []Route{
 	{Method: "GET", Path: "/api/htmx/dashboard/feedback", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/htmx/public/:user_id/wish", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/htmx/public/:user_id/watched", Surface: SurfaceHTMX},
-	{Method: "GET", Path: "/api/htmx/douban-card", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/htmx/douban-sync-status", Surface: SurfaceHTMX},
 	{Method: "GET", Path: "/api/danmaku", Surface: SurfacePublicAPI},
 	{Method: "POST", Path: "/api/danmaku", Surface: SurfaceAuthenticatedAPI},

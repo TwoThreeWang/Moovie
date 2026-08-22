@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -31,6 +32,11 @@ type UnifiedItem struct {
 	DoubanID      string            `json:"douban_id,omitempty"`
 	RatingDouban  float64           `json:"rating_douban,omitempty"`
 	Summary       string            `json:"summary,omitempty"`
+	Genres        string            `json:"genres,omitempty"`
+	Countries     string            `json:"countries,omitempty"`
+	Directors     string            `json:"directors,omitempty"`
+	Actors        string            `json:"actors,omitempty"`
+	Duration      string            `json:"duration,omitempty"`
 	ResourceCount int               `json:"resource_count"`
 	Resources     []UnifiedResource `json:"resources"`
 	BestResource  *UnifiedResource  `json:"best_resource,omitempty"`
@@ -47,7 +53,10 @@ type UnifiedResource struct {
 	VodRemarks     string  `json:"remarks,omitempty"`
 	VodYear        string  `json:"year,omitempty"`
 	TypeName       string  `json:"media_type,omitempty"`
+	CategoryName   string  `json:"category_name,omitempty"`
 	VodPic         string  `json:"poster,omitempty"`
+	VodArea        string  `json:"area,omitempty"`
+	VodActor       string  `json:"actors,omitempty"`
 	AvgSpeedMs     int     `json:"avg_speed_ms"`
 	SampleCount    int     `json:"sample_count"`
 	FailedCount    int     `json:"failed_count"`
@@ -82,16 +91,30 @@ type UnifiedCatalog interface {
 // UnifiedSearchOption 是统一搜索服务的可选装配项。
 type UnifiedSearchOption func(*UnifiedSearchService)
 
+// UnifiedSuggestionFetcher 在本地没有规范影片时提供豆瓣联想兜底。
+type UnifiedSuggestionFetcher func(ctx context.Context, keyword string, limit int) ([]UnifiedItem, error)
+
 // WithUnifiedCatalog 注入媒体库检索；不注入时只返回资源侧结果。
 func WithUnifiedCatalog(catalog UnifiedCatalog) UnifiedSearchOption {
 	return func(service *UnifiedSearchService) { service.catalog = catalog }
 }
 
+// WithUnifiedSuggestions 注入豆瓣联想兜底。
+func WithUnifiedSuggestions(fetcher UnifiedSuggestionFetcher) UnifiedSearchOption {
+	return func(service *UnifiedSearchService) { service.suggestions = fetcher }
+}
+
 // UnifiedSearchService 把「资源站搜索」和「媒体库检索」两条支路的结果合并成一份列表。
 type UnifiedSearchService struct {
-	resources Searcher
-	catalog   UnifiedCatalog
+	resources   Searcher
+	catalog     UnifiedCatalog
+	suggestions UnifiedSuggestionFetcher
 }
+
+const (
+	unifiedSuggestionBudget = 2 * time.Second
+	maxUnifiedSuggestions   = 5
+)
 
 // NewUnifiedSearchService 创建统一搜索服务。
 func NewUnifiedSearchService(resources Searcher, options ...UnifiedSearchOption) *UnifiedSearchService {
@@ -237,6 +260,14 @@ func (service *UnifiedSearchService) SearchUnified(ctx context.Context, query Un
 		}
 		items = append(items, *group)
 	}
+	if len(items) == 0 && service.suggestions != nil {
+		suggestionCtx, cancel := context.WithTimeout(ctx, unifiedSuggestionBudget)
+		suggestions, suggestionErr := service.suggestions(suggestionCtx, query.Keyword, min(query.Limit, maxUnifiedSuggestions))
+		cancel()
+		if suggestionErr == nil {
+			items = append(items, suggestions...)
+		}
+	}
 	return UnifiedResult{Items: items, Unmatched: unmatched, FilteredCount: resourceResult.FilteredCount,
 		DurationMS: time.Since(started).Milliseconds(), ResourceDurationMS: resourceDuration, ResourceUnavailable: resourceUnavailable,
 		CatalogDurationMS: catalogDuration, CatalogFallback: catalogFallback}, nil
@@ -315,7 +346,9 @@ func (query UnifiedQuery) excludes(sourceKey, vodID string) bool {
 func unifiedItemFromResource(resource VodItem) *UnifiedItem {
 	return &UnifiedItem{MediaID: resource.MediaID, Title: resource.VodName, OriginalTitle: firstNonEmpty(resource.VodEn, resource.VodSub),
 		Year: resource.VodYear, MediaType: normalizeMediaType(resource.TypeName), Poster: resource.VodPic,
-		DoubanID: resource.VodDoubanId, Resources: make([]UnifiedResource, 0)}
+		DoubanID: resource.VodDoubanId, Genres: resource.VodClass, Countries: resource.VodArea,
+		Directors: resource.VodDirector, Actors: resource.VodActor, Duration: resource.VodDuration,
+		Resources: make([]UnifiedResource, 0)}
 }
 
 // appendUniqueUnifiedResource 按 source_key+vod_id 去重后追加资源。
@@ -331,9 +364,40 @@ func appendUniqueUnifiedResource(group *UnifiedItem, resource VodItem) {
 // newUnifiedResource 把内部资源模型裁剪成对外返回的精简结构。
 func newUnifiedResource(item VodItem) UnifiedResource {
 	return UnifiedResource{MediaID: item.MediaID, SourceKey: item.SourceKey, VodId: item.VodId, VodName: item.VodName,
-		VodRemarks: item.VodRemarks, VodYear: item.VodYear, TypeName: normalizeMediaType(item.TypeName), VodPic: item.VodPic,
+		VodRemarks: item.VodRemarks, VodYear: item.VodYear, TypeName: normalizeMediaType(item.TypeName), CategoryName: item.TypeName,
+		VodPic: item.VodPic, VodArea: item.VodArea, VodActor: item.VodActor,
 		AvgSpeedMs: item.AvgSpeedMs, SampleCount: item.SampleCount, FailedCount: item.FailedCount,
 		SuccessRate: resourceSuccessRate(item.SampleCount, item.FailedCount), ResourceStatus: item.ResourceStatus}
+}
+
+// GenreNames/CountryNames/DirectorNames/ActorNames 为规范影片卡提供精简列表。
+func (item UnifiedItem) GenreNames() []string    { return splitMetadata(item.Genres) }
+func (item UnifiedItem) CountryNames() []string  { return splitMetadata(item.Countries) }
+func (item UnifiedItem) DirectorNames() []string { return peopleNames(item.Directors, 3) }
+func (item UnifiedItem) ActorNames() []string    { return peopleNames(item.Actors, 4) }
+
+// peopleNames 同时兼容 media 的 JSON 人物列表和资源侧的逗号文本。
+func peopleNames(value string, limit int) []string {
+	var people []struct {
+		Name string `json:"name"`
+	}
+	names := make([]string, 0, limit)
+	if json.Unmarshal([]byte(value), &people) == nil {
+		for _, person := range people {
+			if name := strings.TrimSpace(person.Name); name != "" {
+				names = append(names, name)
+				if len(names) == limit {
+					return names
+				}
+			}
+		}
+		return names
+	}
+	names = splitMetadata(value)
+	if len(names) > limit {
+		names = names[:limit]
+	}
+	return names
 }
 
 // resourceIsBetter 排序规则：先看成功率，再看首帧速度；没有样本的排在后面。

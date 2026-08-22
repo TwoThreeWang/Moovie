@@ -124,8 +124,7 @@ func isHeavyRequestPath(path string) bool {
 		"/play/", "/watch/", "/api/watch/resolve", "/api/tvbox.json", "/api/vod",
 		"/api/v2/media/", "/api/v2/media-units/", "/api/htmx/foryou", "/api/htmx/similar",
 		"/api/htmx/search", "/api/v2/search", "/api/htmx/movie/",
-		"/api/htmx/reviews", "/api/htmx/movie-backdrops",
-		"/api/htmx/douban-card", "/api/danmaku", "/similar/",
+		"/api/htmx/reviews", "/api/htmx/movie-backdrops", "/api/danmaku", "/similar/",
 		"/recommendations/", "/api/v2/admin/metrics",
 	} {
 		if strings.HasPrefix(path, prefix) {

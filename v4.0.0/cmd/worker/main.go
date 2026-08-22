@@ -26,6 +26,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/outbound"
 	"github.com/TwoThreeWang/Moovie/new/internal/playback"
+	"github.com/TwoThreeWang/Moovie/new/internal/recommendation"
 	"github.com/TwoThreeWang/Moovie/new/internal/report"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
@@ -107,7 +108,9 @@ func main() {
 			Provider: playback.NewTMDBPopularProvider(client, cfg.Catalog.TMDBToken, mediaStore)})
 	}
 	popularityRefresher := playback.NewPopularityRefresher(playback.NewPopularitySnapshotStore(pool),
-		playback.NewCompositePopularProvider(popularSources...), cfg.Popularity.RefreshInterval)
+		playback.NewCompositePopularProvider(popularSources...), playback.NewSiteTrendingProvider(pool), cfg.Popularity.RefreshInterval)
+	recommendationService := recommendation.NewService(movies, recommendation.WithPersonalizer(movies))
+	recommendationRefresher := recommendation.NewRefresher(recommendation.NewSnapshotStore(pool), recommendationService)
 	syncService := douban.NewService(douban.NewClient(client), libraryStore, jobs)
 	reportService := report.NewService(reports, libraryStore, movies)
 	doubanHandler := douban.NewTaskHandler(jobs, users, syncService, douban.WithMonthlyGenerator(reportService))
@@ -125,6 +128,8 @@ func main() {
 	dispatcher.Handle(douban.TaskSync, 30*time.Minute, doubanHandler.Handle)
 	dispatcher.Handle(douban.TaskDaily, 30*time.Minute, doubanHandler.HandleDaily)
 	dispatcher.Handle(playback.TaskPopularityRefresh, 15*time.Minute, popularityRefresher.Handle)
+	dispatcher.Handle(playback.TaskSiteTrendingRefresh, 2*time.Minute, popularityRefresher.HandleSiteTrending)
+	dispatcher.Handle(recommendation.TaskRefresh, 5*time.Minute, recommendationRefresher.Handle)
 	dispatcher.Handle(operations.TaskCleanup, 30*time.Minute, operationsService.HandleCleanup)
 	dispatcher.Handle(operations.TaskHealthCheck, 5*time.Minute, operationsService.HandleHealthCheck)
 	dispatcher.Handle(mediaidentity.TaskQualityRefresh, time.Minute, func(ctx context.Context, job workqueue.Job) error {
@@ -141,6 +146,7 @@ func main() {
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: catalog.TaskIMDbBackfill, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute, InitialDelay: 30 * time.Second})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: douban.TaskDaily, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour, InitialDelay: time.Minute})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: cfg.Popularity.RefreshInterval})
+	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskSiteTrendingRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: playback.SiteTrendingRefreshInterval})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: operations.TaskCleanup, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: operations.TaskHealthCheck, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Hour, InitialDelay: time.Hour})
 	if err := dispatcher.Start(); err != nil {

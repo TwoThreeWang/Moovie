@@ -78,7 +78,7 @@ func TestUnifiedSearchAPIKeepsGroupedAndUnmatchedResultsSeparate(t *testing.T) {
 	resources := &fakeSearcher{result: Result{Items: []VodItem{
 		{SourceKey: "a", VodId: "1", VodName: "沙丘", VodPic: "https://img.example/canonical.jpg", VodDoubanId: "1292052", MediaID: 9, SampleCount: 10, AvgSpeedMs: 300},
 		{SourceKey: "b", VodId: "2", VodName: "沙丘", MediaID: 9, SampleCount: 10, AvgSpeedMs: 100},
-		{SourceKey: "unknown", VodId: "3", VodName: "沙丘 未确认", VodPic: "https://img.example/unmatched.jpg", VodPlayUrl: "must-not-leak-play-url", VodContent: "must-not-leak-full-content"},
+		{SourceKey: "unknown", VodId: "3", VodName: "沙丘 未确认", VodPic: "https://img.example/unmatched.jpg", VodYear: "2026", VodArea: "中国", TypeName: "电视剧", VodActor: "演员甲,演员乙", VodRemarks: "更新至第06集", AvgSpeedMs: 100, SampleCount: 3, VodPlayUrl: "must-not-leak-play-url", VodContent: "must-not-leak-full-content"},
 	}}}
 	app := newSearchTestApp(t, resources, WithUnifiedSearcher(NewUnifiedSearchService(resources)))
 	response := performRequest(app.handler, "/api/v2/search?q=%E6%B2%99%E4%B8%98")
@@ -110,27 +110,47 @@ func TestUnifiedSearchAPIKeepsGroupedAndUnmatchedResultsSeparate(t *testing.T) {
 	}
 
 	fragment := responseBody(t, app.client, app.baseURL+"/api/htmx/search?q=%E6%B2%99%E4%B8%98")
-	for _, expected := range []string{"2 个已确认资源", "最佳线路：b", "可能相关的其他资源", "沙丘 未确认", `href="/watch/1292052?source_key=b&vod_id=2"`, `href="/play/unknown/3"`} {
+	for _, expected := range []string{"媒体库收录", "已匹配 <strong>2</strong> 个播放资源", "立即播放", "可能相关的其他资源", "沙丘 未确认", "中国", "电视剧", "主演：演员甲,演员乙", "极速 0.1秒", "更新至第06集", `class="source-item active">unknown</span>`, `href="/watch/1292052?source_key=b&vod_id=2"`, `href="/play/unknown/3"`} {
 		if !strings.Contains(fragment, expected) {
 			t.Fatalf("fragment missing %q: %s", expected, fragment)
 		}
+	}
+	if strings.Contains(fragment, "最佳线路：") || strings.Contains(fragment, `class="source-item">a</span>`) || strings.Contains(fragment, `class="source-item">b</span>`) {
+		t.Fatalf("canonical cards still expose source labels: %s", fragment)
 	}
 	if strings.Count(fragment, "/api/proxy/image/r76RqSIVvUryzx") != 2 {
 		t.Fatalf("search posters did not use the image proxy: %s", fragment)
 	}
 }
 
-func TestUnifiedSearchFragmentHidesCanonicalMediaWithoutResources(t *testing.T) {
+func TestUnifiedSearchFragmentShowsCanonicalMediaWithoutPlaybackAction(t *testing.T) {
 	resources := &fakeSearcher{}
-	catalog := &recordingUnifiedCatalog{items: []UnifiedItem{{MediaID: 12, Title: "仅有规范资料", Year: "2026", MediaType: "movie"}}}
+	catalog := &recordingUnifiedCatalog{items: []UnifiedItem{{MediaID: 12, Title: "仅有规范资料", Year: "2026", MediaType: "movie", DoubanID: "1292052"}}}
 	app := newSearchTestApp(t, resources, WithUnifiedSearcher(NewUnifiedSearchService(resources, WithUnifiedCatalog(catalog))))
 	fragment := responseBody(t, app.client, app.baseURL+"/api/htmx/search?q=%E8%A7%84%E8%8C%83")
-	if strings.Contains(fragment, "仅有规范资料") || strings.Contains(fragment, "0 个已确认资源") || !strings.Contains(fragment, "未找到相关资源") {
+	if !strings.Contains(fragment, "仅有规范资料") || !strings.Contains(fragment, "暂未匹配播放资源") || strings.Contains(fragment, "立即播放") {
 		t.Fatalf("canonical-only fragment = %s", fragment)
 	}
 	response := performRequest(app.handler, "/api/v2/search?q=%E8%A7%84%E8%8C%83")
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "仅有规范资料") {
 		t.Fatalf("canonical-only API = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestUnifiedSearchFragmentHidesCurrentMovieWithoutResources(t *testing.T) {
+	resources := &fakeSearcher{}
+	catalog := &recordingUnifiedCatalog{items: []UnifiedItem{
+		{MediaID: 12, Title: "当前影片", DoubanID: "1292052"},
+		{MediaID: 13, Title: "其他影片", DoubanID: "other"},
+	}}
+	app := newSearchTestApp(t, resources, WithUnifiedSearcher(NewUnifiedSearchService(resources, WithUnifiedCatalog(catalog))))
+	fragment := responseBody(t, app.client, app.baseURL+"/api/htmx/search?q=%E5%BD%B1%E7%89%87&douban_id=1292052")
+	if strings.Contains(fragment, "当前影片") || !strings.Contains(fragment, "其他影片") {
+		t.Fatalf("movie-context fragment = %s", fragment)
+	}
+	response := performRequest(app.handler, "/api/v2/search?q=%E5%BD%B1%E7%89%87")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "当前影片") {
+		t.Fatalf("unfiltered API = %d %s", response.Code, response.Body.String())
 	}
 }
 

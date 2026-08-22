@@ -30,7 +30,7 @@ func (store *PostgresStore) FindByID(ctx context.Context, id int) (*User, error)
 
 // ListUsers 列出全部账号，供后台使用。
 func (store *PostgresStore) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := store.database.Query(ctx, `SELECT `+userColumns+` FROM users ORDER BY id ASC`)
+	rows, err := store.database.Query(ctx, `SELECT `+userColumns+` FROM users ORDER BY id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}

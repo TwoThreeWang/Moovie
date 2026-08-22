@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -44,39 +45,6 @@ import (
 // contentPages 列出需要与共享 layout、partial 一起解析的页面模板。
 // 显式维护清单可以让模板缺失或重名在启动阶段暴露，而不是等用户访问时才报错。
 var contentPages = []string{"home", "search", "trends", "about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "404", "player", "player_embed", "iptv", "tvbox", "play", "watch", "login", "register", "dashboard", "settings", "movie", "fetching", "recommendations", "foryou", "share", "share_monthly", "cinema", "feedback", "admin_feedback", "discover", "admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_copyright", "admin_category", "admin_matches", "admin_jobs"}
-
-// doubanResourceLister 是 search 存储里按豆瓣 ID 查资源的能力。
-type doubanResourceLister interface {
-	ListResourcesByDoubanID(ctx context.Context, doubanID string) ([]search.LinkedResourceRow, error)
-	HasPlayableResource(ctx context.Context, mediaID int) (bool, error)
-}
-
-// catalogResourceListerAdapter 只做模型转换，让 catalog 不必依赖 search 的具体结构体。
-type catalogResourceListerAdapter struct{ lister doubanResourceLister }
-
-// ListResourcesByDoubanID 转换资源模型。
-func (a catalogResourceListerAdapter) ListResourcesByDoubanID(ctx context.Context, doubanID string) ([]catalog.LinkedResource, error) {
-	rows, err := a.lister.ListResourcesByDoubanID(ctx, doubanID)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]catalog.LinkedResource, len(rows))
-	for i, r := range rows {
-		result[i] = catalog.LinkedResource{
-			SourceKey: r.SourceKey, VodID: r.VodID,
-			VodName: r.VodName, VodPic: r.VodPic, VodYear: r.VodYear,
-			VodArea: r.VodArea, TypeName: r.TypeName, VodActor: r.VodActor,
-			VodRemarks: r.VodRemarks, VodDoubanID: r.VodDoubanID,
-			AvgSpeedMs: r.AvgSpeedMs, SampleCount: r.SampleCount, FailedCount: r.FailedCount,
-		}
-	}
-	return result, nil
-}
-
-// HasPlayableResource 判断这部片子有没有可播放的资源。
-func (a catalogResourceListerAdapter) HasPlayableResource(ctx context.Context, mediaID int) (bool, error) {
-	return a.lister.HasPlayableResource(ctx, mediaID)
-}
 
 // discoverPopularAdapter 把播放域的热门结果转换成发现页需要的轻量结构。
 type discoverPopularAdapter struct{ provider playback.PopularProvider }
@@ -259,6 +227,33 @@ func main() {
 	if unifiedCatalog, ok := itemStore.(search.UnifiedCatalog); ok {
 		unifiedOptions = append(unifiedOptions, search.WithUnifiedCatalog(unifiedCatalog))
 	}
+	unifiedOptions = append(unifiedOptions, search.WithUnifiedSuggestions(func(ctx context.Context, keyword string, limit int) ([]search.UnifiedItem, error) {
+		suggestions, err := doubanProvider.SuggestExternal(ctx, keyword)
+		if err != nil {
+			return nil, err
+		}
+		items := make([]search.UnifiedItem, 0, min(limit, len(suggestions)))
+		for _, suggestion := range suggestions {
+			if len(items) == limit {
+				break
+			}
+			if len(suggestion.ID) < 6 || len(suggestion.ID) > 9 || suggestion.Title == "" {
+				continue
+			}
+			if _, parseErr := strconv.Atoi(suggestion.ID); parseErr != nil {
+				continue
+			}
+			items = append(items, search.UnifiedItem{DoubanID: suggestion.ID, Title: suggestion.Title,
+				OriginalTitle: suggestion.SubTitle, Year: suggestion.Year, MediaType: suggestion.Type, Poster: suggestion.Img,
+				Resources: []search.UnifiedResource{}})
+			if metadataRefreshJobs != nil {
+				if _, queueErr := metadataRefreshJobs.EnqueueRefresh(ctx, suggestion.ID, catalog.RefreshProviderDouban, catalog.RefreshReasonSearchDiscovery, 0); queueErr != nil {
+					slog.Warn("queue discovered metadata", "douban_id", suggestion.ID, "error", queueErr)
+				}
+			}
+		}
+		return items, nil
+	}))
 	unifiedSearchService := search.NewUnifiedSearchService(searchService, unifiedOptions...)
 	searchHandler := search.NewHandler(
 		cfg,
@@ -277,9 +272,13 @@ func main() {
 		popularSources = append(popularSources, playback.PopularSource{Name: "tmdb", Provider: tmdbPopular})
 	}
 	snapshotStore := playback.NewPopularitySnapshotStore(databasePool)
+	siteTrendingSource := playback.NewSiteTrendingProvider(databasePool)
 	popularityRefresher := playback.NewPopularityRefresher(snapshotStore,
-		playback.NewCompositePopularProvider(popularSources...), cfg.Popularity.RefreshInterval)
-	popularProvider := playback.PopularProvider(playback.NewSnapshotPopularProvider(snapshotStore, doubanPopular))
+		playback.NewCompositePopularProvider(popularSources...), siteTrendingSource, cfg.Popularity.RefreshInterval)
+	popularProvider := playback.PopularProvider(snapshotStore)
+	recommendationService := recommendation.NewService(catalogStore, recommendation.WithPersonalizer(postgresCatalogStore))
+	recommendationSnapshots := recommendation.NewSnapshotStore(databasePool)
+	recommendationRefresher := recommendation.NewRefresher(recommendationSnapshots, recommendationService)
 	// ── 阶段 5（可选）：内嵌后台任务 ───────────────────────────────
 	// 生产环境后台任务由独立的 cmd/worker 进程跑，但本地开发时开启 JOBS_IN_WEB
 	// 可以把 worker 也跑在 web 进程里，省得同时启两个进程。
@@ -311,7 +310,10 @@ func main() {
 			workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: "metadata_schedule", SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute})
 		}
 		workerDispatcher.Handle(playback.TaskPopularityRefresh, 15*time.Minute, popularityRefresher.Handle)
+		workerDispatcher.Handle(playback.TaskSiteTrendingRefresh, 2*time.Minute, popularityRefresher.HandleSiteTrending)
+		workerDispatcher.Handle(recommendation.TaskRefresh, 5*time.Minute, recommendationRefresher.Handle)
 		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: cfg.Popularity.RefreshInterval})
+		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskSiteTrendingRefresh, SubjectKey: "global", Reason: "scheduled"}, Interval: playback.SiteTrendingRefreshInterval})
 		if err := workerDispatcher.Start(); err != nil {
 			slog.Error("worker dispatcher failed to start", "error", err)
 			os.Exit(1)
@@ -353,7 +355,6 @@ func main() {
 	identityHandler := identity.NewHandler(cfg, identityStore, identity.WithHistoryCounter(historyStore), identity.WithLibraryCounter(libraryStore), identity.WithMonthlyReportReader(reportStore), identity.WithFeedbackCounter(feedbackStore))
 	doubanHandler := douban.NewHandler(cfg, doubanUserStore, doubanJobStore, doubanService, doubanTaskHandler)
 	reportHandler := report.NewHandler(cfg, doubanUserStore, libraryStore, reportStore, reportService)
-	recommendationService := recommendation.NewService(catalogStore, recommendation.WithPersonalizer(postgresCatalogStore))
 	catalogHandlerOptions := []catalog.HandlerOption{
 		catalog.WithUserMovies(libraryStore),
 		catalog.WithFetcher(doubanProvider, searchRunner),
@@ -362,14 +363,14 @@ func main() {
 		catalog.WithBackgroundRunner(searchRunner),
 		catalog.WithSuggester(doubanProvider),
 		catalog.WithPopularProvider(discoverPopularAdapter{provider: popularProvider}),
-		catalog.WithSiteTrending(discoverPopularAdapter{provider: playback.NewSiteTrendingProvider(databasePool)}),
+		catalog.WithSiteTrending(discoverPopularAdapter{provider: popularProvider}),
 		catalog.WithSimilarFinder(recommendationService),
 	}
 	if cfg.Catalog.TMDBToken != "" {
 		catalogHandlerOptions = append(catalogHandlerOptions, catalog.WithBackdropSyncer(tmdbProvider))
 	}
-	if lister, ok := itemStore.(doubanResourceLister); ok {
-		catalogHandlerOptions = append(catalogHandlerOptions, catalog.WithResourceLister(catalogResourceListerAdapter{lister: lister}))
+	if lister, ok := itemStore.(catalog.ResourceLister); ok {
+		catalogHandlerOptions = append(catalogHandlerOptions, catalog.WithResourceLister(lister))
 	}
 	if metadataRefreshJobs != nil {
 		catalogHandlerOptions = append(catalogHandlerOptions, catalog.WithRefreshQueue(metadataRefreshJobs))
@@ -379,7 +380,7 @@ func main() {
 	}
 	catalogHandler := catalog.NewHandler(cfg, catalogStore, catalogHandlerOptions...)
 	contentHandler := content.NewHandler(cfg, catalog.NewSitemapProvider(catalogStore))
-	recommendationHandler := recommendation.NewHandler(cfg, recommendationService)
+	recommendationHandler := recommendation.NewHandler(cfg, recommendationService, recommendationSnapshots).WithRefreshQueue(queueStore)
 	socialHandler := social.NewHandler(cfg, socialStore)
 	feedbackHandler := feedback.NewHandler(cfg, feedbackStore)
 	danmakuClient := outbound.NewClient(25*time.Second, cfg.OutboundMaxConnsPerHost)

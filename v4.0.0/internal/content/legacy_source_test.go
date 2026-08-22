@@ -23,7 +23,7 @@ func TestTemplateInventoryMatchesLegacySource(t *testing.T) {
 			legacyFiles = append(legacyFiles, "cinema.html")
 			sort.Strings(legacyFiles)
 		} else if directory == "partials" {
-			legacyFiles = removeStrings(legacyFiles, "search_results.html", "square_activity.html", "square_grid.html", "square_leaderboard.html")
+			legacyFiles = removeStrings(legacyFiles, "search_results.html", "douban_card.html", "square_activity.html", "square_grid.html", "square_leaderboard.html")
 			legacyFiles = append(legacyFiles, "unified_search_results.html")
 			// 追剧更新时间是新系统独有能力，旧站没有对应 partial 可比对。
 			legacyFiles = append(legacyFiles, "air_schedule.html", "today_updates.html")
@@ -152,7 +152,6 @@ func TestFrozenPublicFilesMatchLegacySource(t *testing.T) {
 		"templates/partials/feedback_list.html",
 		"templates/partials/dashboard_feedback.html",
 		"templates/partials/discover_grid.html",
-		"templates/partials/douban_card.html",
 		"static/css/style.css",
 		"static/img/logo.png",
 		"static/img/moovie-app.png",
@@ -197,7 +196,6 @@ var reviewedHTMXLoadingFiles = map[string]bool{
 	"partials/dashboard_wish.html":               true,
 	"partials/dashboard_wish_grid.html":          true,
 	"partials/discover_grid.html":                true,
-	"partials/douban_card.html":                  true,
 	"partials/foryou_movies.html":                true,
 	"partials/foryou_movies_grid.html":           true,
 	"partials/movie_backdrops.html":              true,
@@ -354,10 +352,8 @@ func TestReviewedHTMXLoadingEnhancements(t *testing.T) {
 			`hx-disabled-elt="find button[type='submit']"`,
 		},
 		"templates/pages/search.html": {
-			`hx-indicator="#douban-card-loading"`,
-			`id="douban-card-loading"`,
-			`class="htmx-skeleton-poster"`,
 			`hx-get="/api/htmx/search?q=`,
+			`正在匹配影片与播放资源`,
 		},
 		"templates/pages/watch.html": {
 			`auto_failover: {{ if .AutoFailoverEnabled }}true{{ else }}false{{ end }}`,
@@ -443,7 +439,7 @@ func TestLayoutDiffIsLimitedToReviewedRuntimeExtensionPoints(t *testing.T) {
 		`<script src="/static/js/app.js?v=0.6" defer></script>`,
 		`<script src="/static/js/app.js?v=0.4" defer></script>`, 1)
 	normalized = strings.Replace(normalized,
-		`<link rel="stylesheet" href="/static/css/style.css?v=3.2">`,
+		`<link rel="stylesheet" href="/static/css/style.css?v=3.6">`,
 		`<link rel="stylesheet" href="/static/css/style.css?v=2.8">`, 1)
 	normalized = strings.Replace(normalized,
 		`<a href="/cinema" class="nav-item {{ if eq .ActiveMenu "cinema" }}active{{ end }}">`,
@@ -539,6 +535,7 @@ func TestReviewedFrontendQualityEnhancements(t *testing.T) {
 		"templates/pages/discover.html": {
 			`class="tab-nav discover-tab-nav"`,
 			`hx-get="/discover/{{ .CurrentType }}"`,
+			`hx-on::response-error="showDiscoverError(event)"`,
 			`aria-current="page"`,
 			`document.addEventListener('htmx:historyRestore', syncDiscoverActiveTab)`,
 		},

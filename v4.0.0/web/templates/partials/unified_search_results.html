@@ -3,53 +3,78 @@
     <div class="copyright-notice"><span>因版权原因，{{ .Result.FilteredCount }} 条相关内容已被隐藏</span></div>
     {{ end }}
     {{ if .Result.Items }}
+    <section class="search-result-section">
+    <div class="search-result-section-heading">
+        <h2>媒体库收录</h2>
+        <span>{{ len .Result.Items }} 部相关作品</span>
+    </div>
     <div class="search-result-grid">
     {{ range .Result.Items }}
-        {{ if .BestResource }}<a href="{{ if .DoubanID }}/watch/{{ .DoubanID }}?source_key={{ .BestResource.SourceKey }}&vod_id={{ .BestResource.VodId }}{{ else }}/play/{{ .BestResource.SourceKey }}/{{ .BestResource.VodId }}{{ end }}" class="search-result-card" data-media-id="{{ .MediaID }}">{{ else }}<article class="search-result-card" data-media-id="{{ .MediaID }}">{{ end }}
-        <div class="card-poster">
+        <article class="search-result-card" data-media-id="{{ .MediaID }}">
+        {{ if .DoubanID }}<a href="/movie/{{ .DoubanID }}?title={{ urlquery .Title }}" class="card-poster" aria-label="查看《{{ .Title }}》详情">{{ else }}<div class="card-poster">{{ end }}
             <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
             {{ with .BestResource }}{{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}{{ end }}
-        </div>
+        {{ if .DoubanID }}</a>{{ else }}</div>{{ end }}
         <div class="card-content">
-            <h3 class="card-title">{{ .Title }}{{ if .OriginalTitle }} <small class="card-original-title">{{ .OriginalTitle }}</small>{{ end }}</h3>
+            <h3 class="card-title">{{ if .DoubanID }}<a href="/movie/{{ .DoubanID }}?title={{ urlquery .Title }}" class="card-detail-link">{{ .Title }}</a>{{ else }}{{ .Title }}{{ end }}{{ if .OriginalTitle }} <small class="card-original-title">{{ .OriginalTitle }}</small>{{ end }}</h3>
             <div class="card-meta-row">
                 {{ if .Year }}<span class="card-year">{{ .Year }}</span>{{ end }}
                 {{ if .MediaType }}<span class="card-type">{{ if eq .MediaType "movie" }}电影{{ else if eq .MediaType "tv" }}剧集{{ else }}{{ .MediaType }}{{ end }}</span>{{ end }}
 					{{ if gt .RatingDouban 0.0 }}<span class="card-rating">★ {{ printf "%.1f" .RatingDouban }}</span>{{ end }}
             </div>
+            {{ if or .GenreNames .CountryNames .Duration }}
+            <div class="card-taxonomy">
+                {{ range .GenreNames }}<span>{{ . }}</span>{{ end }}
+                {{ range .CountryNames }}<span>{{ . }}</span>{{ end }}
+                {{ if .Duration }}<span>{{ .Duration }}</span>{{ end }}
+            </div>
+            {{ end }}
+            {{ if .DirectorNames }}<p class="card-director">导演：{{ range $index, $name := .DirectorNames }}{{ if $index }} / {{ end }}{{ $name }}{{ end }}</p>{{ end }}
+            {{ if .ActorNames }}<p class="card-director">主演：{{ range $index, $name := .ActorNames }}{{ if $index }} / {{ end }}{{ $name }}{{ end }}</p>{{ end }}
             {{ if .Summary }}<p class="card-summary">{{ .Summary }}</p>{{ end }}
-            <div class="card-sources">
-                {{ range .Resources }}
-                <span class="source-item{{ if and .AvgSpeedMs (gt .SampleCount 0) }}{{ $lt := divf .AvgSpeedMs 1000 }}{{ if lt $lt 1.0 }} fast{{ end }}{{ end }}">{{ .SourceKey }}</span>
-                {{ end }}
-				<span class="source-item active">{{ .ResourceCount }} 个已确认资源</span>
-				{{ with .BestResource }}<span class="source-item">最佳线路：{{ .SourceKey }}</span>{{ end }}
+            <div class="card-playback">
                 {{ if .BestResource }}
-                    {{ if and .BestResource.AvgSpeedMs (gt .BestResource.SampleCount 0) }}
-                        {{ $loadTime := divf .BestResource.AvgSpeedMs 1000 }}
-                        <span class="source-item">
-                            <span class="speed-indicator {{ if lt $loadTime 1.0 }}fast{{ else if lt $loadTime 3.0 }}normal{{ else }}slow{{ end }}"></span>
-                            {{ if lt $loadTime 1.0 }}极速{{ else if lt $loadTime 3.0 }}正常{{ else }}较慢{{ end }}
-                        </span>
-                    {{ end }}
+                <span class="playback-match">已匹配 <strong>{{ .ResourceCount }}</strong> 个播放资源</span>
+                <a href="{{ if .DoubanID }}/watch/{{ .DoubanID }}?source_key={{ .BestResource.SourceKey }}&vod_id={{ .BestResource.VodId }}{{ else }}/play/{{ .BestResource.SourceKey }}/{{ .BestResource.VodId }}{{ end }}" class="playback-action">立即播放 <span aria-hidden="true">→</span></a>
+                {{ else }}
+                <span class="playback-match playback-unavailable">暂未匹配播放资源</span>
                 {{ end }}
             </div>
         </div>
-        {{ if .BestResource }}</a>{{ else }}</article>{{ end }}
+        </article>
     {{ end }}
     </div>
+    </section>
     {{ end }}
     {{ if .Result.Unmatched }}
-    <section class="unified-unmatched">
-        <h3>可能相关的其他资源</h3>
+    <section class="search-result-section">
+        <div class="search-result-section-heading">
+            <h2>可能相关的其他资源</h2>
+            <span>尚未确认影视归属</span>
+        </div>
         <div class="search-result-grid">
         {{ range .Result.Unmatched }}
         <a href="/play/{{ .SourceKey }}/{{ .VodId }}" class="search-result-card">
-            <div class="card-poster"><img src="{{ proxyImg .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer"></div>
+            <div class="card-poster">
+                <img src="{{ proxyImg .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
+                {{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}
+            </div>
             <div class="card-content">
                 <h3 class="card-title">{{ .VodName }}</h3>
-                <div class="card-meta-row">{{ if .VodYear }}<span class="card-year">{{ .VodYear }}</span>{{ end }}</div>
-                <div class="card-sources"><span class="source-item active">{{ .SourceKey }}</span><span class="source-item">尚未确认影视归属</span></div>
+                <div class="card-meta-row">
+                    {{ if .VodYear }}<span class="card-year">{{ .VodYear }}</span>{{ end }}
+                    {{ if .VodArea }}<span class="card-region">{{ .VodArea }}</span>{{ end }}
+                    {{ if .CategoryName }}<span class="card-type">{{ .CategoryName }}</span>{{ end }}
+                </div>
+                {{ if .VodActor }}<p class="card-director">主演：{{ .VodActor }}</p>{{ end }}
+                <div class="card-sources">
+                    <span class="source-item active">{{ .SourceKey }}</span>
+                    {{ if and .AvgSpeedMs (gt .SampleCount 0) }}
+                    {{ $loadTime := divf .AvgSpeedMs 1000 }}
+                    <span class="source-item"><span class="speed-indicator {{ if lt $loadTime 1.0 }}fast{{ else if lt $loadTime 3.0 }}normal{{ else }}slow{{ end }}"></span>{{ if lt $loadTime 1.0 }}极速{{ else if lt $loadTime 3.0 }}正常{{ else }}较慢{{ end }} {{ printf "%.1f" $loadTime }}秒</span>
+                    {{ end }}
+                    {{ if .VodRemarks }}<span class="card-remarks">{{ .VodRemarks }}</span>{{ end }}
+                </div>
             </div>
         </a>
         {{ end }}

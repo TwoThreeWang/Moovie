@@ -500,8 +500,8 @@ func (resolver indexingMediaResolver) UpsertEpisodes(_ context.Context, episodes
 	return nil
 }
 
-// 豆瓣卡片直接链到 /watch 并带上 source_key/vod_id，但剧集索引只在搜索和 /play 时写入，
-// 所以卡片显示有来源、点进来却没有候选是常态。此时应当就地补录后继续播，而不是弹回搜索页。
+// 搜索结果直接链到 /watch 并带上 source_key/vod_id；若剧集索引尚未回填，
+// 应当就地补录后继续播，而不是弹回搜索页。
 func TestWatchPageIndexesResourceFromQueryInsteadOfRedirecting(t *testing.T) {
 	testdb.User(t, testdb.Pool(t), 7)
 	store := search.NewPostgresStore(testdb.Pool(t))

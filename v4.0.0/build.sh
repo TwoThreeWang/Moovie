@@ -6,7 +6,7 @@ script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 
 if [ ! -f "$script_dir/.env" ]; then
-    echo "未找到 new/.env，请先根据 new/.env.example 创建生产配置。" >&2
+    echo "未找到 .env，请先根据 .env.example 创建生产配置。" >&2
     exit 1
 fi
 
