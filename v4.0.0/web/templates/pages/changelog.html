@@ -4,6 +4,43 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v4.0.2 -->
+    <section class="changelog-item">
+      <div class="version-badge">v4.0.2 <small>2026-08-23</small></div>
+      <div class="changelog-details">
+        <p>
+          <strong>页面加载速度专项优化。</strong>聚焦影片详情页和播放页的首屏速度，把非关键数据全部改为页面渲染后异步加载，同时修复搜索空结果被长时间缓存的问题。
+        </p>
+        <h3>🚀 性能优化 (Performance)</h3>
+        <ul>
+          <li>
+            <strong>影片详情页延迟加载</strong>：初始渲染只保留电影元数据（标题、海报、简介、评分），播放按钮、想看/看过状态、社交统计、在线资源、系列季度导航、播出日程和相似推荐全部改为 htmx 异步加载，首屏从 9 次串行查询降至 1 次。
+          </li>
+          <li>
+            <strong>播放页启动提速</strong>：播放器初始化所需的播放地址保持同步获取，用户看过状态和播出日程改为页面渲染后异步填充，不再阻塞播放器启动；版权检查提前到候选解析之前，命中时直接跳转不做后续昂贵查询；影片标题查找延迟到错误路径才执行，正常播放不再多一次数据库查询。
+          </li>
+        </ul>
+        <h3>🛠️ 修复 (Fixed)</h3>
+        <ul>
+          <li>
+            <strong>修复搜索空结果缓存</strong>：搜索结果为空时不再写入缓存，避免实际有数据的影片在缓存有效期内（3 小时）持续显示「未找到相关资源」。修复涉及首次搜索和后台异步刷新两条路径。
+          </li>
+        </ul>
+        <h3>💅 界面优化 (UI)</h3>
+        <ul>
+          <li>
+            <strong>数据抓取等待页重设计</strong>：首次访问未收录影片时，页面自动每 3 秒轮询数据状态，就绪后无感知跳转到详情页，不再需要手动刷新；30 秒超时后显示重试和搜索入口。
+          </li>
+        </ul>
+        <h3>🧹 精简 (Simplified)</h3>
+        <ul>
+          <li>
+            <strong>移除详情页相似推荐缓存</strong>：详情页不再维护独立的相似影片缓存和 singleflight，改为复用推荐模块已有的 htmx 接口，减少重复代码和内存占用。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v4.0.1 -->
     <section class="changelog-item">
       <div class="version-badge">v4.0.1 <small>2026-08-22</small></div>

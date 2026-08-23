@@ -12,7 +12,6 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/cache"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
@@ -133,15 +132,6 @@ func TestMoviePageRendersSeriesNavigationAndExcludesSeasonsFromRecommendations(t
 	}
 }
 
-func TestSimilarRecommendationsCoalesceAndCache(t *testing.T) {
-	finder := &countingSimilarFinder{movies: []Movie{{DoubanID: "target", Title: "相关推荐", Summary: "不进入卡片缓存"}}}
-	handler := &Handler{similar: finder, similarCache: cache.New[[]Movie](similarCacheCapacity, similarCacheTTL)}
-	first := handler.findSimilar(t.Context(), "1292052", 6)
-	second := handler.findSimilar(t.Context(), "1292052", 6)
-	if len(first) != 1 || len(second) != 1 || finder.calls != 1 || first[0].Summary != "" {
-		t.Fatalf("similar results/calls = %d/%d/%d, want one result per call and one backend call", len(first), len(second), finder.calls)
-	}
-}
 
 func TestMoviePageQueuesMissingEmbeddingOnce(t *testing.T) {
 	store := NewPostgresStore(testdb.Pool(t))
@@ -486,12 +476,3 @@ func (store *seriesStoreStub) FindSeriesSeasons(context.Context, string) ([]Seri
 	return store.seasons, nil
 }
 
-type countingSimilarFinder struct {
-	movies []Movie
-	calls  int
-}
-
-func (finder *countingSimilarFinder) FindSimilar(context.Context, string, int) ([]Movie, error) {
-	finder.calls++
-	return finder.movies, nil
-}

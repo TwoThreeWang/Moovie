@@ -84,8 +84,10 @@
             </div>
         </div>
 
-        {{/* 追剧更新时间：已完结或无已知播出日期时 partial 自身不渲染任何内容 */}}
-        {{ with .AirSchedule }}{{ template "air_schedule.html" . }}{{ end }}
+        {{/* 追剧更新时间：htmx 延迟加载，不阻塞播放器启动 */}}
+        <div hx-get="/api/htmx/watch-schedule?douban_id={{ .DoubanID }}"
+             hx-trigger="load"
+             hx-swap="innerHTML"></div>
 
         <!-- 集数网格 -->
         {{ if .EpisodeGrid }}
@@ -129,14 +131,9 @@
         <!-- 操作行 -->
         <div class="watch-action-row">
             {{ if .DoubanID }}{{ if ne .DoubanID "0" }}
-            {{ template "play_watched_button.html" (dict
-                "DoubanID" .DoubanID
-                "Title" .View.Title
-                "Poster" .View.Poster
-                "Year" .View.Year
-                "IsWatched" .IsWatched
-                "LoggedIn" .LoggedIn
-                "Redirect" .FullPath) }}
+            <span hx-get="/api/htmx/watch-actions?douban_id={{ .DoubanID }}&title={{ urlquery .View.Title }}&poster={{ urlquery .View.Poster }}&year={{ urlquery .View.Year }}&redirect={{ urlquery .FullPath }}"
+                  hx-trigger="load"
+                  hx-swap="outerHTML"></span>
             {{ end }}{{ end }}
             <button class="watch-action-btn"
                     hx-post="/api/feedback"

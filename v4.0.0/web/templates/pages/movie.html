@@ -127,64 +127,16 @@
                         title="点击重新抓取豆瓣评分">暂无</button>
                 {{ end }}
             </div>
-            <div class="movie-primary-actions">
-                {{ if .Playback.Available }}
-                <a href="{{ if .Playback.Ready }}/watch/{{ .Movie.DoubanID }}?source_key={{ .Playback.BestResource.SourceKey }}&vod_id={{ .Playback.BestResource.VodId }}{{ else }}/play/{{ .Playback.BestResource.SourceKey }}/{{ .Playback.BestResource.VodId }}?douban_id={{ .Movie.DoubanID }}{{ end }}" class="btn btn-primary movie-play-btn">
-                    <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
-                        <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.2-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z"/>
-                    </svg>
-                    <span>立即播放</span>
-                </a>
-                {{ end }}
-                {{ template "user_movie_buttons.html" (dict "DoubanID" .Movie.DoubanID "Title" .Movie.Title "Poster" .Movie.Poster "Year" .Movie.Year "IsWish" .IsWish "IsWatched" .IsWatched) }}
-            </div>
-            {{ if or (gt .WatchedByCount 0) (gt .WishByCount 0) }}
-            <div class="movie-social-stats">
-                {{ if gt .WatchedByCount 0 }}<span>{{ .WatchedByCount }} 人看过</span>{{ end }}
-                {{ if and (gt .WatchedByCount 0) (gt .WishByCount 0) }}<span class="movie-social-dot">·</span>{{ end }}
-                {{ if gt .WishByCount 0 }}<span>{{ .WishByCount }} 人想看</span>{{ end }}
-            </div>
-            {{ end }}
+            <div hx-get="/api/htmx/movie-actions?douban_id={{ .Movie.DoubanID }}&media_id={{ .Movie.ID }}&title={{ urlquery .Movie.Title }}&poster={{ urlquery .Movie.Poster }}&year={{ urlquery .Movie.Year }}"
+                 hx-trigger="load"
+                 hx-swap="innerHTML"></div>
         </div>
     </div>
 
-    {{ if .SeriesSeasons }}
-    <nav class="movie-series-nav" aria-label="本剧季度">
-        <div class="movie-series-heading">
-            <span class="movie-series-title">本剧系列</span>
-            <span class="movie-series-count">共 {{ len .SeriesSeasons }} 季</span>
-        </div>
-        <div class="movie-series-track">
-            {{ range .SeriesSeasons }}
-            {{ if .Current }}
-            <span class="movie-series-season is-current" aria-current="page">
-                <strong>第{{ .SeasonNumber }}季</strong>
-                {{ if or .Year .Rating }}<small>{{ .Year }}{{ if .Rating }} · {{ .Rating }}{{ end }}</small>{{ end }}
-                <em>当前</em>
-            </span>
-            {{ else }}
-            <a class="movie-series-season" href="/movie/{{ .DoubanID }}" aria-label="查看{{ .Title }}">
-                <strong>第{{ .SeasonNumber }}季</strong>
-                {{ if or .Year .Rating }}<small>{{ .Year }}{{ if .Rating }} · {{ .Rating }}{{ end }}</small>{{ end }}
-            </a>
-            {{ end }}
-            {{ end }}
-        </div>
-    </nav>
-    <script>
-    (() => {
-        const current = document.querySelector('.movie-series-season[aria-current="page"]');
-        const track = current && current.parentElement;
-        if (track && track.scrollWidth > track.clientWidth) {
-            track.scrollLeft = current.offsetLeft - (track.clientWidth - current.offsetWidth) / 2;
-        }
-    })();
-    </script>
-    {{ end }}
-
-    {{/* 追剧更新时间：已完结或无已知播出日期时 partial 自身不渲染任何内容。
-         外层 with 只是防御未设置该键的调用路径——nil 传进 partial 会导致渲染报错。 */}}
-    {{ with .AirSchedule }}{{ template "air_schedule.html" . }}{{ end }}
+    <!-- 系列季度 + 播出日程 -->
+    <div hx-get="/api/htmx/movie-series?douban_id={{ .Movie.DoubanID }}"
+         hx-trigger="load"
+         hx-swap="innerHTML"></div>
 
     <!-- 剧情简介 -->
     {{ if .Movie.Summary }}
@@ -237,56 +189,28 @@
         </div>
     </div>
 
-    <!-- 在线资源：已有可播放候选时不再重复执行全网搜索。 -->
-    <div class="movie-section">
-        {{ if .Playback.Available }}
-        <h2 class="section-title">{{ if .Playback.Ready }}选集与线路{{ else }}在线播放资源{{ end }}</h2>
-        <div class="movie-resource-ready">
-            <div>
-                <strong>{{ if .Playback.Ready }}已找到可播放线路{{ else }}已找到直连资源{{ end }}</strong>
-                <p>{{ if .Playback.Ready }}进入播放页选择选集，并可随时切换来源。{{ else }}该资源尚未完成选集索引，将使用资源直连播放。{{ end }}</p>
-            </div>
-            <a href="{{ if .Playback.Ready }}/watch/{{ .Movie.DoubanID }}?source_key={{ .Playback.BestResource.SourceKey }}&vod_id={{ .Playback.BestResource.VodId }}{{ else }}/play/{{ .Playback.BestResource.SourceKey }}/{{ .Playback.BestResource.VodId }}?douban_id={{ .Movie.DoubanID }}{{ end }}" class="movie-resource-link">{{ if .Playback.Ready }}查看选集与线路{{ else }}立即播放{{ end }} →</a>
+    <!-- 在线资源 -->
+    <div class="movie-section"
+         hx-get="/api/htmx/movie-playback?douban_id={{ .Movie.DoubanID }}&media_id={{ .Movie.ID }}&title={{ urlquery .Movie.Title }}&search_title={{ if .SearchTitle }}{{ urlquery .SearchTitle }}{{ end }}&year={{ urlquery .Movie.Year }}"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <div class="movie-search-loading-state">
+            <div class="loading-spinner"></div>
+            <p>正在检查播放资源...</p>
         </div>
-        {{ else }}
-        <h2 class="section-title">查找在线播放资源</h2>
-        <div id="movie-search-results"
-             hx-get="/api/htmx/search?q={{if .SearchTitle }}{{ urlquery .SearchTitle }}{{else}}{{ urlquery .Movie.Title }}{{end}}&year={{ urlquery .Movie.Year }}&douban_id={{ urlquery .Movie.DoubanID }}"
-             hx-trigger="load"
-             hx-indicator="#movie-search-loading">
-            <div id="movie-search-loading" class="htmx-indicator movie-search-loading-state">
-                <div class="loading-spinner"></div>
-                <p>正在搜索全网资源，请稍候...</p>
-            </div>
-        </div>
-        {{ end }}
     </div>
 
     <!-- 相似电影推荐 -->
     <div class="movie-section">
         <h2 class="section-title">喜欢这部剧集的人也喜欢</h2>
-        {{ if .SimilarMovies }}
-        <div class="similar-movies-grid">
-            {{ range .SimilarMovies }}
-            <a href="/movie/{{ .DoubanID }}" class="similar-movie-card">
-                <div class="similar-movie-poster">
-                    <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
-                    {{ if .Rating }}
-                    <span class="similar-movie-rating">{{ .Rating }}</span>
-                    {{ end }}
-                </div>
-                <span class="similar-movie-title">{{ .Title }}</span>
-            </a>
-            {{ end }}
+        <div hx-get="/api/htmx/similar?douban_id={{ .Movie.DoubanID }}"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <div class="movie-search-loading-state">
+                <div class="loading-spinner"></div>
+                <p>正在加载推荐...</p>
+            </div>
         </div>
-        <div class="similar-movies-more">
-            <a href="/similar/{{ .Movie.DoubanID }}">查看更多类似《{{ .Movie.Title }}》的电影 ></a>
-        </div>
-        {{ else }}
-        <div class="similar-movies-empty">
-            <p>暂无相似电影推荐</p>
-        </div>
-        {{ end }}
     </div>
 
     <div class="ad-slot">

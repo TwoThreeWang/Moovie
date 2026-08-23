@@ -1,0 +1,36 @@
+{{/* 系列季度导航 + 播出日程（htmx 延迟加载）。 */}}
+{{ if .SeriesSeasons }}
+<nav class="movie-series-nav" aria-label="本剧季度">
+    <div class="movie-series-heading">
+        <span class="movie-series-title">本剧系列</span>
+        <span class="movie-series-count">共 {{ len .SeriesSeasons }} 季</span>
+    </div>
+    <div class="movie-series-track">
+        {{ range .SeriesSeasons }}
+        {{ if .Current }}
+        <span class="movie-series-season is-current" aria-current="page">
+            <strong>第{{ .SeasonNumber }}季</strong>
+            {{ if or .Year .Rating }}<small>{{ .Year }}{{ if .Rating }} · {{ .Rating }}{{ end }}</small>{{ end }}
+            <em>当前</em>
+        </span>
+        {{ else }}
+        <a class="movie-series-season" href="/movie/{{ .DoubanID }}" aria-label="查看{{ .Title }}">
+            <strong>第{{ .SeasonNumber }}季</strong>
+            {{ if or .Year .Rating }}<small>{{ .Year }}{{ if .Rating }} · {{ .Rating }}{{ end }}</small>{{ end }}
+        </a>
+        {{ end }}
+        {{ end }}
+    </div>
+</nav>
+<script>
+(() => {
+    const current = document.querySelector('.movie-series-season[aria-current="page"]');
+    const track = current && current.parentElement;
+    if (track && track.scrollWidth > track.clientWidth) {
+        track.scrollLeft = current.offsetLeft - (track.clientWidth - current.offsetWidth) / 2;
+    }
+})();
+</script>
+{{ end }}
+
+{{ with .AirSchedule }}{{ template "air_schedule.html" . }}{{ end }}

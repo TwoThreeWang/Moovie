@@ -13,13 +13,11 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/cache"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/sync/singleflight"
 )
 
 // UserMovies 提供想看/看过的标记状态和人数（详情页按钮用）。
@@ -118,15 +116,7 @@ type Handler struct {
 	refreshQueue RefreshQueue
 	httpClient   *http.Client
 	crawling     sync.Map
-	similarCache *cache.TTL[[]Movie]
-	similarSF    singleflight.Group
 }
-
-// similarCacheTTL 是相似影片的缓存时长。
-const similarCacheTTL = 5 * time.Minute
-
-// similarCacheCapacity 是相似影片的缓存条数上限。
-const similarCacheCapacity = 256
 
 // HandlerOption 是 Handler 的可选装配项，下面这一组 WithXxx 都只是往结构体里塞一个依赖。
 type HandlerOption func(*Handler)
@@ -203,8 +193,7 @@ func WithAirScheduleReader(reader AirScheduleReader) HandlerOption {
 
 // NewHandler 构造详情页 Handler，并给出站 HTTP Client 套上图片代理的安全拦截。
 func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handler {
-	handler := &Handler{config: cfg, store: store, httpClient: &http.Client{Timeout: 15 * time.Second},
-		similarCache: cache.New[[]Movie](similarCacheCapacity, similarCacheTTL)}
+	handler := &Handler{config: cfg, store: store, httpClient: &http.Client{Timeout: 15 * time.Second}}
 	for _, option := range options {
 		option(handler)
 	}
@@ -214,11 +203,16 @@ func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handl
 
 // Register 注册路由：详情页、发现页、图片代理、短评/剧照片段和资料刷新接口。
 func (handler *Handler) Register(router *gin.Engine) {
-	router.GET("/movie/:id", auth.Optional(handler.config.AppSecret), handler.movie)
+	optional := auth.Optional(handler.config.AppSecret)
+	router.GET("/movie/:id", optional, handler.movie)
+	router.GET("/api/htmx/movie-actions", optional, handler.movieActions)
+	router.GET("/api/htmx/movie-ready", handler.movieReady)
+	router.GET("/api/htmx/movie-playback", handler.moviePlayback)
+	router.GET("/api/htmx/movie-series", handler.movieSeries)
 	router.GET("/api/proxy/image/:url", handler.proxyImage)
 	router.GET("/api/htmx/reviews", handler.reviewList)
 	router.GET("/api/htmx/movie-backdrops", handler.backdropList)
-	router.POST("/api/v2/media/:media_id/refresh", auth.Optional(handler.config.AppSecret), handler.refreshMediaV2)
+	router.POST("/api/v2/media/:media_id/refresh", optional, handler.refreshMediaV2)
 	router.GET("/api/v2/media/suggest", handler.movieSuggest)
 	router.GET("/discover", handler.discover)
 	router.GET("/discover/:type", handler.discover)
@@ -453,17 +447,8 @@ func (handler *Handler) movie(c *gin.Context) {
 			requestmeta.Logger(c.Request.Context()).Warn("queue partial metadata", "douban_id", doubanID, "error", queueErr)
 		}
 	}
-
-	userID := auth.UserID(c)
-	isWish, isWatched := false, false
-	watchedByCount, wishByCount := 0, 0
-	if handler.userMovies != nil {
-		if userID > 0 {
-			isWish, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, movie.DoubanID, "wish")
-			isWatched, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, movie.DoubanID, "watched")
-		}
-		watchedByCount, _ = handler.userMovies.CountByMovie(c.Request.Context(), movie.DoubanID, "watched")
-		wishByCount, _ = handler.userMovies.CountByMovie(c.Request.Context(), movie.DoubanID, "wish")
+	if movie.EmbeddingContent == "" {
+		handler.queueEmbedding(c.Request.Context(), doubanID)
 	}
 
 	keywords := []string{movie.Title}
@@ -474,37 +459,117 @@ func (handler *Handler) movie(c *gin.Context) {
 		keywords = append(keywords, strings.Split(movie.Genres, ",")...)
 	}
 	keywords = append(keywords, "在线观看", "免费下载", "高清资源", "Moovie", "影牛")
-	description := truncateDescription(movie.Summary, 150)
 	var directors []Director
 	if json.Unmarshal([]byte(movie.Directors), &directors) != nil {
 		directors = []Director{}
 	}
-	seriesSeasons := handler.findSeriesSeasons(c.Request.Context(), doubanID)
-	similarMovies := excludeSeriesMovies(
-		handler.findSimilar(c.Request.Context(), doubanID, 6+len(seriesSeasons)), seriesSeasons,
-		mediaidentity.TitleBase(movie.Title, movie.OriginalTitle), 6)
-	if movie.EmbeddingContent == "" {
-		handler.queueEmbedding(c.Request.Context(), doubanID)
-	}
-	airSchedule := handler.airScheduleView(c.Request.Context(), movie)
-	playbackSummary := search.PlaybackSummary{MediaID: movie.ID, State: search.PlaybackNone}
-	if handler.resources != nil {
-		if summary, resourceErr := handler.resources.PlaybackSummary(c.Request.Context(), movie.ID); resourceErr == nil {
-			playbackSummary = summary
-		}
-	}
 
 	c.HTML(http.StatusOK, "movie.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
 		Title:       "《" + movie.Title + "》 (" + movie.Year + ") - 剧情介绍/演职员表 - " + handler.config.SiteName,
-		Description: description, Keywords: strings.Join(keywords, ","),
+		Description: truncateDescription(movie.Summary, 150), Keywords: strings.Join(keywords, ","),
 		Cover: proxyImageURL(movie.Poster), Canonical: fmt.Sprintf("%s/movie/%s", handler.config.SiteURL, movie.DoubanID),
 	}, gin.H{
-		"Movie": movie, "IsWish": isWish, "IsWatched": isWatched,
-		"WatchedByCount": watchedByCount, "WishByCount": wishByCount,
-		"DirectorList": directors, "SearchTitle": searchTitle, "SimilarMovies": similarMovies,
-		"SeriesSeasons": seriesSeasons,
-		"AirSchedule":   airSchedule, "Playback": playbackSummary,
+		"Movie": movie, "DirectorList": directors, "SearchTitle": searchTitle,
 	}))
+}
+
+// movieReady 供 fetching 页轮询：数据就绪时通过 HX-Redirect 跳转到详情页。
+func (handler *Handler) movieReady(c *gin.Context) {
+	doubanID := c.Query("douban_id")
+	if doubanID == "" {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	movie, err := handler.store.FindByDoubanID(c.Request.Context(), doubanID)
+	if err == nil && movie != nil && movie.Title != "" {
+		c.Header("HX-Redirect", "/movie/"+doubanID)
+	}
+	c.Status(http.StatusOK)
+}
+
+// movieActions 返回播放按钮、想看/看过按钮和社交统计（htmx 延迟加载）。
+func (handler *Handler) movieActions(c *gin.Context) {
+	doubanID := c.Query("douban_id")
+	mediaID, _ := strconv.Atoi(c.Query("media_id"))
+
+	var (
+		playback                            search.PlaybackSummary
+		isWish, isWatched                   bool
+		watchedByCount, wishByCount         int
+	)
+	playback.MediaID = mediaID
+
+	var wg sync.WaitGroup
+	if handler.resources != nil && mediaID > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if s, err := handler.resources.PlaybackSummary(c.Request.Context(), mediaID); err == nil {
+				playback = s
+			}
+		}()
+	}
+	userID := auth.UserID(c)
+	if handler.userMovies != nil {
+		if userID > 0 {
+			wg.Add(2)
+			go func() { defer wg.Done(); isWish, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, doubanID, "wish") }()
+			go func() { defer wg.Done(); isWatched, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, doubanID, "watched") }()
+		}
+		wg.Add(2)
+		go func() { defer wg.Done(); watchedByCount, _ = handler.userMovies.CountByMovie(c.Request.Context(), doubanID, "watched") }()
+		go func() { defer wg.Done(); wishByCount, _ = handler.userMovies.CountByMovie(c.Request.Context(), doubanID, "wish") }()
+	}
+	wg.Wait()
+
+	c.HTML(http.StatusOK, "partials/movie_actions.html", gin.H{
+		"Playback": playback, "DoubanID": doubanID,
+		"IsWish": isWish, "IsWatched": isWatched,
+		"WatchedByCount": watchedByCount, "WishByCount": wishByCount,
+		"Title": c.Query("title"), "Poster": c.Query("poster"), "Year": c.Query("year"),
+	})
+}
+
+// moviePlayback 返回在线资源区块（htmx 延迟加载）。
+func (handler *Handler) moviePlayback(c *gin.Context) {
+	mediaID, _ := strconv.Atoi(c.Query("media_id"))
+	playback := search.PlaybackSummary{MediaID: mediaID, State: search.PlaybackNone}
+	if handler.resources != nil && mediaID > 0 {
+		if s, err := handler.resources.PlaybackSummary(c.Request.Context(), mediaID); err == nil {
+			playback = s
+		}
+	}
+	searchTitle := c.Query("search_title")
+	if searchTitle == "" {
+		searchTitle = c.Query("title")
+	}
+	c.HTML(http.StatusOK, "partials/movie_playback.html", gin.H{
+		"Playback": playback, "DoubanID": c.Query("douban_id"),
+		"Title": c.Query("title"), "SearchTitle": searchTitle, "Year": c.Query("year"),
+	})
+}
+
+// movieSeries 返回系列季度导航和播出日程（htmx 延迟加载）。
+func (handler *Handler) movieSeries(c *gin.Context) {
+	doubanID := c.Query("douban_id")
+	movie, err := handler.store.FindByDoubanID(c.Request.Context(), doubanID)
+	if err != nil || movie == nil {
+		c.String(http.StatusOK, "")
+		return
+	}
+	var (
+		seriesSeasons []SeriesSeason
+		airSchedule   mediaidentity.AirScheduleView
+	)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); seriesSeasons = handler.findSeriesSeasons(c.Request.Context(), doubanID) }()
+	go func() { defer wg.Done(); airSchedule = handler.airScheduleView(c.Request.Context(), movie) }()
+	wg.Wait()
+
+	c.HTML(http.StatusOK, "partials/movie_series.html", gin.H{
+		"SeriesSeasons": seriesSeasons, "AirSchedule": airSchedule,
+	})
 }
 
 // findSeriesSeasons 取同系列各季，少于两季就不展示导航。
@@ -522,32 +587,6 @@ func (handler *Handler) findSeriesSeasons(ctx context.Context, doubanID string) 
 		return nil
 	}
 	return seasons
-}
-
-// excludeSeriesMovies 把同系列的其他季从「相似推荐」里剔除，避免推荐区全是自己。
-func excludeSeriesMovies(movies []Movie, seasons []SeriesSeason, seriesTitle string, limit int) []Movie {
-	if limit <= 0 {
-		return []Movie{}
-	}
-	excluded := make(map[string]struct{}, len(seasons))
-	for _, season := range seasons {
-		excluded[season.DoubanID] = struct{}{}
-	}
-	filtered := make([]Movie, 0, min(limit, len(movies)))
-	for _, movie := range movies {
-		if _, sameSeries := excluded[movie.DoubanID]; sameSeries {
-			continue
-		}
-		// 未完成 TMDB 绑定的季度也不该混入推荐；这里只过滤，不据此建立系列关系。
-		if len(seasons) > 0 && mediaidentity.TitleBase(movie.Title, movie.OriginalTitle) == seriesTitle {
-			continue
-		}
-		filtered = append(filtered, movie)
-		if len(filtered) == limit {
-			break
-		}
-	}
-	return filtered
 }
 
 // needsMetadataRefresh 判断资料是否需要补全：状态是 partial 或完整度低于 70 分，且已过下次刷新时间。
@@ -582,56 +621,6 @@ func (handler *Handler) airScheduleView(ctx context.Context, movie *Movie) media
 		return mediaidentity.AirScheduleView{}
 	}
 	return mediaidentity.BuildAirScheduleView(movie.SeriesStatus, units, now, location)
-}
-
-// findSimilar 让同一影片第一次请求后的向量查询离开热点路径，
-// 并合并并发请求，防止热门详情页在冷缓存突发时击穿向量索引。
-func (handler *Handler) findSimilar(ctx context.Context, doubanID string, limit int) []Movie {
-	if handler.similar == nil || doubanID == "" || limit == 0 {
-		return []Movie{}
-	}
-	key := fmt.Sprintf("%s:%d", doubanID, limit)
-	if movies, ok := handler.cachedSimilar(key); ok {
-		return movies
-	}
-	value, err, _ := handler.similarSF.Do(key, func() (any, error) {
-		if movies, ok := handler.cachedSimilar(key); ok {
-			return movies, nil
-		}
-		movies, err := handler.similar.FindSimilar(ctx, doubanID, limit)
-		if err != nil {
-			return nil, err
-		}
-		copyMovies := compactSimilarMovies(movies)
-		handler.similarCache.Set(key, copyMovies)
-		return copyMovies, nil
-	})
-	if err != nil || value == nil {
-		return []Movie{}
-	}
-	return append([]Movie(nil), value.([]Movie)...)
-}
-
-// cachedSimilar 读相似推荐缓存。返回的是副本，防止调用方改到缓存里的数据。
-func (handler *Handler) cachedSimilar(key string) ([]Movie, bool) {
-	movies, ok := handler.similarCache.Get(key)
-	if !ok {
-		return nil, false
-	}
-	return append([]Movie(nil), movies...), true
-}
-
-// 相似卡片只渲染身份、标题、海报、评分和年份。
-// 只缓存这些字段可避免为每部访问过的影片长期保留简介、演员 JSON 和向量。
-func compactSimilarMovies(movies []Movie) []Movie {
-	compact := make([]Movie, 0, len(movies))
-	for _, movie := range movies {
-		compact = append(compact, Movie{
-			ID: movie.ID, DoubanID: movie.DoubanID, Title: movie.Title, Year: movie.Year,
-			Poster: movie.Poster, Rating: movie.Rating, Genres: movie.Genres,
-		})
-	}
-	return compact
 }
 
 // queueEmbedding 为缺向量的影片排一个生成任务。

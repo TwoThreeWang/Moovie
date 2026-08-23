@@ -319,6 +319,8 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/vod", handler.tvboxVOD)
 	router.GET("/play/:source_key/:vod_id", auth.Optional(handler.config.AppSecret), handler.play)
 	router.GET("/watch/:douban_id", auth.Optional(handler.config.AppSecret), handler.watch)
+	router.GET("/api/htmx/watch-actions", auth.Optional(handler.config.AppSecret), handler.watchActionsHTMX)
+	router.GET("/api/htmx/watch-schedule", handler.watchScheduleHTMX)
 	router.GET("/api/watch/resolve", handler.resolveWatchURL)
 	router.GET("/api/v2/media/:id/resources", handler.resources)
 	router.GET("/api/v2/media-units/:unit_id/playback-candidates", handler.playbackCandidatesV2)
@@ -666,18 +668,12 @@ func (handler *Handler) watch(c *gin.Context) {
 	}
 
 	// 1. 解析规范媒体身份。解析不出来时，URL 上如果指名了资源就直接按 /play 播，
-	//    否则回搜索页——优先用影片标题做关键词，裸豆瓣 ID 搜不出东西。
-	searchKeyword := doubanID
-	if handler.titleFinder != nil {
-		if title, _ := handler.titleFinder.FindTitleByDoubanID(c.Request.Context(), doubanID); title != "" {
-			searchKeyword = title
-		}
-	}
+	//    否则回搜索页——FindTitleByDoubanID 延迟到这里才调，不阻塞主路径。
 	if handler.media == nil {
 		if handler.fallbackToPlay(c, doubanID) {
 			return
 		}
-		c.Redirect(http.StatusFound, "/search?kw="+url.QueryEscape(searchKeyword))
+		c.Redirect(http.StatusFound, "/search?kw="+url.QueryEscape(handler.watchSearchKeyword(c.Request.Context(), doubanID)))
 		return
 	}
 	canonical, err := handler.media.FindByDoubanID(c.Request.Context(), doubanID)
@@ -685,12 +681,20 @@ func (handler *Handler) watch(c *gin.Context) {
 		if handler.fallbackToPlay(c, doubanID) {
 			return
 		}
-		c.Redirect(http.StatusFound, "/search?kw="+url.QueryEscape(searchKeyword))
+		c.Redirect(http.StatusFound, "/search?kw="+url.QueryEscape(handler.watchSearchKeyword(c.Request.Context(), doubanID)))
 		return
 	}
 
+	// 1b. 版权检查提前到候选解析之前——命中就直接 302，不做后续昂贵查询。
+	if handler.copyright != nil {
+		if blocked, _ := handler.copyright.IsCopyrightRestricted(c.Request.Context(), canonical.Title); blocked {
+			c.Redirect(http.StatusFound, "/copyright-restricted?title="+url.QueryEscape(canonical.Title))
+			return
+		}
+	}
+
 	// 2. 确定用户请求的季集。未指定 ep 时使用数据库中第一个真实单元，
-	// 不能假定电影都叫 S01E01；常见的电影资源键是“正片”或“HD”。
+	// 不能假定电影都叫 S01E01；常见的电影资源键是"正片"或"HD"。
 	epParam := strings.TrimSpace(c.Query("ep"))
 	var episodeInfos []mediaidentity.EpisodeInfo
 	if handler.episodes != nil {
@@ -844,24 +848,8 @@ func (handler *Handler) watch(c *gin.Context) {
 	view := buildPlayView(&canonical, detail)
 	episodeSources := buildEpisodeSources(ranked, best.SourceKey, best.VodID, playURL, episode, doubanID)
 
-	// 11. 执行版权关键词检查。
-	if handler.copyright != nil {
-		if blocked, _ := handler.copyright.IsCopyrightRestricted(c.Request.Context(), canonical.Title); blocked {
-			c.Redirect(http.StatusFound, "/copyright-restricted?title="+url.QueryEscape(canonical.Title))
-			return
-		}
-	}
-
-	// 12. 加载用户想看、看过等状态。
 	userID := auth.UserID(c)
-	isWatched := false
-	if userID > 0 && handler.userMovies != nil {
-		isWatched, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, doubanID, "watched")
-	}
-
-	// 13. 创建播放候选会话，用于后续质量事件关联。
 	candidateID, mediaUnitID := best.CandidateID, best.MediaUnitID
-
 	title := "《" + canonical.Title + "》"
 	if episode != "" {
 		title += "(" + episode + ")"
@@ -881,7 +869,6 @@ func (handler *Handler) watch(c *gin.Context) {
 		"CandidateSessionID":  newCandidateSessionID(),
 		"SeasonNumber":        seasonNumber,
 		"EpisodeKey":          episodeKey,
-		"IsWatched":           isWatched,
 		"LoggedIn":            userID > 0,
 		"SourceKey":           best.SourceKey,
 		"VodID":               best.VodID,
@@ -893,8 +880,49 @@ func (handler *Handler) watch(c *gin.Context) {
 		"EpisodeSources":      episodeSources,
 		"SourceLabel":         best.SourceKey + " · " + best.LineLabel,
 		"AutoFailoverEnabled": true,
-		"AirSchedule":         handler.airScheduleView(c.Request.Context(), &canonical),
 	}))
+}
+
+// watchActionsHTMX 返回播放页的"看过"按钮（htmx 延迟加载，不阻塞播放器启动）。
+func (handler *Handler) watchActionsHTMX(c *gin.Context) {
+	doubanID := c.Query("douban_id")
+	userID := auth.UserID(c)
+	isWatched := false
+	if userID > 0 && handler.userMovies != nil {
+		isWatched, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, doubanID, "watched")
+	}
+	c.HTML(http.StatusOK, "partials/play_watched_button.html", gin.H{
+		"DoubanID": doubanID, "Title": c.Query("title"), "Poster": c.Query("poster"),
+		"Year": c.Query("year"), "IsWatched": isWatched, "LoggedIn": userID > 0,
+		"Redirect": c.Query("redirect"),
+	})
+}
+
+// watchScheduleHTMX 返回播放页的播出日程（htmx 延迟加载）。
+func (handler *Handler) watchScheduleHTMX(c *gin.Context) {
+	doubanID := c.Query("douban_id")
+	if doubanID == "" || handler.media == nil {
+		c.String(http.StatusOK, "")
+		return
+	}
+	canonical, err := handler.media.FindByDoubanID(c.Request.Context(), doubanID)
+	if err != nil || canonical.ID == 0 {
+		c.String(http.StatusOK, "")
+		return
+	}
+	schedule := handler.airScheduleView(c.Request.Context(), &canonical)
+	c.HTML(http.StatusOK, "partials/air_schedule.html", schedule)
+}
+
+// watchSearchKeyword 在 /watch 走不通需要回搜索页时，优先用影片标题做关键词。
+// 延迟到错误路径才调用，不阻塞正常播放的主路径。
+func (handler *Handler) watchSearchKeyword(ctx context.Context, doubanID string) string {
+	if handler.titleFinder != nil {
+		if title, _ := handler.titleFinder.FindTitleByDoubanID(ctx, doubanID); title != "" {
+			return title
+		}
+	}
+	return doubanID
 }
 
 // indexWatchResource 为 /watch 现场补录一条资源的剧集索引，真正写入了才返回 true。

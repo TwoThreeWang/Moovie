@@ -1,0 +1,19 @@
+{{/* 播放按钮、想看/看过按钮、社交统计（htmx 延迟加载）。 */}}
+<div class="movie-primary-actions">
+    {{ if .Playback.Available }}
+    <a href="{{ if .Playback.Ready }}/watch/{{ .DoubanID }}?source_key={{ .Playback.BestResource.SourceKey }}&vod_id={{ .Playback.BestResource.VodId }}{{ else }}/play/{{ .Playback.BestResource.SourceKey }}/{{ .Playback.BestResource.VodId }}?douban_id={{ .DoubanID }}{{ end }}" class="btn btn-primary movie-play-btn">
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
+            <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.2-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z"/>
+        </svg>
+        <span>立即播放</span>
+    </a>
+    {{ end }}
+    {{ template "user_movie_buttons.html" (dict "DoubanID" .DoubanID "Title" .Title "Poster" .Poster "Year" .Year "IsWish" .IsWish "IsWatched" .IsWatched) }}
+</div>
+{{ if or (gt .WatchedByCount 0) (gt .WishByCount 0) }}
+<div class="movie-social-stats">
+    {{ if gt .WatchedByCount 0 }}<span>{{ .WatchedByCount }} 人看过</span>{{ end }}
+    {{ if and (gt .WatchedByCount 0) (gt .WishByCount 0) }}<span class="movie-social-dot">·</span>{{ end }}
+    {{ if gt .WishByCount 0 }}<span>{{ .WishByCount }} 人想看</span>{{ end }}
+</div>
+{{ end }}

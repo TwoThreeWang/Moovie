@@ -1,0 +1,22 @@
+{{/* 在线资源区块（htmx 延迟加载）：已有可播放候选时展示直达入口，否则触发全网搜索。 */}}
+{{ if .Playback.Available }}
+<h2 class="section-title">{{ if .Playback.Ready }}选集与线路{{ else }}在线播放资源{{ end }}</h2>
+<div class="movie-resource-ready">
+    <div>
+        <strong>{{ if .Playback.Ready }}已找到可播放线路{{ else }}已找到直连资源{{ end }}</strong>
+        <p>{{ if .Playback.Ready }}进入播放页选择选集，并可随时切换来源。{{ else }}该资源尚未完成选集索引，将使用资源直连播放。{{ end }}</p>
+    </div>
+    <a href="{{ if .Playback.Ready }}/watch/{{ .DoubanID }}?source_key={{ .Playback.BestResource.SourceKey }}&vod_id={{ .Playback.BestResource.VodId }}{{ else }}/play/{{ .Playback.BestResource.SourceKey }}/{{ .Playback.BestResource.VodId }}?douban_id={{ .DoubanID }}{{ end }}" class="movie-resource-link">{{ if .Playback.Ready }}查看选集与线路{{ else }}立即播放{{ end }} →</a>
+</div>
+{{ else }}
+<h2 class="section-title">查找在线播放资源</h2>
+<div id="movie-search-results"
+     hx-get="/api/htmx/search?q={{if .SearchTitle }}{{ urlquery .SearchTitle }}{{else}}{{ urlquery .Title }}{{end}}&year={{ urlquery .Year }}&douban_id={{ urlquery .DoubanID }}"
+     hx-trigger="load"
+     hx-indicator="#movie-search-loading">
+    <div id="movie-search-loading" class="htmx-indicator movie-search-loading-state">
+        <div class="loading-spinner"></div>
+        <p>正在搜索全网资源，请稍候...</p>
+    </div>
+</div>
+{{ end }}
