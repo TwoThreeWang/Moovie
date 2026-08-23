@@ -3,7 +3,7 @@
 <div class="admin-page">
     <!-- 页面标题和导航 -->
     <div class="admin-header">
-        <h1 class="admin-title">分类过滤管理</h1>
+        <h1 class="admin-title">NSFW 过滤管理</h1>
         <nav class="admin-tabs">
             <a href="/admin" class="admin-tab">概览</a>
             <a href="/admin/users" class="admin-tab">用户</a>
@@ -13,32 +13,32 @@
             <a href="/admin/jobs" class="admin-tab">任务队列</a>
             <a href="/admin/matches" class="admin-tab">匹配复核</a>
             <a href="/admin/copyright" class="admin-tab">版权限制</a>
-            <a href="/admin/category" class="admin-tab active">分类过滤</a>
-            <a href="/admin/nsfw" class="admin-tab">NSFW</a>
+            <a href="/admin/category" class="admin-tab">分类过滤</a>
+            <a href="/admin/nsfw" class="admin-tab active">NSFW</a>
         </nav>
     </div>
 
-    <!-- 添加分类关键词 -->
+    <!-- 添加 NSFW 关键词 -->
     <div class="admin-card">
         <div class="admin-card-header">
-            <h3>添加分类过滤关键词</h3>
+            <h3>添加 NSFW 标签关键词</h3>
         </div>
-        <form id="addCategoryForm" class="admin-form">
+        <form id="addNSFWForm" class="admin-form">
             <div class="form-row">
                 <div class="form-group flex-2">
-                    <label for="keyword">分类关键词</label>
-                    <input type="text" id="keyword" name="keyword" placeholder="输入需要屏蔽的分类关键词，如：写真" required>
+                    <label for="keyword">标签关键词</label>
+                    <input type="text" id="keyword" name="keyword" placeholder="输入需要模糊化的标签关键词，如：情色" required>
                 </div>
                 <button type="submit" class="btn btn-primary">添加</button>
             </div>
         </form>
-        <p class="form-help">添加后，搜索结果中<b>类别名称 (TypeName)</b> 包含该关键词的内容将被自动屏蔽。</p>
+        <p class="form-help">添加后，首页「继续观看」中影片类型标签命中该关键词的海报将显示模糊化，点击后可消除模糊。个人中心在看记录不受影响。</p>
     </div>
 
-    <!-- 分类关键词列表 -->
+    <!-- NSFW 关键词列表 -->
     <div class="admin-card">
         <div class="admin-card-header">
-            <h3>分类过滤列表</h3>
+            <h3>NSFW 标签列表</h3>
             <span class="badge">{{ if .Filters }}{{ len .Filters }}{{ else }}0{{ end }} 个关键词</span>
         </div>
         <div class="admin-table-wrapper">
@@ -51,19 +51,19 @@
                         <th>操作</th>
                     </tr>
                 </thead>
-                <tbody id="categoryTable">
+                <tbody id="nsfwTable">
                     {{ range .Filters }}
                     <tr data-id="{{ .ID }}">
                         <td><span class="id-badge">{{ .ID }}</span></td>
                         <td><code class="key-badge">{{ .Keyword }}</code></td>
                         <td>{{ .CreatedAt.Format "2006-01-02 15:04" }}</td>
                         <td class="actions-cell">
-                            <button class="btn btn-danger btn-sm" onclick="deleteCategory({{ .ID }})">删除</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteNSFW({{ .ID }})">删除</button>
                         </td>
                     </tr>
                     {{ else }}
                     <tr>
-                        <td colspan="4" class="empty-cell">暂无分类过滤关键词</td>
+                        <td colspan="4" class="empty-cell">暂无 NSFW 标签关键词</td>
                     </tr>
                     {{ end }}
                 </tbody>
@@ -73,14 +73,13 @@
 </div>
 
 <script>
-// 添加分类关键词
-document.getElementById('addCategoryForm').addEventListener('submit', async (e) => {
+document.getElementById('addNSFWForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
     const formData = new FormData(form);
 
     try {
-        const resp = await fetch('/admin/category', {
+        const resp = await fetch('/admin/nsfw', {
             method: 'POST',
             body: formData
         });
@@ -96,12 +95,11 @@ document.getElementById('addCategoryForm').addEventListener('submit', async (e) 
     }
 });
 
-// 删除分类关键词
-async function deleteCategory(id) {
+async function deleteNSFW(id) {
     if (!confirm('确定要删除这个关键词吗？')) return;
 
     try {
-        const resp = await fetch('/admin/category/' + id, {
+        const resp = await fetch('/admin/nsfw/' + id, {
             method: 'DELETE'
         });
         const data = await resp.json();

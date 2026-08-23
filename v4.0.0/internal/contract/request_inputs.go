@@ -203,4 +203,5 @@ var RequestInputs = []RequestInput{
 	{Method: "POST", Path: "/admin/copyright", Name: "keyword", Location: InputForm},
 	{Method: "PUT", Path: "/admin/copyright/:id", Name: "keyword", Location: InputForm},
 	{Method: "POST", Path: "/admin/category", Name: "keyword", Location: InputForm},
+	{Method: "POST", Path: "/admin/nsfw", Name: "keyword", Location: InputForm},
 }

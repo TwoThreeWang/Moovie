@@ -48,6 +48,9 @@ type SearchStore interface {
 	ListCategoryFilters(ctx context.Context) ([]search.Filter, error)
 	CreateCategoryFilter(ctx context.Context, keyword string) (*search.Filter, error)
 	DeleteCategoryFilter(ctx context.Context, id uint) error
+	ListNSFWFilters(ctx context.Context) ([]search.Filter, error)
+	CreateNSFWFilter(ctx context.Context, keyword string) (*search.Filter, error)
+	DeleteNSFWFilter(ctx context.Context, id uint) error
 	SummaryHealthSince(ctx context.Context, since time.Time) (map[string]*search.HealthSummary, error)
 }
 
@@ -139,6 +142,9 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/admin/category", append(middleware, handler.categoryList)...)
 	router.POST("/admin/category", append(middleware, handler.categoryCreate)...)
 	router.DELETE("/admin/category/:id", append(middleware, handler.categoryDelete)...)
+	router.GET("/admin/nsfw", append(middleware, handler.nsfwList)...)
+	router.POST("/admin/nsfw", append(middleware, handler.nsfwCreate)...)
+	router.DELETE("/admin/nsfw/:id", append(middleware, handler.nsfwDelete)...)
 }
 
 // jobQueuePage 渲染任务队列页，按状态筛选、按游标翻页。
@@ -622,6 +628,35 @@ func (handler *Handler) categoryCreate(c *gin.Context) {
 // categoryDelete 删除分类屏蔽词。
 func (handler *Handler) categoryDelete(c *gin.Context) {
 	handler.deleteFilter(c, handler.search.DeleteCategoryFilter)
+}
+
+// nsfwList 渲染 NSFW 标签关键词列表。
+func (handler *Handler) nsfwList(c *gin.Context) {
+	filters, err := handler.search.ListNSFWFilters(c.Request.Context())
+	if err != nil {
+		c.String(http.StatusInternalServerError, "")
+		return
+	}
+	handler.page(c, "admin_nsfw.html", "NSFW 过滤管理 - Moovie影牛", gin.H{"Filters": filters})
+}
+
+// nsfwCreate 新增 NSFW 标签关键词。
+func (handler *Handler) nsfwCreate(c *gin.Context) {
+	value, ok := keyword(c)
+	if !ok {
+		return
+	}
+	filter, err := handler.search.CreateNSFWFilter(c.Request.Context(), value)
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, "创建失败: "+err.Error())
+		return
+	}
+	apiSuccess(c, filter)
+}
+
+// nsfwDelete 删除 NSFW 标签关键词。
+func (handler *Handler) nsfwDelete(c *gin.Context) {
+	handler.deleteFilter(c, handler.search.DeleteNSFWFilter)
 }
 
 // deleteFilter 是两类屏蔽词删除的公共实现。

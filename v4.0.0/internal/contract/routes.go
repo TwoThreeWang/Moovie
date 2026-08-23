@@ -157,4 +157,7 @@ var Routes = []Route{
 	{Method: "GET", Path: "/admin/category", Surface: SurfaceAdmin},
 	{Method: "POST", Path: "/admin/category", Surface: SurfaceAdmin},
 	{Method: "DELETE", Path: "/admin/category/:id", Surface: SurfaceAdmin},
+	{Method: "GET", Path: "/admin/nsfw", Surface: SurfaceAdmin},
+	{Method: "POST", Path: "/admin/nsfw", Surface: SurfaceAdmin},
+	{Method: "DELETE", Path: "/admin/nsfw/:id", Surface: SurfaceAdmin},
 }

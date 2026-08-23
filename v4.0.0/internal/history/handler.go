@@ -1,6 +1,7 @@
 package history
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// NSFWKeywordReader 提供 NSFW 标签关键词。
+type NSFWKeywordReader interface {
+	NSFWKeywords(ctx context.Context) ([]string, error)
+}
+
 // Handler 提供观看记录的接口和首页/仪表盘的 HTMX 片段。
 type Handler struct {
 	store             Store
@@ -20,6 +26,7 @@ type Handler struct {
 	todayUpdateReader TodayUpdateReader
 	playbackReader    search.PlaybackSummaryReader
 	timeZone          string
+	nsfwReader        NSFWKeywordReader
 }
 
 // HandlerOption 用于注入可选依赖。
@@ -34,6 +41,11 @@ func WithTodayUpdateReader(reader TodayUpdateReader, timeZone string) HandlerOpt
 // WithPlaybackSummaryReader 让今日更新根据最新播放摘要选择 /watch、/play 或详情页。
 func WithPlaybackSummaryReader(reader search.PlaybackSummaryReader) HandlerOption {
 	return func(handler *Handler) { handler.playbackReader = reader }
+}
+
+// WithNSFWKeywordReader 启用首页继续观看的 NSFW 海报模糊化。
+func WithNSFWKeywordReader(reader NSFWKeywordReader) HandlerOption {
+	return func(handler *Handler) { handler.nsfwReader = reader }
 }
 
 // NewHandler 创建观看记录处理器。
@@ -119,7 +131,50 @@ func (handler *Handler) recent(c *gin.Context) {
 		c.HTML(http.StatusOK, "partials/dashboard_history.html", gin.H{"History": nil})
 		return
 	}
-	c.HTML(http.StatusOK, "partials/dashboard_history.html", gin.H{"History": records, "HasMore": false})
+	handler.markNSFW(c.Request.Context(), records)
+	c.HTML(http.StatusOK, "partials/dashboard_history.html", gin.H{"History": records, "HasMore": false, "BlurNSFW": true})
+}
+
+// markNSFW 根据 NSFW 关键词标记记录。
+func (handler *Handler) markNSFW(ctx context.Context, records []Record) {
+	if handler.nsfwReader == nil || len(records) == 0 {
+		return
+	}
+	keywords, err := handler.nsfwReader.NSFWKeywords(ctx)
+	if err != nil || len(keywords) == 0 {
+		return
+	}
+	lowerKW := make([]string, len(keywords))
+	for i, kw := range keywords {
+		lowerKW[i] = strings.ToLower(kw)
+	}
+
+	var needVod []VodKey
+	for _, r := range records {
+		if r.Genres == "" && r.Source != "" && r.VodID != "" {
+			needVod = append(needVod, VodKey{SourceKey: r.Source, VodID: r.VodID})
+		}
+	}
+	var vodTags map[VodKey]string
+	if len(needVod) > 0 {
+		vodTags, _ = handler.store.VodTags(ctx, needVod)
+	}
+
+	for i := range records {
+		tags := strings.ToLower(records[i].Genres)
+		if tags == "" && vodTags != nil {
+			tags = strings.ToLower(vodTags[VodKey{SourceKey: records[i].Source, VodID: records[i].VodID}])
+		}
+		if tags == "" {
+			continue
+		}
+		for _, kw := range lowerKW {
+			if strings.Contains(tags, kw) {
+				records[i].NSFW = true
+				break
+			}
+		}
+	}
 }
 
 // continueRecords 取「继续观看」并做合并去重，再在内存里分页。

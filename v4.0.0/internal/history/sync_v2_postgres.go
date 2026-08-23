@@ -123,7 +123,7 @@ func finalizeSyncEvent(ctx context.Context, executor database.Executor, userID i
 		conflictReason = payload.Conflict.Reason
 	}
 	if _, err := executor.Exec(ctx, `UPDATE history_sync_events SET payload_json = $2::jsonb,
-conflict_reason = $3, record_id = $4, media_id = $5, media_unit_id = $6, season_number = $7,
+conflict_reason = $3, record_id = $4, media_id = (SELECT id FROM media WHERE id = $5), media_unit_id = $6, season_number = $7,
 episode_key = $8, source_key = $9, vod_id = $10 WHERE version = $1 AND user_id = $11`,
 		version, string(encoded), conflictReason, nullablePositive(operation.HistoryID), nullablePositive(operation.MediaID),
 		nullablePositive(operation.MediaUnitID), operation.Season, operation.EpisodeKey, operation.Source, operation.VodID, userID); err != nil {
@@ -155,7 +155,7 @@ WHERE user_id = $1 AND device_id = $2 AND operation_id = $3`, userID, deviceID, 
 	err = executor.QueryRow(ctx, `INSERT INTO history_sync_events
 (user_id, device_id, operation_id, device_seq, operation_type, record_id, media_id, media_unit_id,
  season_number, episode_key, source_key, vod_id, occurred_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+VALUES ($1,$2,$3,$4,$5,$6,(SELECT id FROM media WHERE id = $7),$8,$9,$10,$11,$12,$13)
 ON CONFLICT (user_id, device_id, operation_id) DO NOTHING
 	RETURNING version`, userID, deviceID, operation.OperationID, operation.DeviceSeq, operation.Type,
 		nullablePositive(operation.HistoryID), nullablePositive(operation.MediaID), nullablePositive(operation.MediaUnitID),

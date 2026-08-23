@@ -11,4 +11,11 @@ type Store interface {
 	ListContinue(ctx context.Context, userID, limit, offset int) ([]Record, error)
 	CountByUser(ctx context.Context, userID int) (int, error)
 	SyncV2(ctx context.Context, userID int, request SyncV2Request, receivedAt time.Time) (SyncV2Result, error)
+	VodTags(ctx context.Context, keys []VodKey) (map[VodKey]string, error)
+}
+
+// VodKey 标识一条资源。
+type VodKey struct {
+	SourceKey string
+	VodID     string
 }

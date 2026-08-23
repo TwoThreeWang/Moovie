@@ -31,7 +31,7 @@ func TestPostgresStoreUpsertsOnlyCanonicalPlaybackPosition(t *testing.T) {
 
 func TestPostgresStoreDashboardListUsesCanonicalOrderAndPagination(t *testing.T) {
 	watchedAt := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
-	database := &historyFakeDatabase{rows: &historyFakeRows{values: [][]any{{1, 42, nil, nil, "1292052", "vod", "影片", "poster", "第01集", 1, "S01E01", 25, 30.5, 120.0, "source", "watch", watchedAt, watchedAt}}}}
+	database := &historyFakeDatabase{rows: &historyFakeRows{values: [][]any{{1, 42, nil, nil, "1292052", "vod", "影片", "poster", "第01集", 1, "S01E01", 25, 30.5, 120.0, "source", "watch", watchedAt, watchedAt, "剧情"}}}}
 	store := NewPostgresStore(database)
 	records, err := store.ListByUser(t.Context(), 42, 24, 48)
 	if err != nil || len(records) != 1 || records[0].EntryPage != "watch" {

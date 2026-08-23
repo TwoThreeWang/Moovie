@@ -160,7 +160,8 @@ COALESCE(media.douban_id, ''), position.last_vod_id,
 COALESCE(NULLIF(media.title, ''), position.title),
 COALESCE(NULLIF(media.poster, ''), position.poster), position.episode,
 position.season_number, position.episode_key, position.progress_percent, position.position_seconds,
-position.duration_seconds, position.last_source_key, position.entry_page, position.activity_at, position.updated_at
+position.duration_seconds, position.last_source_key, position.entry_page, position.activity_at, position.updated_at,
+COALESCE(media.genres, '')
 FROM playback_positions position LEFT JOIN media ON media.id = position.media_id`
 
 // queryPlaybackPositions 按给定条件查询进度记录。
@@ -177,7 +178,7 @@ func queryPlaybackPositions(ctx context.Context, executor database.Executor, pre
 		if err := rows.Scan(&record.ID, &record.UserID, &mediaID, &mediaUnitID, &record.DoubanID,
 			&record.VodID, &record.Title, &record.Poster, &record.Episode, &record.SeasonNumber,
 			&record.EpisodeKey, &record.Progress, &record.LastTime, &record.Duration, &record.Source,
-			&record.EntryPage, &record.WatchedAt, &record.UpdatedAt); err != nil {
+			&record.EntryPage, &record.WatchedAt, &record.UpdatedAt, &record.Genres); err != nil {
 			return nil, fmt.Errorf("scan playback position: %w", err)
 		}
 		if mediaID != nil {
@@ -228,4 +229,50 @@ AND NOT EXISTS (
       AND user_movies.updated_at >= position.activity_at
 )
 ORDER BY position.activity_at DESC LIMIT $2 OFFSET $3`, userID, limit, offset)
+}
+
+// VodTags 批量查询资源站分类标签（vod_class + type_name）。
+func (store *PostgresStore) VodTags(ctx context.Context, keys []VodKey) (map[VodKey]string, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(keys)*2)
+	conditions := make([]string, 0, len(keys))
+	for i, k := range keys {
+		conditions = append(conditions, fmt.Sprintf("(source_key=$%d AND vod_id=$%d)", i*2+1, i*2+2))
+		args = append(args, k.SourceKey, k.VodID)
+	}
+	query := "SELECT source_key, vod_id, vod_class, type_name FROM vod_items WHERE " + joinOr(conditions)
+	rows, err := store.database.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[VodKey]string, len(keys))
+	for rows.Next() {
+		var sk, vid, vc, tn string
+		if err := rows.Scan(&sk, &vid, &vc, &tn); err != nil {
+			return nil, err
+		}
+		tags := vc
+		if tn != "" {
+			if tags != "" {
+				tags += ","
+			}
+			tags += tn
+		}
+		result[VodKey{SourceKey: sk, VodID: vid}] = tags
+	}
+	return result, rows.Err()
+}
+
+func joinOr(parts []string) string {
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	result := parts[0]
+	for _, p := range parts[1:] {
+		result += " OR " + p
+	}
+	return result
 }

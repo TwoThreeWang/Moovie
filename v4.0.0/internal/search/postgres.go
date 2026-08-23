@@ -504,6 +504,27 @@ func (store *PostgresStore) DeleteCategoryFilter(ctx context.Context, id uint) e
 	return err
 }
 
+// ListNSFWFilters 列出 NSFW 标签关键词。
+func (store *PostgresStore) ListNSFWFilters(ctx context.Context) ([]Filter, error) {
+	return store.listFilters(ctx, `SELECT id, keyword, created_at, updated_at FROM nsfw_filters ORDER BY id`)
+}
+
+// CreateNSFWFilter 新增 NSFW 标签关键词。
+func (store *PostgresStore) CreateNSFWFilter(ctx context.Context, keyword string) (*Filter, error) {
+	return store.createFilter(ctx, "nsfw_filters", keyword)
+}
+
+// DeleteNSFWFilter 删除 NSFW 标签关键词。
+func (store *PostgresStore) DeleteNSFWFilter(ctx context.Context, id uint) error {
+	_, err := store.database.Exec(ctx, `DELETE FROM nsfw_filters WHERE id = $1`, id)
+	return err
+}
+
+// NSFWKeywords 取 NSFW 标签关键词（首页继续观看海报模糊化）。
+func (store *PostgresStore) NSFWKeywords(ctx context.Context) ([]string, error) {
+	return store.keywords(ctx, `SELECT keyword FROM nsfw_filters`)
+}
+
 // listFilters 是两类屏蔽词的公共查询。
 func (store *PostgresStore) listFilters(ctx context.Context, query string) ([]Filter, error) {
 	rows, err := store.database.Query(ctx, query)
@@ -524,7 +545,7 @@ func (store *PostgresStore) listFilters(ctx context.Context, query string) ([]Fi
 
 // createFilter 表名是拼进 SQL 的，因此这里用白名单校验，杜绝注入。
 func (store *PostgresStore) createFilter(ctx context.Context, table, keyword string) (*Filter, error) {
-	if table != "copyright_filters" && table != "category_filters" {
+	if table != "copyright_filters" && table != "category_filters" && table != "nsfw_filters" {
 		return nil, fmt.Errorf("unsupported filter table")
 	}
 	filter := &Filter{Keyword: keyword, CreatedAt: time.Now(), UpdatedAt: time.Now()}
