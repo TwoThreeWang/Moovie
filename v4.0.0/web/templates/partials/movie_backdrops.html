@@ -56,7 +56,7 @@ var MOOVIE_BACKDROPS = [{{ range $i, $url := .Backdrops }}{{ if $i }},{{ end }}{
 }
 
 .backdrop-item:hover {
-    border-color: var(--primary);
+    border-color: var(--primary-text);
     transform: translateY(-2px);
 }
 
@@ -181,7 +181,7 @@ var MOOVIE_BACKDROPS = [{{ range $i, $url := .Backdrops }}{{ if $i }},{{ end }}{
 
 .lightbox-close:hover {
     transform: scale(1.2);
-    color: var(--primary);
+    color: var(--primary-text);
 }
 
 @media (max-width: 768px) {

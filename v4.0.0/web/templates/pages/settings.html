@@ -216,6 +216,12 @@
                         </div>
                     </div>
 
+                    <div class="settings-field settings-field-readonly">
+                        <label>自动同步</label>
+                        <div class="settings-field-value">每 24 小时一次</div>
+                        <p class="settings-field-hint">系统会自动检查豆瓣的新记录，也可以随时手动同步。</p>
+                    </div>
+
                     <div class="settings-field-actions">
                         <form action="/dashboard/settings/douban/sync" method="POST" style="display:inline">
                             <button type="submit" class="btn btn-primary">重新同步</button>
@@ -231,7 +237,7 @@
                             <input type="text" id="douban_user_id" name="douban_user_id"
                                    placeholder="例如：198878447 或 https://www.douban.com/people/198878447/"
                                    required>
-                            <p class="settings-field-hint">只同步公开的观影记录</p>
+                            <p class="settings-field-hint">只同步公开的观影记录；绑定后立即同步，之后每 24 小时自动检查一次</p>
                         </div>
                         <div class="settings-field-actions">
                             <button type="submit" class="btn btn-primary">绑定并同步</button>
@@ -263,7 +269,7 @@
     padding: 8px 12px; border-radius: 8px;
     transition: all 0.2s ease;
 }
-.settings-back-link:hover { color: var(--primary); background: var(--primary-alpha); }
+.settings-back-link:hover { color: var(--primary-text); background: var(--primary-alpha); }
 .settings-page-title { font-size: 1.5rem; font-weight: 800; }
 
 /* 布局 - 用 settings-layout 避免冲突 */
@@ -292,8 +298,8 @@
     transition: all 0.2s ease;
     text-align: left; width: 100%;
 }
-.settings-nav-item:hover { color: var(--primary); background: var(--primary-alpha); }
-.settings-nav-item.active { color: var(--primary); background: var(--primary-alpha); font-weight: 600; }
+.settings-nav-item:hover { color: var(--primary-text); background: var(--primary-alpha); }
+.settings-nav-item.active { color: var(--primary-text); background: var(--primary-alpha); font-weight: 600; }
 .settings-nav-item svg { flex-shrink: 0; }
 .settings-nav-spacer { flex: 1; min-height: 12px; }
 .settings-nav-logout {
@@ -347,7 +353,7 @@
     border: 1px solid var(--border); border-radius: 8px;
     font-size: 0.88rem; background: var(--bg-secondary); color: var(--text);
 }
-.settings-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-alpha); }
+.settings-field input:focus { outline: none; border-color: var(--primary-text); box-shadow: 0 0 0 3px var(--primary-alpha); }
 .settings-field-input { display: flex; gap: 8px; align-items: center; }
 .settings-field-input input { flex: 1; }
 .settings-field-readonly { gap: 4px; }
@@ -375,10 +381,10 @@
     font-size: 0.88rem; font-weight: 600;
     transition: all 0.25s ease; white-space: nowrap;
 }
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-primary:hover { background: var(--primary-light); }
+.btn-primary { background: var(--primary-solid); color: #fff; }
+.btn-primary:hover { background: var(--primary-solid-hover); }
 .btn-ghost { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border); }
-.btn-ghost:hover { color: var(--primary); border-color: var(--primary); }
+.btn-ghost:hover { color: var(--primary-text); border-color: var(--primary-text); }
 .btn-sm { padding: 8px 14px; font-size: 0.8rem; }
 
 /* Toggle */
@@ -440,11 +446,11 @@
 }
 .avatar-emoji-item:hover {
     background: var(--primary-alpha);
-    border-color: var(--primary-light);
+    border-color: var(--primary);
     transform: scale(1.15);
 }
 .avatar-emoji-item.active {
-    border-color: var(--primary);
+    border-color: var(--primary-text);
     background: var(--primary-alpha);
     box-shadow: 0 0 0 2px var(--primary-alpha);
 }
