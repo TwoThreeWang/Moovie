@@ -33,7 +33,7 @@ img { max-width: 100%; height: auto; display: block; }
 
 /* ==================== 侧边栏 ==================== */
 .sidebar { width: var(--sidebar-width); background: var(--bg); border-right: 1px solid var(--border); box-shadow: 2px 0 12px rgba(0, 0, 0, 0.04); display: flex; flex-direction: column; height: 100%; overflow-y: auto; flex-shrink: 0; }
-.sidebar-header { padding: 24px 20px 16px; border-bottom: 1px solid var(--border); text-align: center; }
+.sidebar-header { padding: 24px 20px 16px; text-align: center; background: linear-gradient(to bottom, var(--bg-secondary), var(--bg)); }
 .logo { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 1.5rem; font-weight: 700; color: var(--primary); }
 .logo-icon { height: 32px; width: auto; flex-shrink: 0; }
 .logo-subtitle { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
@@ -61,7 +61,7 @@ img { max-width: 100%; height: auto; display: block; }
 .content-wrapper.full-width { max-width: none; padding: 32px 0; }
 
 /* ==================== 页脚 ==================== */
-.main-footer { padding: 24px 40px; border-top: 1px solid var(--border); text-align: center; background: var(--bg-secondary); }
+.main-footer { padding: 24px 40px; text-align: center; background: linear-gradient(to top, var(--bg-secondary), var(--bg)); }
 .footer-content { max-width: 1200px; margin: 0 auto; }
 .footer-links { display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; margin-bottom: 12px; }
 .footer-links a { color: var(--text-secondary); font-size: 0.75rem; transition: color var(--transition); }
