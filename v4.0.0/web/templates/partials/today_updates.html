@@ -21,7 +21,7 @@
     </div>
     <div class="today-updates-list">
         {{ range .Updates }}
-        <a class="today-update-card" href="{{ if .Playback.Ready }}/watch/{{ .DoubanID }}?ep={{ .EpisodeLabel }}&source_key={{ .Playback.BestResource.SourceKey }}&vod_id={{ .Playback.BestResource.VodId }}{{ else if .Playback.Direct }}/play/{{ .Playback.BestResource.SourceKey }}/{{ .Playback.BestResource.VodId }}?ep={{ .EpisodeLabel }}&douban_id={{ .DoubanID }}{{ else }}/movie/{{ .DoubanID }}?title={{ urlquery .Title }}{{ end }}">
+        <a class="today-update-card" href="{{ .ContinueURL }}">
             {{ if .Poster }}
             <img class="today-update-poster" src="{{ proxyImg .Poster }}"
                  alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
@@ -33,7 +33,7 @@
                 <span class="today-update-ep">
                     更新至 {{ .EpisodeLabel }}{{ if .EpisodeTitle }} · {{ .EpisodeTitle }}{{ end }}
                 </span>
-                {{ if not .Playback.Available }}<span class="today-update-progress">资源待同步</span>{{ end }}
+                {{ if not .Playable }}<span class="today-update-progress">资源待同步</span>{{ end }}
                 {{ if .WatchingLabel }}
                 <span class="today-update-progress">你看到 {{ .WatchingLabel }}</span>
                 {{ end }}

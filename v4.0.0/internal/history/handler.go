@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
-	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,7 +24,7 @@ type Handler struct {
 	secret            string
 	now               func() time.Time
 	todayUpdateReader TodayUpdateReader
-	playbackReader    search.PlaybackSummaryReader
+	episodeReader     mediaidentity.EpisodeReader
 	timeZone          string
 	nsfwReader        NSFWKeywordReader
 }
@@ -38,9 +38,9 @@ func WithTodayUpdateReader(reader TodayUpdateReader, timeZone string) HandlerOpt
 	return func(handler *Handler) { handler.todayUpdateReader, handler.timeZone = reader, timeZone }
 }
 
-// WithPlaybackSummaryReader 让今日更新根据最新播放摘要选择 /watch、/play 或详情页。
-func WithPlaybackSummaryReader(reader search.PlaybackSummaryReader) HandlerOption {
-	return func(handler *Handler) { handler.playbackReader = reader }
+// WithEpisodeReader 让今日更新只把确实有当集候选的卡片链到 /watch。
+func WithEpisodeReader(reader mediaidentity.EpisodeReader) HandlerOption {
+	return func(handler *Handler) { handler.episodeReader = reader }
 }
 
 // WithNSFWKeywordReader 启用首页继续观看的 NSFW 海报模糊化。

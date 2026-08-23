@@ -2,13 +2,14 @@ package history
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
-	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,7 +30,8 @@ type TodayUpdate struct {
 	// WatchingLabel 是用户当前的观看位置，例如 "第 3 集"。
 	// 它让"已更新到第 7 集但你看到第 3 集"这件事在首页就能被看到。
 	WatchingLabel string
-	Playback      search.PlaybackSummary
+	ContinueURL   string
+	Playable      bool
 }
 
 // todayUpdatesLimit 限制首页一次展示的更新条目。
@@ -86,25 +88,16 @@ func (handler *Handler) todayUpdates(c *gin.Context) {
 		c.Status(http.StatusOK)
 		return
 	}
-	playback := make(map[int]search.PlaybackSummary)
-	if handler.playbackReader != nil {
-		if summaries, summaryErr := handler.playbackReader.ListPlaybackSummaries(c.Request.Context(), mediaIDs); summaryErr == nil {
-			playback = summaries
-		} else {
-			requestmeta.Logger(c.Request.Context()).Warn("today updates: load playback summaries failed",
-				"user_id", userID, "error", summaryErr)
-		}
-	}
-
-	// 一部剧同一天可能连更多集，这里只保留集号最大的一集作为"最新更新"。
-	// units 已按 media_id、season、episode 升序，因此后来的覆盖先前的即可。
-	latest := make(map[int]mediaidentity.MediaUnit, len(units))
+	// 取当天最早的一集。TMDB 偶尔会把整段待定档剧集都标成同一天，
+	// 取最大集号会把尚未更新的集数当成“今日更新”。
+	firstByMedia := make(map[int]mediaidentity.MediaUnit, len(units))
 	order := make([]int, 0, len(units))
 	for _, unit := range units {
-		if _, seen := latest[unit.MediaID]; !seen {
-			order = append(order, unit.MediaID)
+		if _, seen := firstByMedia[unit.MediaID]; seen {
+			continue
 		}
-		latest[unit.MediaID] = unit
+		order = append(order, unit.MediaID)
+		firstByMedia[unit.MediaID] = unit
 	}
 
 	updates := make([]TodayUpdate, 0, len(order))
@@ -113,7 +106,21 @@ func (handler *Handler) todayUpdates(c *gin.Context) {
 		if !ok {
 			continue
 		}
-		unit := latest[mediaID]
+		unit := firstByMedia[mediaID]
+		episodeKey := unit.EpisodeKey
+		if episodeKey == "" {
+			episodeKey = mediaidentity.EpisodeLabel(unit.SeasonNumber, unit.EpisodeNumber)
+		}
+		var playable bool
+		if handler.episodeReader != nil {
+			candidates, candidateErr := handler.episodeReader.ListResourceCandidates(c.Request.Context(), mediaID, unit.SeasonNumber, episodeKey)
+			if candidateErr != nil {
+				requestmeta.Logger(c.Request.Context()).Warn("today updates: load episode candidates failed",
+					"user_id", userID, "media_id", mediaID, "episode_key", episodeKey, "error", candidateErr)
+			} else {
+				playable = len(candidates) > 0
+			}
+		}
 		updates = append(updates, TodayUpdate{
 			MediaID:       mediaID,
 			DoubanID:      record.DoubanID,
@@ -122,7 +129,8 @@ func (handler *Handler) todayUpdates(c *gin.Context) {
 			EpisodeLabel:  mediaidentity.EpisodeLabel(unit.SeasonNumber, unit.EpisodeNumber),
 			EpisodeTitle:  unit.Title,
 			WatchingLabel: record.Episode,
-			Playback:      playback[mediaID],
+			ContinueURL:   historyContinueURL(record),
+			Playable:      playable,
 		})
 		if len(updates) >= todayUpdatesLimit {
 			break
@@ -133,4 +141,23 @@ func (handler *Handler) todayUpdates(c *gin.Context) {
 		return
 	}
 	c.HTML(http.StatusOK, "partials/today_updates.html", gin.H{"Updates": updates})
+}
+
+// historyContinueURL 复用观看记录的入口、集数和优选资源，今日更新只负责提醒。
+func historyContinueURL(record Record) string {
+	sourceKey, vodID := record.Source, record.VodID
+	if record.PreferredSource != "" && record.PreferredVodID != "" {
+		sourceKey, vodID = record.PreferredSource, record.PreferredVodID
+	}
+	if record.EntryPage == "watch" && record.DoubanID != "" {
+		return fmt.Sprintf("/watch/%s?ep=%s&source_key=%s&vod_id=%s", url.PathEscape(record.DoubanID), url.QueryEscape(record.Episode), url.QueryEscape(sourceKey), url.QueryEscape(vodID))
+	}
+	if sourceKey != "" && vodID != "" {
+		playURL := fmt.Sprintf("/play/%s/%s?ep=%s", url.PathEscape(sourceKey), url.PathEscape(vodID), url.QueryEscape(record.Episode))
+		if record.DoubanID != "" {
+			playURL += "&douban_id=" + url.QueryEscape(record.DoubanID)
+		}
+		return playURL
+	}
+	return "/search?kw=" + url.QueryEscape(record.Title)
 }

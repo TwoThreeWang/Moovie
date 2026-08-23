@@ -350,8 +350,8 @@ func main() {
 	if updateReader, ok := mediaIdentityStore.(history.TodayUpdateReader); ok {
 		historyOptions = append(historyOptions, history.WithTodayUpdateReader(updateReader, cfg.Database.TimeZone))
 	}
-	if playbackReader, ok := itemStore.(search.PlaybackSummaryReader); ok {
-		historyOptions = append(historyOptions, history.WithPlaybackSummaryReader(playbackReader))
+	if episodeReader, ok := mediaIdentityStore.(mediaidentity.EpisodeReader); ok {
+		historyOptions = append(historyOptions, history.WithEpisodeReader(episodeReader))
 	}
 	if nsfwReader, ok := adminSearchStore.(history.NSFWKeywordReader); ok {
 		historyOptions = append(historyOptions, history.WithNSFWKeywordReader(nsfwReader))
