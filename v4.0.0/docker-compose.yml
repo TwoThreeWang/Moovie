@@ -45,9 +45,9 @@ services:
         max-file: "3"
 
   worker:
-    build:
-      context: .
     image: moovie-v4:local
+    depends_on:
+      - web
     container_name: moovie-new-worker
     entrypoint: ["./moovie-worker"]
     # Dockerfile 的 HEALTHCHECK 探测 5008，worker 不监听端口，不关掉会永远 unhealthy。

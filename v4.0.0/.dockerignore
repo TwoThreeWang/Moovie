@@ -1,7 +1,11 @@
 .env
 .git
+.claude
 bin
+danmu-cache
 datamigrate
+docs
+scripts
 coverage.out
 *.log
 .migration-reports
