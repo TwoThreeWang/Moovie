@@ -45,7 +45,7 @@ type Service struct {
 	identityCache *cache.TTL[mediaIdentityResult]
 }
 
-// mediaIdentityResult 是媒体匹配结果的缓存值；found=false 表示“确认匹配不上”，同样要缓存以免反复计算。
+// mediaIdentityResult 是媒体匹配结果的缓存值；found=false 表示"确认匹配不上"，同样要缓存以免反复计算。
 type mediaIdentityResult struct {
 	mediaID    int
 	confidence float64
@@ -438,20 +438,21 @@ func (service *Service) refreshWithinBudget(ctx context.Context, keyword string)
 }
 
 func (service *Service) fetchAndSave(ctx context.Context, keyword string) ([]VodItem, error) {
-	totalContext, cancel := context.WithTimeout(ctx, service.config.TotalTimeout)
-	defer cancel()
-	items, err := service.fetchFromSources(totalContext, keyword)
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, service.config.TotalTimeout)
+	defer fetchCancel()
+	items, err := service.fetchFromSources(fetchCtx, keyword)
 	if err != nil {
 		return nil, err
 	}
+	// persist/enrich 用独立超时，不受 fetch 阶段的时间消耗影响
+	persistCtx, persistCancel := context.WithTimeout(ctx, service.config.TotalTimeout)
+	defer persistCancel()
 	for _, item := range items {
-		if err := service.persistItem(totalContext, item); err != nil {
+		if err := service.persistItem(persistCtx, item); err != nil {
 			requestmeta.Logger(ctx).Warn("persist source item failed", "source", item.SourceKey, "vod_id", item.VodId, "error", err)
 		}
 	}
-	// 在返回本次刷新结果前立即回填精确媒体关联，
-	// 避免新资源停留在“有豆瓣 ID 但未关联”的状态。
-	service.enrichMediaIdentity(totalContext, items)
+	service.enrichMediaIdentity(persistCtx, items)
 	return items, nil
 }
 
@@ -550,7 +551,7 @@ func (service *Service) fetchFromSources(ctx context.Context, keyword string) ([
 	return allItems, nil
 }
 
-// recordOutcomes 写入健康统计。特例：整轮一条结果都没有时，“返回空”不算某个站的问题，不计入。
+// recordOutcomes 写入健康统计。特例：整轮一条结果都没有时，"返回空"不算某个站的问题，不计入。
 func (service *Service) recordOutcomes(probes []probe, anyHit bool) {
 	if service.health == nil {
 		return
