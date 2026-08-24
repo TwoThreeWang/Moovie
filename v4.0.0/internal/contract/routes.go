@@ -71,6 +71,7 @@ var Routes = []Route{
 	{Method: "POST", Path: "/dashboard/settings/password", Surface: SurfaceDashboard},
 	{Method: "POST", Path: "/dashboard/settings/share", Surface: SurfaceDashboard},
 	{Method: "POST", Path: "/dashboard/settings/avatar", Surface: SurfaceDashboard},
+	{Method: "POST", Path: "/dashboard/settings/ad-skip", Surface: SurfaceDashboard},
 	{Method: "POST", Path: "/dashboard/settings/douban/bind", Surface: SurfaceDashboard},
 	{Method: "POST", Path: "/dashboard/settings/douban/unbind", Surface: SurfaceDashboard},
 	{Method: "POST", Path: "/dashboard/settings/douban/sync", Surface: SurfaceDashboard},
@@ -123,6 +124,8 @@ var Routes = []Route{
 	{Method: "GET", Path: "/api/v2/media/:id/resources", Surface: SurfacePublicAPI},
 	{Method: "GET", Path: "/api/v2/media-units/:unit_id/playback-candidates", Surface: SurfacePublicAPI},
 	{Method: "POST", Path: "/api/v2/playback/events", Surface: SurfacePublicAPI},
+	{Method: "POST", Path: "/api/ad-fingerprints/match", Surface: SurfaceAuthenticatedAPI},
+	{Method: "POST", Path: "/api/ad-fingerprints/vote", Surface: SurfaceAuthenticatedAPI},
 
 	{Method: "GET", Path: "/admin", Surface: SurfaceAdmin},
 	{Method: "GET", Path: "/admin/users", Surface: SurfaceAdmin},

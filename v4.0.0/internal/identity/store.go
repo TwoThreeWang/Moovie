@@ -14,5 +14,6 @@ type Store interface {
 	UpdateIsPublic(ctx context.Context, userID int, isPublic bool) error
 	UpdateAvatar(ctx context.Context, userID int, avatar string) error
 	UpdateRole(ctx context.Context, userID int, role string) error
+	UpdateAdSkipEnabled(ctx context.Context, userID int, enabled bool) error
 	Delete(ctx context.Context, userID int) error
 }

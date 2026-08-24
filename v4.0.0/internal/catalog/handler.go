@@ -105,7 +105,6 @@ type Handler struct {
 	fetcher      Fetcher
 	reviews      ReviewFetcher
 	backdrops    BackdropSyncer
-	vectors      VectorEnricher
 	suggester    Suggester
 	popular      PopularProvider
 	trending     PopularProvider
@@ -154,11 +153,6 @@ func WithReviewFetcher(fetcher ReviewFetcher) HandlerOption {
 // WithBackdropSyncer 注入剧照同步器。
 func WithBackdropSyncer(syncer BackdropSyncer) HandlerOption {
 	return func(handler *Handler) { handler.backdrops = syncer }
-}
-
-// WithVectorEnricher 注入向量补全器。
-func WithVectorEnricher(enricher VectorEnricher) HandlerOption {
-	return func(handler *Handler) { handler.vectors = enricher }
 }
 
 // WithSuggester 注入搜索建议实现。
@@ -447,9 +441,6 @@ func (handler *Handler) movie(c *gin.Context) {
 			requestmeta.Logger(c.Request.Context()).Warn("queue partial metadata", "douban_id", doubanID, "error", queueErr)
 		}
 	}
-	if movie.EmbeddingContent == "" {
-		handler.queueEmbedding(c.Request.Context(), doubanID)
-	}
 
 	keywords := []string{movie.Title}
 	if movie.Year != "" {
@@ -621,29 +612,6 @@ func (handler *Handler) airScheduleView(ctx context.Context, movie *Movie) media
 		return mediaidentity.AirScheduleView{}
 	}
 	return mediaidentity.BuildAirScheduleView(movie.SeriesStatus, units, now, location)
-}
-
-// queueEmbedding 为缺向量的影片排一个生成任务。
-func (handler *Handler) queueEmbedding(ctx context.Context, doubanID string) {
-	if queued, err := handler.enqueueRefresh(ctx, doubanID, RefreshProviderEmbedding, RefreshReasonMissingEmbedding); queued {
-		if err != nil {
-			requestmeta.Logger(ctx).Warn("queue missing embedding", "douban_id", doubanID, "error", err)
-		}
-		return
-	}
-	if handler.vectors == nil || handler.runner == nil {
-		return
-	}
-	key := "embedding:" + doubanID
-	if _, loaded := handler.crawling.LoadOrStore(key, struct{}{}); loaded {
-		return
-	}
-	if !handler.runBackground(func(ctx context.Context) {
-		defer handler.crawling.Delete(key)
-		_ = handler.vectors.Enrich(ctx, doubanID)
-	}) {
-		handler.crawling.Delete(key)
-	}
 }
 
 // fetchMissing 为本地没有资料的影片排一个抓取任务；第一个返回值表示是否走了任务队列。

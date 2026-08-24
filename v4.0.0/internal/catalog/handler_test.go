@@ -132,34 +132,11 @@ func TestMoviePageRendersSeriesNavigationAndExcludesSeasonsFromRecommendations(t
 	}
 }
 
-
-func TestMoviePageQueuesMissingEmbeddingOnce(t *testing.T) {
-	store := NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "源电影", Year: "2026"})
-	runner := &queuedRunner{}
-	enricher := &recordingVectorEnricher{}
-	router := catalogTestRouterWithOptions(t, store, nil, WithBackgroundRunner(runner), WithVectorEnricher(enricher))
-	for range 2 {
-		recorder := httptest.NewRecorder()
-		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/movie/1292052", nil))
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("movie status = %d", recorder.Code)
-		}
-	}
-	if len(runner.tasks) != 1 {
-		t.Fatalf("embedding tasks = %d, want 1", len(runner.tasks))
-	}
-	runner.tasks[0](t.Context())
-	if len(enricher.ids) != 1 || enricher.ids[0] != "1292052" {
-		t.Fatalf("embedding enriches = %#v", enricher.ids)
-	}
-}
-
 func TestMoviePageQueuesDuePartialMetadataThroughWorker(t *testing.T) {
 	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{
 		DoubanID: "1292052", Title: "只有标题", MetadataStatus: "partial",
-		CompletenessScore: 15, EmbeddingContent: "already-enriched",
+		CompletenessScore: 15,
 	})
 	queue := &recordingRefreshQueue{jobID: 43}
 	router := catalogTestRouterWithOptions(t, store, nil, WithRefreshQueue(queue))
@@ -296,7 +273,7 @@ func TestPageTriggeredCatalogWorkUsesPersistentRefreshQueue(t *testing.T) {
 	router := catalogTestRouterWithOptions(t, store, nil,
 		WithRefreshQueue(queue), WithBackgroundRunner(runner),
 		WithReviewFetcher(&recordingReviewFetcher{}), WithBackdropSyncer(&recordingBackdropSyncer{}),
-		WithVectorEnricher(&recordingVectorEnricher{}), WithFetcher(&recordingFetcher{}, runner))
+		WithFetcher(&recordingFetcher{}, runner))
 
 	for _, path := range []string{
 		"/api/htmx/reviews?douban_id=1292052",
@@ -310,7 +287,7 @@ func TestPageTriggeredCatalogWorkUsesPersistentRefreshQueue(t *testing.T) {
 			t.Fatalf("%s status = %d: %s", path, recorder.Code, recorder.Body.String())
 		}
 	}
-	wantProviders := []string{RefreshProviderReviews, RefreshProviderTMDB, RefreshProviderEmbedding, RefreshProviderDouban}
+	wantProviders := []string{RefreshProviderReviews, RefreshProviderTMDB, RefreshProviderDouban}
 	if !reflect.DeepEqual(queue.providers, wantProviders) || len(runner.tasks) != 0 {
 		t.Fatalf("queued providers/tasks = %#v/%d, want %#v/0", queue.providers, len(runner.tasks), wantProviders)
 	}
@@ -475,4 +452,3 @@ type seriesStoreStub struct {
 func (store *seriesStoreStub) FindSeriesSeasons(context.Context, string) ([]SeriesSeason, error) {
 	return store.seasons, nil
 }
-

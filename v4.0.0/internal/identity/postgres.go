@@ -16,7 +16,7 @@ func NewPostgresStore(executor database.Executor) *PostgresStore {
 }
 
 // userColumns 是各查询共用的字段列表。
-const userColumns = `id, email, username, password_hash, role, douban_user_id, is_public, avatar, created_at`
+const userColumns = `id, email, username, password_hash, role, douban_user_id, is_public, avatar, ad_skip_enabled, created_at`
 
 // FindByEmail 按邮箱查账号，查不到返回 nil 而不是错误。
 func (store *PostgresStore) FindByEmail(ctx context.Context, email string) (*User, error) {
@@ -39,7 +39,7 @@ func (store *PostgresStore) ListUsers(ctx context.Context) ([]User, error) {
 	for rows.Next() {
 		var user User
 		if err := rows.Scan(&user.ID, &user.Email, &user.Username, &user.PasswordHash, &user.Role,
-			&user.DoubanUserID, &user.IsPublic, &user.Avatar, &user.CreatedAt); err != nil {
+			&user.DoubanUserID, &user.IsPublic, &user.Avatar, &user.AdSkipEnabled, &user.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		users = append(users, user)
@@ -61,7 +61,7 @@ func (store *PostgresStore) find(ctx context.Context, query string, argument any
 		return nil, rows.Err()
 	}
 	var user User
-	if err := rows.Scan(&user.ID, &user.Email, &user.Username, &user.PasswordHash, &user.Role, &user.DoubanUserID, &user.IsPublic, &user.Avatar, &user.CreatedAt); err != nil {
+	if err := rows.Scan(&user.ID, &user.Email, &user.Username, &user.PasswordHash, &user.Role, &user.DoubanUserID, &user.IsPublic, &user.Avatar, &user.AdSkipEnabled, &user.CreatedAt); err != nil {
 		return nil, fmt.Errorf("scan user: %w", err)
 	}
 	return &user, nil
@@ -107,6 +107,11 @@ func (store *PostgresStore) UpdateRole(ctx context.Context, userID int, role str
 	return store.update(ctx, "role", userID, role)
 }
 
+// UpdateAdSkipEnabled 切换智能跳过广告。
+func (store *PostgresStore) UpdateAdSkipEnabled(ctx context.Context, userID int, enabled bool) error {
+	return store.update(ctx, "ad_skip_enabled", userID, enabled)
+}
+
 // Delete 删除账号。
 func (store *PostgresStore) Delete(ctx context.Context, userID int) error {
 	if _, err := store.database.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID); err != nil {
@@ -131,7 +136,7 @@ func (store *PostgresStore) ListBoundDoubanUsers(ctx context.Context) ([]User, e
 	for rows.Next() {
 		var user User
 		if err := rows.Scan(&user.ID, &user.Email, &user.Username, &user.PasswordHash, &user.Role,
-			&user.DoubanUserID, &user.IsPublic, &user.Avatar, &user.CreatedAt); err != nil {
+			&user.DoubanUserID, &user.IsPublic, &user.Avatar, &user.AdSkipEnabled, &user.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		users = append(users, user)
@@ -144,7 +149,7 @@ func (store *PostgresStore) ListBoundDoubanUsers(ctx context.Context) ([]User, e
 
 // update 是所有单字段更新的公共实现。
 func (store *PostgresStore) update(ctx context.Context, column string, userID int, value any) error {
-	allowed := map[string]bool{"username": true, "email": true, "password_hash": true, "is_public": true, "avatar": true, "douban_user_id": true, "role": true}
+	allowed := map[string]bool{"username": true, "email": true, "password_hash": true, "is_public": true, "avatar": true, "douban_user_id": true, "role": true, "ad_skip_enabled": true}
 	if !allowed[column] {
 		return fmt.Errorf("unsupported user column")
 	}

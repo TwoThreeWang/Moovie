@@ -21,8 +21,10 @@ const (
 	RefreshReasonMissingMetadata  = "missing_metadata"
 	RefreshReasonMissingReviews   = "missing_reviews"
 	RefreshReasonMissingBackdrops = "missing_backdrops"
-	RefreshReasonMissingEmbedding = "missing_embedding"
 	RefreshReasonSearchDiscovery  = "search_discovery"
+
+	embeddingBackfillPriority  = -10
+	embeddingBackfillBatchSize = 5
 )
 
 // autoRefreshCooldowns 是详情页自动入队的冷却时间。这些入队条件都挂在「某个字段还是空的」
@@ -32,9 +34,8 @@ const (
 // 不在这张表里的 reason 行为不变：调度器入队时自己会推进 next_refresh_at，
 // IMDb 回填是查到新映射才触发的事件，用户手动刷新则必须立即生效。
 var autoRefreshCooldowns = map[string]time.Duration{
-	RefreshReasonPartialMetadata:  24 * time.Hour,
-	RefreshReasonMissingReviews:   24 * time.Hour,
-	RefreshReasonMissingEmbedding: 24 * time.Hour,
+	RefreshReasonPartialMetadata: 24 * time.Hour,
+	RefreshReasonMissingReviews:  24 * time.Hour,
 	// 详情页缺主资料时整页都渲染不出来，冷却给短一点，让用户重试还有机会。
 	RefreshReasonMissingMetadata: time.Hour,
 	// TMDB 没有剧照的条目占比很高，而且是永久状态，一周内不必再问第二次。
@@ -67,8 +68,18 @@ func (store *PostgresStore) EnqueueRefresh(ctx context.Context, doubanID, provid
 	if !validRefreshProvider(provider) {
 		return 0, workqueue.Terminal(fmt.Errorf("invalid metadata refresh provider %q", provider))
 	}
-	if skip, _ := store.alreadyComplete(ctx, provider, doubanID); skip {
-		return 0, nil
+	if provider == RefreshProviderEmbedding {
+		movie, err := store.FindByDoubanID(ctx, doubanID)
+		if err != nil {
+			return 0, err
+		}
+		if !embeddingMetadataComplete(movie) || embeddingUpToDate(movie) {
+			return 0, nil
+		}
+	} else {
+		if skip, _ := store.alreadyComplete(ctx, provider, doubanID); skip {
+			return 0, nil
+		}
 	}
 	if cooling, err := store.coolingDown(ctx, provider, doubanID, reason); err != nil {
 		return 0, err
@@ -113,8 +124,6 @@ func (store *PostgresStore) alreadyComplete(ctx context.Context, provider, douba
 		query = `SELECT reviews_json <> '' AND reviews_json <> '[]' FROM media WHERE douban_id = $1`
 	case RefreshProviderTMDB:
 		query = `SELECT backdrops <> '' AND EXISTS (SELECT 1 FROM media_external_ids WHERE media_id = m.id AND provider = 'tmdb') FROM media m WHERE m.douban_id = $1`
-	case RefreshProviderEmbedding:
-		query = `SELECT semantic_hash <> '' FROM media WHERE douban_id = $1`
 	default:
 		return false, nil
 	}
@@ -220,6 +229,44 @@ ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO N
 	return nil
 }
 
+// ScheduleEmbeddingBackfills 低优先级补齐历史向量。已有最新成功任务的影片不再入队；
+// 向量本身是否过期由 EmbeddingService 的元数据哈希作最终判断。
+func (store *PostgresStore) ScheduleEmbeddingBackfills(ctx context.Context, limit int) error {
+	if limit <= 0 {
+		limit = embeddingBackfillBatchSize
+	}
+	_, err := store.database.Exec(ctx, `WITH candidates AS (
+    SELECT m.douban_id
+    FROM media m
+    WHERE m.douban_id <> ''
+      AND m.metadata_status <> 'partial' AND m.completeness_score >= 70
+      AND NOT EXISTS (
+        SELECT 1 FROM worker_jobs done
+        WHERE done.task_type = 'embedding' AND done.subject_key = m.douban_id
+          AND done.status = 'completed'
+          AND done.finished_at >= COALESCE(m.last_content_change_at, m.created_at)
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM worker_jobs blocked
+        WHERE blocked.task_type = 'embedding' AND blocked.subject_key = m.douban_id
+          AND (blocked.status IN ('pending', 'running') OR
+            (blocked.status = 'failed' AND blocked.finished_at >= COALESCE(m.last_content_change_at, m.created_at)))
+      )
+    ORDER BY (m.embedding IS NULL OR m.embedding_content = '') DESC,
+             COALESCE(m.last_content_change_at, m.created_at), m.id
+    LIMIT $1
+)
+INSERT INTO worker_jobs (task_type, subject_key, payload, reason, status, priority, available_at)
+SELECT 'embedding', douban_id, JSONB_BUILD_OBJECT('douban_id', douban_id),
+       'embedding_backfill', 'pending', $2, NOW()
+FROM candidates
+ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO NOTHING`, limit, embeddingBackfillPriority)
+	if err != nil {
+		return fmt.Errorf("schedule embedding backfills: %w", err)
+	}
+	return nil
+}
+
 // RefreshHandler 是资料刷新任务的执行器，四种 provider 走同一个 Handle 分发。
 type RefreshHandler struct {
 	queue     RefreshQueue
@@ -251,8 +298,8 @@ func NewRefreshHandler(queue RefreshQueue, fetcher Fetcher, vectors VectorEnrich
 	return handler
 }
 
-// Handle 执行一个刷新任务。豆瓣主资料抓完后，只在首次 TMDB 资料确实缺失时派生 TMDB 任务；
-// 剧照是该任务的附带结果，不会因为已有资料而反复刷新。
+// Handle 执行一个刷新任务。主资料抓完后先补必要的 TMDB 资料，
+// 只有最后一个元数据任务成功后才派生向量任务。
 func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) error {
 	doubanID := job.SubjectKey
 	switch job.TaskType {
@@ -271,8 +318,13 @@ func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) er
 					return err
 				}
 				if needed {
-					if _, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderTMDB, job.Reason, job.RequestedBy); err != nil {
+					jobID, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderTMDB, job.Reason, job.RequestedBy)
+					if err != nil {
 						return err
+					}
+					// TMDB 会合并语义字段，因此它真正入队时要等其成功后再生成向量。
+					if jobID != 0 {
+						return nil
 					}
 				}
 			}
@@ -292,7 +344,15 @@ func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) er
 		if handler.backdrops == nil {
 			return workqueue.Terminal(fmt.Errorf("TMDB refresher is not configured"))
 		}
-		return handler.backdrops.SyncBackdrops(ctx, doubanID)
+		if err := handler.backdrops.SyncBackdrops(ctx, doubanID); err != nil {
+			return err
+		}
+		if handler.vectors != nil {
+			if _, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderEmbedding, job.Reason, job.RequestedBy); err != nil {
+				return err
+			}
+		}
+		return nil
 	case RefreshProviderEmbedding:
 		if handler.vectors == nil {
 			return workqueue.Terminal(fmt.Errorf("embedding refresher is not configured"))
@@ -308,6 +368,7 @@ func (handler *RefreshHandler) Schedule(ctx context.Context, _ workqueue.Job) er
 	store, ok := handler.queue.(interface {
 		ScheduleDueRefreshes(context.Context, int) error
 		ScheduleActiveContentRefreshes(context.Context, int) error
+		ScheduleEmbeddingBackfills(context.Context, int) error
 	})
 	if !ok {
 		return nil
@@ -315,5 +376,8 @@ func (handler *RefreshHandler) Schedule(ctx context.Context, _ workqueue.Job) er
 	if err := store.ScheduleDueRefreshes(ctx, 20); err != nil {
 		return err
 	}
-	return store.ScheduleActiveContentRefreshes(ctx, 10)
+	if err := store.ScheduleActiveContentRefreshes(ctx, 10); err != nil {
+		return err
+	}
+	return store.ScheduleEmbeddingBackfills(ctx, embeddingBackfillBatchSize)
 }

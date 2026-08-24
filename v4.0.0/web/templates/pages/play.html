@@ -152,6 +152,7 @@
                 </svg>
                 <span>播放失败反馈</span>
             </button>
+            {{ template "ad_skip_toggle.html" . }}
         </div>
 
         {{/* 追剧更新时间：放在选集区之上，是用户在播放页最想确认的信息 */}}
@@ -303,7 +304,10 @@
             episode: '{{ .Episode }}',
             episodes: episodeList,
             vodName: '{{ .Detail.VodName }}',
-            canSendDanmaku: {{ if .LoggedIn }}true{{ else }}false{{ end }}
+            canSendDanmaku: {{ if .LoggedIn }}true{{ else }}false{{ end }},
+            adSkipEnabled: {{ if and .LoggedIn .UserInfo }}{{ if .UserInfo.AdSkipEnabled }}true{{ else }}false{{ end }}{{ else }}false{{ end }},
+            adSkipLoggedIn: {{ if .LoggedIn }}true{{ else }}false{{ end }},
+            loginURL: '/auth/login?redirect={{ .FullPath }}'
         });
     });
 </script>

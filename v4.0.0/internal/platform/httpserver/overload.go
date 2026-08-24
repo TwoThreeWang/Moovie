@@ -144,8 +144,14 @@ func (controller *overloadController) reject(c *gin.Context, class string) {
 	c.Header("Cache-Control", "no-store")
 	c.Header("X-Moovie-Overload", class)
 	controller.logRejection(class, total)
-	if c.GetHeader("HX-Request") == "true" || strings.Contains(c.GetHeader("Accept"), "text/html") {
-		c.String(http.StatusServiceUnavailable, "服务繁忙，请稍后重试")
+	if c.GetHeader("HX-Request") == "true" {
+		c.Data(http.StatusServiceUnavailable, "text/html; charset=utf-8", []byte(
+			`<div class="empty-state" style="padding:2rem"><p>服务繁忙，请稍后重试</p></div>`))
+		c.Abort()
+		return
+	}
+	if strings.Contains(c.GetHeader("Accept"), "text/html") {
+		c.Data(http.StatusServiceUnavailable, "text/html; charset=utf-8", []byte(overloadHTML))
 		c.Abort()
 		return
 	}
@@ -172,6 +178,24 @@ func (controller *overloadController) logRejection(class string, total uint64) {
 		"image_limit", cap(controller.image),
 	)
 }
+
+const overloadHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>服务繁忙</title><style>
+:root{--bg:#fff;--text:#1a1a2e;--text-s:#64748b;--primary:#6366f1}
+@media(prefers-color-scheme:dark){:root{--bg:#0f0f1a;--text:#e2e8f0;--text-s:#94a3b8;--primary:#818cf8}}
+*{margin:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:40px 20px}
+.dots{display:flex;gap:6px;justify-content:center}
+.dots span{width:8px;height:8px;border-radius:50%;background:var(--primary);animation:pulse 1.4s ease-in-out infinite}
+.dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}
+@keyframes pulse{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+h2{font-size:1.25rem;font-weight:600;margin:20px 0 8px}p{font-size:.9rem;color:var(--text-s)}
+a{display:inline-block;margin-top:20px;padding:8px 20px;font-size:.9rem;color:#fff;background:var(--primary);border-radius:8px;text-decoration:none}
+</style></head><body><div>
+<div class="dots"><span></span><span></span><span></span></div>
+<h2>服务繁忙</h2><p>当前访问量较大，请稍后重试</p>
+<a href="javascript:location.reload()">刷新重试</a>
+</div></body></html>`
 
 // requestTimeout 给每个请求的 context 加统一超时，防止慢上游把连接一直占住。
 func requestTimeout(timeout time.Duration) gin.HandlerFunc {

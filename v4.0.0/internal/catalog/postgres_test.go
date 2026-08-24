@@ -191,6 +191,21 @@ func TestPostgresMetadataRefreshQueueUsesUnifiedWorkerJobs(t *testing.T) {
 			t.Fatalf("active refresh query missing %q: %s", expected, fake.execQuery)
 		}
 	}
+	if err := store.ScheduleEmbeddingBackfills(t.Context(), 5); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"metadata_status <> 'partial'", "completeness_score >= 70", "task_type = 'embedding'",
+		"status = 'completed'", "last_content_change_at", "embedding_backfill",
+		"m.embedding IS NULL", "status IN ('pending', 'running')", "LIMIT $1",
+	} {
+		if !strings.Contains(fake.execQuery, expected) {
+			t.Fatalf("embedding backfill query missing %q: %s", expected, fake.execQuery)
+		}
+	}
+	if !reflect.DeepEqual(fake.arguments, []any{5, embeddingBackfillPriority}) {
+		t.Fatalf("embedding backfill arguments = %#v", fake.arguments)
+	}
 }
 
 func TestPostgresNeedsTMDBRefreshRequiresIMDbAndMissingIdentityOrBackdrops(t *testing.T) {

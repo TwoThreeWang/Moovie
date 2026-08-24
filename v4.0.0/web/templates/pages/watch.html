@@ -142,6 +142,7 @@
                 <svg class="w-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
                 <span>播放失败反馈</span>
             </button>
+            {{ template "ad_skip_toggle.html" . }}
         </div>
 
         <!-- 短评 -->
@@ -193,7 +194,10 @@ document.addEventListener('DOMContentLoaded', function() {
             episode: episode,
             episodes: [],
             vodName: '{{ .View.Title }}',
-            canSendDanmaku: {{ if .LoggedIn }}true{{ else }}false{{ end }}
+            canSendDanmaku: {{ if .LoggedIn }}true{{ else }}false{{ end }},
+            adSkipEnabled: {{ if and .LoggedIn .UserInfo }}{{ if .UserInfo.AdSkipEnabled }}true{{ else }}false{{ end }}{{ else }}false{{ end }},
+            adSkipLoggedIn: {{ if .LoggedIn }}true{{ else }}false{{ end }},
+            loginURL: '/auth/login?redirect={{ .FullPath }}'
         });
     }
 

@@ -5,10 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"html"
+	"io"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,7 +71,7 @@ func buildPlayView(media *mediaidentity.Media, detail *search.VodItem) PlayViewI
 		Title:   detail.VodName,
 		Poster:  detail.VodPic,
 		Year:    detail.VodYear,
-		Summary: detail.VodContent,
+		Summary: stripHTML(detail.VodContent),
 	}
 	if genres := detail.GetGenres(); len(genres) > 0 {
 		view.Genres = genres
@@ -115,6 +118,15 @@ func buildPlayView(media *mediaidentity.Media, detail *search.VodItem) PlayViewI
 		view.Summary = media.Summary
 	}
 	return view
+}
+
+var reHTMLTag = regexp.MustCompile(`<[^>]*>`)
+
+func stripHTML(s string) string {
+	s = reHTMLTag.ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	s = strings.Join(strings.Fields(s), " ")
+	return s
 }
 
 // resolveDisplayMedia 找出这条资源对应的规范媒体：先按 media_id，再按资源关联，最后按豆瓣 ID。
@@ -251,8 +263,10 @@ type Handler struct {
 	media        mediaidentity.Resolver
 	episodes     mediaidentity.EpisodeReader
 	events       mediaidentity.PlaybackEventWriter
-	airSchedule  AirScheduleReader
-	eventLimiter *ratelimit.PerIP
+	airSchedule    AirScheduleReader
+	eventLimiter   *ratelimit.PerIP
+	adFingerprints AdFingerprintStore
+	adVoteLimiter  *ratelimit.PerIP
 }
 
 // AirScheduleReader 提供某部作品尚未播出的剧集，用于播放页展示更新时间。
@@ -299,6 +313,14 @@ func WithAirScheduleReader(reader AirScheduleReader) HandlerOption {
 	return func(handler *Handler) { handler.airSchedule = reader }
 }
 
+// WithAdFingerprintStore 注入广告指纹存储。
+func WithAdFingerprintStore(store AdFingerprintStore) HandlerOption {
+	return func(handler *Handler) {
+		handler.adFingerprints = store
+		handler.adVoteLimiter = ratelimit.NewPerIP(30, time.Minute)
+	}
+}
+
 // NewHandler 创建播放处理器，播放事件上报默认限流每 IP 每分钟 120 次。
 func NewHandler(cfg config.Config, catalog Catalog, details *DetailService, popular PopularProvider, titleFinder MovieTitleFinder, options ...HandlerOption) *Handler {
 	handler := &Handler{config: cfg, catalog: catalog, details: details, popular: popular, titleFinder: titleFinder,
@@ -325,6 +347,9 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/api/v2/media/:id/resources", handler.resources)
 	router.GET("/api/v2/media-units/:unit_id/playback-candidates", handler.playbackCandidatesV2)
 	router.POST("/api/v2/playback/events", handler.playbackEventV2)
+	require := auth.Require(handler.config.AppSecret, handler.config.Env == "production")
+	router.POST("/api/ad-fingerprints/match", require, handler.adFingerprintMatch)
+	router.POST("/api/ad-fingerprints/vote", require, handler.adFingerprintVote)
 }
 
 // resources 返回某一集的全部播放源（按质量排序）。
@@ -1065,6 +1090,112 @@ func (handler *Handler) resolveWatchURL(c *gin.Context) {
 		"media_unit_id": best.MediaUnitID,
 		"session_id":    newCandidateSessionID(),
 		"sources":       sourcesJSON,
+	})
+}
+
+// adFingerprintMatch 批量匹配广告指纹。
+func (handler *Handler) adFingerprintMatch(c *gin.Context) {
+	if handler.adFingerprints == nil {
+		apiError(c, http.StatusServiceUnavailable, "广告指纹服务暂时不可用")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 4096))
+	if err != nil {
+		apiError(c, http.StatusBadRequest, "请求读取失败")
+		return
+	}
+	var request struct {
+		Fingerprints []string `json:"fingerprints"`
+	}
+	if json.Unmarshal(body, &request) != nil {
+		apiError(c, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	if len(request.Fingerprints) > 20 {
+		apiError(c, http.StatusBadRequest, "指纹数量超过上限")
+		return
+	}
+	seen := make(map[string]bool, len(request.Fingerprints))
+	var fingerprints [][]byte
+	for _, hexStr := range request.Fingerprints {
+		if seen[hexStr] {
+			continue
+		}
+		seen[hexStr] = true
+		fp, err := hex.DecodeString(hexStr)
+		if err != nil || len(fp) != 32 {
+			apiError(c, http.StatusBadRequest, "指纹格式错误")
+			return
+		}
+		fingerprints = append(fingerprints, fp)
+	}
+	if len(fingerprints) == 0 {
+		c.JSON(http.StatusOK, gin.H{"matches": gin.H{}})
+		return
+	}
+	results, err := handler.adFingerprints.MatchFingerprints(c.Request.Context(), fingerprints)
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, "指纹匹配失败")
+		return
+	}
+	matches := make(gin.H, len(results))
+	for _, f := range results {
+		matches[hex.EncodeToString(f.Fingerprint)] = gin.H{
+			"status":        f.Status(),
+			"confirm_count": f.ConfirmCount,
+			"reject_count":  f.RejectCount,
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"matches": matches})
+}
+
+// adFingerprintVote 提交广告指纹投票。
+func (handler *Handler) adFingerprintVote(c *gin.Context) {
+	if handler.adFingerprints == nil {
+		apiError(c, http.StatusServiceUnavailable, "广告指纹服务暂时不可用")
+		return
+	}
+	if handler.adVoteLimiter != nil && !handler.adVoteLimiter.Allow(c.ClientIP()) {
+		apiError(c, http.StatusTooManyRequests, "投票过于频繁")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1024))
+	if err != nil {
+		apiError(c, http.StatusBadRequest, "请求读取失败")
+		return
+	}
+	var request struct {
+		Fingerprint string `json:"fingerprint"`
+		Vote        string `json:"vote"`
+	}
+	if json.Unmarshal(body, &request) != nil {
+		apiError(c, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	fp, err := hex.DecodeString(request.Fingerprint)
+	if err != nil || len(fp) != 32 {
+		apiError(c, http.StatusBadRequest, "指纹格式错误")
+		return
+	}
+	var result *AdFingerprint
+	switch request.Vote {
+	case "confirm":
+		result, err = handler.adFingerprints.VoteConfirm(c.Request.Context(), fp)
+	case "reject":
+		result, err = handler.adFingerprints.VoteReject(c.Request.Context(), fp)
+	default:
+		apiError(c, http.StatusBadRequest, "投票类型错误")
+		return
+	}
+	if err != nil {
+		apiError(c, http.StatusInternalServerError, "投票失败")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"fingerprint":   request.Fingerprint,
+		"status":        result.Status(),
+		"confirm_count": result.ConfirmCount,
+		"reject_count":  result.RejectCount,
 	})
 }
 

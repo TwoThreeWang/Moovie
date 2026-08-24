@@ -90,6 +90,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/dashboard/settings/password", require, handler.updatePassword)
 	router.POST("/dashboard/settings/share", require, handler.updateShare)
 	router.POST("/dashboard/settings/avatar", require, handler.updateAvatar)
+	router.POST("/dashboard/settings/ad-skip", require, handler.updateAdSkip)
 }
 
 // loginPage 渲染登录页。
@@ -284,6 +285,21 @@ func (handler *Handler) updateShare(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=share")
+}
+
+// updateAdSkip 切换智能跳过广告。
+func (handler *Handler) updateAdSkip(c *gin.Context) {
+	enabled := c.PostForm("ad_skip_enabled") == "on"
+	if err := handler.store.UpdateAdSkipEnabled(c.Request.Context(), auth.UserID(c), enabled); err != nil {
+		handler.settingsError(c, "广告跳过设置更新失败")
+		return
+	}
+	if c.GetHeader("HX-Request") != "" {
+		user := handler.currentUser(c)
+		c.HTML(http.StatusOK, "partials/ad_skip_toggle.html", gin.H{"User": user, "UserInfo": user, "LoggedIn": true})
+		return
+	}
+	c.Redirect(http.StatusFound, "/dashboard/settings?success=ad_skip")
 }
 
 // updateAvatar 修改头像（一个 emoji）。

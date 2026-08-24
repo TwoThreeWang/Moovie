@@ -55,6 +55,7 @@ var RequestInputs = []RequestInput{
 	{Method: "POST", Path: "/dashboard/settings/password", Name: "confirm_password", Location: InputForm},
 	{Method: "POST", Path: "/dashboard/settings/share", Name: "is_public", Location: InputForm},
 	{Method: "POST", Path: "/dashboard/settings/avatar", Name: "avatar", Location: InputForm},
+	{Method: "POST", Path: "/dashboard/settings/ad-skip", Name: "ad_skip_enabled", Location: InputForm},
 	{Method: "POST", Path: "/dashboard/settings/douban/bind", Name: "douban_user_id", Location: InputForm},
 
 	{Method: "GET", Path: "/api/vod", Name: "ac", Location: InputQuery},
@@ -186,6 +187,10 @@ var RequestInputs = []RequestInput{
 	{Method: "POST", Path: "/api/v2/playback/events", Name: "vod_id", Location: InputJSON},
 	{Method: "POST", Path: "/api/v2/playback/events", Name: "elapsed_ms", Location: InputJSON},
 	{Method: "POST", Path: "/api/v2/playback/events", Name: "reason", Location: InputJSON},
+
+	{Method: "POST", Path: "/api/ad-fingerprints/match", Name: "fingerprints", Location: InputJSON},
+	{Method: "POST", Path: "/api/ad-fingerprints/vote", Name: "fingerprint", Location: InputJSON},
+	{Method: "POST", Path: "/api/ad-fingerprints/vote", Name: "vote", Location: InputJSON},
 
 	{Method: "PUT", Path: "/admin/users/:id/role", Name: "role", Location: InputForm},
 	{Method: "POST", Path: "/admin/sites", Name: "key", Location: InputForm},

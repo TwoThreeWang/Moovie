@@ -193,7 +193,7 @@ func main() {
 		CFGatewayURL: cfg.Catalog.CFGatewayURL, CFAPIToken: cfg.Catalog.CFAPIToken,
 		CFAIModel: cfg.Catalog.CFAIModel,
 	}, catalog.WithEmbeddingAIClient(aiClient))
-	// 元数据刷新：豆瓣抓基本信息 → 补短评 → TMDB 补剧照 → 向量化，四步串行，由后台任务驱动。
+	// 主资料刷新：豆瓣抓取 → 可选 TMDB 合并 → 向量化，串行由后台任务驱动。
 	var metadataRefreshHandler *catalog.RefreshHandler
 	if metadataRefreshJobs != nil {
 		refreshOptions := []catalog.RefreshHandlerOption{catalog.WithRefreshReviews(doubanProvider)}
@@ -338,6 +338,7 @@ func main() {
 	if airReader, ok := mediaIdentityStore.(playback.AirScheduleReader); ok {
 		playbackOptions = append(playbackOptions, playback.WithAirScheduleReader(airReader))
 	}
+	playbackOptions = append(playbackOptions, playback.WithAdFingerprintStore(playback.NewAdFingerprintPostgresStore(databasePool)))
 	playbackHandler := playback.NewHandler(
 		cfg,
 		itemStore.(playback.Catalog),
@@ -365,7 +366,6 @@ func main() {
 		catalog.WithUserMovies(libraryStore),
 		catalog.WithFetcher(doubanProvider, searchRunner),
 		catalog.WithReviewFetcher(doubanProvider),
-		catalog.WithVectorEnricher(embeddingService),
 		catalog.WithBackgroundRunner(searchRunner),
 		catalog.WithSuggester(doubanProvider),
 		catalog.WithPopularProvider(discoverPopularAdapter{provider: popularProvider}),

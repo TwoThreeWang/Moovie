@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -45,6 +46,7 @@ func TestEmbeddingServiceUsesLocalMetadataAndPersistsExactly768Dimensions(t *tes
 
 	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", Summary: "越狱", Directors: `[{"name":"导演甲"}]`, Actors: `[{"name":"演员甲"}]`})
+	markEmbeddingMetadataReady(t, store, "1292052")
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test", OllamaModel: "bge-test",
 	})
@@ -78,6 +80,7 @@ func TestEmbeddingServiceFallsBackToMetadataAndRejectsWrongDimension(t *testing.
 		DoubanID: "1292052", Title: "标题", Genres: "剧情", Summary: "简介", Directors: `[{"name":"导演甲"}]`,
 		Actors: `[{"name":"演员1"},{"name":"演员2"},{"name":"演员3"},{"name":"演员4"},{"name":"演员5"},{"name":"演员6"}]`,
 	})
+	markEmbeddingMetadataReady(t, store, "1292052")
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test",
 	})
@@ -123,6 +126,7 @@ func TestEmbeddingServiceEmbedsAIRewriteWhenGatewayConfigured(t *testing.T) {
 
 	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", Summary: "越狱"})
+	markEmbeddingMetadataReady(t, store, "1292052")
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test", CFGatewayURL: "https://gateway.test", CFAPIToken: "cf-token", CFAIModel: "test-model",
 	})
@@ -161,6 +165,7 @@ func TestEmbeddingServiceFallsBackWhenGatewayKeepsFailing(t *testing.T) {
 
 	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", Summary: "越狱"})
+	markEmbeddingMetadataReady(t, store, "1292052")
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test", CFGatewayURL: "https://gateway.test", CFAPIToken: "cf-token",
 	})
@@ -198,6 +203,7 @@ func TestEmbeddingServiceHashesMetadataNotAIOutput(t *testing.T) {
 
 	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1", Title: "标题", Summary: "简介"})
+	markEmbeddingMetadataReady(t, store, "1")
 	service := NewEmbeddingService(client, store, EmbeddingConfig{
 		OllamaHost: "https://ollama.test", CFGatewayURL: "https://gateway.test", CFAPIToken: "cf-token",
 	})
@@ -221,6 +227,7 @@ func TestEmbeddingServiceOnlyRebuildsWhenSemanticInputChanges(t *testing.T) {
 	})}
 	store := NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), Movie{DoubanID: "1", Title: "标题", Summary: "简介"})
+	markEmbeddingMetadataReady(t, store, "1")
 	service := NewEmbeddingService(client, store, EmbeddingConfig{OllamaHost: "https://ollama.test"})
 	if err := service.Enrich(t.Context(), "1"); err != nil {
 		t.Fatal(err)
@@ -242,5 +249,58 @@ func TestEmbeddingServiceOnlyRebuildsWhenSemanticInputChanges(t *testing.T) {
 	}
 	if vectorCalls.Load() != 2 {
 		t.Fatalf("vector calls = %d, want 2", vectorCalls.Load())
+	}
+}
+
+func TestEmbeddingServiceRejectsIncompleteMetadataBeforeCallingModels(t *testing.T) {
+	var calls atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return testJSONResponse(nil, http.StatusInternalServerError, `{}`), nil
+	})}
+	store := &embeddingStoreStub{movie: &Movie{
+		DoubanID: "1292052", Title: "只有标题", MetadataStatus: "partial", CompletenessScore: 15,
+	}}
+	service := NewEmbeddingService(client, store, EmbeddingConfig{
+		OllamaHost: "https://ollama.test", CFGatewayURL: "https://gateway.test", CFAPIToken: "cf-token",
+	})
+	if err := service.Enrich(t.Context(), "1292052"); err == nil || !strings.Contains(err.Error(), "metadata incomplete") {
+		t.Fatalf("error = %v", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("model calls = %d, want 0", calls.Load())
+	}
+}
+
+func TestEmbeddingUpToDateRequiresCurrentMetadataHashAndDimensions(t *testing.T) {
+	movie := Movie{
+		DoubanID: "1292052", Title: "标题", Summary: "简介",
+		MetadataStatus: "ready", CompletenessScore: 70,
+		Embedding: make([]float32, embeddingDimensions),
+	}
+	movie.EmbeddingSemanticHash = contentHash(strings.TrimSpace(embeddingInput(movie)))
+	if !embeddingMetadataComplete(&movie) || !embeddingUpToDate(&movie) {
+		t.Fatal("完整资料的当前向量应该被识别为已完成")
+	}
+	movie.Summary = "更新后的简介"
+	if embeddingUpToDate(&movie) {
+		t.Fatal("元数据变化后不应复用旧向量")
+	}
+}
+
+type embeddingStoreStub struct {
+	Store
+	movie *Movie
+}
+
+func (store *embeddingStoreStub) FindByDoubanID(context.Context, string) (*Movie, error) {
+	return store.movie, nil
+}
+
+func markEmbeddingMetadataReady(t *testing.T, store *PostgresStore, doubanID string) {
+	t.Helper()
+	if _, err := store.database.Exec(t.Context(),
+		`UPDATE media SET metadata_status = 'ready', completeness_score = 70 WHERE douban_id = $1`, doubanID); err != nil {
+		t.Fatal(err)
 	}
 }

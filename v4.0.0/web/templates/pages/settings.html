@@ -21,6 +21,10 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
                 分享与隐私
             </button>
+            <button class="settings-nav-item" data-section="playback" onclick="switchSection('playback')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                播放设置
+            </button>
             <button class="settings-nav-item" data-section="security" onclick="switchSection('security')">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                 安全设置
@@ -160,6 +164,29 @@
                         </div>
                     </div>
                     {{ end }}
+                </div>
+            </div>
+
+            <!-- ====== 播放设置 ====== -->
+            <div class="settings-section" id="section-playback">
+                <div class="settings-section-header">
+                    <h2 class="settings-section-title">播放设置</h2>
+                    <p class="settings-section-desc">自定义播放体验</p>
+                </div>
+
+                <div class="settings-card-body">
+                    <form action="/dashboard/settings/ad-skip" method="POST">
+                        <div class="settings-field settings-field-toggle">
+                            <div class="settings-field-text">
+                                <label>智能跳过广告</label>
+                                <p class="settings-field-hint">开启后自动跳过已确认广告，并询问高度疑似的广告片段；设置会同步到所有设备</p>
+                            </div>
+                            <label class="toggle-wrap">
+                                <input type="checkbox" name="ad_skip_enabled" {{ if .User.AdSkipEnabled }}checked{{ end }} onchange="this.form.submit()">
+                                <span class="toggle-track {{ if .User.AdSkipEnabled }}on{{ end }}"></span>
+                            </label>
+                        </div>
+                    </form>
                 </div>
             </div>
 
@@ -487,11 +514,11 @@ document.addEventListener('DOMContentLoaded', function() {
     var params = new URLSearchParams(window.location.search);
     var success = params.get('success');
     if (success) {
-        var messages = { 'username': '用户名已更新', 'email': '邮箱已更新', 'password': '密码已更新', 'share': '分享设置已更新', 'douban_bind': '豆瓣已绑定', 'douban_unbind': '豆瓣已解绑', 'douban_sync': '同步任务已创建', 'avatar': '头像已更新' };
+        var messages = { 'username': '用户名已更新', 'email': '邮箱已更新', 'password': '密码已更新', 'share': '分享设置已更新', 'douban_bind': '豆瓣已绑定', 'douban_unbind': '豆瓣已解绑', 'douban_sync': '同步任务已创建', 'avatar': '头像已更新', 'ad_skip': '播放设置已更新' };
         if (messages[success]) showToast(messages[success]);
         if (window.history && window.history.replaceState) window.history.replaceState({}, '', window.location.pathname);
     }
-    var sectionMap = { 'username': 'profile', 'email': 'profile', 'password': 'security', 'share': 'share', 'douban_bind': 'sync', 'douban_unbind': 'sync', 'douban_sync': 'sync' };
+    var sectionMap = { 'username': 'profile', 'email': 'profile', 'password': 'security', 'share': 'share', 'ad_skip': 'playback', 'douban_bind': 'sync', 'douban_unbind': 'sync', 'douban_sync': 'sync' };
     if (sectionMap[success]) switchSection(sectionMap[success]);
 });
 

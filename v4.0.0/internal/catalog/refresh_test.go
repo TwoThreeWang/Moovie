@@ -27,6 +27,18 @@ func TestRefreshHandlerDispatchesAllMetadataTypesAndChainsWork(t *testing.T) {
 	}
 }
 
+func TestRefreshHandlerQueuesEmbeddingDirectlyWhenTMDBIsAlreadySatisfied(t *testing.T) {
+	queue := &refreshQueueStub{}
+	handler := NewRefreshHandler(queue, &recordingFetcher{}, &recordingVectorEnricher{},
+		WithRefreshBackdrops(&recordingBackdropSyncer{}))
+	if err := handler.Handle(t.Context(), workqueue.Job{TaskType: RefreshProviderDouban, SubjectKey: "1292052"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(queue.jobs) != 1 || queue.jobs[0].TaskType != RefreshProviderEmbedding {
+		t.Fatalf("chained jobs = %+v", queue.jobs)
+	}
+}
+
 func TestRefreshHandlerSkipsSatisfiedTMDBCollection(t *testing.T) {
 	queue := &refreshQueueStub{}
 	handler := NewRefreshHandler(queue, &recordingFetcher{}, nil, WithRefreshBackdrops(&recordingBackdropSyncer{}))
@@ -38,9 +50,40 @@ func TestRefreshHandlerSkipsSatisfiedTMDBCollection(t *testing.T) {
 	}
 }
 
+func TestRefreshHandlerScheduleIncludesLowPriorityEmbeddingBackfill(t *testing.T) {
+	queue := &refreshScheduleStub{}
+	handler := NewRefreshHandler(queue, nil, nil)
+	if err := handler.Schedule(t.Context(), workqueue.Job{}); err != nil {
+		t.Fatal(err)
+	}
+	if queue.dueLimit != 20 || queue.activeLimit != 10 || queue.embeddingLimit != embeddingBackfillBatchSize {
+		t.Fatalf("schedule limits = %d/%d/%d", queue.dueLimit, queue.activeLimit, queue.embeddingLimit)
+	}
+}
+
 type refreshQueueStub struct {
 	jobs      []workqueue.Job
 	needsTMDB bool
+}
+
+type refreshScheduleStub struct {
+	refreshQueueStub
+	dueLimit, activeLimit, embeddingLimit int
+}
+
+func (queue *refreshScheduleStub) ScheduleDueRefreshes(_ context.Context, limit int) error {
+	queue.dueLimit = limit
+	return nil
+}
+
+func (queue *refreshScheduleStub) ScheduleActiveContentRefreshes(_ context.Context, limit int) error {
+	queue.activeLimit = limit
+	return nil
+}
+
+func (queue *refreshScheduleStub) ScheduleEmbeddingBackfills(_ context.Context, limit int) error {
+	queue.embeddingLimit = limit
+	return nil
 }
 
 func (queue *refreshQueueStub) EnqueueRefresh(_ context.Context, doubanID, provider, reason string, requestedBy int) (int, error) {

@@ -1,0 +1,24 @@
+{{ define "ad_skip_toggle.html" }}
+<div class="ad-skip-toggle" id="ad-skip-toggle">
+{{ if .LoggedIn }}
+    <form action="/dashboard/settings/ad-skip" method="POST"
+          hx-post="/dashboard/settings/ad-skip"
+          hx-target="#ad-skip-toggle"
+          hx-swap="outerHTML">
+        <label class="ad-skip-label">
+            <span class="ad-skip-text">智能跳过广告</span>
+            <span class="ad-skip-switch">
+                <input type="checkbox" name="ad_skip_enabled" {{ if .UserInfo.AdSkipEnabled }}checked{{ end }}
+                       onchange="this.closest('form').requestSubmit ? this.closest('form').requestSubmit() : this.closest('form').dispatchEvent(new Event('submit',{cancelable:true}))">
+                <span class="ad-skip-track {{ if .UserInfo.AdSkipEnabled }}on{{ end }}"></span>
+            </span>
+        </label>
+    </form>
+{{ else }}
+    <a href="/auth/login?redirect={{ .FullPath }}" class="ad-skip-label ad-skip-locked">
+        <span class="ad-skip-text">智能跳过广告</span>
+        <span class="ad-skip-hint">登录后可开启</span>
+    </a>
+{{ end }}
+</div>
+{{ end }}

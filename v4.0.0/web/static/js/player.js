@@ -555,10 +555,314 @@ function showDanmakuError(msg) {
     }
 }
 
+// ---- Ad-skip: M3U8 广告指纹众包跳过 ----
+
+function adSkipResolvePath(uri, base) {
+    try { return new URL(uri, base || 'http://x').pathname; }
+    catch(e) { return uri; }
+}
+
+function adSkipPathFamily(uri) {
+    try { var p = new URL(uri, 'http://x').pathname; var i = p.lastIndexOf('/'); return i > 0 ? p.substring(0, i) : '/'; }
+    catch(e) { return '/'; }
+}
+
+function adSkipParse(text, baseURL) {
+    var lines = text.split('\n'), segs = [], keyURI = '', keyMethod = 'NONE', byterange = '', extinf = null, discont = false;
+    for (var i = 0; i < lines.length; i++) {
+        var L = lines[i].trim();
+        if (L.startsWith('#EXT-X-DISCONTINUITY')) { discont = true; continue; }
+        if (L.startsWith('#EXT-X-KEY:')) {
+            var mm = L.match(/METHOD=([^,]+)/), mu = L.match(/URI="([^"]+)"/);
+            var nm = mm ? mm[1] : 'NONE', nu = mu ? mu[1] : '';
+            if (nm !== keyMethod || nu !== keyURI) { discont = true; keyMethod = nm; keyURI = nu; }
+            continue;
+        }
+        if (L.startsWith('#EXT-X-BYTERANGE:')) { byterange = L.substring(17); continue; }
+        if (L.startsWith('#EXTINF:')) { extinf = parseFloat(L.substring(8).split(',')[0]) || 0; continue; }
+        if (L.startsWith('#') || !L) continue;
+        if (extinf !== null) {
+            var np = adSkipResolvePath(L, baseURL);
+            segs.push({ dur: extinf, uri: L, path: np, family: adSkipPathFamily(np), br: byterange,
+                        kURI: keyURI, kMethod: keyMethod, line: i, discont: discont });
+            extinf = null; byterange = ''; discont = false;
+        }
+    }
+    return segs;
+}
+
+function adSkipBlocks(segs) {
+    if (!segs.length) return [];
+    var blocks = [], cur = { segs: [segs[0]], family: segs[0].family, kURI: segs[0].kURI, kMethod: segs[0].kMethod };
+    for (var i = 1; i < segs.length; i++) {
+        var s = segs[i];
+        if (s.discont || s.kURI !== cur.kURI || s.kMethod !== cur.kMethod || s.family !== cur.family) {
+            blocks.push(cur);
+            cur = { segs: [s], family: s.family, kURI: s.kURI, kMethod: s.kMethod };
+        } else { cur.segs.push(s); }
+    }
+    blocks.push(cur);
+    var t = 0;
+    for (var b = 0; b < blocks.length; b++) {
+        var bl = blocks[b]; bl.start = t; bl.dur = 0; bl.idx = b;
+        for (var j = 0; j < bl.segs.length; j++) bl.dur += bl.segs[j].dur;
+        bl.end = t + bl.dur; t = bl.end;
+        bl.first = b === 0; bl.last = b === blocks.length - 1;
+    }
+    return blocks;
+}
+
+function adSkipMainBody(blocks) {
+    if (!blocks.length) return null;
+    var best = blocks[0], total = 0;
+    for (var i = 0; i < blocks.length; i++) { total += blocks[i].dur; if (blocks[i].dur > best.dur) best = blocks[i]; }
+    return best.dur >= total * 0.3 ? best : null;
+}
+
+function adSkipScore(bl, main, blocks) {
+    if (bl === main || bl.dur < 5 || bl.dur > 120 || bl.segs.length < 2) return 0;
+    var total = 0;
+    for (var i = 0; i < blocks.length; i++) total += blocks[i].dur;
+    if (bl.dur > total * 0.5) return 0;
+    var sc = 0;
+    if (bl.first || bl.last) sc++;
+    if (bl.segs[0].discont) sc++;
+    else if (bl.idx < blocks.length - 1 && blocks[bl.idx + 1].segs.length && blocks[bl.idx + 1].segs[0].discont) sc++;
+    if (bl.family !== main.family) sc++;
+    if (bl.kURI !== main.kURI || bl.kMethod !== main.kMethod) sc++;
+    var bAvg = bl.dur / bl.segs.length, mAvg = main.dur / main.segs.length;
+    if (Math.abs(bAvg - mAvg) > mAvg * 0.3) sc++;
+    for (var i = 0; i < blocks.length; i++) {
+        if (blocks[i] === bl || blocks[i] === main) continue;
+        if (blocks[i].family === bl.family && blocks[i].segs.length === bl.segs.length &&
+            Math.abs(blocks[i].dur - bl.dur) < 1) { sc++; break; }
+    }
+    return sc;
+}
+
+function adSkipAnalyze(text, url) {
+    if (!text.includes('#EXTINF') || !text.includes('#EXT-X-ENDLIST')) return null;
+    var segs = adSkipParse(text, url);
+    if (segs.length < 3) return null;
+    var blocks = adSkipBlocks(segs);
+    if (blocks.length < 2) return null;
+    var main = adSkipMainBody(blocks);
+    if (!main) return null;
+    var cands = [];
+    for (var i = 0; i < blocks.length; i++) {
+        var sc = adSkipScore(blocks[i], main, blocks);
+        if (sc >= 3) cands.push({ block: blocks[i], score: sc, hex: null });
+    }
+    return cands.length ? { candidates: cands } : null;
+}
+
+function adSkipCanonical(cand, url) {
+    var lines = [];
+    for (var i = 0; i < cand.block.segs.length; i++) {
+        var s = cand.block.segs[i], line = Math.round(s.dur * 1000) + '|' + adSkipResolvePath(s.uri, url);
+        if (s.br) line += '|' + s.br;
+        lines.push(line);
+    }
+    return lines.join('\n');
+}
+
+function adSkipFingerprints(cands, url) {
+    if (!window.crypto || !window.crypto.subtle) return Promise.resolve([]);
+    return Promise.all(cands.map(function(c) {
+        var data = new TextEncoder().encode(adSkipCanonical(c, url));
+        return crypto.subtle.digest('SHA-256', data).then(function(buf) {
+            var a = new Uint8Array(buf), h = '';
+            for (var i = 0; i < a.length; i++) h += ('0' + a[i].toString(16)).slice(-2);
+            c.hex = h;
+            return c;
+        });
+    }));
+}
+
+function adSkipMatchAPI(hexes) {
+    if (!hexes.length) return Promise.resolve({});
+    return new Promise(function(resolve) {
+        var timer = setTimeout(function() { resolve({}); }, 250);
+        fetch('/api/ad-fingerprints/match', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({ fingerprints: hexes.slice(0, 20) })
+        }).then(function(r) { return r.ok ? r.json() : {}; })
+        .then(function(d) { clearTimeout(timer); resolve(d.matches || {}); })
+        .catch(function() { clearTimeout(timer); resolve({}); });
+    });
+}
+
+function adSkipRewrite(text, gapLines) {
+    if (!gapLines.length) return text;
+    var lines = text.split('\n'), out = [], set = {};
+    for (var i = 0; i < gapLines.length; i++) set[gapLines[i]] = true;
+    for (var i = 0; i < lines.length; i++) {
+        if (set[i]) out.push('#EXT-X-GAP');
+        out.push(lines[i]);
+    }
+    return out.join('\n');
+}
+
+function adSkipProcess(text, url, state) {
+    var analysis = adSkipAnalyze(text, url);
+    if (!analysis) return Promise.resolve(null);
+    return adSkipFingerprints(analysis.candidates, url).then(function(cands) {
+        var hexes = [];
+        for (var i = 0; i < cands.length; i++) if (cands[i].hex) hexes.push(cands[i].hex);
+        return adSkipMatchAPI(hexes).then(function(matches) {
+            var gapLines = [];
+            state.candidates = [];
+            for (var i = 0; i < cands.length; i++) {
+                var c = cands[i], m = c.hex ? matches[c.hex] : null;
+                var status = m ? m.status : 'unknown';
+                var info = { start: c.block.start, end: c.block.end, dur: c.block.dur, hex: c.hex, status: status };
+                state.candidates.push(info);
+                if (status === 'confirmed' && c.block.dur <= 120 && !state.undone[c.hex]) {
+                    for (var j = 0; j < c.block.segs.length; j++) gapLines.push(c.block.segs[j].line);
+                }
+            }
+            return gapLines.length ? adSkipRewrite(text, gapLines) : null;
+        });
+    });
+}
+
+function adSkipCreateLoader(state) {
+    var Default = Hls.DefaultConfig.loader;
+    function Loader(cfg) { this._l = new Default(cfg); this._adTimer = 0; this._adDone = false; }
+    Object.defineProperty(Loader.prototype, 'stats', { get: function() { return this._l.stats; } });
+    Object.defineProperty(Loader.prototype, 'context', { get: function() { return this._l.context; } });
+    Loader.prototype.load = function(ctx, cfg, cb) {
+        if (!state.enabled) { this._l.load(ctx, cfg, cb); return; }
+        var self = this, orig = cb.onSuccess;
+        self._adDone = false;
+        function deliver(r, s, c, n) { if (self._adDone) return; self._adDone = true; clearTimeout(self._adTimer); orig.call(null, r, s, c, n); }
+        cb.onSuccess = function(resp, stats, c, net) {
+            var txt = typeof resp.data === 'string' ? resp.data : '';
+            if (!txt.includes('#EXTINF') || !txt.includes('#EXT-X-ENDLIST')) { deliver(resp, stats, c, net); return; }
+            state.originalPlaylist = txt;
+            state.playlistURL = resp.url || c.url || '';
+            self._adTimer = setTimeout(function() { deliver(resp, stats, c, net); }, 250);
+            adSkipProcess(txt, state.playlistURL, state).then(function(rewritten) {
+                if (rewritten) resp.data = rewritten;
+                deliver(resp, stats, c, net);
+            }).catch(function() { deliver(resp, stats, c, net); });
+        };
+        this._l.load(ctx, cfg, cb);
+    };
+    Loader.prototype.abort = function() { this._adDone = true; clearTimeout(this._adTimer); this._l.abort(); };
+    Loader.prototype.destroy = function() { this._adDone = true; clearTimeout(this._adTimer); this._l.destroy(); };
+    return Loader;
+}
+
+function adSkipHidePrompt() {
+    var el = document.getElementById('ad-skip-prompt');
+    if (el) el.remove();
+}
+
+function adSkipShowPrompt(container, cand, state) {
+    adSkipHidePrompt();
+    var el = document.createElement('div');
+    el.className = 'ad-skip-prompt'; el.id = 'ad-skip-prompt';
+    el.innerHTML = '<span class="ad-skip-prompt-text">检测到疑似广告 · ' + Math.round(cand.dur) + ' 秒</span>' +
+        '<span class="ad-skip-prompt-btns">' +
+        '<button class="ad-skip-prompt-btn confirm">是广告，跳过</button>' +
+        '<button class="ad-skip-prompt-btn reject">不是</button>' +
+        '<button class="ad-skip-prompt-btn close">×</button></span>';
+    el.querySelector('.confirm').onclick = function() {
+        state.confirmedLocal[cand.hex] = true;
+        state.voted[cand.hex] = true;
+        if (state.art) try { state.art.currentTime = cand.end; } catch(e) {}
+        fetch('/api/ad-fingerprints/vote', { method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin', keepalive: true,
+            body: JSON.stringify({ fingerprint: cand.hex, vote: 'confirm' }) }).catch(function() {});
+        adSkipHidePrompt();
+    };
+    el.querySelector('.reject').onclick = function() {
+        state.voted[cand.hex] = true;
+        fetch('/api/ad-fingerprints/vote', { method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin', keepalive: true,
+            body: JSON.stringify({ fingerprint: cand.hex, vote: 'reject' }) }).catch(function() {});
+        adSkipHidePrompt();
+    };
+    el.querySelector('.close').onclick = function() { adSkipHidePrompt(); };
+    state.prompted[cand.hex] = true;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    container.appendChild(el);
+}
+
+function adSkipShowToast(container, cand, state) {
+    if (state.toastShown[cand.hex]) return;
+    state.toastShown[cand.hex] = true;
+    var el = document.createElement('div');
+    el.className = 'ad-skip-toast';
+    el.innerHTML = '已跳过 ' + Math.round(cand.dur) + ' 秒广告　<a class="ad-skip-undo">撤销本次</a>';
+    el.querySelector('.ad-skip-undo').onclick = function(e) {
+        e.preventDefault();
+        state.undone[cand.hex] = true;
+        el.remove();
+        if (!state.art || !state.originalPlaylist) return;
+        try {
+            var playURL = state.art.option ? state.art.option.url : '';
+            if (!playURL) return;
+            state.art.once('video:canplay', function() {
+                try { state.art.currentTime = cand.start; } catch(e) {}
+            });
+            state.art.switchUrl(playURL);
+        } catch(e) {
+            if (state.art && state.art.notice) state.art.notice.show = '撤销失败，继续播放';
+        }
+    };
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    container.appendChild(el);
+    setTimeout(function() { if (el.parentNode) el.remove(); }, 4000);
+}
+
+function adSkipMonitor(state) {
+    if (!state.art || !state.enabled) return;
+    var container = document.getElementById('artplayer-app');
+    if (!container) return;
+    state.art.on('video:timeupdate', function() {
+        if (!state.enabled || !state.candidates.length) return;
+        var t = state.art.currentTime;
+        for (var i = 0; i < state.candidates.length; i++) {
+            var c = state.candidates[i];
+            if (!c.hex) continue;
+            if (c.status === 'confirmed' && !state.undone[c.hex] && !state.toastShown[c.hex]) {
+                if (t >= c.start && t <= c.end + 3) adSkipShowToast(container, c, state);
+            } else if (c.status === 'unknown' || c.status === 'pending') {
+                if (t >= c.start && t < c.end) {
+                    if (state.confirmedLocal[c.hex]) {
+                        try { state.art.currentTime = c.end; } catch(e) {}
+                    } else if (!state.prompted[c.hex] && !state.voted[c.hex]) {
+                        adSkipShowPrompt(container, c, state);
+                    }
+                }
+            }
+        }
+    });
+    // Hide prompt when toggle is turned off via htmx
+    document.addEventListener('htmx:afterSwap', function(e) {
+        var tgt = e.detail && e.detail.target;
+        if (tgt && tgt.id === 'ad-skip-toggle') {
+            var cb = tgt.querySelector('input[name="ad_skip_enabled"]');
+            if (!cb || !cb.checked) { state.enabled = false; adSkipHidePrompt(); }
+        }
+    });
+}
+
+// ---- End ad-skip ----
+
 // 初始化播放器
 function initPlayer(containerId, url, options) {
     options = options || {};
     options._current_url = url;
+
+    var adState = options.adSkipEnabled ? {
+        enabled: true, playlistURL: '', originalPlaylist: '',
+        candidates: [], prompted: {}, voted: {}, confirmedLocal: {},
+        undone: {}, toastShown: {}, art: null
+    } : null;
 
     // 自动播放下一集
     var autoPlayState = null;
@@ -680,7 +984,7 @@ function initPlayer(containerId, url, options) {
                         art.hls.destroy();
                         art.hls = null;
                     };
-                    var hls = new Hls({
+                    var hlsConfig = {
                         overrideNative: true,
                         maxBufferLength: forceMSE ? 60 : 15,
                         maxMaxBufferLength: forceMSE ? 120 : 60,
@@ -698,7 +1002,9 @@ function initPlayer(containerId, url, options) {
                         fragLoadingTimeOut: 8000,
                         manifestLoadingTimeOut: 15000,
                         maxFragLookUpTolerance: 0.2,
-                    });
+                    };
+                    if (adState) hlsConfig.pLoader = adSkipCreateLoader(adState);
+                    var hls = new Hls(hlsConfig);
                     hls.loadSource(url);
                     hls.attachMedia(video);
                     art.hls = hls;
@@ -808,6 +1114,8 @@ function initPlayer(containerId, url, options) {
     try {
         var art = new Artplayer(config);
         currentArt = art;
+
+        if (adState) { adState.art = art; adSkipMonitor(adState); }
 
         if (danmakuPlugin) {
             art.on('artplayerPluginDanmuku:loaded', function(queue) {

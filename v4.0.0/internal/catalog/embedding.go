@@ -95,13 +95,17 @@ func (service *EmbeddingService) enrich(ctx context.Context, doubanID string) er
 	if movie == nil {
 		return fmt.Errorf("movie not found: %s", doubanID)
 	}
+	if !embeddingMetadataComplete(movie) {
+		return fmt.Errorf("movie metadata incomplete for embedding: %s (status=%s, completeness=%d)",
+			doubanID, movie.MetadataStatus, movie.CompletenessScore)
+	}
 	// 哈希只对元数据取，不对最终送进模型的文本取。AI 每次改写的措辞都不同，
 	// 如果哈希包含 AI 输出，worker 每轮都会判定「内容变了」而无限重算。
-	metadata := strings.TrimSpace(embeddingInput(*movie))
-	semanticHash := contentHash(metadata)
-	if movie.EmbeddingSemanticHash == semanticHash && len(movie.Embedding) == embeddingDimensions {
+	if embeddingUpToDate(movie) {
 		return nil
 	}
+	metadata := strings.TrimSpace(embeddingInput(*movie))
+	semanticHash := contentHash(metadata)
 	content := service.semanticContent(ctx, *movie, metadata)
 	vector, err := service.generateVector(ctx, content)
 	if err != nil {
@@ -114,6 +118,22 @@ func (service *EmbeddingService) enrich(ctx context.Context, doubanID string) er
 		return fmt.Errorf("persist embedding: %w", err)
 	}
 	return nil
+}
+
+// embeddingMetadataComplete 复用主资料刷新完成条件。只有主资料达到可用状态后，
+// 才允许把内容发给 AI/Ollama；半成品记录继续等待资料刷新链路补全。
+func embeddingMetadataComplete(movie *Movie) bool {
+	return movie != nil && movie.MetadataStatus != "partial" && movie.CompletenessScore >= 70
+}
+
+// embeddingUpToDate 判断现有向量是否仍对应当前元数据。仅判断“有向量”不够：
+// 简介、类型或主创变化后，旧向量必须重算。
+func embeddingUpToDate(movie *Movie) bool {
+	if movie == nil || len(movie.Embedding) != embeddingDimensions {
+		return false
+	}
+	metadata := strings.TrimSpace(embeddingInput(*movie))
+	return movie.EmbeddingSemanticHash == contentHash(metadata)
 }
 
 // embeddingInput 是元数据的规范表示：既用于组装 AI prompt，也是语义哈希的唯一来源。
