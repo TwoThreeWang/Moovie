@@ -4,6 +4,43 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v4.0.4 -->
+    <section class="changelog-item">
+      <div class="version-badge">v4.0.4 <small>2026-08-25</small></div>
+      <div class="changelog-details">
+        <p>
+          <strong>观看记录同步精简与性能优化。</strong>移除冗余的同步事件账本，简化观看记录的删除与同步链路，同时优化相似影片查询性能和前端加载体验。
+        </p>
+        <h3>🚀 性能优化 (Performance)</h3>
+        <ul>
+          <li>
+            <strong>相似影片查询提速</strong>：详情页「喜欢这部剧集的人也喜欢」接口不再拉取向量文本和评论等大字段，仅查询卡片展示所需的轻量列，减少数据传输量。
+          </li>
+        </ul>
+        <h3>🛠️ 修复 (Fixed)</h3>
+        <ul>
+          <li>
+            <strong>修复观看记录删除后重新出现</strong>：删除接口返回 200 但刷新后记录仍在，原因是删除路径重新解析了媒体单元 ID 导致插入新行而非删除原行，现改为直接按记录 ID 硬删除。
+          </li>
+          <li>
+            <strong>修复 HTMX 加载动画不显示</strong>：播放记录和相似影片区域的加载 loading 因 CSS 选择器层级不匹配而无法触发，已修正选择器。
+          </li>
+        </ul>
+        <h3>🧹 精简 (Simplified)</h3>
+        <ul>
+          <li>
+            <strong>移除同步事件账本</strong>：删除 <code>history_sync_events</code> 表及全部相关代码，客户端每次打开页面直接从数据库获取最新进度，不再维护增量同步版本链。
+          </li>
+          <li>
+            <strong>观看记录改为硬删除</strong>：删除记录时直接从数据库移除行，不再保留软删除标记，减少冗余数据。
+          </li>
+          <li>
+            <strong>缩短任务记录保留期</strong>：后台任务的完成和失败记录从 30/90 天缩短为 3 天，减少数据库存储。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v4.0.3 -->
     <section class="changelog-item">
       <div class="version-badge">v4.0.3 <small>2026-08-24</small></div>

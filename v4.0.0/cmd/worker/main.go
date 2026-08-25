@@ -17,7 +17,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
 	"github.com/TwoThreeWang/Moovie/new/internal/douban"
-	"github.com/TwoThreeWang/Moovie/new/internal/history"
+
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
@@ -117,8 +117,7 @@ func main() {
 	metricsStore := operations.NewMetricsStore(pool)
 	operationsService := operations.NewService(searchStore,
 		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs),
-		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry),
-		operations.WithSyncEventCleanup(history.NewPostgresStore(pool).DeleteExpiredSyncEvents))
+		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry))
 	dispatcher := workqueue.NewDispatcher(queueStore, cfg.Worker.Concurrency, cfg.Worker.Poll)
 	for _, taskType := range []string{catalog.RefreshProviderDouban, catalog.RefreshProviderReviews, catalog.RefreshProviderTMDB, catalog.RefreshProviderEmbedding} {
 		dispatcher.Handle(taskType, 10*time.Minute, metadataHandler.Handle)

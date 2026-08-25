@@ -71,7 +71,7 @@ VALUES ($1,$2,$3,'x') ON CONFLICT (id) DO NOTHING`, id, fmt.Sprintf("u%d@test.lo
 	}
 }
 
-// Media 插入指定 ID 的媒体，供 playback_positions、history_sync_events、
+// Media 插入指定 ID 的媒体，供 playback_positions、
 // resource_match_candidates 等带 media_id 外键的表使用。
 func Media(t *testing.T, pool *database.Pool, ids ...int) {
 	t.Helper()

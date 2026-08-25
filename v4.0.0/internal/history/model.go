@@ -3,12 +3,10 @@
 // 主要涉及的表：
 //
 //	playback_positions        播放进度主表（每个用户每一集一行，唯一的服务端进度来源）
-//	playback_position_version_seq  全局版本号序列，用于增量同步
-//	history_sync_events       同步事件账本（只追加，客户端按游标增量拉取）
 //	user_movies               片单标记，参与「继续观看」的过滤
 //
-// 同步模型：客户端提交一批操作 → 服务端按 operation_id 去重（幂等）→ 写进度 →
-// 追加一条事件 → 返回大于客户端游标的所有事件。以「谁的时间更新听谁的」解决冲突。
+// 同步模型：客户端提交一批操作 → 服务端按 operation_id 去重（幂等）→ 直接写/删 playback_positions。
+// 以「谁的时间更新听谁的」解决冲突。
 package history
 
 import "time"

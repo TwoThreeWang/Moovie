@@ -12,7 +12,6 @@ import (
 // 客户端时钟比服务端快 5 分钟以内的时间戳按有效处理。
 const (
 	maxSyncOperations = 100
-	maxSyncChanges    = 500
 	maxClockSkew      = 5 * time.Minute
 )
 

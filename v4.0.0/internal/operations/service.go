@@ -18,18 +18,14 @@ import (
 const (
 	stalePurgeDays            = 90
 	siteStatRetentionDays     = 7
-	completedJobRetentionDays = 30
-	failedJobRetentionDays    = 90
+	completedJobRetentionDays = 3
+	failedJobRetentionDays    = 3
 	jobCleanupBatchSize       = 1000
 	// 遥测读取方最长只看 7 天，留 30 天是给排查留余量，不是给查询用的。
 	telemetryRetentionDays = 30
 	// 每天每张表最多删 100 万行：够排空存量积压，又不会让一次清理跑太久。
 	telemetryCleanupBudget = 1_000_000
-	// 同步账本留 30 天。停用超过 30 天的客户端本来就会走全量重同步，
-	// 留更久也没人读；删过头也不会丢进度（见 history.DeleteExpiredSyncEvents）。
-	syncEventRetentionDays = 30
-	syncEventCleanupBudget = 1_000_000
-	siteAlertMinSamples    = 5
+	siteAlertMinSamples = 5
 	siteAlertCooldown      = 24 * time.Hour
 	TaskCleanup            = "operations_cleanup"
 	TaskHealthCheck        = "site_health_check"
@@ -55,7 +51,6 @@ type Service struct {
 	lastAlert        map[string]time.Time
 	jobCleanup       func(context.Context, time.Time, time.Time, int) (int, error)
 	telemetryCleanup func(context.Context, time.Time, int) (int, error)
-	syncEventCleanup func(context.Context, time.Time, int) (int, error)
 }
 
 // ServiceOption 用于注入可选的清理能力。
@@ -71,10 +66,6 @@ func WithTelemetryCleanup(cleanup func(context.Context, time.Time, int) (int, er
 	return func(service *Service) { service.telemetryCleanup = cleanup }
 }
 
-// WithSyncEventCleanup 注入观影历史同步账本清理。
-func WithSyncEventCleanup(cleanup func(context.Context, time.Time, int) (int, error)) ServiceOption {
-	return func(service *Service) { service.syncEventCleanup = cleanup }
-}
 
 // NewService 创建运维服务。
 func NewService(store Store, options ...ServiceOption) *Service {
@@ -111,12 +102,6 @@ func (service *Service) HandleCleanup(ctx context.Context, _ workqueue.Job) erro
 		before := service.now().AddDate(0, 0, -telemetryRetentionDays)
 		operations = append(operations, cleanupOperation{name: "expired playback telemetry", run: func() (int, error) {
 			return service.telemetryCleanup(ctx, before, telemetryCleanupBudget)
-		}})
-	}
-	if service.syncEventCleanup != nil {
-		before := service.now().AddDate(0, 0, -syncEventRetentionDays)
-		operations = append(operations, cleanupOperation{name: "expired history sync events", run: func() (int, error) {
-			return service.syncEventCleanup(ctx, before, syncEventCleanupBudget)
 		}})
 	}
 	var failures []error

@@ -79,7 +79,7 @@ func TestCleanupUsesRetentionWindows(t *testing.T) {
 	if store.inactiveDays != 10 || store.logDays != 30 || !store.healthBefore.Equal(service.now().AddDate(0, 0, -7)) {
 		t.Fatalf("cleanup windows = %+v", store)
 	}
-	if !completedBefore.Equal(service.now().AddDate(0, 0, -30)) || !failedBefore.Equal(service.now().AddDate(0, 0, -90)) || cleanupLimit != 1000 {
+	if !completedBefore.Equal(service.now().AddDate(0, 0, -3)) || !failedBefore.Equal(service.now().AddDate(0, 0, -3)) || cleanupLimit != 1000 {
 		t.Fatalf("job cleanup = %s / %s / %d", completedBefore, failedBefore, cleanupLimit)
 	}
 	// 遥测保留必须明显长于最长读取窗口（activity_popular 的 7 天），

@@ -183,10 +183,9 @@ func main() {
 	if databasePool != nil {
 		metricsStore = operations.NewMetricsStore(databasePool)
 	}
-	operationsService := operations.NewService(operationsStore, // 运维服务：定期清理过期任务、遥测、同步事件
+	operationsService := operations.NewService(operationsStore, // 运维服务：定期清理过期任务、遥测
 		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs),
-		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry),
-		operations.WithSyncEventCleanup(postgresHistory.DeleteExpiredSyncEvents))
+		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry))
 	tmdbProvider := catalog.NewTMDBProvider(sourceClient, catalogStore, cfg.Catalog.TMDBToken, tmdbOptions...)
 	embeddingService := catalog.NewEmbeddingService(sourceClient, catalogStore, catalog.EmbeddingConfig{ // 向量化服务（相似推荐用）
 		OllamaHost: cfg.Catalog.OllamaHost, OllamaModel: cfg.Catalog.OllamaModel,

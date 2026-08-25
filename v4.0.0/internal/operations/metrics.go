@@ -57,11 +57,8 @@ type SearchMetrics struct {
 // HistoryMetrics 是观看记录相关的量级统计。
 type HistoryMetrics struct {
 	Total        int64 `json:"total"`
-	Active       int64 `json:"active"`
 	WithMedia    int64 `json:"with_media"`
 	ResourceOnly int64 `json:"resource_only"`
-	Tombstones   int64 `json:"tombstones"`
-	SyncEvents   int64 `json:"sync_events"`
 }
 
 // PlaybackMetrics 是播放质量指标：首帧率、播满 10 秒率、换源成功率、启动耗时分位数。
@@ -250,11 +247,8 @@ SELECT JSONB_BUILD_OBJECT(
     ),
 	'history', JSONB_BUILD_OBJECT(
 		'total', (SELECT COUNT(*) FROM playback_positions),
-		'active', (SELECT COUNT(*) FROM playback_positions WHERE deleted_at IS NULL),
 		'with_media', (SELECT COUNT(*) FROM playback_positions WHERE media_id IS NOT NULL),
-		'resource_only', (SELECT COUNT(*) FROM playback_positions WHERE media_id IS NULL),
-        'tombstones', (SELECT COUNT(*) FROM playback_positions WHERE deleted_at IS NOT NULL),
-        'sync_events', (SELECT COUNT(*) FROM history_sync_events WHERE created_at >= NOW() - INTERVAL '24 hours')
+		'resource_only', (SELECT COUNT(*) FROM playback_positions WHERE media_id IS NULL)
     ),
     'playback', JSONB_BUILD_OBJECT(
         'attempts', COALESCE((SELECT attempts FROM event_totals), 0),
