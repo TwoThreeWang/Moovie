@@ -45,7 +45,7 @@
                 <div class="mc-filmstrip">
                     {{ range $i, $p := .PosterWall }}
                     <div class="mc-filmstrip-item">
-                        <img src="{{ proxyImg $p.Poster }}" alt="{{ $p.Title }}" referrerpolicy="no-referrer" onerror="this.style.display='none'">
+                        <img src="{{ proxyImg $p.Poster }}" alt="{{ $p.Title }}" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                         <span class="mc-filmstrip-cap">{{ $p.Title }}</span>
                         {{ if and (eq (add $i 1) (len $.PosterWall)) (gt $.PosterWallExtra 0) }}
                         <div class="mc-filmstrip-more">+{{ $.PosterWallExtra }}</div>
@@ -88,7 +88,7 @@
 
                 {{ if .Report.TopMovieTitle }}
                 <div class="mc-featured">
-                    <img class="mc-featured-poster" src="{{ proxyImg .Report.TopMoviePoster }}" alt="{{ .Report.TopMovieTitle }}" referrerpolicy="no-referrer" onerror="this.style.display='none'">
+                    <img class="mc-featured-poster" src="{{ proxyImg .Report.TopMoviePoster }}" alt="{{ .Report.TopMovieTitle }}" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                     <div class="mc-featured-body">
                         <div class="mc-featured-label">特别放映 FEATURED</div>
                         <div class="mc-featured-title">《{{ .Report.TopMovieTitle }}》</div>
@@ -199,6 +199,7 @@
             qr.addData(profileURL);
             qr.make();
             var img = document.createElement('img');
+            img.onerror = function() { this.onerror = null; this.src = '/static/img/placeholder.svg'; };
             img.src = qr.createDataURL(4, 0);
             qrContainer.appendChild(img);
         } catch(e) {

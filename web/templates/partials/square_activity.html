@@ -1,9 +1,0 @@
-{{ if .Activities }}
-<div class="square-feed" id="square-feed">
-    {{ template "square_grid.html" . }}
-</div>
-{{ else if .IsFirstPage }}
-<div class="empty-state">
-    <p>还没有人公开分享观影记录</p>
-</div>
-{{ end }}

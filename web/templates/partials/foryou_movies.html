@@ -21,7 +21,7 @@
         <div class="hero-overlay"></div>
         <div class="hero-content">
             <div class="hero-poster-wrapper">
-                <img src="{{ proxyImg .HeroMovie.Poster }}" alt="{{ .HeroMovie.Title }}" class="hero-poster">
+                <img src="{{ proxyImg .HeroMovie.Poster }}" alt="{{ .HeroMovie.Title }}" class="hero-poster" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                 {{ if .HeroMovie.Rating }}
                 <div class="hero-rating">⭐ {{ .HeroMovie.Rating }}</div>
                 {{ end }}
@@ -54,7 +54,7 @@
                 {{ template "foryou_movies_grid.html" . }}
             </div>
             <div id="foryou-loading" class="htmx-indicator" style="text-align: center; padding: 20px;">
-                <span class="loading-spinner"></span> 正在发现更多好片...
+                <span class="foryou-loading-spinner"></span> 正在发现更多好片...
             </div>
         </div>
     </section>
@@ -192,7 +192,7 @@
 .hero-badge {
     display: inline-block;
     padding: 4px 12px;
-    background: var(--primary);
+    background: var(--primary-solid);
     color: white;
     border-radius: 100px;
     font-size: 0.75rem;
@@ -231,18 +231,18 @@
     margin-bottom: 48px;
 }
 
-.section-header {
+.foryou-section .section-header {
     margin-bottom: 20px;
 }
 
-.section-title {
+.foryou-section .section-title {
     font-size: 1.5rem;
     font-weight: 700;
     margin-bottom: 4px;
     color: var(--text);
 }
 
-.section-subtitle {
+.foryou-section .section-subtitle {
     font-size: 0.9rem;
     color: var(--text-muted);
 }
@@ -267,7 +267,7 @@
     transform: translateY(-8px);
 }
 
-.movie-card .movie-meta {
+.foryou-page .movie-card .movie-meta {
     font-size: 0.75rem;
     color: var(--text-muted);
     display: block;
@@ -286,7 +286,7 @@
     border: 1px dashed var(--border);
 }
 
-.empty-icon {
+.foryou-empty .empty-icon {
     font-size: 4rem;
     margin-bottom: 24px;
 }
@@ -297,35 +297,31 @@
 }
 
 /* Loading & Buttons */
-.htmx-indicator {
+.foryou-page .htmx-indicator {
     display: none;
     color: var(--text-muted);
     font-size: 0.9rem;
 }
-.htmx-request .htmx-indicator {
+.foryou-page .htmx-request .htmx-indicator {
     display: block;
 }
-.htmx-request.htmx-indicator {
+.foryou-page .htmx-request.htmx-indicator {
     display: block;
 }
 
-.loading-spinner {
+.foryou-loading-spinner {
     display: inline-block;
     width: 20px;
     height: 20px;
-    border: 2px solid rgba(var(--primary-rgb), 0.3);
+    border: 2px solid var(--primary-alpha);
     border-radius: 50%;
-    border-top-color: var(--primary);
+    border-top-color: var(--primary-text);
     animation: spin 1s ease-in-out infinite;
     vertical-align: middle;
     margin-right: 8px;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-.btn-outline {
+.foryou-page .btn-outline {
     background: transparent;
     border: 1px solid var(--border);
     color: var(--text);
@@ -336,10 +332,10 @@
     font-weight: 500;
 }
 
-.btn-outline:hover {
-    background: var(--bg-hover);
-    border-color: var(--primary);
-    color: var(--primary);
+.foryou-page .btn-outline:hover {
+    background: var(--bg-secondary);
+    border-color: var(--primary-text);
+    color: var(--primary-text);
 }
 
 .foryou-empty p {
@@ -350,9 +346,9 @@
 .foryou-hint {
     text-align: center;
     padding: 24px;
-    background: rgba(var(--primary-rgb), 0.1);
+    background: var(--primary-alpha);
     border-radius: 12px;
-    color: var(--primary);
+    color: var(--primary-text);
     font-size: 0.9rem;
 }
 

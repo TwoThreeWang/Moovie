@@ -1,40 +1,91 @@
-version: '3.8'
-
 services:
-  app:
-    build: .
-    container_name: moovie-app
-    ports:
-      - "5007:5007"
+  web:
+    build:
+      context: .
+    image: moovie-v4:local
+    container_name: moovie-new-web
     env_file:
       - .env
     environment:
-      - APP_ENV=production
-      # 如下几行是 WARP 代理配置，如果没有 WARP 代理，注释掉即可
-      # WARP 代理配置 - 走 SOCKS5
-      - HTTP_PROXY=socks5://cloudflare-warp:1080
-      - HTTPS_PROXY=socks5://cloudflare-warp:1080
-      - ALL_PROXY=socks5://cloudflare-warp:1080
-      # 排除本地和内部服务（danmu-api 必须排除，否则弹幕请求会绕道 WARP 出国再回来）
-      - NO_PROXY=localhost,127.0.0.1,postgres,danmu-api,ollama
+      APP_ENV: production
+      WEB_ROOT: /app/web
+      JOBS_IN_WEB: "false"
+      DB_MAX_CONNS: "${WEB_DB_MAX_CONNS:-12}"
+      GOMEMLIMIT: "${WEB_GO_MEMORY_LIMIT:-700MiB}"
+      GOMAXPROCS: "${WEB_GOMAXPROCS:-2}"
+      # 复用已连接 postgres_default 网络的 Cloudflare WARP 容器。
+      HTTP_PROXY: socks5://cloudflare-warp:1080
+      HTTPS_PROXY: socks5://cloudflare-warp:1080
+      ALL_PROXY: socks5://cloudflare-warp:1080
+      NO_PROXY: localhost,127.0.0.1,postgres,danmu-api,ollama
+    ports:
+      - "5008:5008"
     restart: unless-stopped
+    stop_grace_period: 20s
+    mem_limit: "${WEB_MEMORY_LIMIT:-1g}"
+    cpus: "${WEB_CPU_LIMIT:-2.0}"
+    pids_limit: 256
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
     networks:
       - postgres_default
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5007/health"]
+      # 数据库拥塞时 liveness 仍必须足够轻量。/ready 只供负载均衡判断，
+      # 绝不能把它作为容器自动重启信号。
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:5008/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  worker:
+    image: moovie-v4:local
+    depends_on:
+      - web
+    container_name: moovie-new-worker
+    entrypoint: ["./moovie-worker"]
+    # Dockerfile 的 HEALTHCHECK 探测 5008，worker 不监听端口，不关掉会永远 unhealthy。
+    healthcheck:
+      disable: true
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      JOBS_IN_WEB: "false"
+      DB_MAX_CONNS: "${WORKER_DB_MAX_CONNS:-6}"
+      GOMEMLIMIT: "${WORKER_GO_MEMORY_LIMIT:-320MiB}"
+      GOMAXPROCS: "${WORKER_GOMAXPROCS:-1}"
+      # 复用已连接 postgres_default 网络的 Cloudflare WARP 容器。
+      HTTP_PROXY: socks5://cloudflare-warp:1080
+      HTTPS_PROXY: socks5://cloudflare-warp:1080
+      ALL_PROXY: socks5://cloudflare-warp:1080
+      NO_PROXY: localhost,127.0.0.1,postgres,danmu-api,ollama
+    restart: unless-stopped
+    stop_grace_period: 20s
+    mem_limit: "${WORKER_MEMORY_LIMIT:-512m}"
+    cpus: "${WORKER_CPU_LIMIT:-1.0}"
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - postgres_default
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  
   # 弹幕聚合服务，仅供 app 内网调用，不对外映射端口
   danmu-api:
     image: logvar/danmu-api:latest
-    container_name: moovie-danmu-api
+    container_name: moovie-danmu-api-v4
     env_file:
       - .env
     environment:
@@ -54,8 +105,8 @@ services:
       - HTTP_PROXY=socks5://cloudflare-warp:1080
       - HTTPS_PROXY=socks5://cloudflare-warp:1080
       - ALL_PROXY=socks5://cloudflare-warp:1080
-      # 排除本地和内部服务（danmu-api 必须排除，否则弹幕请求会绕道 WARP 出国再回来）
       - NO_PROXY=localhost,127.0.0.1,postgres,danmu-api,ollama
+
     volumes:
       - ./danmu-cache:/app/.cache
     restart: unless-stopped

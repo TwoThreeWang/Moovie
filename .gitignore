@@ -1,46 +1,42 @@
-# Binaries for programs and plugins
+# Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
+bin/
+/datamigrate
 
-# Output of the go coverage tool, specifically when used with Litmus
+# Go
+coverage.out
 *.out
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Environment
+.env
+.env.local
+.env.*.local
 
-# OS X
+# OS
 .DS_Store
 
 # IDEs
 .vscode/
 .idea/
-.claude/
-.workbuddy/
-design/
 *.swp
 *.swo
 
-# Environment files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Claude / AI tools
+.claude/
+.workbuddy/
 
 # Logs
 *.log
 
 # Docker
 .docker/
-.env.online
+
+# Project-specific
+.migration-reports/
+.run-tests
+.test-out.txt

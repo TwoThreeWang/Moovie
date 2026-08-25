@@ -10,8 +10,11 @@
             <a href="/admin/feedback" class="admin-tab">反馈</a>
             <a href="/admin/sites" class="admin-tab">资源网</a>
             <a href="/admin/data" class="admin-tab">数据管理</a>
+            <a href="/admin/jobs" class="admin-tab">任务队列</a>
+            <a href="/admin/matches" class="admin-tab">匹配复核</a>
             <a href="/admin/copyright" class="admin-tab">版权限制</a>
             <a href="/admin/category" class="admin-tab">分类过滤</a>
+            <a href="/admin/nsfw" class="admin-tab">NSFW</a>
         </nav>
     </div>
 
@@ -43,7 +46,7 @@
                         </td>
                         <td>{{ .Email }}</td>
                         <td>
-                            <select class="role-select" onchange="updateUserRole({{ .ID }}, this.value)" data-current="{{ .Role }}">
+                            <select class="admin-select" onchange="updateUserRole({{ .ID }}, this.value)" data-current="{{ .Role }}">
                                 <option value="user" {{ if eq .Role "user" }}selected{{ end }}>普通用户</option>
                                 <option value="admin" {{ if eq .Role "admin" }}selected{{ end }}>管理员</option>
                             </select>

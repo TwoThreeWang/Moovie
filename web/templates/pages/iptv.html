@@ -10,7 +10,7 @@
                 </svg>
                 频道列表
             </h2>
-            <button class="iptv-toggle-btn" onclick="toggleIptvSidebar()" title="收起频道列表">
+            <button type="button" class="iptv-toggle-btn" onclick="toggleIptvSidebar()" title="收起频道列表" aria-label="收起频道列表">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
                     <polyline points="15 18 9 12 15 6"></polyline>
                 </svg>
@@ -21,7 +21,7 @@
         <div class="iptv-url-bar">
             <input type="text" id="iptv-url-input" class="iptv-url-input" placeholder="输入 M3U 直播源链接..."
                    value="">
-            <button id="iptv-load-btn" class="iptv-load-btn" onclick="loadM3U()">
+            <button type="button" id="iptv-load-btn" class="iptv-load-btn" onclick="loadM3U()" aria-label="重新加载频道源">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                     <polyline points="23 4 23 10 17 10"></polyline>
                     <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
@@ -64,7 +64,7 @@
     <!-- 主播放区 -->
     <div class="iptv-main">
         <!-- 桌面端展开频道列表按钮（仅在侧边栏收起时显示） -->
-        <button class="iptv-expand-btn" id="iptv-expand-btn" onclick="toggleIptvSidebar()" title="展开频道列表" style="display:none;">
+        <button type="button" class="iptv-expand-btn" id="iptv-expand-btn" onclick="toggleIptvSidebar()" title="展开频道列表" aria-label="展开频道列表" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <line x1="8" y1="6" x2="21" y2="6"></line>
                 <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -77,7 +77,7 @@
 
         <!-- 当前频道信息条 -->
         <div id="iptv-now-bar" class="iptv-now-bar" style="display:none;">
-            <img id="iptv-now-logo" class="iptv-now-logo" src="" alt="" referrerpolicy="no-referrer" onerror="this.style.display='none'">
+            <img id="iptv-now-logo" class="iptv-now-logo" alt="" hidden referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
             <span id="iptv-now-name" class="iptv-now-name"></span>
             <span id="iptv-now-group" class="iptv-now-group"></span>
         </div>
@@ -85,13 +85,18 @@
         <!-- 播放器容器 -->
         <div class="iptv-player-wrapper" id="iptv-player-container">
             <div id="iptv-artplayer"></div>
+            <div id="iptv-playback-status" class="iptv-playback-status" role="status" aria-live="polite">
+                <strong id="iptv-playback-title">选择一个频道开始播放</strong>
+                <span id="iptv-playback-detail">打开频道列表，或粘贴你自己的 M3U 直播源。</span>
+                <button type="button" id="iptv-retry-btn" class="iptv-retry-btn" onclick="retryCurrentChannel()" hidden>重试当前频道</button>
+            </div>
         </div>
 
         <!-- 提示信息 -->
         <div class="iptv-tip">本页仅提供 M3U 播放功能，内置源仅作演示，不保证可用性与稳定性。建议自行获取可靠的 IPTV 直播源以获得更好的观看体验。</div>
 
         <!-- 移动端频道切换按钮 -->
-        <button class="iptv-mobile-channels-btn" onclick="toggleIptvSidebar()">
+        <button type="button" class="iptv-mobile-channels-btn" onclick="toggleIptvSidebar()" aria-controls="iptv-sidebar" aria-expanded="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
                 <line x1="8" y1="6" x2="21" y2="6"></line>
                 <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -156,7 +161,9 @@
         border: none;
         color: var(--text-muted);
         cursor: pointer;
-        padding: 4px;
+        min-width: 40px;
+        min-height: 40px;
+        padding: 8px;
         border-radius: 4px;
         display: flex;
         align-items: center;
@@ -184,11 +191,11 @@
         transition: border-color 0.2s;
     }
     .iptv-url-input:focus {
-        border-color: var(--primary);
+        border-color: var(--primary-text);
         outline: none;
     }
     .iptv-load-btn {
-        background: var(--primary);
+        background: var(--primary-solid);
         color: #fff;
         border: none;
         border-radius: 6px;
@@ -200,7 +207,7 @@
         flex-shrink: 0;
     }
     .iptv-load-btn:hover {
-        background: var(--primary-light);
+        background: var(--primary-solid-hover);
     }
 
     /* 搜索栏 */
@@ -228,7 +235,7 @@
         box-sizing: border-box;
     }
     .iptv-search-input:focus {
-        border-color: var(--primary);
+        border-color: var(--primary-text);
         outline: none;
     }
 
@@ -246,20 +253,17 @@
         width: 16px;
         height: 16px;
         border: 2px solid var(--border);
-        border-top-color: var(--primary);
+        border-top-color: var(--primary-text);
         border-radius: 50%;
-        animation: iptv-spin 0.6s linear infinite;
-    }
-    @keyframes iptv-spin {
-        to { transform: rotate(360deg); }
+        animation: spin 0.6s linear infinite;
     }
     .iptv-error {
         margin: 0 16px 12px;
         padding: 12px;
-        background: rgba(246, 12, 62, 0.08);
-        border: 1px solid rgba(246, 12, 62, 0.2);
+        background: var(--error-bg);
+        border: 1px solid var(--error-border);
         border-radius: 8px;
-        color: #f60c3e;
+        color: var(--error);
         font-size: 12px;
         line-height: 1.6;
     }
@@ -331,12 +335,16 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        width: 100%;
         padding: 7px 12px;
+        border: 0;
         border-radius: 6px;
+        background: transparent;
         cursor: pointer;
         transition: background 0.15s;
         font-size: 13px;
         color: var(--text-secondary);
+        text-align: left;
     }
     .iptv-channel-item:hover {
         background: var(--bg-secondary);
@@ -344,7 +352,7 @@
     }
     .iptv-channel-item.active {
         background: var(--primary-alpha);
-        color: var(--primary);
+        color: var(--primary-text);
         font-weight: 500;
     }
     .iptv-channel-item.hidden {
@@ -394,7 +402,7 @@
         box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
     }
     .iptv-expand-btn:hover {
-        color: var(--primary);
+        color: var(--primary-text);
         background: var(--bg);
     }
 
@@ -440,6 +448,51 @@
         height: 100%;
     }
 
+    .iptv-playback-status {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 24px;
+        background: rgba(0, 0, 0, 0.82);
+        color: rgba(255, 255, 255, 0.92);
+        text-align: center;
+    }
+    .iptv-playback-status[hidden] {
+        display: none;
+    }
+    .iptv-playback-status strong {
+        font-size: 1rem;
+        font-weight: 650;
+    }
+    .iptv-playback-status span {
+        max-width: 38rem;
+        color: rgba(255, 255, 255, 0.66);
+        font-size: 0.82rem;
+        line-height: 1.6;
+    }
+    .iptv-playback-status[data-state="error"] strong {
+        color: #ff9aae;
+    }
+    .iptv-retry-btn {
+        min-height: 40px;
+        margin-top: 6px;
+        padding: 8px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+        font-size: 0.82rem;
+    }
+    .iptv-retry-btn:hover {
+        border-color: var(--primary);
+        background: var(--primary-alpha);
+    }
+
     /* 底部提示 */
     .iptv-tip {
         padding: 10px 16px;
@@ -458,6 +511,7 @@
         justify-content: center;
         gap: 6px;
         padding: 10px;
+        min-height: 44px;
         background: var(--bg);
         border: 1px solid var(--border);
         border-top: none;
@@ -548,7 +602,7 @@
 <!-- 播放器依赖 -->
 <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
-<script src="/static/js/player.js"></script>
+<script src="/static/js/player.js?v=0.9"></script>
 
 <script>
     // ===== 默认 M3U 源 =====
@@ -557,6 +611,8 @@
     // ===== 全局状态 =====
     let iptvPlayer = null;
     let allChannels = [];
+    let currentIptvChannel = null;
+    let currentIptvElement = null;
 
     // ===== 初始化 =====
     document.addEventListener('DOMContentLoaded', () => {
@@ -595,23 +651,33 @@
             saveLastUrl(url);
             renderChannels(allChannels);
         } catch (err) {
-            let msg = '';
+            let message = '';
             if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.name === 'TypeError') {
-                msg = '<strong>加载失败：该源可能存在跨域限制</strong><br>请更换支持 CORS 的 M3U 源，或尝试在浏览器中直接打开该链接确认可用。';
+                message = '加载失败：该源可能存在跨域限制。请更换支持 CORS 的 M3U 源，或尝试在浏览器中直接打开该链接确认可用。';
             } else {
-                msg = `<strong>加载失败</strong><br>${err.message}`;
+                message = `加载失败：${err.message}`;
             }
-            msg += `<details><summary>错误详情</summary><pre>${err.stack || err.message}</pre></details>`;
-            showError(msg);
+            showError(message, err.stack || err.message);
         } finally {
             loading.style.display = 'none';
             loadBtn.disabled = false;
         }
     }
 
-    function showError(html) {
+    function showError(message, detail = '') {
         const error = document.getElementById('iptv-error');
-        error.innerHTML = html;
+        const summary = document.createElement('strong');
+        summary.textContent = message;
+        error.replaceChildren(summary);
+        if (detail) {
+            const details = document.createElement('details');
+            const label = document.createElement('summary');
+            label.textContent = '错误详情';
+            const pre = document.createElement('pre');
+            pre.textContent = detail;
+            details.append(label, pre);
+            error.appendChild(details);
+        }
         error.style.display = 'block';
         // 恢复空状态
         const list = document.getElementById('iptv-channel-list');
@@ -706,17 +772,19 @@
 
             for (let i = 0; i < chs.length; i++) {
                 const ch = chs[i];
-                const item = document.createElement('div');
+                const item = document.createElement('button');
+                item.type = 'button';
                 item.className = 'iptv-channel-item';
                 item.setAttribute('data-name', ch.name.toLowerCase());
                 item.setAttribute('data-group', group);
+                item.setAttribute('aria-label', `播放 ${ch.name}`);
 
                 if (ch.logo) {
                     const img = document.createElement('img');
                     img.className = 'iptv-channel-logo';
                     img.src = ch.logo;
                     img.referrerPolicy = 'no-referrer';
-                    img.onerror = function() { this.style.display = 'none'; };
+                    img.onerror = function() { this.onerror = null; this.src = '/static/img/placeholder.svg'; };
                     item.appendChild(img);
                 }
 
@@ -733,6 +801,10 @@
 
     // ===== 播放频道 =====
     function playChannel(channel, element) {
+        currentIptvChannel = channel;
+        currentIptvElement = element || currentIptvElement;
+        setPlaybackStatus('loading', `正在连接 ${channel.name}`, '直播源响应速度不固定，超过 15 秒仍未加载时可以重试或切换频道。');
+
         // 高亮当前频道
         document.querySelectorAll('.iptv-channel-item.active').forEach(el => el.classList.remove('active'));
         if (element) {
@@ -747,10 +819,12 @@
         const nowGroup = document.getElementById('iptv-now-group');
 
         if (channel.logo) {
+            nowLogo.onerror = function() { this.onerror = null; this.src = '/static/img/placeholder.svg'; };
             nowLogo.src = channel.logo;
-            nowLogo.style.display = 'block';
+            nowLogo.hidden = false;
         } else {
-            nowLogo.style.display = 'none';
+            nowLogo.removeAttribute('src');
+            nowLogo.hidden = true;
         }
         nowName.textContent = channel.name;
         nowGroup.textContent = channel.group;
@@ -767,11 +841,57 @@
             isLive: true,
             sourceKey: 'iptv',
             vodId: 'iptv_' + Date.now(),
+            loadTimeoutMs: 15000,
+            onPlaybackReady: () => clearPlaybackStatus(),
+            onPlaybackError: () => setPlaybackStatus('error', `${channel.name} 暂时无法播放`, '直播源可能已失效或当前网络无法访问。请重试，或从频道列表选择其他频道。'),
         });
 
         if (iptvPlayer) {
-            iptvPlayer.play();
+            const playResult = iptvPlayer.play();
+            if (playResult && typeof playResult.catch === 'function') {
+                playResult.catch((error) => {
+                    if (!error || error.name !== 'AbortError') {
+                        setPlaybackStatus('error', `${channel.name} 未能自动播放`, '请点按播放器中的播放按钮，或重试当前频道。');
+                    }
+                });
+            }
+        } else {
+            setPlaybackStatus('error', '播放器初始化失败', '请刷新页面后重试，或检查浏览器是否阻止了播放器脚本。');
         }
+
+        closeIptvSidebarOnMobile();
+    }
+
+    function setPlaybackStatus(state, title, detail) {
+        const status = document.getElementById('iptv-playback-status');
+        status.dataset.state = state;
+        status.hidden = false;
+        status.setAttribute('role', state === 'error' ? 'alert' : 'status');
+        document.getElementById('iptv-playback-title').textContent = title;
+        document.getElementById('iptv-playback-detail').textContent = detail;
+        document.getElementById('iptv-retry-btn').hidden = state !== 'error';
+    }
+
+    function clearPlaybackStatus() {
+        const status = document.getElementById('iptv-playback-status');
+        status.hidden = true;
+        status.dataset.state = 'ready';
+    }
+
+    function retryCurrentChannel() {
+        if (currentIptvChannel) {
+            playChannel(currentIptvChannel, currentIptvElement);
+        }
+    }
+
+    function closeIptvSidebarOnMobile() {
+        if (window.innerWidth > 768) return;
+        const sidebar = document.getElementById('iptv-sidebar');
+        const overlay = document.querySelector('.iptv-sidebar-overlay');
+        sidebar.classList.remove('open');
+        if (overlay) overlay.classList.remove('open');
+        const button = document.querySelector('.iptv-mobile-channels-btn');
+        if (button) button.setAttribute('aria-expanded', 'false');
     }
 
     // ===== 搜索过滤 =====
@@ -818,13 +938,12 @@
             if (!overlay) {
                 overlay = document.createElement('div');
                 overlay.className = 'iptv-sidebar-overlay';
-                overlay.addEventListener('click', () => {
-                    sidebar.classList.remove('open');
-                    overlay.classList.remove('open');
-                });
+                overlay.addEventListener('click', closeIptvSidebarOnMobile);
                 document.body.appendChild(overlay);
             }
             overlay.classList.toggle('open', sidebar.classList.contains('open'));
+            const button = document.querySelector('.iptv-mobile-channels-btn');
+            if (button) button.setAttribute('aria-expanded', sidebar.classList.contains('open') ? 'true' : 'false');
         } else {
             sidebar.classList.toggle('collapsed');
             const expandBtn = document.getElementById('iptv-expand-btn');
@@ -835,6 +954,15 @@
             }
         }
     }
+
+    document.addEventListener('keydown', event => {
+        const sidebar = document.getElementById('iptv-sidebar');
+        if (event.key === 'Escape' && sidebar.classList.contains('open')) {
+            closeIptvSidebarOnMobile();
+            const button = document.querySelector('.iptv-mobile-channels-btn');
+            if (button) button.focus();
+        }
+    });
 
 </script>
 {{ end }}

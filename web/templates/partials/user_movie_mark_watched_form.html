@@ -1,9 +1,9 @@
-<div class="modal-overlay" id="mark-watched-modal" onclick="if(event.target==this) this.remove()">
-    <div class="modal-container">
-        <button class="modal-close-btn" onclick="document.getElementById('mark-watched-modal').remove()">×</button>
+<div class="action-modal-overlay" id="mark-watched-modal" onclick="if(event.target==this) this.remove()" onkeydown="if(event.key==='Escape') this.remove()">
+    <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="mark-watched-title">
+        <button type="button" class="modal-close-btn" aria-label="关闭评分窗口" onclick="document.getElementById('mark-watched-modal').remove()" autofocus>×</button>
 
         <div class="modal-header">
-            <h3 class="modal-title">标记为“已看过”</h3>
+            <h3 class="modal-title" id="mark-watched-title">标记为“已看过”</h3>
             <p class="modal-subtitle">《{{ .Title }}》</p>
         </div>
 
@@ -21,34 +21,34 @@
             <input type="hidden" name="rating" id="rating-input" value="0">
 
             <div class="form-group">
-                <label class="form-label">点击分值完成评分</label>
-                <div class="score-chips-group">
-                    <div class="score-chip" onclick="selectScore(1, this)">
+                <span class="form-label" id="rating-label">点击分值完成评分</span>
+                <div class="score-chips-group" role="group" aria-labelledby="rating-label">
+                    <button type="button" class="score-chip" aria-pressed="false" onclick="selectScore(1, this)">
                         <span class="chip-label">1分</span>
                         <span class="chip-desc">很差</span>
-                    </div>
-                    <div class="score-chip" onclick="selectScore(2, this)">
+                    </button>
+                    <button type="button" class="score-chip" aria-pressed="false" onclick="selectScore(2, this)">
                         <span class="chip-label">2分</span>
                         <span class="chip-desc">较差</span>
-                    </div>
-                    <div class="score-chip" onclick="selectScore(3, this)">
+                    </button>
+                    <button type="button" class="score-chip" aria-pressed="false" onclick="selectScore(3, this)">
                         <span class="chip-label">3分</span>
                         <span class="chip-desc">还行</span>
-                    </div>
-                    <div class="score-chip" onclick="selectScore(4, this)">
+                    </button>
+                    <button type="button" class="score-chip" aria-pressed="false" onclick="selectScore(4, this)">
                         <span class="chip-label">4分</span>
                         <span class="chip-desc">推荐</span>
-                    </div>
-                    <div class="score-chip" onclick="selectScore(5, this)">
+                    </button>
+                    <button type="button" class="score-chip" aria-pressed="false" onclick="selectScore(5, this)">
                         <span class="chip-label">5分</span>
                         <span class="chip-desc">力荐</span>
-                    </div>
+                    </button>
                 </div>
             </div>
 
             <div class="form-group">
-                <label class="form-label">简短评价</label>
-                <textarea name="comment" rows="3" class="form-textarea" placeholder="写几句感受..."></textarea>
+                <label class="form-label" for="watched-comment">简短评价</label>
+                <textarea id="watched-comment" name="comment" rows="3" class="form-textarea" placeholder="写几句感受..."></textarea>
             </div>
 
             <div class="modal-actions">
@@ -61,8 +61,12 @@
     <script>
         function selectScore(score, el) {
             document.getElementById('rating-input').value = score;
-            document.querySelectorAll('.score-chip').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('#mark-watched-modal .score-chip').forEach(c => {
+                c.classList.remove('active');
+                c.setAttribute('aria-pressed', 'false');
+            });
             el.classList.add('active');
+            el.setAttribute('aria-pressed', 'true');
         }
     </script>
 </div>

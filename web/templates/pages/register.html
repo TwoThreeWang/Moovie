@@ -5,7 +5,7 @@
         <!-- Logo 区域 -->
         <div class="auth-header">
             <a href="/" class="auth-logo">
-                <img src="/static/img/logo.png" alt="" class="auth-logo-icon" width="224" height="227" decoding="async">
+                <img src="/static/img/logo.png" alt="" class="auth-logo-icon" width="224" height="227" decoding="async" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                 <span class="auth-logo-text">Moovie影牛</span>
             </a>
         </div>
@@ -34,7 +34,7 @@
                             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
                             <polyline points="22,6 12,13 2,6"></polyline>
                         </svg>
-                        <input type="email" id="email" name="email" placeholder="请输入邮箱" required autofocus>
+                        <input type="email" id="email" name="email" placeholder="请输入邮箱" autocomplete="email" inputmode="email" required autofocus>
                     </div>
                 </div>
 
@@ -45,7 +45,7 @@
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                         </svg>
-                        <input type="password" id="password" name="password" placeholder="请输入密码" required minlength="6">
+                        <input type="password" id="password" name="password" placeholder="请输入密码" autocomplete="new-password" required minlength="6">
                     </div>
                     <small class="auth-hint">密码至少 6 个字符</small>
                 </div>
@@ -56,7 +56,7 @@
                         <svg class="auth-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                         </svg>
-                        <input type="password" id="confirm_password" name="confirm_password" placeholder="请再次输入密码" required>
+                        <input type="password" id="confirm_password" name="confirm_password" placeholder="请再次输入密码" autocomplete="new-password" required>
                     </div>
                 </div>
 

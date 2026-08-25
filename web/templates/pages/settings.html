@@ -21,6 +21,10 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
                 分享与隐私
             </button>
+            <button class="settings-nav-item" data-section="playback" onclick="switchSection('playback')">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                播放设置
+            </button>
             <button class="settings-nav-item" data-section="security" onclick="switchSection('security')">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                 安全设置
@@ -141,7 +145,7 @@
                         <div class="settings-field settings-field-toggle">
                             <div class="settings-field-text">
                                 <label>公开主页</label>
-                                <p class="settings-field-hint">开启后，任何人都可以通过链接查看你的想看和已看列表</p>
+                                <p class="settings-field-hint">开启后，任何人都可以查看你的想看和已看列表；已看与短评也可能出现在片场</p>
                             </div>
                             <label class="toggle-wrap">
                                 <input type="checkbox" name="is_public" {{ if .User.IsPublic }}checked{{ end }} onchange="this.form.submit()">
@@ -160,6 +164,29 @@
                         </div>
                     </div>
                     {{ end }}
+                </div>
+            </div>
+
+            <!-- ====== 播放设置 ====== -->
+            <div class="settings-section" id="section-playback">
+                <div class="settings-section-header">
+                    <h2 class="settings-section-title">播放设置</h2>
+                    <p class="settings-section-desc">自定义播放体验</p>
+                </div>
+
+                <div class="settings-card-body">
+                    <form action="/dashboard/settings/ad-skip" method="POST">
+                        <div class="settings-field settings-field-toggle">
+                            <div class="settings-field-text">
+                                <label>智能跳过广告</label>
+                                <p class="settings-field-hint">开启后自动跳过已确认广告，并询问高度疑似的广告片段；设置会同步到所有设备</p>
+                            </div>
+                            <label class="toggle-wrap">
+                                <input type="checkbox" name="ad_skip_enabled" {{ if .User.AdSkipEnabled }}checked{{ end }} onchange="this.form.submit()">
+                                <span class="toggle-track {{ if .User.AdSkipEnabled }}on{{ end }}"></span>
+                            </label>
+                        </div>
+                    </form>
                 </div>
             </div>
 
@@ -216,6 +243,12 @@
                         </div>
                     </div>
 
+                    <div class="settings-field settings-field-readonly">
+                        <label>自动同步</label>
+                        <div class="settings-field-value">每 24 小时一次</div>
+                        <p class="settings-field-hint">系统会自动检查豆瓣的新记录，也可以随时手动同步。</p>
+                    </div>
+
                     <div class="settings-field-actions">
                         <form action="/dashboard/settings/douban/sync" method="POST" style="display:inline">
                             <button type="submit" class="btn btn-primary">重新同步</button>
@@ -231,7 +264,7 @@
                             <input type="text" id="douban_user_id" name="douban_user_id"
                                    placeholder="例如：198878447 或 https://www.douban.com/people/198878447/"
                                    required>
-                            <p class="settings-field-hint">只同步公开的观影记录</p>
+                            <p class="settings-field-hint">只同步公开的观影记录；绑定后立即同步，之后每 24 小时自动检查一次</p>
                         </div>
                         <div class="settings-field-actions">
                             <button type="submit" class="btn btn-primary">绑定并同步</button>
@@ -263,7 +296,7 @@
     padding: 8px 12px; border-radius: 8px;
     transition: all 0.2s ease;
 }
-.settings-back-link:hover { color: var(--primary); background: var(--primary-alpha); }
+.settings-back-link:hover { color: var(--primary-text); background: var(--primary-alpha); }
 .settings-page-title { font-size: 1.5rem; font-weight: 800; }
 
 /* 布局 - 用 settings-layout 避免冲突 */
@@ -292,8 +325,8 @@
     transition: all 0.2s ease;
     text-align: left; width: 100%;
 }
-.settings-nav-item:hover { color: var(--primary); background: var(--primary-alpha); }
-.settings-nav-item.active { color: var(--primary); background: var(--primary-alpha); font-weight: 600; }
+.settings-nav-item:hover { color: var(--primary-text); background: var(--primary-alpha); }
+.settings-nav-item.active { color: var(--primary-text); background: var(--primary-alpha); font-weight: 600; }
 .settings-nav-item svg { flex-shrink: 0; }
 .settings-nav-spacer { flex: 1; min-height: 12px; }
 .settings-nav-logout {
@@ -347,7 +380,7 @@
     border: 1px solid var(--border); border-radius: 8px;
     font-size: 0.88rem; background: var(--bg-secondary); color: var(--text);
 }
-.settings-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-alpha); }
+.settings-field input:focus { outline: none; border-color: var(--primary-text); box-shadow: 0 0 0 3px var(--primary-alpha); }
 .settings-field-input { display: flex; gap: 8px; align-items: center; }
 .settings-field-input input { flex: 1; }
 .settings-field-readonly { gap: 4px; }
@@ -375,10 +408,10 @@
     font-size: 0.88rem; font-weight: 600;
     transition: all 0.25s ease; white-space: nowrap;
 }
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-primary:hover { background: var(--primary-light); }
+.btn-primary { background: var(--primary-solid); color: #fff; }
+.btn-primary:hover { background: var(--primary-solid-hover); }
 .btn-ghost { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border); }
-.btn-ghost:hover { color: var(--primary); border-color: var(--primary); }
+.btn-ghost:hover { color: var(--primary-text); border-color: var(--primary-text); }
 .btn-sm { padding: 8px 14px; font-size: 0.8rem; }
 
 /* Toggle */
@@ -440,11 +473,11 @@
 }
 .avatar-emoji-item:hover {
     background: var(--primary-alpha);
-    border-color: var(--primary-light);
+    border-color: var(--primary);
     transform: scale(1.15);
 }
 .avatar-emoji-item.active {
-    border-color: var(--primary);
+    border-color: var(--primary-text);
     background: var(--primary-alpha);
     box-shadow: 0 0 0 2px var(--primary-alpha);
 }
@@ -481,11 +514,11 @@ document.addEventListener('DOMContentLoaded', function() {
     var params = new URLSearchParams(window.location.search);
     var success = params.get('success');
     if (success) {
-        var messages = { 'username': '用户名已更新', 'email': '邮箱已更新', 'password': '密码已更新', 'share': '分享设置已更新', 'douban_bind': '豆瓣已绑定', 'douban_unbind': '豆瓣已解绑', 'douban_sync': '同步任务已创建', 'avatar': '头像已更新' };
+        var messages = { 'username': '用户名已更新', 'email': '邮箱已更新', 'password': '密码已更新', 'share': '分享设置已更新', 'douban_bind': '豆瓣已绑定', 'douban_unbind': '豆瓣已解绑', 'douban_sync': '同步任务已创建', 'avatar': '头像已更新', 'ad_skip': '播放设置已更新' };
         if (messages[success]) showToast(messages[success]);
         if (window.history && window.history.replaceState) window.history.replaceState({}, '', window.location.pathname);
     }
-    var sectionMap = { 'username': 'profile', 'email': 'profile', 'password': 'security', 'share': 'share', 'douban_bind': 'sync', 'douban_unbind': 'sync', 'douban_sync': 'sync' };
+    var sectionMap = { 'username': 'profile', 'email': 'profile', 'password': 'security', 'share': 'share', 'ad_skip': 'playback', 'douban_bind': 'sync', 'douban_unbind': 'sync', 'douban_sync': 'sync' };
     if (sectionMap[success]) switchSection(sectionMap[success]);
 });
 

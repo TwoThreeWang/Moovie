@@ -28,7 +28,7 @@
     </div>
     {{ end }}
     {{ if .HasMore }}
-    <div id="wish-load-more" class="load-more-container" style="grid-column: 1 / -1; display: flex; justify-content: center; padding: 20px 0;">
+    <div id="wish-load-more" class="load-more-container">
         <button class="btn btn-outline"
                 hx-get="/api/htmx/dashboard/wish?page={{ .NextPage }}"
                 hx-target="#wish-load-more"

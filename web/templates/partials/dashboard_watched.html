@@ -4,7 +4,7 @@
         {{ template "dashboard_watched_item.html" . }}
     {{ end }}
     {{ if .HasMore }}
-    <div id="watched-load-more" class="load-more-container" style="display: flex; justify-content: center; padding: 20px 0;">
+    <div id="watched-load-more" class="load-more-container">
         <button class="btn btn-outline"
                 hx-get="/api/htmx/dashboard/watched?page={{ .NextPage }}"
                 hx-target="#watched-load-more"

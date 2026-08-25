@@ -1,106 +1,96 @@
 {{ define "content" }}
-<div class="loading-spinner" style="margin: 0 auto 30px"></div>
+<div class="fetching-page">
+    <!-- htmx 轮询：数据就绪后 HX-Redirect 自动跳转，用户无感知 -->
+    <div hx-get="/api/htmx/movie-ready?douban_id={{ .DoubanID }}"
+         hx-trigger="every 3s"
+         hx-swap="none"></div>
 
-<h2 class="fetching-title">
-  📽️ 正在获取{{ if .Title }}《{{ .Title }}》{{ else }}电影{{ end
-  }}的最新数据，请稍候片刻
-</h2>
+    <div class="fetching-loading" id="fetching-loading">
+        <div class="fetching-dots"><span></span><span></span><span></span></div>
+        <h2>{{ if .Title }}正在加载《{{ .Title }}》{{ else }}正在加载影片资料{{ end }}</h2>
+        <p>首次访问需要获取数据，通常几秒内完成</p>
+    </div>
 
-<p class="fetching-desc">💡 提示：豆瓣电影数据通常需要 3-10 秒加载</p>
+    <div class="fetching-timeout" id="fetching-timeout">
+        <h2>加载时间较长</h2>
+        <p>数据仍在获取中，你可以稍后刷新或先搜索资源</p>
+        <div class="fetching-actions">
+            <a href="/movie/{{ .DoubanID }}{{ if .Title }}?title={{ urlquery .Title }}{{ end }}" class="btn btn-primary">刷新重试</a>
+            {{ if .Title }}<a href="/search?kw={{ urlquery .Title }}" class="btn btn-secondary">搜索《{{ .Title }}》</a>{{ end }}
+        </div>
+    </div>
 
-<div class="fetching-actions">
-  <button onclick="window.location.reload()" class="btn btn-primary">
-    🔄 立即刷新
-  </button>
-
-  <a href="/" class="btn btn-secondary"> 🏠 返回首页 </a>
+    {{ if .Title }}
+    <a class="fetching-alt" href="/search?kw={{ urlquery .Title }}">直接搜索播放资源</a>
+    {{ end }}
 </div>
 
-{{ if .Title }}
-<div class="alternative-option">
-  <h3>不想等待？</h3>
-  <p>您可以先查看搜索结果，稍后再回来</p>
-  <a href="/search?kw={{ .Title }}" class="btn">
-    🔍 查看《{{ .Title }}》的搜索结果
-  </a>
-</div>
-{{ end }}
-
-<div class="tech-details">
-  <p><strong>豆瓣ID:</strong> {{ .DoubanID }}</p>
-  <p><strong>状态:</strong> 正在从豆瓣API获取数据...</p>
-</div>
+<script>
+setTimeout(function() {
+    document.getElementById('fetching-loading').style.display = 'none';
+    document.getElementById('fetching-timeout').style.display = '';
+}, 30000);
+</script>
 
 <style>
-  .fetching-title {
-    font-size: 1.5rem;
-    margin-bottom: 16px;
-    color: var(--text);
-    font-weight: 600;
-  }
-
-  .fetching-desc {
-    font-size: 1rem;
-    color: var(--text-secondary);
-    margin-bottom: 24px;
-  }
-
-  .fetching-actions {
+.fetching-page {
     display: flex;
-    gap: 16px;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
-    margin: 32px 0;
-    flex-wrap: wrap;
-  }
-
-  .alternative-option {
-    margin-top: 40px;
-    padding: 24px;
-    background: var(--bg);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-  }
-
-  .alternative-option h3 {
-    font-size: 1.1rem;
-    margin-bottom: 8px;
+    min-height: 50vh;
+    text-align: center;
+    padding: 40px 20px;
+}
+.fetching-loading h2,
+.fetching-timeout h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
     color: var(--text);
-  }
-
-  .alternative-option p {
+    margin: 20px 0 8px;
+}
+.fetching-loading p,
+.fetching-timeout p {
     font-size: 0.9rem;
     color: var(--text-secondary);
-    margin-bottom: 16px;
-  }
-
-  .tech-details {
+    margin: 0;
+}
+.fetching-timeout {
+    display: none;
+}
+.fetching-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+.fetching-alt {
     margin-top: 32px;
-    padding: 16px;
-    background: var(--bg);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     color: var(--text-muted);
-    border: 1px solid var(--border);
-  }
-
-  .tech-details p {
-    margin: 4px 0;
-  }
-
-  @media (max-width: 768px) {
-    .fetching-title {
-      font-size: 1.2rem;
-    }
-
-    .fetching-actions {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .fetching-actions .btn {
-      width: 100%;
-    }
-  }
+}
+.fetching-alt:hover {
+    color: var(--primary);
+}
+.fetching-dots {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+}
+.fetching-dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--primary);
+    animation: fetching-pulse 1.4s ease-in-out infinite;
+}
+.fetching-dots span:nth-child(2) { animation-delay: 0.2s; }
+.fetching-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes fetching-pulse {
+    0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+}
 </style>
-{{ end }} {{ define "title" }}{{ if .Title }}{{ .Title }}{{ else }}电影{{ end }}
-- 正在加载 - {{ .SiteName }}{{ end }}
+{{ end }}
+{{ define "title" }}{{ if .Title }}{{ .Title }}{{ else }}影片{{ end }} - 正在加载 - {{ .SiteName }}{{ end }}

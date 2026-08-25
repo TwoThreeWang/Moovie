@@ -15,7 +15,7 @@
 {{ end }}
 
 {{ if .HasMore }}
-<div id="personalized-load-more" class="load-more-container" style="grid-column: 1 / -1; display: flex; justify-content: center; padding: 20px 0;">
+<div id="personalized-load-more" class="load-more-container">
     <button class="btn btn-outline"
             hx-get="/api/htmx/foryou?page={{ .NextPage }}"
             hx-target="#personalized-load-more"

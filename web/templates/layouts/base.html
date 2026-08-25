@@ -21,13 +21,13 @@
     <title>{{ .Title }}</title>
     <meta name="description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie 影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
     <meta name="keywords" content="{{ if .Keywords }}{{ .Keywords }}{{ else }}Moovie, 影牛, 影视搜索, 电影搜索, 电视剧搜索, 在线看电影, 聚合搜索, 全网视频, 豆瓣热门{{ end }}">
-    <meta name="robots" content="index, follow">
+    <meta name="robots" content="{{ if .Robots }}{{ .Robots }}{{ else }}index, follow{{ end }}">
     {{ if .Canonical }}<link rel="canonical" href="{{ .Canonical }}">{{ end }}
     <link rel="icon" type="image/png" href="/static/img/moovie-app.png">
 
     <!-- PWA -->
     <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#f60c3e">
+    <meta name="theme-color" content="#cc5656">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -45,12 +45,16 @@
     <meta name="twitter:title" content="{{ .Title }}">
     <meta name="twitter:description" content="{{ if .Description }}{{ .Description }}{{ else }}Moovie影牛是一个全网影视聚合搜索网站，支持一键搜索各大资源平台的电影、电视剧和综艺节目，让你轻松找到想看的影片。{{ end }}">
     {{ if .Cover }}<meta name="twitter:image" content="{{ .Cover }}">{{ end }}
+    {{ range .JSONLD }}<script type="application/ld+json">{{ . }}</script>{{ end }}
 
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=2.8">
+    <link rel="stylesheet" href="/static/css/style.css?v=4.1.1">
 
     <!-- htmx -->
     <script src="/static/js/htmx.min.js?v=0.1" defer></script>
+    <!-- csrf-runtime:start -->
+    <script src="/static/js/csrf.js?v=0.1"></script>
+    <!-- csrf-runtime:end -->
 
     <!-- 统计 -->
     <script async defer src="https://pingoo.c2v2.com/pingoo.js" site-id="4"></script>
@@ -91,7 +95,7 @@
     });
     </script>
 </head>
-<body hx-ext="preload">
+<body hx-ext="preload" data-user-id="{{ if .UserInfo }}{{ .UserInfo.ID }}{{ end }}">
     <!-- htmx 进度条 -->
     <div class="htmx-progress" id="htmx-progress">
         <div class="htmx-progress-bar"></div>
@@ -105,7 +109,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <a href="/" class="logo">
-                    <img src="/static/img/logo.png" alt="" class="logo-icon" width="224" height="227" decoding="async">
+                    <img src="/static/img/logo.png" alt="" class="logo-icon" width="224" height="227" decoding="async" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                     <span class="logo-text">Moovie</span>
                 </a>
                 <p class="logo-subtitle">发现你的下一部电影</p>
@@ -139,14 +143,14 @@
                     </svg>
                     <span>为你推荐</span>
                 </a>
-                <a href="/square" class="nav-item {{ if eq .ActiveMenu "square" }}active{{ end }}">
+                <a href="/cinema" class="nav-item {{ if eq .ActiveMenu "cinema" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                         <circle cx="9" cy="7" r="4"></circle>
                         <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
                         <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                     </svg>
-                    <span>广场</span>
+                    <span>片场</span>
                 </a>
                 <a href="/player" class="nav-item {{ if eq .ActiveMenu "player" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -196,7 +200,7 @@
                     </svg>
                     <span>广告合作</span>
                 </a>
-                <button class="nav-item theme-toggle" onclick="toggleTheme()" title="切换主题" style="width: 100%; text-align: left;">
+                <button type="button" class="nav-item theme-toggle" onclick="toggleTheme()" title="切换主题" aria-label="切换外观" style="width: 100%; text-align: left;">
                     <svg class="nav-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="5"></circle>
                         <line x1="12" y1="1" x2="12" y2="3"></line>
@@ -249,31 +253,31 @@
         </aside>
 
         <!-- 遮罩层（移动端） -->
-        <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+        <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar(false)" aria-hidden="true"></div>
 
         <!-- 主内容区 -->
         <main class="main-content">
             <!-- 移动端顶栏 -->
             <header class="mobile-header">
-                <button class="hamburger" onclick="toggleSidebar()">
+                <button type="button" class="hamburger" id="mobile-menu-button" onclick="toggleSidebar()" aria-label="打开导航菜单" aria-controls="sidebar" aria-expanded="false">
                     <span></span>
                     <span></span>
                     <span></span>
                 </button>
                 <a href="/" class="mobile-logo">
-                    <img src="/static/img/logo.png" alt="" class="mobile-logo-icon" width="224" height="227" decoding="async">
+                    <img src="/static/img/logo.png" alt="" class="mobile-logo-icon" width="224" height="227" decoding="async" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                     <span>Moovie 影牛</span>
                 </a>
                 <div class="mobile-header-actions">
                     {{ if .UserInfo }}
-                    <a href="/dashboard" class="mobile-user" title="{{ .UserInfo.Username }}">
+                    <a href="/dashboard" class="mobile-user" title="{{ .UserInfo.Username }}" aria-label="进入 {{ .UserInfo.Username }} 的个人中心">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                             <circle cx="12" cy="7" r="4"></circle>
                         </svg>
                     </a>
                     {{ else }}
-                    <a href="/auth/login" class="mobile-user">
+                    <a href="/auth/login" class="mobile-user" aria-label="登录或注册">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
                             <polyline points="10 17 15 12 10 7"></polyline>
@@ -281,7 +285,7 @@
                         </svg>
                     </a>
                     {{ end }}
-                    <button class="mobile-theme-toggle theme-toggle" onclick="toggleTheme()">
+                    <button type="button" class="mobile-theme-toggle theme-toggle" onclick="toggleTheme()" aria-label="切换外观">
                         <svg class="sun-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
                         <svg class="moon-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
                     </button>
@@ -306,7 +310,7 @@
                         <a href="/sitemap.xml">网站地图</a>
                     </div>
                     <p class="footer-copyright">
-                        © 2026 Moovie 影牛(v3.4.0). 本站不存储任何视频文件，仅提供搜索服务。
+                        © 2026 Moovie 影牛(v4.0.4). 本站不存储任何视频文件，仅提供搜索服务。
                     </p>
                     <p class="footer-also">
                         除了这个项目，我还在做一些方向相近的实验：<a href="https://zhulink.vip/" target="_blank" rel="noopener">竹林</a>（去算法社区）· <a href="https://pockoo.app/" target="_blank" rel="noopener">Pockoo</a>（智能导航）
@@ -315,12 +319,18 @@
     </div>
 
     <!-- 应用脚本 -->
-    <script src="/static/js/app.js?v=0.4" defer></script>
+    <script src="/static/js/app.js?v=0.6" defer></script>
     <script>
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
-            document.getElementById('sidebarOverlay').classList.toggle('open');
-            document.body.classList.toggle('sidebar-open');
+        function toggleSidebar(forceOpen) {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const menuButton = document.getElementById('mobile-menu-button');
+            const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !sidebar.classList.contains('open');
+            sidebar.classList.toggle('open', shouldOpen);
+            overlay.classList.toggle('open', shouldOpen);
+            document.body.classList.toggle('sidebar-open', shouldOpen);
+            menuButton.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+            menuButton.setAttribute('aria-label', shouldOpen ? '关闭导航菜单' : '打开导航菜单');
         }
 
         function toggleTheme() {
@@ -343,10 +353,21 @@
                 suns.forEach(s => s.style.display = 'block');
                 moons.forEach(m => m.style.display = 'none');
             }
+            document.querySelectorAll('.theme-toggle').forEach(button => {
+                button.setAttribute('aria-label', theme === 'dark' ? '切换为浅色外观' : '切换为深色外观');
+                button.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+            });
         }
 
         // 初始化图标状态
         updateThemeIcons();
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && document.getElementById('sidebar').classList.contains('open')) {
+                toggleSidebar(false);
+                document.getElementById('mobile-menu-button').focus();
+            }
+        });
 
         // 注册 Service Worker
         if ('serviceWorker' in navigator) {

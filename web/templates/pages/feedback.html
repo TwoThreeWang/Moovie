@@ -1,9 +1,9 @@
 
 {{ define "content" }}
-<h1 class="page-title">📝 反馈建议</h1>
+<h1 class="page-title">反馈建议</h1>
 <p class="page-subtitle">发现问题或有想看的影片？告诉我们！</p>
 
-<form class="feedback-form" hx-post="/api/feedback" hx-swap="outerHTML">
+<form class="feedback-form" hx-post="/api/feedback" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']">
     <div class="form-group">
         <label for="type">反馈类型</label>
         <select id="type" name="type" required>
@@ -42,35 +42,57 @@
                 hx-get="/api/htmx/feedback-list?page=1"
                 hx-target="#feedback-list-container"
                 hx-swap="innerHTML"
+                hx-indicator="#feedback-list-loading"
+                hx-disabled-elt="this"
                 onclick="setActiveFilter(this)">全部</button>
         <button class="filter-btn"
                 hx-get="/api/htmx/feedback-list?page=1&type=bug"
                 hx-target="#feedback-list-container"
                 hx-swap="innerHTML"
+                hx-indicator="#feedback-list-loading"
+                hx-disabled-elt="this"
                 onclick="setActiveFilter(this)">Bug 报告</button>
         <button class="filter-btn"
                 hx-get="/api/htmx/feedback-list?page=1&type=request"
                 hx-target="#feedback-list-container"
                 hx-swap="innerHTML"
+                hx-indicator="#feedback-list-loading"
+                hx-disabled-elt="this"
                 onclick="setActiveFilter(this)">求片</button>
         <button class="filter-btn"
                 hx-get="/api/htmx/feedback-list?page=1&type=suggestion"
                 hx-target="#feedback-list-container"
                 hx-swap="innerHTML"
+                hx-indicator="#feedback-list-loading"
+                hx-disabled-elt="this"
                 onclick="setActiveFilter(this)">功能建议</button>
         <button class="filter-btn"
                 hx-get="/api/htmx/feedback-list?page=1&type=dmca"
                 hx-target="#feedback-list-container"
                 hx-swap="innerHTML"
+                hx-indicator="#feedback-list-loading"
+                hx-disabled-elt="this"
                 onclick="setActiveFilter(this)">版权投诉</button>
     </div>
-    <div id="feedback-list-container"
-         hx-get="/api/htmx/feedback-list?page=1"
-         hx-trigger="load"
-         hx-swap="innerHTML">
-        <div class="feedback-loading">
-            <div class="loading-spinner"></div>
-            <span>加载中...</span>
+    <div class="htmx-panel-shell htmx-panel-shell-list">
+        <div id="feedback-list-container"
+             hx-get="/api/htmx/feedback-list?page=1"
+             hx-trigger="load"
+             hx-swap="innerHTML"
+             hx-indicator="#feedback-list-loading">
+            <div class="htmx-skeleton-list" aria-hidden="true">
+                <div class="htmx-skeleton-row"></div>
+                <div class="htmx-skeleton-row"></div>
+                <div class="htmx-skeleton-row"></div>
+            </div>
+        </div>
+        <div id="feedback-list-loading" class="htmx-panel-indicator htmx-indicator" role="status" aria-live="polite">
+            <div class="htmx-skeleton-list" aria-hidden="true">
+                <div class="htmx-skeleton-row"></div>
+                <div class="htmx-skeleton-row"></div>
+                <div class="htmx-skeleton-row"></div>
+            </div>
+            <span class="htmx-loading-label">加载中...</span>
         </div>
     </div>
 </section>
@@ -82,4 +104,3 @@ function setActiveFilter(btn) {
 }
 </script>
 {{ end }}
-

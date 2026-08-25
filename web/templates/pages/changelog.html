@@ -4,6 +4,329 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v4.0.4 -->
+    <section class="changelog-item">
+      <div class="version-badge">v4.0.4 <small>2026-08-25</small></div>
+      <div class="changelog-details">
+        <p>
+          <strong>观看记录同步精简与性能优化。</strong>移除冗余的同步事件账本，简化观看记录的删除与同步链路，同时优化相似影片查询性能和前端加载体验。
+        </p>
+        <h3>🚀 性能优化 (Performance)</h3>
+        <ul>
+          <li>
+            <strong>相似影片查询提速</strong>：详情页「喜欢这部剧集的人也喜欢」接口不再拉取向量文本和评论等大字段，仅查询卡片展示所需的轻量列，减少数据传输量。
+          </li>
+        </ul>
+        <h3>🛠️ 修复 (Fixed)</h3>
+        <ul>
+          <li>
+            <strong>修复观看记录删除后重新出现</strong>：删除接口返回 200 但刷新后记录仍在，原因是删除路径重新解析了媒体单元 ID 导致插入新行而非删除原行，现改为直接按记录 ID 硬删除。
+          </li>
+          <li>
+            <strong>修复 HTMX 加载动画不显示</strong>：播放记录和相似影片区域的加载 loading 因 CSS 选择器层级不匹配而无法触发，已修正选择器。
+          </li>
+        </ul>
+        <h3>🧹 精简 (Simplified)</h3>
+        <ul>
+          <li>
+            <strong>移除同步事件账本</strong>：删除 <code>history_sync_events</code> 表及全部相关代码，客户端每次打开页面直接从数据库获取最新进度，不再维护增量同步版本链。
+          </li>
+          <li>
+            <strong>观看记录改为硬删除</strong>：删除记录时直接从数据库移除行，不再保留软删除标记，减少冗余数据。
+          </li>
+          <li>
+            <strong>缩短任务记录保留期</strong>：后台任务的完成和失败记录从 30/90 天缩短为 3 天，减少数据库存储。
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- v4.0.3 -->
+    <section class="changelog-item">
+      <div class="version-badge">v4.0.3 <small>2026-08-24</small></div>
+      <div class="changelog-details">
+        <p>
+          <strong>M3U8 广告指纹众包跳过。</strong>新增基于 M3U8 结构分析的广告检测与众包跳过系统，同时完善向量生成链路和过载保护页面。
+        </p>
+        <h3>✨ 新功能 (Features)</h3>
+        <ul>
+          <li>
+            <strong>智能跳过广告</strong>：前端解析 M3U8 播放列表的分片结构，通过 DISCONTINUITY 标记、加密方式变化、路径差异和时长特征识别疑似广告片段，为每个候选生成 SHA-256 指纹。已达到众包共识（≥5 票确认、确认率 ≥80%）的广告在 HLS 加载时直接注入 <code>EXT-X-GAP</code> 跳过，未确认的以浮层提示用户「是广告，跳过 / 不是」，投票结果全局共享。功能仅对主动开启的登录用户生效，所有异常失败开放，不影响正常播放。
+          </li>
+          <li>
+            <strong>播放设置页</strong>：用户设置新增「播放设置」分区，提供智能跳过广告的全局开关，设置保存到用户表、全端同步。播放页和观看页的操作栏同步显示开关，支持 HTMX 即时切换。
+          </li>
+          <li>
+            <strong>向量补全后台调度</strong>：新增 <code>ScheduleEmbeddingBackfills</code>，由调度器每轮自动选取元数据完整但尚未生成向量的影片入队（优先级 -10），替代原来详情页访问时的即时入队逻辑；向量任务现在严格等待 TMDB 合并完成后才触发，避免半成品元数据生成低质量向量。
+          </li>
+        </ul>
+        <h3>🛠️ 修复 (Fixed)</h3>
+        <ul>
+          <li>
+            <strong>修复播放简介 HTML 泄漏</strong>：资源站返回的影片简介可能包含 HTML 标签，播放页现在会剥离所有标签并反转义实体，避免页面显示原始 HTML 或注入风险。
+          </li>
+          <li>
+            <strong>hls.js 版本锁定</strong>：将 hls.js 从 <code>@latest</code> 锁定到 <code>@1.5.18</code>，避免不可控的版本升级引入播放兼容问题。
+          </li>
+        </ul>
+        <h3>💅 界面优化 (UI)</h3>
+        <ul>
+          <li>
+            <strong>过载保护页面重设计</strong>：高并发触发 503 时不再返回纯文本，改为展示完整的品牌页面（带加载动画和刷新重试按钮），HTMX 局部请求则返回简洁的嵌入式提示卡片。
+          </li>
+          <li>
+            <strong>播放页操作栏自适应</strong>：操作栏改为 <code>flex-wrap</code> 布局，按钮在窄屏下自动换行而不溢出。
+          </li>
+        </ul>
+        <h3>🧹 精简 (Simplified)</h3>
+        <ul>
+          <li>
+            <strong>移除详情页即时向量入队</strong>：详情页不再在访问时检查向量是否缺失并排即时任务，改由后台调度统一补全，减少热路径的数据库查询和并发争用。
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- v4.0.2 -->
+    <section class="changelog-item">
+      <div class="version-badge">v4.0.2 <small>2026-08-23</small></div>
+      <div class="changelog-details">
+        <p>
+          <strong>页面加载速度专项优化。</strong>聚焦影片详情页和播放页的首屏速度，把非关键数据全部改为页面渲染后异步加载，同时修复搜索空结果被长时间缓存的问题。
+        </p>
+        <h3>🚀 性能优化 (Performance)</h3>
+        <ul>
+          <li>
+            <strong>影片详情页延迟加载</strong>：初始渲染只保留电影元数据（标题、海报、简介、评分），播放按钮、想看/看过状态、社交统计、在线资源、系列季度导航、播出日程和相似推荐全部改为 htmx 异步加载，首屏从 9 次串行查询降至 1 次。
+          </li>
+          <li>
+            <strong>播放页启动提速</strong>：播放器初始化所需的播放地址保持同步获取，用户看过状态和播出日程改为页面渲染后异步填充，不再阻塞播放器启动；版权检查提前到候选解析之前，命中时直接跳转不做后续昂贵查询；影片标题查找延迟到错误路径才执行，正常播放不再多一次数据库查询。
+          </li>
+        </ul>
+        <h3>✨ 新功能 (Features)</h3>
+        <ul>
+          <li>
+            <strong>NSFW 海报模糊</strong>：新增后台 NSFW 关键词管理，首页「继续观看」区域自动模糊匹配关键词的海报，点击可解除模糊。
+          </li>
+          <li>
+            <strong>统一播放跳转</strong>：全站播放按钮统一判断逻辑，自动选择直连播放或选集页面；今日更新页新增资源未同步提示。
+          </li>
+          <li>
+            <strong>任务调度优先级</strong>：Worker 任务支持优先级配置，推荐刷新与热门快照设为最高优先级；已完成采集的影片不再重复触发刷新。
+          </li>
+        </ul>
+        <h3>🛠️ 修复 (Fixed)</h3>
+        <ul>
+          <li>
+            <strong>修复搜索空结果缓存</strong>：搜索结果为空时不再写入缓存，避免实际有数据的影片在缓存有效期内（3 小时）持续显示「未找到相关资源」。修复涉及首次搜索和后台异步刷新两条路径。
+          </li>
+        </ul>
+        <h3>💅 界面优化 (UI)</h3>
+        <ul>
+          <li>
+            <strong>数据抓取等待页重设计</strong>：首次访问未收录影片时，页面自动每 3 秒轮询数据状态，就绪后无感知跳转到详情页，不再需要手动刷新；30 秒超时后显示重试和搜索入口。
+          </li>
+          <li>
+            <strong>想看/看过按钮选中态优化</strong>：收紧按钮内间距，修复选中状态下「已想看」「已看过」三字文字撑出按钮边界的问题。
+          </li>
+          <li>
+            <strong>全站主题配色统一</strong>：亮色与暗色模式统一采用更柔和的品牌红 <code>#cc5656</code>，同步调整背景、文字、边框和状态色；暗色背景由接近纯黑改为带暖调的深灰，减少大面积黑色带来的压迫感。
+          </li>
+          <li>
+            <strong>实心按钮颜色优化</strong>：主操作按钮改用更明亮的 <code>#c24b4f</code>，悬停状态使用 <code>#b64047</code>，在贴近品牌色的同时保持白色文字清晰可读。
+          </li>
+          <li>
+            <strong>静态内容页排版统一</strong>：重新整理关于本站、广告合作、隐私政策、服务协议、DMCA、更新记录和 TVBox 配置指南的正文宽度、标题层级、章节间距、链接、列表与图片样式；修复步骤列表显示为圆点和更新记录暗色文字对比度不足的问题。
+          </li>
+        </ul>
+        <h3>🧹 精简 (Simplified)</h3>
+        <ul>
+          <li>
+            <strong>移除详情页相似推荐缓存</strong>：详情页不再维护独立的相似影片缓存和 singleflight，改为复用推荐模块已有的 htmx 接口，减少重复代码和内存占用。
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- v4.0.1 -->
+    <section class="changelog-item">
+      <div class="version-badge">v4.0.1 <small>2026-08-22</small></div>
+      <div class="changelog-details">
+        <p>
+          <strong>4.0 上线后的首个稳定性更新。</strong>这一版集中处理真实运行中暴露出的任务堆积、资源关联、跨设备进度和搜索性能问题，同时移除切流完成后不再需要的代码与数据结构，让系统更轻、更稳。
+        </p>
+        <h3>🚀 性能与稳定性 (Performance &amp; Stability)</h3>
+        <ul>
+          <li>
+            <strong>「为你推荐」改为快照读取</strong>：页面不再现场执行多轮向量查询；首次访问先展示已有热门榜，快照缺失或过期时由 Worker 去重刷新，过期结果可继续使用，避免高峰期集中重算。
+          </li>
+          <li>
+            <strong>热门发现统一快照读取</strong>：「热门好片」不再因条数不足现场回源补齐，「本站热播」改由 Worker 定时生成快照，页面请求不再实时扫描播放事件；快照过期时自动降级展示旧数据，避免页面空白。
+          </li>
+          <li>
+            <strong>搜索结果更清楚</strong>：豆瓣规范资料与播放资源合并为同一组卡片，有资源时显示已匹配数量和「立即播放」；未确认影视归属的资源保留地区、类型、演员、速度和更新状态。
+          </li>
+          <li>
+            <strong>搜索缓存即时返回</strong>：搜索结果缓存过期时先返回旧结果、后台异步刷新，重复搜索不再等待资源站响应；热搜榜刷新时自动预热榜上关键词的搜索缓存，用户点击热搜词可直接命中。
+          </li>
+          <li>
+            <strong>资料刷新更克制</strong>：豆瓣主资料、短评、TMDB 剧照、语义向量在数据已完整时一律跳过，不再重复采集；资料完整的影片退出定时轮转，不完整的每天重试；详情页自动任务增加冷却时间，迁移影片的刷新日期分批错峰，避免访问流量反复制造相同任务。
+          </li>
+          <li>
+            <strong>Worker 任务优先级分级</strong>：推荐和热门快照最高优先级（10），豆瓣主资料和画质刷新中等优先级（5），短评、剧照、向量等锦上添花任务保持默认，避免批量任务堆积时饿死用户可感知的刷新。
+          </li>
+          <li>
+            <strong>热门与热播快照改为每日刷新</strong>：热门好片和本站热播快照从频繁间隔改为每天刷新一次，快照有效期 48 小时，减少无谓的重复计算。
+          </li>
+          <li>
+            <strong>Worker 限流不再误伤任务</strong>：上游限流拥有独立计数，不再消耗普通失败的重试预算；队列增加终态任务冷却索引，降低上游异常时的重复请求压力。
+          </li>
+          <li>
+            <strong>搜索热路径提速</strong>：为片名模糊搜索、豆瓣资源匹配和播放质量查询补齐索引，数据增长后仍能保持稳定响应。
+          </li>
+          <li>
+            <strong>后台刷新有界执行</strong>：短评、剧照等机会型刷新统一受并发数和超时保护，繁忙时优先保障正在访问页面的用户。
+          </li>
+        </ul>
+        <h3>🛠️ 修复 (Fixed)</h3>
+        <ul>
+          <li>
+            <strong>修复「有资源却打不开」</strong>：补齐并持续维护播放候选与影片的关联，避免 <code>/watch</code> 找不到已存在的资源后跳回搜索页。
+          </li>
+          <li>
+            <strong>修复跨设备进度冲突</strong>：同步以设备上报的实际活动时间判断新旧操作，幂等重试不再产生无效版本空洞，离线设备的旧进度不会覆盖较新的观看记录。
+          </li>
+          <li>
+            <strong>修复向量资料重复生成</strong>：影片读取现在会正确带回已保存的向量，避免重复调用 AI 与向量服务。
+          </li>
+          <li>
+            <strong>完善 IMDb / TMDB 补全链路</strong>：IMDb 映射拆为批量查询与兜底查询两阶段，已查无结果的影片不会一直阻塞后续任务；已有 TMDB 映射但剧照为空的影片仍会继续补图。
+          </li>
+        </ul>
+        <h3>💅 界面优化 (UI)</h3>
+        <ul>
+          <li>
+            <strong>搜索结果分区更名</strong>：「影片资料」改为「媒体库收录」，不再暗示数据一定来自豆瓣。
+          </li>
+          <li>
+            <strong>管理后台全宽布局</strong>：后台页面不再限制 1200px 最大宽度，表格和列表在宽屏上有更多空间。
+          </li>
+          <li>
+            <strong>用户列表倒序</strong>：管理后台用户列表按注册时间倒序排列，最新注册的用户显示在最前面。
+          </li>
+        </ul>
+        <h3>🧹 精简 (Simplified)</h3>
+        <ul>
+          <li>
+            <strong>收起一次性迁移路径</strong>：4.0 切流完成后，移除旧库迁移、旧站兼容检查和无数据库内存回退等不再使用的生产路径，只保留日常运行与发布仍需要的命令。
+          </li>
+          <li>
+            <strong>精简数据库结构</strong>：移除没有读取方或未实际生效的匹配审计、热词快照、资源生命周期等结构，并将播放质量汇总直接收敛到资源记录，减少重复表与重复状态。
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- v4.0.0 -->
+    <section class="changelog-item changelog-item--major">
+      <div class="version-badge">v4.0.0 <small>2026-08-16</small></div>
+      <div class="changelog-details">
+        <p class="major-summary">
+          <strong>Moovie 全新架构版本。</strong>这一版不是在旧系统上继续叠加功能，而是把搜索、影视资料、播放、用户、观影记录、社区和后台能力整体重写成一套可以独立运行、测试和发布的应用：Web 与后台任务拆成两个进程，影视身份、资源记录和播放候选分层保存，数据库结构完全重建。带来更稳的播放体验和更强的抗压能力，同时也包含若干不可回退的破坏性变更，升级前请先阅读下方「破坏性变更」。
+        </p>
+        <h3>💥 破坏性变更 (Breaking Changes)</h3>
+        <ul>
+          <li>
+            <strong>数据库结构完全重建，迁移单向不可回滚</strong>：新增 37 个 schema migration，<code>media</code>、<code>media_units</code>、<code>user_movies</code>、<code>playback_positions</code> 成为唯一的运行时数据源。<code>watch_histories</code>、<code>movies</code>、<code>resource_episodes</code> 等旧表只出现在数据迁移、schema migration 和发布审计等过渡路径中。系统不提供从新库回迁旧库的脚本，回退只能回退应用版本，不能回退数据。
+          </li>
+          <li>
+            <strong>Web 与 Worker 拆分为两个独立进程</strong>：后台任务不再随 Web 进程启动，生产环境强制 <code>JOBS_IN_WEB=false</code>。部署时必须同时运行 <code>cmd/worker</code>，否则豆瓣同步、资料刷新、向量生成、热门快照与运维告警都不会执行。
+          </li>
+          <li>
+            <strong>会话密钥必须沿用旧值</strong>：新旧环境的 <code>APP_SECRET</code> 不一致会导致全站登录 Cookie 失效，数据迁移脚本会在写库前直接阻断，需先让新系统复用旧密钥。
+          </li>
+          <li>
+            <strong>统一后台任务队列，旧任务表删除</strong>：原先并存的两套任务记录合并为单一的 <code>worker_jobs</code>，支持优先级、去重、重试上限、租约锁与进度上报；迁移完成后旧表直接删除，不保留双写与兼容读取。
+          </li>
+          <li>
+            <strong>不再保留旧表双读双写与已废弃的客户端 API</strong>：运行时不读取任何旧表，对外暴露的路由收敛为一份显式契约清单，未列入契约的历史接口一律下线。
+          </li>
+        </ul>
+        <h3>🗑️ 移除 (Removed)</h3>
+        <ul>
+          <li>
+            <strong>「全站广场」下线</strong>：<code>/square</code> 及其 <code>/api/htmx/square/activity</code>、<code>/api/htmx/square/leaderboard</code> 接口全部移除，公开动态流与活跃度排行榜的能力由全新的「片场」页面承接。
+          </li>
+        </ul>
+        <h3>✨ 新增 (Added)</h3>
+        <ul>
+          <li>
+            <strong>片场</strong>：新增 <code>/cinema</code> 页面，汇总本周影单、精选短评与影友推荐，替代原广场页成为站内社区入口。
+          </li>
+          <li>
+            <strong>媒体统一身份体系</strong>：把「同一部作品」「这部剧有哪些集」「哪个站提供了它」「这一集播哪条线路」拆成 <code>media</code>、<code>media_units</code>、<code>vod_items</code>、<code>resource_episode_candidates</code> 四层，从根本上解决换源时串片、串集的问题。
+          </li>
+          <li>
+            <strong>多线路播放与受限故障切换</strong>：同一集可保留多条 Provider 线路并按质量排序，支持手动换源；自动故障切换严格限定在同一媒体单元、同一集范围内，不会把用户切到别的影片或别的集数。
+          </li>
+          <li>
+            <strong>追剧更新时间</strong>：剧集单元携带 TMDB 官方播出日期，未完结剧集在详情页和播放页展示下一集播出时间，首页展示在看剧集的今日更新。
+          </li>
+          <li>
+            <strong>观看页直达</strong>：新增 <code>/watch/:douban_id</code>，可从豆瓣影片直接进入播放并自动解析可用资源；播放进度会区分 <code>play</code> 与 <code>watch</code> 两种入口来源。
+          </li>
+          <li>
+            <strong>服务端播放进度</strong>：<code>playback_positions</code> 成为唯一进度来源，配合 <code>/api/v2/history/sync</code> 实现多设备续播同步。
+          </li>
+          <li>
+            <strong>播放质量观测与热门降权</strong>：播放器通过 <code>/api/v2/playback/events</code> 上报播放事件，后端按时间分桶统计成功率；近 7 天成功率过低的影片会在热门排序中自动降权。
+          </li>
+          <li>
+            <strong>热门快照</strong>：热门榜改为多来源融合（豆瓣、站内行为、TMDB）后按 RRF 排名合并，快照在单个事务内整批发布，附带过期时间与实时回退兜底，避免榜单半成品对外可见。
+          </li>
+          <li>
+            <strong>后台任务管理页</strong>：新增 <code>/admin/jobs</code>，可按状态筛选查看统一队列，游标分页每页 50 条；运维任务每天分批清理终态记录（已完成保留 30 天、失败保留 90 天，每轮最多删除 1,000 条），等待中与执行中的任务永不清理。
+          </li>
+          <li>
+            <strong>媒体匹配人工复核</strong>：新增 <code>/admin/matches</code> 复核页与对应管理接口，可对自动匹配存疑的资源逐条确认或驳回，并留下审计记录。
+          </li>
+          <li>
+            <strong>数据生命周期操作</strong>：后台新增数据退役预览、退役执行与恢复操作，危险操作前可先看到影响范围。
+          </li>
+          <li>
+            <strong>运维可观测性</strong>：新增 <code>/api/v2/admin/metrics</code> 指标接口；健康检查拆分为 <code>/health</code>（存活）与 <code>/ready</code>（就绪，带 2 秒超时的依赖探测），避免依赖未就绪时被误判为存活。
+          </li>
+          <li>
+            <strong>发布与压测工具链</strong>：新增独立的结构迁移、数据迁移、路由兼容检查、站点地图检查、负载检查、突发流量检查和发布审计命令，发布前的验证不再依赖人工点检。
+          </li>
+        </ul>
+        <h3>🛠️ 变更/优化 (Changed/Improved)</h3>
+        <ul>
+          <li>
+            <strong>按业务边界重新分层</strong>：原先按技术角色划分的 8 个目录重组为 26 个业务模块，每个模块内 Handler、Service、Store 接口、PostgreSQL 实现与内存实现职责固定，不连数据库也能运行和测试。
+          </li>
+          <li>
+            <strong>资源上限治理</strong>：HTTP 在途请求、重请求、图片代理、数据库连接和单个外部主机的连接数分别设置明确上限，并共用一个有界 HTTP 客户端，避免高峰期外部抓取拖垮用户请求。
+          </li>
+          <li>
+            <strong>过载保护中间件</strong>：按路径分类做并发准入，播放相关路径单独放行策略，突发流量下优先保证正在观看的用户不被拒绝。
+          </li>
+          <li>
+            <strong>进程内有界缓存</strong>：搜索、相似内容与推荐结果使用带上限的缓存，替代原先容易无界增长的缓存方式，降低 OOM 风险。
+          </li>
+          <li>
+            <strong>剧集按季精确同步</strong>：豆瓣按季建页而 TMDB 的剧集 ID 指向整部剧，旧同步会把所有季的播出日期写进同一个季度页面；新同步按标题季数只写目标季度，并在迁移中撤销历史错季数据。
+          </li>
+          <li>
+            <strong>SEO 与用户习惯保持不变</strong>：公开页面路径与站点地图与旧版保持一致，并由专门的兼容检查工具在发布前逐条比对，收藏夹与搜索引擎收录不受影响。
+          </li>
+          <li>
+            <strong>中间件统一装配</strong>：请求 ID、访问日志、安全响应头、请求超时、CSRF 校验、过载保护与登录态解析集中在同一处配置，行为在全站保持一致。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v3.4.0 -->
     <section class="changelog-item">
       <div class="version-badge">v3.4.0 <small>2026-07-26</small></div>
@@ -962,57 +1285,4 @@
   </div>
 </div>
 
-<style>
-  .changelog-container {
-    margin-top: 2rem;
-    position: relative;
-  }
-
-  .changelog-item {
-    margin-bottom: 2.5rem;
-    padding-left: 20px;
-    border-left: 2px solid var(--primary-color, #ff4d4d);
-    position: relative;
-  }
-
-  .changelog-item::before {
-    content: "";
-    position: absolute;
-    left: -7px;
-    top: 5px;
-    width: 12px;
-    height: 12px;
-    background: var(--primary-color, #ff4d4d);
-    border-radius: 50%;
-  }
-
-  .version-badge {
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: var(--primary-color, #ff4d4d);
-    margin-bottom: 0.5rem;
-  }
-
-  .version-badge small {
-    font-size: 0.9rem;
-    color: var(--text-muted, #888);
-    margin-left: 10px;
-    font-weight: normal;
-  }
-
-  .changelog-details h3 {
-    font-size: 1.1rem;
-    margin: 1rem 0 0.5rem 0;
-  }
-
-  .changelog-details ul {
-    margin: 0;
-    padding-left: 1.5rem;
-  }
-
-  .changelog-details li {
-    margin-bottom: 0.3rem;
-    color: var(--text-color-secondary, #666);
-  }
-</style>
 {{ end }}

@@ -1,7 +1,7 @@
 {{ define "content" }}
 <div class="foryou-page">
     <div class="foryou-header">
-        <h1 class="page-title">✨ 为你推荐</h1>
+        <h1 class="page-title">为你推荐</h1>
         <p class="page-desc">基于你的观影历史和收藏，为你精选精准的内容</p>
     </div>
 
@@ -26,11 +26,11 @@
         </div>
     </div>
 
-    <center>
+    <div class="ad-slot">
     <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>
     <ins class="eas6a97888e20" data-zoneid="5863824"></ins>
     <script>(AdProvider = window.AdProvider || []).push({"serve": {}});</script>
-    </center>
+    </div>
 </div>
 
 <style>
@@ -43,16 +43,14 @@
     margin-bottom: 32px;
 }
 
-.page-title {
+.foryou-page .page-title {
     font-size: 2rem;
     font-weight: 800;
     margin-bottom: 8px;
-    background: linear-gradient(90deg, var(--primary), #a855f7);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text);
 }
 
-.page-desc {
+.foryou-page .page-desc {
     font-size: 0.95rem;
     color: var(--text-muted);
 }
@@ -110,9 +108,6 @@
 }
 
 @media (max-width: 768px) {
-    .foryou-page {
-        padding: 10px 16px;
-    }
     .skeleton-hero {
         height: 250px;
     }

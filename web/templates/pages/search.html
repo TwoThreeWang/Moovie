@@ -17,71 +17,29 @@
     <p class="search-result-hint">「{{ .Keyword }}」的搜索结果</p>
 </div>
 
-<!-- 豆瓣电影卡片 -->
-<div id="douban-card-container"
-     hx-get="/api/htmx/douban-card?kw={{ urlquery .Keyword }}"
-     hx-trigger="load"
-     hx-swap="outerHTML">
-</div>
-
 <div id="search-results-container"
-     hx-get="/api/htmx/search?kw={{ urlquery .Keyword }}{{ if .Bypass }}&bypass=1{{ end }}"
-     hx-trigger="load"
+	 hx-get="/api/htmx/search?q={{ urlquery .Keyword }}{{ if .Bypass }}&bypass=1{{ end }}"
+	 hx-trigger="load"
      hx-indicator="#search-loading">
     <div id="search-loading" class="htmx-indicator search-loading-state">
-        <div class="loading-spinner"></div>
-        <p>正在搜索全网资源，请稍候...</p>
+        <div class="search-loading-spinner" aria-hidden="true"></div>
+        <p>正在匹配影片与播放资源...</p>
     </div>
 </div>
-<center>
+<br>
+<div class="ad-slot">
 <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>
  <ins class="eas6a97888e20" data-zoneid="5863824"></ins>
  <script>(AdProvider = window.AdProvider || []).push({"serve": {}});</script>
-</center>
-<style>
-.search-loading-state {
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-    color: var(--text-muted);
-}
-/* HTMX 给 indicator 元素自身加 htmx-request 类 */
-.search-loading-state.htmx-request {
-    display: flex;
-}
-.loading-spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid rgba(255,255,255,.1);
-    border-radius: 50%;
-    border-top-color: var(--primary-color);
-    animation: spin 1s ease-in-out infinite;
-    margin-bottom: 1rem;
-}
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-</style>
+</div>
 
 <script>
 // 记录搜索词到最近搜索
 document.addEventListener('DOMContentLoaded', function() {
     const keyword = "{{ .Keyword }}";
-    if (!keyword) return;
-
-    function trySave() {
-        if (typeof addRecentSearch === 'function') {
-            addRecentSearch(keyword);
-            console.log('[搜索页] 已成功记录搜索词:', keyword);
-        } else {
-            console.warn('[搜索页] addRecentSearch 尚未就绪，100ms 后重试...');
-            setTimeout(trySave, 100);
-        }
+    if (keyword && typeof addRecentSearch === 'function') {
+        addRecentSearch(keyword);
     }
-
-    trySave();
 });
 </script>
 {{ end }}

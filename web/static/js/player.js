@@ -56,6 +56,9 @@ var Storage = {
             data = trimmed;
         }
         localStorage.setItem(this.key, JSON.stringify(data));
+        if (typeof window.queueHistoryUpsert === 'function') {
+            window.queueHistoryUpsert(item);
+        }
     },
     find: function(id) {
         return this.get()[id] || null;
@@ -78,17 +81,247 @@ function detectVideoType(url) {
     // 默认尝试 m3u8
     return 'm3u8';
 }
-let hasReported = false;
-// 加载速度上报函数
-function reportLoad(status, loadTime, reason, sourceKey, vodId) {
-    if (hasReported) return;
-    hasReported = true;
-    console.log('视频加载', status, '，耗时:', loadTime, '毫秒');
-    fetch('/api/report/load-speed', {
+function createPlaybackAttemptId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return 'attempt-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+}
+
+function reportPlaybackEvent(eventType, elapsedMs, reason, context) {
+    if (!context || !context.attempt_id || !context.candidate_id || !context.media_unit_id) return;
+    fetch('/api/v2/playback/events', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({source_key: sourceKey, vod_id: vodId, load_time: loadTime, status: status, reason: reason})
-    }).catch(() => {}); // 静默处理错误
+        credentials: 'same-origin',
+        keepalive: true,
+        body: JSON.stringify({
+            attempt_id: context.attempt_id,
+            candidate_session_id: context.candidate_session_id || '',
+            event_type: eventType,
+            candidate_id: context.candidate_id,
+            media_unit_id: context.media_unit_id,
+            source_key: context.sourceKey,
+            vod_id: context.vodId,
+            elapsed_ms: Math.max(0, Math.round(elapsedMs || 0)),
+            reason: reason || ''
+        })
+    }).catch(function() {});
+}
+
+var MAX_AUTOMATIC_FAILOVERS = 2;
+var MIN_AUTOMATIC_MAPPING_CONFIDENCE = 0.90;
+
+function failoverStateKey(options) {
+    return 'moovie_failover:unit:' + options.media_unit_id;
+}
+
+function readFailoverState(options) {
+    var state = {};
+    try {
+        state = JSON.parse(sessionStorage.getItem(failoverStateKey(options)) || '{}');
+    } catch (e) {
+        state = {};
+    }
+    if (!Array.isArray(state.failed_candidate_ids)) state.failed_candidate_ids = [];
+    if (!Array.isArray(state.failed_candidate_keys)) state.failed_candidate_keys = [];
+    state.switch_count = Math.max(0, Number(state.switch_count) || 0);
+    return state;
+}
+
+function writeFailoverState(options, state) {
+    try {
+        sessionStorage.setItem(failoverStateKey(options), JSON.stringify(state));
+    } catch (e) {}
+}
+
+function failoverCandidateKey(candidate) {
+    var candidateID = Number(candidate.candidate_id) || 0;
+    if (candidateID > 0) return 'candidate:' + candidateID;
+    return 'resource:' + (candidate.source_key || '') + ':' + (candidate.vod_id || '') + ':' + (candidate.play_url || '');
+}
+
+function rememberFailedCandidate(state, candidate) {
+    var candidateID = Number(candidate.candidate_id) || 0;
+    var key = failoverCandidateKey(candidate);
+    if (candidateID > 0 && state.failed_candidate_ids.indexOf(candidateID) === -1) {
+        state.failed_candidate_ids.push(candidateID);
+    }
+    if (state.failed_candidate_keys.indexOf(key) === -1) {
+        state.failed_candidate_keys.push(key);
+    }
+}
+
+// 自动换源只在前后端开关都开启时执行，并严格限制在同一规范剧集内。
+function failoverToHealthyEpisode(options) {
+    if (!options || !options.auto_failover || !options.media_unit_id ||
+        options.sourceKey === 'iptv' || options.sourceKey === 'manual') {
+        return Promise.resolve(false);
+    }
+    if (options._failover_in_progress) return Promise.resolve(true);
+
+    var state = readFailoverState(options);
+    rememberFailedCandidate(state, {
+        candidate_id: options.candidate_id,
+        source_key: options.sourceKey,
+        vod_id: options.vodId,
+        play_url: options._current_url || ''
+    });
+    state.candidate_session_id = state.candidate_session_id || options.candidate_session_id || createPlaybackAttemptId();
+    options.candidate_session_id = state.candidate_session_id;
+    writeFailoverState(options, state);
+    if (state.switch_count >= MAX_AUTOMATIC_FAILOVERS) return Promise.resolve(false);
+
+    options._failover_in_progress = true;
+    var endpoint = '/api/v2/media-units/' + encodeURIComponent(options.media_unit_id) + '/playback-candidates';
+    return fetch(endpoint, { credentials: 'same-origin' })
+        .then(function(response) { return response.ok ? response.json() : null; })
+        .then(function(payload) {
+            if (!payload || payload.auto_failover_enabled !== true ||
+                Number(payload.unit_id) !== Number(options.media_unit_id)) return false;
+
+            var candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+            var next = null;
+            for (var i = 0; i < candidates.length; i++) {
+                var candidate = candidates[i] || {};
+                var candidateID = Number(candidate.candidate_id) || 0;
+                var candidateKey = failoverCandidateKey(candidate);
+                if (!candidate.play_url || Number(candidate.mapping_confidence) < MIN_AUTOMATIC_MAPPING_CONFIDENCE) continue;
+                if (candidateID > 0 && state.failed_candidate_ids.indexOf(candidateID) !== -1) continue;
+                if (state.failed_candidate_keys.indexOf(candidateKey) !== -1) continue;
+                next = candidate;
+                break;
+            }
+            if (!next || !currentArt || typeof currentArt.switchUrl !== 'function') return false;
+
+            var art = currentArt;
+            var resumePosition = Math.max(0, Number(art.currentTime) || 0);
+            state.switch_count++;
+            writeFailoverState(options, state);
+
+            reportPlaybackEvent('source_switched', 0, 'automatic', options);
+            options.candidate_id = Number(next.candidate_id) || 0;
+            options.sourceKey = next.source_key || '';
+            options.vodId = next.vod_id || '';
+            options.episode_key = next.episode_key || options.episode_key || '';
+            options.attempt_id = createPlaybackAttemptId();
+            options._attempt_started_at = Date.now();
+            options._load_reported = false;
+            options._current_url = next.play_url;
+            reportPlaybackEvent('attempt_started', 0, 'automatic_failover', options);
+
+            if (art.notice) art.notice.show = '当前线路异常，正在自动切换备用线路…';
+            art.once('video:canplay', function() {
+                if (resumePosition > 0) art.currentTime = resumePosition;
+                options._recovery_requested = false;
+                if (art.notice) art.notice.show = '已自动切换到 ' + (next.line_label || next.source_key || '备用线路');
+                if (art.video) art.video.play().catch(function() {});
+            });
+
+            try {
+                var switched = art.switchUrl(next.play_url);
+                options._recovery_requested = false;
+                if (switched && typeof switched.then === 'function') {
+                    switched.catch(function() {
+                        rememberFailedCandidate(state, next);
+                        writeFailoverState(options, state);
+                    });
+                }
+                return true;
+            } catch (e) {
+                options._recovery_requested = false;
+                rememberFailedCandidate(state, next);
+                writeFailoverState(options, state);
+                return false;
+            }
+        })
+        .catch(function() { return false; })
+        .finally(function() { options._failover_in_progress = false; });
+}
+
+function recoverPlaybackOrShowAlternatives(options) {
+    return failoverToHealthyEpisode(options).then(function(switched) {
+        return switched ? true : showFailoverAlternatives(options);
+    });
+}
+
+// 自动换源不可用或已达到上限时，展示可用备选线路供用户手动选择。
+function showFailoverAlternatives(options) {
+    if (!options || !options.media_unit_id || options.sourceKey === 'iptv' || options.sourceKey === 'manual') {
+        return Promise.resolve(false);
+    }
+    var currentKey = options.sourceKey + ':' + options.vodId;
+    var endpoint = '/api/v2/media-units/' + encodeURIComponent(options.media_unit_id) + '/playback-candidates';
+    return fetch(endpoint, { credentials: 'same-origin' })
+        .then(function(response) { return response.ok ? response.json() : null; })
+        .then(function(payload) {
+            if (!payload || Number(payload.unit_id) !== Number(options.media_unit_id)) return false;
+            var resources = Array.isArray(payload.candidates) ? payload.candidates : [];
+            var alternatives = [];
+            for (var i = 0; i < resources.length; i++) {
+                var resource = resources[i] || {};
+                var key = (resource.source_key || '') + ':' + (resource.vod_id || '');
+                if (!resource.source_key || !resource.vod_id || key === currentKey) continue;
+                alternatives.push(resource);
+            }
+            if (alternatives.length === 0) return false;
+            showAlternativeSourcesUI(alternatives, options);
+            return true;
+        })
+        .catch(function() { return false; });
+}
+
+// 在播放器区域展示备选线路供用户手动点击切换
+function showAlternativeSourcesUI(alternatives, options) {
+    var container = document.getElementById('artplayer-app');
+    if (!container) return;
+    var existing = container.querySelector('.failover-alternatives');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.className = 'failover-alternatives';
+    overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff;padding:1rem';
+
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:1.1rem;margin-bottom:.5rem';
+    title.textContent = '当前线路播放失败';
+    overlay.appendChild(title);
+
+    var hint = document.createElement('div');
+    hint.style.cssText = 'font-size:.85rem;color:#aaa;margin-bottom:1rem';
+    hint.textContent = '请选择其他可用线路：';
+    overlay.appendChild(hint);
+
+    var list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:400px';
+
+    for (var i = 0; i < Math.min(alternatives.length, 6); i++) {
+        (function(res) {
+            var btn = document.createElement('button');
+            btn.style.cssText = 'padding:8px 16px;border:1px solid #555;border-radius:6px;background:#222;color:#fff;cursor:pointer;font-size:.9rem';
+            btn.textContent = (res.line_label || res.source_key || '备用源') + (res.source_key ? ' [' + res.source_key + ']' : '');
+            btn.addEventListener('mouseover', function() { btn.style.borderColor = '#f60c3e'; });
+            btn.addEventListener('mouseout', function() { btn.style.borderColor = '#555'; });
+            btn.addEventListener('click', function() {
+                reportPlaybackEvent('source_switched', 0, 'manual', options);
+                var query = '?ep=' + encodeURIComponent(res.episode_label || options.episode || res.episode_key);
+                if (res.line_label) query += '&source=' + encodeURIComponent(res.line_label);
+                if (options.douban_id) query += '&douban_id=' + encodeURIComponent(options.douban_id);
+                window.location.href = '/play/' + encodeURIComponent(res.source_key) + '/' + encodeURIComponent(res.vod_id) + query;
+            });
+            list.appendChild(btn);
+        })(alternatives[i]);
+    }
+    overlay.appendChild(list);
+
+    var dismiss = document.createElement('div');
+    dismiss.style.cssText = 'margin-top:1rem;font-size:.8rem;color:#666;cursor:pointer';
+    dismiss.textContent = '关闭';
+    dismiss.addEventListener('click', function() { overlay.remove(); });
+    overlay.appendChild(dismiss);
+
+    if (getComputedStyle(container).position === 'static') {
+        container.style.position = 'relative';
+    }
+    container.appendChild(overlay);
 }
 
 // XSS 防护：转义 HTML
@@ -322,10 +555,314 @@ function showDanmakuError(msg) {
     }
 }
 
+// ---- Ad-skip: M3U8 广告指纹众包跳过 ----
+
+function adSkipResolvePath(uri, base) {
+    try { return new URL(uri, base || 'http://x').pathname; }
+    catch(e) { return uri; }
+}
+
+function adSkipPathFamily(uri) {
+    try { var p = new URL(uri, 'http://x').pathname; var i = p.lastIndexOf('/'); return i > 0 ? p.substring(0, i) : '/'; }
+    catch(e) { return '/'; }
+}
+
+function adSkipParse(text, baseURL) {
+    var lines = text.split('\n'), segs = [], keyURI = '', keyMethod = 'NONE', byterange = '', extinf = null, discont = false;
+    for (var i = 0; i < lines.length; i++) {
+        var L = lines[i].trim();
+        if (L.startsWith('#EXT-X-DISCONTINUITY')) { discont = true; continue; }
+        if (L.startsWith('#EXT-X-KEY:')) {
+            var mm = L.match(/METHOD=([^,]+)/), mu = L.match(/URI="([^"]+)"/);
+            var nm = mm ? mm[1] : 'NONE', nu = mu ? mu[1] : '';
+            if (nm !== keyMethod || nu !== keyURI) { discont = true; keyMethod = nm; keyURI = nu; }
+            continue;
+        }
+        if (L.startsWith('#EXT-X-BYTERANGE:')) { byterange = L.substring(17); continue; }
+        if (L.startsWith('#EXTINF:')) { extinf = parseFloat(L.substring(8).split(',')[0]) || 0; continue; }
+        if (L.startsWith('#') || !L) continue;
+        if (extinf !== null) {
+            var np = adSkipResolvePath(L, baseURL);
+            segs.push({ dur: extinf, uri: L, path: np, family: adSkipPathFamily(np), br: byterange,
+                        kURI: keyURI, kMethod: keyMethod, line: i, discont: discont });
+            extinf = null; byterange = ''; discont = false;
+        }
+    }
+    return segs;
+}
+
+function adSkipBlocks(segs) {
+    if (!segs.length) return [];
+    var blocks = [], cur = { segs: [segs[0]], family: segs[0].family, kURI: segs[0].kURI, kMethod: segs[0].kMethod };
+    for (var i = 1; i < segs.length; i++) {
+        var s = segs[i];
+        if (s.discont || s.kURI !== cur.kURI || s.kMethod !== cur.kMethod || s.family !== cur.family) {
+            blocks.push(cur);
+            cur = { segs: [s], family: s.family, kURI: s.kURI, kMethod: s.kMethod };
+        } else { cur.segs.push(s); }
+    }
+    blocks.push(cur);
+    var t = 0;
+    for (var b = 0; b < blocks.length; b++) {
+        var bl = blocks[b]; bl.start = t; bl.dur = 0; bl.idx = b;
+        for (var j = 0; j < bl.segs.length; j++) bl.dur += bl.segs[j].dur;
+        bl.end = t + bl.dur; t = bl.end;
+        bl.first = b === 0; bl.last = b === blocks.length - 1;
+    }
+    return blocks;
+}
+
+function adSkipMainBody(blocks) {
+    if (!blocks.length) return null;
+    var best = blocks[0], total = 0;
+    for (var i = 0; i < blocks.length; i++) { total += blocks[i].dur; if (blocks[i].dur > best.dur) best = blocks[i]; }
+    return best.dur >= total * 0.3 ? best : null;
+}
+
+function adSkipScore(bl, main, blocks) {
+    if (bl === main || bl.dur < 5 || bl.dur > 120 || bl.segs.length < 2) return 0;
+    var total = 0;
+    for (var i = 0; i < blocks.length; i++) total += blocks[i].dur;
+    if (bl.dur > total * 0.5) return 0;
+    var sc = 0;
+    if (bl.first || bl.last) sc++;
+    if (bl.segs[0].discont) sc++;
+    else if (bl.idx < blocks.length - 1 && blocks[bl.idx + 1].segs.length && blocks[bl.idx + 1].segs[0].discont) sc++;
+    if (bl.family !== main.family) sc++;
+    if (bl.kURI !== main.kURI || bl.kMethod !== main.kMethod) sc++;
+    var bAvg = bl.dur / bl.segs.length, mAvg = main.dur / main.segs.length;
+    if (Math.abs(bAvg - mAvg) > mAvg * 0.3) sc++;
+    for (var i = 0; i < blocks.length; i++) {
+        if (blocks[i] === bl || blocks[i] === main) continue;
+        if (blocks[i].family === bl.family && blocks[i].segs.length === bl.segs.length &&
+            Math.abs(blocks[i].dur - bl.dur) < 1) { sc++; break; }
+    }
+    return sc;
+}
+
+function adSkipAnalyze(text, url) {
+    if (!text.includes('#EXTINF') || !text.includes('#EXT-X-ENDLIST')) return null;
+    var segs = adSkipParse(text, url);
+    if (segs.length < 3) return null;
+    var blocks = adSkipBlocks(segs);
+    if (blocks.length < 2) return null;
+    var main = adSkipMainBody(blocks);
+    if (!main) return null;
+    var cands = [];
+    for (var i = 0; i < blocks.length; i++) {
+        var sc = adSkipScore(blocks[i], main, blocks);
+        if (sc >= 3) cands.push({ block: blocks[i], score: sc, hex: null });
+    }
+    return cands.length ? { candidates: cands } : null;
+}
+
+function adSkipCanonical(cand, url) {
+    var lines = [];
+    for (var i = 0; i < cand.block.segs.length; i++) {
+        var s = cand.block.segs[i], line = Math.round(s.dur * 1000) + '|' + adSkipResolvePath(s.uri, url);
+        if (s.br) line += '|' + s.br;
+        lines.push(line);
+    }
+    return lines.join('\n');
+}
+
+function adSkipFingerprints(cands, url) {
+    if (!window.crypto || !window.crypto.subtle) return Promise.resolve([]);
+    return Promise.all(cands.map(function(c) {
+        var data = new TextEncoder().encode(adSkipCanonical(c, url));
+        return crypto.subtle.digest('SHA-256', data).then(function(buf) {
+            var a = new Uint8Array(buf), h = '';
+            for (var i = 0; i < a.length; i++) h += ('0' + a[i].toString(16)).slice(-2);
+            c.hex = h;
+            return c;
+        });
+    }));
+}
+
+function adSkipMatchAPI(hexes) {
+    if (!hexes.length) return Promise.resolve({});
+    return new Promise(function(resolve) {
+        var timer = setTimeout(function() { resolve({}); }, 250);
+        fetch('/api/ad-fingerprints/match', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({ fingerprints: hexes.slice(0, 20) })
+        }).then(function(r) { return r.ok ? r.json() : {}; })
+        .then(function(d) { clearTimeout(timer); resolve(d.matches || {}); })
+        .catch(function() { clearTimeout(timer); resolve({}); });
+    });
+}
+
+function adSkipRewrite(text, gapLines) {
+    if (!gapLines.length) return text;
+    var lines = text.split('\n'), out = [], set = {};
+    for (var i = 0; i < gapLines.length; i++) set[gapLines[i]] = true;
+    for (var i = 0; i < lines.length; i++) {
+        if (set[i]) out.push('#EXT-X-GAP');
+        out.push(lines[i]);
+    }
+    return out.join('\n');
+}
+
+function adSkipProcess(text, url, state) {
+    var analysis = adSkipAnalyze(text, url);
+    if (!analysis) return Promise.resolve(null);
+    return adSkipFingerprints(analysis.candidates, url).then(function(cands) {
+        var hexes = [];
+        for (var i = 0; i < cands.length; i++) if (cands[i].hex) hexes.push(cands[i].hex);
+        return adSkipMatchAPI(hexes).then(function(matches) {
+            var gapLines = [];
+            state.candidates = [];
+            for (var i = 0; i < cands.length; i++) {
+                var c = cands[i], m = c.hex ? matches[c.hex] : null;
+                var status = m ? m.status : 'unknown';
+                var info = { start: c.block.start, end: c.block.end, dur: c.block.dur, hex: c.hex, status: status };
+                state.candidates.push(info);
+                if (status === 'confirmed' && c.block.dur <= 120 && !state.undone[c.hex]) {
+                    for (var j = 0; j < c.block.segs.length; j++) gapLines.push(c.block.segs[j].line);
+                }
+            }
+            return gapLines.length ? adSkipRewrite(text, gapLines) : null;
+        });
+    });
+}
+
+function adSkipCreateLoader(state) {
+    var Default = Hls.DefaultConfig.loader;
+    function Loader(cfg) { this._l = new Default(cfg); this._adTimer = 0; this._adDone = false; }
+    Object.defineProperty(Loader.prototype, 'stats', { get: function() { return this._l.stats; } });
+    Object.defineProperty(Loader.prototype, 'context', { get: function() { return this._l.context; } });
+    Loader.prototype.load = function(ctx, cfg, cb) {
+        if (!state.enabled) { this._l.load(ctx, cfg, cb); return; }
+        var self = this, orig = cb.onSuccess;
+        self._adDone = false;
+        function deliver(r, s, c, n) { if (self._adDone) return; self._adDone = true; clearTimeout(self._adTimer); orig.call(null, r, s, c, n); }
+        cb.onSuccess = function(resp, stats, c, net) {
+            var txt = typeof resp.data === 'string' ? resp.data : '';
+            if (!txt.includes('#EXTINF') || !txt.includes('#EXT-X-ENDLIST')) { deliver(resp, stats, c, net); return; }
+            state.originalPlaylist = txt;
+            state.playlistURL = resp.url || c.url || '';
+            self._adTimer = setTimeout(function() { deliver(resp, stats, c, net); }, 250);
+            adSkipProcess(txt, state.playlistURL, state).then(function(rewritten) {
+                if (rewritten) resp.data = rewritten;
+                deliver(resp, stats, c, net);
+            }).catch(function() { deliver(resp, stats, c, net); });
+        };
+        this._l.load(ctx, cfg, cb);
+    };
+    Loader.prototype.abort = function() { this._adDone = true; clearTimeout(this._adTimer); this._l.abort(); };
+    Loader.prototype.destroy = function() { this._adDone = true; clearTimeout(this._adTimer); this._l.destroy(); };
+    return Loader;
+}
+
+function adSkipHidePrompt() {
+    var el = document.getElementById('ad-skip-prompt');
+    if (el) el.remove();
+}
+
+function adSkipShowPrompt(container, cand, state) {
+    adSkipHidePrompt();
+    var el = document.createElement('div');
+    el.className = 'ad-skip-prompt'; el.id = 'ad-skip-prompt';
+    el.innerHTML = '<span class="ad-skip-prompt-text">检测到疑似广告 · ' + Math.round(cand.dur) + ' 秒</span>' +
+        '<span class="ad-skip-prompt-btns">' +
+        '<button class="ad-skip-prompt-btn confirm">是广告，跳过</button>' +
+        '<button class="ad-skip-prompt-btn reject">不是</button>' +
+        '<button class="ad-skip-prompt-btn close">×</button></span>';
+    el.querySelector('.confirm').onclick = function() {
+        state.confirmedLocal[cand.hex] = true;
+        state.voted[cand.hex] = true;
+        if (state.art) try { state.art.currentTime = cand.end; } catch(e) {}
+        fetch('/api/ad-fingerprints/vote', { method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin', keepalive: true,
+            body: JSON.stringify({ fingerprint: cand.hex, vote: 'confirm' }) }).catch(function() {});
+        adSkipHidePrompt();
+    };
+    el.querySelector('.reject').onclick = function() {
+        state.voted[cand.hex] = true;
+        fetch('/api/ad-fingerprints/vote', { method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin', keepalive: true,
+            body: JSON.stringify({ fingerprint: cand.hex, vote: 'reject' }) }).catch(function() {});
+        adSkipHidePrompt();
+    };
+    el.querySelector('.close').onclick = function() { adSkipHidePrompt(); };
+    state.prompted[cand.hex] = true;
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    container.appendChild(el);
+}
+
+function adSkipShowToast(container, cand, state) {
+    if (state.toastShown[cand.hex]) return;
+    state.toastShown[cand.hex] = true;
+    var el = document.createElement('div');
+    el.className = 'ad-skip-toast';
+    el.innerHTML = '已跳过 ' + Math.round(cand.dur) + ' 秒广告　<a class="ad-skip-undo">撤销本次</a>';
+    el.querySelector('.ad-skip-undo').onclick = function(e) {
+        e.preventDefault();
+        state.undone[cand.hex] = true;
+        el.remove();
+        if (!state.art || !state.originalPlaylist) return;
+        try {
+            var playURL = state.art.option ? state.art.option.url : '';
+            if (!playURL) return;
+            state.art.once('video:canplay', function() {
+                try { state.art.currentTime = cand.start; } catch(e) {}
+            });
+            state.art.switchUrl(playURL);
+        } catch(e) {
+            if (state.art && state.art.notice) state.art.notice.show = '撤销失败，继续播放';
+        }
+    };
+    if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
+    container.appendChild(el);
+    setTimeout(function() { if (el.parentNode) el.remove(); }, 4000);
+}
+
+function adSkipMonitor(state) {
+    if (!state.art || !state.enabled) return;
+    var container = document.getElementById('artplayer-app');
+    if (!container) return;
+    state.art.on('video:timeupdate', function() {
+        if (!state.enabled || !state.candidates.length) return;
+        var t = state.art.currentTime;
+        for (var i = 0; i < state.candidates.length; i++) {
+            var c = state.candidates[i];
+            if (!c.hex) continue;
+            if (c.status === 'confirmed' && !state.undone[c.hex] && !state.toastShown[c.hex]) {
+                if (t >= c.start && t <= c.end + 3) adSkipShowToast(container, c, state);
+            } else if (c.status === 'unknown' || c.status === 'pending') {
+                if (t >= c.start && t < c.end) {
+                    if (state.confirmedLocal[c.hex]) {
+                        try { state.art.currentTime = c.end; } catch(e) {}
+                    } else if (!state.prompted[c.hex] && !state.voted[c.hex]) {
+                        adSkipShowPrompt(container, c, state);
+                    }
+                }
+            }
+        }
+    });
+    // Hide prompt when toggle is turned off via htmx
+    document.addEventListener('htmx:afterSwap', function(e) {
+        var tgt = e.detail && e.detail.target;
+        if (tgt && tgt.id === 'ad-skip-toggle') {
+            var cb = tgt.querySelector('input[name="ad_skip_enabled"]');
+            if (!cb || !cb.checked) { state.enabled = false; adSkipHidePrompt(); }
+        }
+    });
+}
+
+// ---- End ad-skip ----
+
 // 初始化播放器
 function initPlayer(containerId, url, options) {
     options = options || {};
-    hasReported = false; // 重置上报标记，确保每次初始化都能正常上报
+    options._current_url = url;
+
+    var adState = options.adSkipEnabled ? {
+        enabled: true, playlistURL: '', originalPlaylist: '',
+        candidates: [], prompted: {}, voted: {}, confirmedLocal: {},
+        undone: {}, toastShown: {}, art: null
+    } : null;
 
     // 自动播放下一集
     var autoPlayState = null;
@@ -363,8 +900,41 @@ function initPlayer(containerId, url, options) {
     
     // 加载速度统计
     const startTime = Date.now();
-    // 30秒超时
-    const timeoutTimer = setTimeout(() => reportLoad('failed', 30000, 'timeout', options.sourceKey, options.vodId), 30000);
+    options._attempt_started_at = startTime;
+    if (options.media_unit_id) {
+        var existingFailoverState = readFailoverState(options);
+        options.candidate_session_id = existingFailoverState.candidate_session_id || options.candidate_session_id || createPlaybackAttemptId();
+        existingFailoverState.candidate_session_id = options.candidate_session_id;
+        writeFailoverState(options, existingFailoverState);
+    }
+    options.attempt_id = options.attempt_id || createPlaybackAttemptId();
+    var firstFrameLoadTime = 0;
+    var effectivePlaybackMs = 0;
+    var lastPlaybackTick = 0;
+    var terminalAttempt = false;
+    reportPlaybackEvent('attempt_started', 0, '', options);
+
+    function recoverAfterFatal(reason, elapsedMs, fallbackMessage) {
+        if (options._recovery_requested) return;
+        options._recovery_requested = true;
+        clearTimeout(timeoutTimer);
+        terminalAttempt = true;
+        reportPlaybackEvent('fatal_error', elapsedMs, reason, options);
+        if (typeof options.onPlaybackError === 'function') {
+            try { options.onPlaybackError({ reason: reason, elapsedMs: elapsedMs }); } catch (e) {}
+        }
+        recoverPlaybackOrShowAlternatives(options).then(function(shown) {
+            if (!shown && currentArt && currentArt.notice) {
+                currentArt.notice.show = fallbackMessage;
+            }
+        });
+    }
+
+    // 默认 30 秒超时；直播页可按外部源特性缩短等待时间。
+    const loadTimeoutMs = Math.max(5000, Number(options.loadTimeoutMs) || 30000);
+    const timeoutTimer = setTimeout(() => {
+        recoverAfterFatal('timeout', loadTimeoutMs, '加载超时，请刷新页面或切换其他线路');
+    }, loadTimeoutMs);
     // Artplayer 配置
     var config = {
         container: container,
@@ -414,7 +984,7 @@ function initPlayer(containerId, url, options) {
                         art.hls.destroy();
                         art.hls = null;
                     };
-                    var hls = new Hls({
+                    var hlsConfig = {
                         overrideNative: true,
                         maxBufferLength: forceMSE ? 60 : 15,
                         maxMaxBufferLength: forceMSE ? 120 : 60,
@@ -432,7 +1002,9 @@ function initPlayer(containerId, url, options) {
                         fragLoadingTimeOut: 8000,
                         manifestLoadingTimeOut: 15000,
                         maxFragLookUpTolerance: 0.2,
-                    });
+                    };
+                    if (adState) hlsConfig.pLoader = adSkipCreateLoader(adState);
+                    var hls = new Hls(hlsConfig);
                     hls.loadSource(url);
                     hls.attachMedia(video);
                     art.hls = hls;
@@ -455,7 +1027,8 @@ function initPlayer(containerId, url, options) {
                                         if (art && art.notice) {
                                             art.notice.show = '视频片段加载失败，请尝试刷新页面或切换其他视频源';
                                         }
-                                        hls.destroy(); 
+                                        hls.destroy();
+                                        recoverAfterFatal('hls_network_error', Date.now() - startTime, '视频片段加载失败，请切换其他线路');
                                     } else {
                                         hls.startLoad();
                                     }
@@ -473,6 +1046,7 @@ function initPlayer(containerId, url, options) {
                                         art.notice.show = '视频片段加载失败，请尝试刷新页面或切换其他视频源';
                                     }
                                     hls.destroy();
+                                    recoverAfterFatal('hls_fatal_error', Date.now() - startTime, '视频片段加载失败，请切换其他线路');
                                     break;
                             }
                         }
@@ -482,19 +1056,18 @@ function initPlayer(containerId, url, options) {
                     });
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         console.log('[Player] HLS manifest 解析完成');
+                        reportPlaybackEvent('manifest_loaded', Date.now() - startTime, '', options);
                         hls._bufferTimer = setTimeout(() => {
                             hls.config.maxBufferLength = 40;
                             hls.config.maxMaxBufferLength = 90;
                         }, 8000);
                     });
                     
-                    // 监听HLS的LEVEL_LOADED事件，表示数据加载完成
+                    // LEVEL_LOADED 仅表示播放列表就绪；首帧出现前继续保留超时保护。
                     hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
-                        console.log('[Player] HLS level loaded, 可以开始播放');
-                        clearTimeout(timeoutTimer);
+                        console.log('[Player] HLS level loaded');
                         const loadTime = Date.now() - startTime;
                         console.log('视频加载成功，耗时:', loadTime, '毫秒');
-                        reportLoad('success', loadTime, null, options.sourceKey, options.vodId);
                     });
                 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                     video.src = url;
@@ -520,10 +1093,9 @@ function initPlayer(containerId, url, options) {
                     // 监听FLV加载完成事件
                     flvPlayer.on(flvjs.Events.LOADING_COMPLETE, () => {
                         console.log('[Player] FLV 加载完成');
-                        clearTimeout(timeoutTimer);
                         const loadTime = Date.now() - startTime;
                         console.log('视频加载成功，耗时:', loadTime, '毫秒');
-                        reportLoad('success', loadTime, null, options.sourceKey, options.vodId);
+                        reportPlaybackEvent('manifest_loaded', loadTime, '', options);
                     });
                 } else {
                     console.error('[Player] 不支持 FLV 播放');
@@ -542,6 +1114,8 @@ function initPlayer(containerId, url, options) {
     try {
         var art = new Artplayer(config);
         currentArt = art;
+
+        if (adState) { adState.art = art; adSkipMonitor(adState); }
 
         if (danmakuPlugin) {
             art.on('artplayerPluginDanmuku:loaded', function(queue) {
@@ -572,6 +1146,8 @@ function initPlayer(containerId, url, options) {
             // 保存引用供 destroy 时清理
             var recoverTimer = null;
             var waitingHandler = function() {
+                reportPlaybackEvent('rebuffer', 0, 'waiting', options);
+                lastPlaybackTick = 0;
                 if (recoverTimer) return;
                 recoverTimer = setTimeout(function() {
                     console.log('iOS卡顿自动恢复');
@@ -589,23 +1165,26 @@ function initPlayer(containerId, url, options) {
 
             // 获取上次播放进度并自动跳转
             var playState = Storage.find(options.sourceKey + options.vodId);
-            if(options.episode && options.episode == playState.episode){
-                var lastTime = playState ? playState.lastTime : 0;
-                if (lastTime > 5) {
-                    // 延迟一小会儿执行跳转，确保播放器状态稳定
-                    art.currentTime = lastTime;
-                    art.notice.show = `已为您定位到上次播放位置: ${formatTime(lastTime)}`;
-                }
+            var sameStoredEpisode = playState && (!options.episode || options.episode === playState.episode);
+            var lastTime = sameStoredEpisode ? (playState.lastTime || 0) : 0;
+            if (lastTime > 5) {
+                art.currentTime = lastTime;
+                art.notice.show = `已为您定位到上次播放位置: ${formatTime(lastTime)}`;
             }
         });
         art.once('video:canplay', () => {
             clearTimeout(timeoutTimer);
             const loadTime = Date.now() - startTime;
+            firstFrameLoadTime = loadTime;
             console.log('视频加载成功，耗时:', loadTime, '毫秒');
-            reportLoad('success', loadTime, null, options.sourceKey, options.vodId);
+            reportPlaybackEvent('first_frame', loadTime, '', options);
+            if (typeof options.onPlaybackReady === 'function') {
+                try { options.onPlaybackReady({ elapsedMs: loadTime }); } catch (e) {}
+            }
         });
 
         art.on('play', () => {
+            lastPlaybackTick = Date.now();
             art.notice.show = '不要相信视频中出现的任何广告！！！';
             showMsg('不要相信视频中出现的任何广告！！！', 'warning');
         });
@@ -613,10 +1192,23 @@ function initPlayer(containerId, url, options) {
         art.on('error', function(error, reconnectTime) {
             console.error('[Player] 播放错误:', error);
             clearTimeout(timeoutTimer);
-            reportLoad('failed', Date.now() - startTime, 'error', options.sourceKey, options.vodId);
+            recoverAfterFatal(String(error || 'error'), Date.now() - startTime, '当前线路播放失败，请稍后重试或切换其他线路');
         });
 
         art.on('video:timeupdate', () => {
+            var playbackNow = Date.now();
+            var playbackVideo = art.video;
+            if (playbackVideo && !playbackVideo.paused && lastPlaybackTick > 0) {
+                effectivePlaybackMs += Math.min(playbackNow - lastPlaybackTick, 2000);
+            }
+            lastPlaybackTick = playbackNow;
+            if (effectivePlaybackMs >= 10000 && !options._played_10s_reported) {
+                options._played_10s_reported = true;
+                reportPlaybackEvent('played_10s', effectivePlaybackMs, '', options);
+                if (options.media_unit_id) {
+                    try { sessionStorage.removeItem('moovie_failover:unit:' + options.media_unit_id); } catch (e) {}
+                }
+            }
             // “手动播放”或 iptv 不需要记录历史也不需要同步服务器
             if (options.title === '手动播放' || options.sourceKey === 'iptv') return;
 
@@ -625,10 +1217,15 @@ function initPlayer(containerId, url, options) {
                 Storage.upsert({
                     id: options.sourceKey + options.vodId,
                     douban_id: options.douban_id, // 统一使用下划线
-                    title: options.title,
+                    media_id: options.media_id || 0,
+                    media_unit_id: options.media_unit_id || 0,
+					season_number: options.season_number || 1,
+					episode_key: options.episode_key || options.episode || '',
+					entry_page: options.entryPage === 'watch' ? 'watch' : 'play',
+					title: options.title,
                     source_key: options.sourceKey,
                     vod_id: options.vodId,
-                    play: btoa64(url),
+                    play: btoa64(options._current_url || url),
                     lastTime: art.currentTime,
                     duration: art.duration,
                     img: options.poster,
@@ -645,6 +1242,8 @@ function initPlayer(containerId, url, options) {
 
         // 自动播放下一集：视频结束时触发
         art.on('video:ended', function() {
+            terminalAttempt = true;
+            reportPlaybackEvent('ended', effectivePlaybackMs, '', options);
             if (autoPlayState) {
                 autoPlayState.trigger();
             }
@@ -659,6 +1258,7 @@ function initPlayer(containerId, url, options) {
 
         // 播放器销毁时清理
         art.on('destroy', function() {
+            if (!terminalAttempt) reportPlaybackEvent('abandoned', effectivePlaybackMs, '', options);
             clearTimeout(timeoutTimer);
             if (art._recoverTimer) clearTimeout(art._recoverTimer);
             if (art._waitingHandler && art.video) {
@@ -675,6 +1275,7 @@ function initPlayer(containerId, url, options) {
         console.log('[Player] Artplayer 初始化成功');
         return art;
     } catch (e) {
+        clearTimeout(timeoutTimer);
         console.error('[Player] Artplayer 初始化失败:', e);
         container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#fff;">播放器初始化失败</div>';
         return null;

@@ -1,9 +1,9 @@
-<div class="modal-overlay" id="edit-watched-modal" onclick="if(event.target==this) this.remove()">
-    <div class="modal-container">
-        <button class="modal-close-btn" onclick="document.getElementById('edit-watched-modal').remove()">×</button>
+<div class="action-modal-overlay" id="edit-watched-modal" onclick="if(event.target==this) this.remove()" onkeydown="if(event.key==='Escape') this.remove()">
+    <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="edit-watched-title">
+        <button type="button" class="modal-close-btn" aria-label="关闭修改窗口" onclick="document.getElementById('edit-watched-modal').remove()" autofocus>×</button>
 
         <div class="modal-header">
-            <h3 class="modal-title">修改评分与短评</h3>
+            <h3 class="modal-title" id="edit-watched-title">修改评分与短评</h3>
             <p class="modal-subtitle">《{{ .Record.Title }}》</p>
         </div>
 
@@ -17,34 +17,34 @@
             <input type="hidden" name="rating" id="edit-rating-input" value="{{ .Record.Rating }}">
 
             <div class="form-group">
-                <label class="form-label">修改评分</label>
-                <div class="score-chips-group">
-                    <div class="score-chip {{ if eq .Record.Rating 1 }}active{{ end }}" onclick="selectEditScore(1, this)">
+                <span class="form-label" id="edit-rating-label">修改评分</span>
+                <div class="score-chips-group" role="group" aria-labelledby="edit-rating-label">
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 1 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 1 }}true{{ else }}false{{ end }}" onclick="selectEditScore(1, this)">
                         <span class="chip-label">1分</span>
                         <span class="chip-desc">很差</span>
-                    </div>
-                    <div class="score-chip {{ if eq .Record.Rating 2 }}active{{ end }}" onclick="selectEditScore(2, this)">
+                    </button>
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 2 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 2 }}true{{ else }}false{{ end }}" onclick="selectEditScore(2, this)">
                         <span class="chip-label">2分</span>
                         <span class="chip-desc">较差</span>
-                    </div>
-                    <div class="score-chip {{ if eq .Record.Rating 3 }}active{{ end }}" onclick="selectEditScore(3, this)">
+                    </button>
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 3 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 3 }}true{{ else }}false{{ end }}" onclick="selectEditScore(3, this)">
                         <span class="chip-label">3分</span>
                         <span class="chip-desc">还行</span>
-                    </div>
-                    <div class="score-chip {{ if eq .Record.Rating 4 }}active{{ end }}" onclick="selectEditScore(4, this)">
+                    </button>
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 4 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 4 }}true{{ else }}false{{ end }}" onclick="selectEditScore(4, this)">
                         <span class="chip-label">4分</span>
                         <span class="chip-desc">推荐</span>
-                    </div>
-                    <div class="score-chip {{ if eq .Record.Rating 5 }}active{{ end }}" onclick="selectEditScore(5, this)">
+                    </button>
+                    <button type="button" class="score-chip {{ if eq .Record.Rating 5 }}active{{ end }}" aria-pressed="{{ if eq .Record.Rating 5 }}true{{ else }}false{{ end }}" onclick="selectEditScore(5, this)">
                         <span class="chip-label">5分</span>
                         <span class="chip-desc">力荐</span>
-                    </div>
+                    </button>
                 </div>
             </div>
 
             <div class="form-group">
-                <label class="form-label">修改短评</label>
-                <textarea name="comment" rows="3" class="form-textarea" placeholder="写几句感受...">{{ .Record.Comment }}</textarea>
+                <label class="form-label" for="edit-comment">修改短评</label>
+                <textarea id="edit-comment" name="comment" rows="3" class="form-textarea" placeholder="写几句感受...">{{ .Record.Comment }}</textarea>
             </div>
 
             <div class="modal-actions">
@@ -58,8 +58,12 @@
         function selectEditScore(score, el) {
             document.getElementById('edit-rating-input').value = score;
             const chips = el.parentElement.querySelectorAll('.score-chip');
-            chips.forEach(c => c.classList.remove('active'));
+            chips.forEach(c => {
+                c.classList.remove('active');
+                c.setAttribute('aria-pressed', 'false');
+            });
             el.classList.add('active');
+            el.setAttribute('aria-pressed', 'true');
         }
     </script>
 </div>

@@ -6,10 +6,15 @@
 
 // ==================== 观影历史管理 ====================
 
-const HISTORY_KEY = 'moovie_play_state'; // 统一使用该键
-const SYNC_KEY = 'moovie_lastSyncAt';
-const MAX_HISTORY = 100;
-const SYNC_INTERVAL = 1 * 60 * 1000; // 1 分钟
+var HISTORY_KEY = 'moovie_play_state'; // 统一使用该键；var 允许 HTMX 历史恢复安全重载脚本
+var SYNC_KEY = 'moovie_lastSyncAt';
+var SYNC_CURSOR_KEY = 'moovie_history_cursor_v2';
+var SYNC_OUTBOX_KEY = 'moovie_history_outbox_v2';
+var SYNC_MIGRATED_KEY = 'moovie_history_migrated_v2';
+var DEVICE_ID_KEY = 'moovie_history_device_id';
+var DEVICE_SEQ_KEY = 'moovie_history_device_seq';
+var MAX_HISTORY = 100;
+var SYNC_INTERVAL = 1 * 60 * 1000; // 1 分钟
 
 /**
  * 获取观影历史
@@ -17,7 +22,7 @@ const SYNC_INTERVAL = 1 * 60 * 1000; // 1 分钟
 function getWatchHistory() {
     try {
         const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
-        // 将对象转换为数组并排序，以便兼容旧的调用处
+        // 存储层使用对象便于按资源键覆盖，页面层统一转换为按时间排序的数组。
         return Object.values(data).sort((a, b) => (b.watchedAt || b.updatedAt || 0) - (a.watchedAt || a.updatedAt || 0));
     } catch {
         return [];
@@ -50,8 +55,9 @@ function saveWatchHistory(historyArray) {
                 ...h,
                 source_key: source,
                 vod_id: vodId,
-                douban_id: h.douban_id || h.doubanId || '', // 确保 douban_id 存在
-                img: h.poster || h.img || ''
+				douban_id: h.douban_id || h.doubanId || '', // 确保 douban_id 存在
+				entry_page: h.entry_page === 'watch' ? 'watch' : 'play',
+				img: h.poster || h.img || ''
             };
         }
     });
@@ -62,8 +68,8 @@ function saveWatchHistory(historyArray) {
 
 // ==================== 同步逻辑 ====================
 
-let syncTimer = null;
-let isSyncing = false;
+var syncTimer = typeof syncTimer === 'undefined' ? null : syncTimer;
+var isSyncing = typeof isSyncing === 'undefined' ? false : isSyncing;
 
 /**
  * 检查是否登录
@@ -72,6 +78,104 @@ function isLoggedIn() {
     // 检查是否有登录态（通过检测页面元素或 cookie）
     return document.querySelector('[href="/dashboard"]') !== null;
 }
+
+function historyUserScope() {
+    const userId = document.body && document.body.dataset ? document.body.dataset.userId : '';
+    return userId ? `user:${userId}` : 'anonymous';
+}
+
+function scopedHistoryKey(baseKey) {
+    return `${baseKey}:${historyUserScope()}`;
+}
+
+function readJSONStorage(key, fallback) {
+    try {
+        return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+    } catch {
+        return fallback;
+    }
+}
+
+function createOperationId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getDeviceId() {
+    let deviceId = localStorage.getItem(DEVICE_ID_KEY) || '';
+    if (!deviceId) {
+        deviceId = `browser-${createOperationId()}`;
+        localStorage.setItem(DEVICE_ID_KEY, deviceId);
+    }
+    return deviceId;
+}
+
+function nextDeviceSequence() {
+    const next = parseInt(localStorage.getItem(DEVICE_SEQ_KEY) || '0', 10) + 1;
+    localStorage.setItem(DEVICE_SEQ_KEY, next.toString());
+    return next;
+}
+
+function historyIdentityKey(item) {
+    const mediaUnitId = item.media_unit_id || item.mediaUnitId || 0;
+    if (mediaUnitId) return `unit:${mediaUnitId}`;
+    const mediaId = item.media_id || item.mediaId || 0;
+    const season = item.season_number || item.seasonNumber || 1;
+    const episodeKey = item.episode_key || item.episodeKey || item.episode || '';
+    if (mediaId && episodeKey) return `media:${mediaId}:${season}:${episodeKey}`;
+    const source = item.source_key || item.source || '';
+    const vodId = item.vod_id || item.vodId || '';
+    if (source && vodId) return `resource:${source}:${vodId}`;
+    const historyId = Number(item.id || 0);
+    return historyId > 0 ? `history:${historyId}` : '';
+}
+
+function queueHistoryOperation(type, item, shouldSchedule = true) {
+    if (!item || !isLoggedIn()) return;
+    const source = item.source_key || item.source || '';
+    if (source === 'iptv' || source === 'manual') return;
+    const identity = historyIdentityKey(item);
+    if (!identity) return;
+    const outboxKey = scopedHistoryKey(SYNC_OUTBOX_KEY);
+    const outbox = readJSONStorage(outboxKey, {});
+    const historyId = Number(item.id || 0);
+    const occurredAt = Number(item.updatedAt || item.watchedAt || Date.now());
+    outbox[identity] = {
+        operation_id: createOperationId(),
+        device_seq: nextDeviceSequence(),
+        type: type,
+        history_id: historyId > 0 ? historyId : 0,
+        media_id: item.media_id || item.mediaId || 0,
+        media_unit_id: item.media_unit_id || item.mediaUnitId || 0,
+        douban_id: item.douban_id || item.doubanId || '',
+        source_key: source,
+        vod_id: item.vod_id || item.vodId || '',
+        title: item.title || '',
+        poster: item.poster || item.img || '',
+        episode: item.episode || '',
+        season_number: item.season_number || item.seasonNumber || 1,
+        episode_key: item.episode_key || item.episodeKey || '',
+        position_seconds: item.lastTime || item.last_time || 0,
+        duration_seconds: item.duration || 0,
+		progress_percent: item.progress || 0,
+		entry_page: item.entry_page === 'watch' ? 'watch' : 'play',
+		occurred_at: new Date(Number.isFinite(occurredAt) ? occurredAt : Date.now()).toISOString()
+    };
+    localStorage.setItem(outboxKey, JSON.stringify(outbox));
+    if (shouldSchedule) scheduleSync();
+}
+
+function ensureInitialHistoryOutbox() {
+    const migratedKey = scopedHistoryKey(SYNC_MIGRATED_KEY);
+    if (localStorage.getItem(migratedKey) === 'true') return;
+    getWatchHistory().forEach(item => queueHistoryOperation('upsert', item, false));
+    localStorage.setItem(migratedKey, 'true');
+}
+
+window.queueHistoryUpsert = item => queueHistoryOperation('upsert', item);
+window.queueHistoryDelete = item => queueHistoryOperation('delete', item);
 
 /**
  * 调度同步任务
@@ -99,51 +203,8 @@ async function doSync() {
     if (!isLoggedIn() || isSyncing) return;
     isSyncing = true;
 
-    try {
-        const lastSyncAt = parseInt(localStorage.getItem(SYNC_KEY) || '0');
-        const data = JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
-
-        // 找出需要同步的新记录 (watchedAt/updatedAt > lastSyncAt)，排除 IPTV
-        const newRecords = Object.values(data).filter(h =>
-            (h.watchedAt || h.updatedAt || 0) > lastSyncAt &&
-            (h.source_key || h.source || '') !== 'iptv'
-        ).map(h => ({
-            douban_id: h.douban_id || h.doubanId || '',
-            vod_id: h.vod_id || h.vodId || '',
-            title: h.title,
-            poster: h.poster || h.img,
-            episode: h.episode || '',
-            progress: h.progress || (h.duration > 0 ? Math.floor((h.lastTime / h.duration) * 100) : 0),
-            last_time: h.lastTime || 0,
-            duration: h.duration || 0,
-            source: h.source || h.source_key || '',
-            watchedAt: h.watchedAt || h.updatedAt || Date.now()
-        }));
-
-        // 即使本地没有新记录，也允许发起请求以拉取服务器端可能的更新
-        const response = await fetch('/api/history/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                records: newRecords,
-                lastSyncAt: lastSyncAt
-            })
-        });
-
-        if (response.ok) {
-            const result = await response.json();
-            const syncData = result.data || {};
-
-            // 合并服务器返回的记录
-            if (syncData.serverRecords && syncData.serverRecords.length > 0) {
-                mergeServerRecords(syncData.serverRecords);
-            }
-
-            // 更新同步时间
-            const syncedAt = syncData.syncedAt || Date.now();
-            localStorage.setItem(SYNC_KEY, syncedAt.toString());
-            return true;
-        }
+	try {
+		return await syncHistoryV2();
     } catch (error) {
         console.error('同步观影历史失败:', error);
     } finally {
@@ -152,80 +213,121 @@ async function doSync() {
     return false;
 }
 
+async function syncHistoryV2() {
+    ensureInitialHistoryOutbox();
+    const cursorKey = scopedHistoryKey(SYNC_CURSOR_KEY);
+    const outboxKey = scopedHistoryKey(SYNC_OUTBOX_KEY);
+    const cursor = parseInt(localStorage.getItem(cursorKey) || '0', 10);
+    const outbox = readJSONStorage(outboxKey, {});
+    const sentOperations = Object.values(outbox).slice(0, 100);
+    const response = await fetch('/api/v2/history/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ device_id: getDeviceId(), cursor: cursor, operations: sentOperations })
+    });
+	if (!response.ok) throw new Error(`v2 history sync returned ${response.status}`);
+
+    const result = await response.json();
+    applyHistoryChanges(result.changes || []);
+    (result.conflicts || []).forEach(conflict => {
+        if (conflict.current) mergeServerRecords([conflict.current], false);
+    });
+
+    const latestOutbox = readJSONStorage(outboxKey, {});
+    sentOperations.forEach(operation => {
+        Object.keys(latestOutbox).forEach(key => {
+            if (latestOutbox[key] && latestOutbox[key].operation_id === operation.operation_id) {
+                delete latestOutbox[key];
+            }
+        });
+    });
+    localStorage.setItem(outboxKey, JSON.stringify(latestOutbox));
+    localStorage.setItem(cursorKey, String(result.cursor || cursor));
+    localStorage.setItem(SYNC_KEY, Date.now().toString());
+    document.dispatchEvent(new CustomEvent('moovie:history-updated'));
+    if (Object.keys(latestOutbox).length > 0) setTimeout(scheduleSync, 0);
+    return true;
+}
+
+function recordsMatch(left, right) {
+    const leftUnit = left.media_unit_id || left.mediaUnitId || 0;
+    const rightUnit = right.media_unit_id || right.mediaUnitId || 0;
+    if (leftUnit && rightUnit && leftUnit === rightUnit) return true;
+    const leftMedia = left.media_id || left.mediaId || 0;
+    const rightMedia = right.media_id || right.mediaId || 0;
+    const leftEpisode = left.episode_key || left.episodeKey || left.episode || '';
+    const rightEpisode = right.episode_key || right.episodeKey || right.episode || '';
+    if (leftMedia && rightMedia && leftMedia === rightMedia && leftEpisode === rightEpisode) return true;
+    const leftSource = left.source_key || left.source || '';
+    const rightSource = right.source_key || right.source || '';
+    const leftVod = left.vod_id || left.vodId || '';
+    const rightVod = right.vod_id || right.vodId || '';
+    if (leftSource && leftVod && leftSource === rightSource && leftVod === rightVod) return true;
+    return !!(left.douban_id && left.douban_id === right.douban_id && (left.episode || '') === (right.episode || ''));
+}
+
+function mergeServerRecord(localHistory, serverRecord) {
+    const recSource = serverRecord.source_key || serverRecord.source || '';
+    const recVodId = serverRecord.vod_id || serverRecord.vodId || '';
+    const localIdx = localHistory.findIndex(item => recordsMatch(item, serverRecord));
+    const parsedTime = new Date(serverRecord.updated_at || serverRecord.watched_at).getTime();
+    const serverTime = Number.isFinite(parsedTime) ? parsedTime : 0;
+    const normalized = {
+        id: serverRecord.id,
+        media_id: serverRecord.media_id || 0,
+        media_unit_id: serverRecord.media_unit_id || 0,
+        season_number: serverRecord.season_number || 1,
+		episode_key: serverRecord.episode_key || '',
+		entry_page: serverRecord.entry_page === 'watch' ? 'watch' : 'play',
+		douban_id: serverRecord.douban_id || '',
+        title: serverRecord.title || '',
+        poster: serverRecord.poster || '',
+        img: serverRecord.poster || '',
+        episode: serverRecord.episode || '',
+        progress: serverRecord.progress || 0,
+        source_key: recSource,
+        vod_id: recVodId,
+        watchedAt: serverTime,
+        updatedAt: serverTime,
+        lastTime: Number.isFinite(serverRecord.last_time) ? serverRecord.last_time : 0,
+        duration: Number.isFinite(serverRecord.duration) ? serverRecord.duration : 0
+    };
+    if (localIdx < 0) {
+        localHistory.push(normalized);
+        return;
+    }
+    const localTime = localHistory[localIdx].updatedAt || localHistory[localIdx].watchedAt || 0;
+    if (serverTime >= localTime) localHistory[localIdx] = { ...localHistory[localIdx], ...normalized };
+}
+
+function applyHistoryChanges(changes) {
+    let localHistory = getWatchHistory();
+    changes.forEach(change => {
+        if (!change || !change.record) return;
+        if (change.type === 'delete') {
+            localHistory = localHistory.filter(item => !recordsMatch(item, change.record));
+        } else {
+            mergeServerRecord(localHistory, change.record);
+        }
+    });
+    saveWatchHistory(localHistory);
+}
 
 /**
  * 合并服务器记录到本地
  */
-function mergeServerRecords(serverRecords) {
+function mergeServerRecords(serverRecords, notify = true) {
     const localHistory = getWatchHistory();
-
-    serverRecords.forEach(serverRecord => {
-        // 统一字段名：服务器返回 source，本地存储 source_key
-        const recSource = serverRecord.source_key || serverRecord.source || '';
-        const recVodId = serverRecord.vod_id || serverRecord.vodId || '';
-
-        // 匹配逻辑：优先 source_key + vod_id，其次 douban_id + episode
-        const localIdx = localHistory.findIndex(h => {
-            if (recSource && recVodId && h.source_key === recSource && h.vod_id === recVodId) {
-                return true;
-            }
-            if (serverRecord.douban_id && h.douban_id === serverRecord.douban_id && h.episode === serverRecord.episode) {
-                return true;
-            }
-            return false;
-        });
-
-        const serverTime = new Date(serverRecord.watched_at).getTime();
-
-        if (localIdx >= 0) {
-            const localTime = localHistory[localIdx].watchedAt || localHistory[localIdx].updatedAt || 0;
-            if (serverTime > localTime) {
-                localHistory[localIdx] = {
-                    ...localHistory[localIdx],
-                    id: serverRecord.id, // 服务器记录ID
-                    douban_id: serverRecord.douban_id,
-                    title: serverRecord.title,
-                    poster: serverRecord.poster,
-                    img: serverRecord.poster,
-                    episode: serverRecord.episode,
-                    progress: serverRecord.progress,
-                    source_key: recSource,
-                    vod_id: recVodId,
-                    watchedAt: serverTime,
-                    updatedAt: serverTime
-                };
-            }
-        } else {
-            localHistory.push({
-                id: serverRecord.id,
-                douban_id: serverRecord.douban_id,
-                title: serverRecord.title,
-                poster: serverRecord.poster,
-                img: serverRecord.poster,
-                episode: serverRecord.episode,
-                progress: serverRecord.progress,
-                source_key: recSource,
-                vod_id: recVodId,
-                watchedAt: serverTime,
-                updatedAt: serverTime,
-                lastTime: (serverRecord.progress / 100) * (serverRecord.duration || 0),
-                duration: serverRecord.duration || 0
-            });
-        }
-    });
-
-    // 按时间排序
-    localHistory.sort((a, b) => (b.watchedAt || 0) - (a.watchedAt || 0));
+    serverRecords.forEach(serverRecord => mergeServerRecord(localHistory, serverRecord));
     saveWatchHistory(localHistory);
-
-    // 同步完成后，触发一个自定义事件，方便页面感知更新（如首页刷新列表）
-    document.dispatchEvent(new CustomEvent('moovie:history-updated'));
+    if (notify) document.dispatchEvent(new CustomEvent('moovie:history-updated'));
 }
 
 // ==================== 搜索建议 ====================
 
-let searchTimeout = null;
-let selectedSuggestionIndex = -1;
+var searchTimeout = typeof searchTimeout === 'undefined' ? null : searchTimeout;
+var selectedSuggestionIndex = typeof selectedSuggestionIndex === 'undefined' ? -1 : selectedSuggestionIndex;
 
 /**
  * 处理搜索输入
@@ -248,22 +350,18 @@ function handleSearchInput(value) {
  * 获取搜索建议
  */
 async function fetchSuggestions(keyword) {
-    console.log('[搜索建议] 开始获取:', keyword);
     try {
-        const response = await fetch(`/api/movies/suggest?kw=${encodeURIComponent(keyword)}`);
-        console.log('[搜索建议] API响应状态:', response.status);
+        const response = await fetch(`/api/v2/media/suggest?q=${encodeURIComponent(keyword)}`);
 
         if (!response.ok) {
             throw new Error('搜索服务暂时不可用');
         }
 
         const result = await response.json();
-        console.log('[搜索建议] API返回数据:', result);
 
         if (result.data && result.data.length > 0) {
             renderSuggestions(result.data);
         } else {
-            console.log('[搜索建议] 无数据，隐藏下拉框');
             hideSuggestions();
         }
     } catch (error) {
@@ -276,7 +374,6 @@ async function fetchSuggestions(keyword) {
  * 渲染搜索建议
  */
 function renderSuggestions(suggestions) {
-    console.log('[搜索建议] 开始渲染，数量:', suggestions.length);
     const container = document.getElementById('search-suggestions');
     if (!container) {
         console.error('[搜索建议] 容器未找到');
@@ -285,8 +382,7 @@ function renderSuggestions(suggestions) {
 
     selectedSuggestionIndex = -1;
 
-    // 根据 API 返回的字段: id, title, sub_title, type, year, img
-    container.innerHTML = suggestions.map((item, index) => {
+    const rows = suggestions.map((item, index) => {
         // 转换 type 显示
         let typeText = '其他';
         if (item.type === 'movie') typeText = '电影';
@@ -300,30 +396,60 @@ function renderSuggestions(suggestions) {
             if (item.img.startsWith('/api/proxy/image')) {
                 imgSrc = item.img;
             } else {
-                imgSrc = '/api/proxy/image/r76RqSIVvUryzx' + btoa(item.img);
+                try {
+                    imgSrc = '/api/proxy/image/r76RqSIVvUryzx' + btoa(item.img);
+                } catch (_) {
+                    imgSrc = '/static/img/placeholder.svg';
+                }
             }
         }
 
-        return `
-            <a href="${searchUrl}" class="search-suggestion-item" data-index="${index}">
-                <img src="${imgSrc}"
-                     alt="${item.title || ''}"
-                     class="suggestion-poster"
-                     onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
-                <div class="suggestion-info">
-                    <div class="suggestion-title">${item.title || ''}</div>
-                    <div class="suggestion-meta">
-                        <span class="suggestion-type">${typeText}</span>
-                        ${item.year ? `<span class="suggestion-year">${item.year}</span>` : ''}
-                    </div>
-                    ${item.sub_title ? `<div class="suggestion-subtitle">${item.sub_title}</div>` : ''}
-                </div>
-            </a>
-        `;
-    }).join('');
+        const row = document.createElement('a');
+        row.href = searchUrl;
+        row.className = 'search-suggestion-item';
+        row.dataset.index = String(index);
+
+        const image = document.createElement('img');
+        image.src = imgSrc;
+        image.alt = item.title || '';
+        image.className = 'suggestion-poster';
+        image.loading = 'lazy';
+        image.referrerPolicy = 'no-referrer';
+        image.onerror = function() {
+            this.onerror = null;
+            this.src = '/static/img/placeholder.svg';
+        };
+
+        const info = document.createElement('div');
+        info.className = 'suggestion-info';
+        const title = document.createElement('div');
+        title.className = 'suggestion-title';
+        title.textContent = item.title || '';
+        const meta = document.createElement('div');
+        meta.className = 'suggestion-meta';
+        const type = document.createElement('span');
+        type.className = 'suggestion-type';
+        type.textContent = typeText;
+        meta.appendChild(type);
+        if (item.year) {
+            const year = document.createElement('span');
+            year.className = 'suggestion-year';
+            year.textContent = String(item.year);
+            meta.appendChild(year);
+        }
+        info.append(title, meta);
+        if (item.sub_title) {
+            const subtitle = document.createElement('div');
+            subtitle.className = 'suggestion-subtitle';
+            subtitle.textContent = item.sub_title;
+            info.appendChild(subtitle);
+        }
+        row.append(image, info);
+        return row;
+    });
+    container.replaceChildren(...rows);
 
     container.style.display = 'block';
-    console.log('[搜索建议] 渲染完成，已显示');
 }
 
 /**
@@ -387,8 +513,8 @@ function updateSelectedSuggestion(items) {
 
 // ==================== 最近搜索管理 ====================
 
-const RECENT_SEARCHES_KEY = 'moovie_recentSearches';
-const MAX_RECENT_SEARCHES = 10;
+var RECENT_SEARCHES_KEY = 'moovie_recentSearches';
+var MAX_RECENT_SEARCHES = 10;
 
 /**
  * 获取最近搜索
@@ -469,17 +595,29 @@ function renderRecentSearches() {
 
     if (section) section.style.display = 'block';
 
-    container.innerHTML = searches.map(keyword => `
-        <span class="tag tag-deletable">
-            <a href="/search?kw=${encodeURIComponent(keyword)}">${keyword}</a>
-            <button class="tag-delete" onclick="event.preventDefault(); removeRecentSearch('${keyword.replace(/'/g, "\\'")}')">×</button>
-        </span>
-    `).join('');
+    const tags = searches.map(keyword => {
+        const tag = document.createElement('span');
+        tag.className = 'tag tag-deletable';
+        const link = document.createElement('a');
+        link.href = `/search?kw=${encodeURIComponent(keyword)}`;
+        link.textContent = keyword;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'tag-delete';
+        remove.textContent = '×';
+        remove.addEventListener('click', event => {
+            event.preventDefault();
+            removeRecentSearch(keyword);
+        });
+        tag.append(link, remove);
+        return tag;
+    });
+    container.replaceChildren(...tags);
 }
 
 // ==================== 初始化 ====================
 
-document.addEventListener('DOMContentLoaded', function() {
+function initializeMoovieApp() {
     // 渲染首页继续观看
     if (typeof renderContinueWatching === 'function') {
         renderContinueWatching();
@@ -495,7 +633,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 监听搜索表单提交，记录搜索历史
     const searchForm = document.querySelector('.search-form');
-    if (searchForm) {
+    if (searchForm && searchForm.dataset.moovieAppBound !== 'true') {
+        searchForm.dataset.moovieAppBound = 'true';
         searchForm.addEventListener('submit', function(e) {
             const input = this.querySelector('input[name="kw"]');
             if (input && input.value) {
@@ -506,22 +645,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 监听搜索输入框键盘事件
     const searchInput = document.getElementById('search-input');
-    if (searchInput) {
+    if (searchInput && searchInput.dataset.moovieAppBound !== 'true') {
+        searchInput.dataset.moovieAppBound = 'true';
         searchInput.addEventListener('keydown', handleSuggestionNavigation);
     }
 
-    // 点击外部区域关闭搜索建议
-    document.addEventListener('click', function(e) {
-        const searchContainer = document.querySelector('.search-form');
-        const suggestions = document.getElementById('search-suggestions');
-        if (searchContainer && !searchContainer.contains(e.target)) {
-            hideSuggestions();
-        }
-    });
-
     // 防止鼠标进入搜索建议区域时关闭下拉框
     const suggestionsContainer = document.getElementById('search-suggestions');
-    if (suggestionsContainer) {
+    if (suggestionsContainer && suggestionsContainer.dataset.moovieAppBound !== 'true') {
+        suggestionsContainer.dataset.moovieAppBound = 'true';
         suggestionsContainer.addEventListener('mouseenter', function() {
             // 鼠标进入建议区域时，不清除建议
             clearTimeout(searchTimeout);
@@ -536,35 +668,51 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 200);
         });
     }
-});
+}
 
-// 页面关闭前尝试同步（仅提示，不阻塞）
-window.addEventListener('beforeunload', function() {
-    if (isLoggedIn() && getWatchHistory().length > 0) {
-        const history = getWatchHistory();
-        const lastSyncAt = parseInt(localStorage.getItem(SYNC_KEY) || '0');
-        const newRecords = history.filter(h => (h.watchedAt || h.updatedAt || 0) > lastSyncAt);
-
-        if (newRecords.length > 0) {
-            const payload = JSON.stringify({
-                records: newRecords.map(h => ({
-                    douban_id: h.douban_id || h.doubanId || '',
-                    vod_id: h.vod_id || h.vodId || '',
-                    title: h.title,
-                    poster: h.poster || h.img,
-                    episode: h.episode || '',
-                    progress: h.progress || (h.duration > 0 ? Math.floor((h.lastTime / h.duration) * 100) : 0),
-                    last_time: h.lastTime || 0,
-                    duration: h.duration || 0,
-                    source: h.source_key || h.source || '',
-                    watchedAt: h.watchedAt || h.updatedAt || Date.now()
-                })),
-                lastSyncAt: lastSyncAt
-            });
-            navigator.sendBeacon('/api/history/sync', payload);
-        }
+function closeSuggestionsOutsideSearch(event) {
+    const searchContainer = document.querySelector('.search-form');
+    if (searchContainer && !searchContainer.contains(event.target)) {
+        hideSuggestions();
     }
-});
+}
+
+if (!window.__moovieAppGlobalListenersBound) {
+    window.__moovieAppGlobalListenersBound = true;
+    document.addEventListener('click', closeSuggestionsOutsideSearch);
+    document.addEventListener('htmx:historyRestore', initializeMoovieApp);
+    window.addEventListener('beforeunload', flushHistoryOutboxBeforeUnload);
+}
+
+if (document.readyState === 'loading') {
+    if (!window.__moovieAppDOMContentLoadedPending) {
+        window.__moovieAppDOMContentLoadedPending = true;
+        document.addEventListener('DOMContentLoaded', function() {
+            window.__moovieAppDOMContentLoadedPending = false;
+            initializeMoovieApp();
+        }, { once: true });
+    }
+} else {
+    initializeMoovieApp();
+}
+
+// 页面关闭前发送尚未确认的 outbox。响应不会在卸载阶段处理；下次页面
+// 会按相同 operation_id 重试，服务端幂等账本不会重复写入。
+function flushHistoryOutboxBeforeUnload() {
+    if (!isLoggedIn()) return;
+    ensureInitialHistoryOutbox();
+    const outbox = readJSONStorage(scopedHistoryKey(SYNC_OUTBOX_KEY), {});
+    const operations = Object.values(outbox).slice(0, 100);
+    if (operations.length === 0) return;
+    const cursor = parseInt(localStorage.getItem(scopedHistoryKey(SYNC_CURSOR_KEY)) || '0', 10);
+    fetch('/api/v2/history/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        keepalive: true,
+        body: JSON.stringify({ device_id: getDeviceId(), cursor: cursor, operations: operations })
+    }).catch(() => {});
+}
 
 // 从老版本的历史记录转为新版本
 function transform(list) {

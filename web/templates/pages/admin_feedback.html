@@ -10,8 +10,11 @@
             <a href="/admin/feedback" class="admin-tab active">反馈</a>
             <a href="/admin/sites" class="admin-tab">资源网</a>
             <a href="/admin/data" class="admin-tab">数据管理</a>
+            <a href="/admin/jobs" class="admin-tab">任务队列</a>
+            <a href="/admin/matches" class="admin-tab">匹配复核</a>
             <a href="/admin/copyright" class="admin-tab">版权限制</a>
             <a href="/admin/category" class="admin-tab">分类过滤</a>
+            <a href="/admin/nsfw" class="admin-tab">NSFW</a>
         </nav>
     </div>
 
@@ -83,17 +86,17 @@
                         <td>{{ .CreatedAt.Format "2006-01-02 15:04" }}</td>
                         <td class="action-cell">
                             {{ if eq .Status "pending" }}
-                            <button class="btn btn-sm btn-success" onclick="updateFeedbackStatus({{ .ID }}, 'resolved')">
+                            <button type="button" class="btn btn-sm btn-success" onclick="updateFeedbackStatus({{ .ID }}, 'resolved')">
                                 标记已处理
                             </button>
-                            <button class="btn btn-sm btn-primary" onclick="showReplyDialog({{ .ID }})">
+                            <button type="button" class="btn btn-sm btn-primary" onclick="showReplyDialog({{ .ID }})">
                                 回复
                             </button>
-                            <button class="btn btn-sm btn-secondary" onclick="updateFeedbackStatus({{ .ID }}, 'rejected')">
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="updateFeedbackStatus({{ .ID }}, 'rejected')">
                                 拒绝
                             </button>
                             {{ else }}
-                            <button class="btn btn-sm btn-secondary" onclick="updateFeedbackStatus({{ .ID }}, 'pending')">
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="updateFeedbackStatus({{ .ID }}, 'pending')">
                                 重置
                             </button>
                             {{ end }}
@@ -109,23 +112,23 @@
             </table>
         </div>
     </div>
-    </div>
 </div>
 
 <!-- 回复弹窗 -->
-<div id="reply-dialog" class="modal-overlay" style="display: none;">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3>回复反馈</h3>
-            <span class="close-btn" onclick="closeReplyDialog()">&times;</span>
+<div id="reply-dialog" class="feedback-modal-overlay" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="reply-dialog-title" style="display: none;">
+    <div class="feedback-modal-content">
+        <div class="feedback-modal-header">
+            <h3 id="reply-dialog-title">回复反馈</h3>
+            <button type="button" class="feedback-modal-close" aria-label="关闭回复窗口" onclick="closeReplyDialog()">&times;</button>
         </div>
-        <div class="modal-body form-group">
+        <div class="feedback-modal-body">
             <input type="hidden" id="reply-feedback-id">
-            <textarea id="reply-text" rows="5" class="form-control" placeholder="请输入回复内容..."></textarea>
+            <label class="form-label" for="reply-text">回复内容</label>
+            <textarea id="reply-text" rows="5" class="feedback-form-control" placeholder="请输入回复内容..."></textarea>
         </div>
-        <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeReplyDialog()">取消</button>
-            <button class="btn btn-primary" onclick="submitReply()">发送回复</button>
+        <div class="feedback-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeReplyDialog()">取消</button>
+            <button type="button" class="btn btn-primary" onclick="submitReply()">发送回复</button>
         </div>
     </div>
 </div>
@@ -135,21 +138,21 @@
     margin-top: 0.5rem;
     padding: 0.5rem;
     border-radius: 4px;
-    border-left: 3px solid var(--primary-color);
+    border-left: 3px solid var(--primary);
 }
 .reply-badge {
     font-size: 0.75rem;
-    color: var(--primary-color);
+    color: var(--primary-text);
     font-weight: bold;
     display: block;
     margin-bottom: 0.25rem;
 }
 .reply-content {
     font-size: 0.9rem;
-    color: var(--text-color);
+    color: var(--text);
 }
 
-.modal-overlay {
+.feedback-modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -161,33 +164,50 @@
     align-items: center;
     z-index: 1000;
 }
-.modal-content {
+.feedback-modal-content {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
     padding: 1.5rem;
     border-radius: 8px;
     width: 500px;
     max-width: 90%;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
-.modal-header {
+.feedback-modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
 }
-.close-btn {
+.feedback-modal-close {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    background: transparent;
     cursor: pointer;
     font-size: 1.5rem;
     color: #999;
 }
-.form-control {
+.feedback-modal-body .form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+.feedback-form-control {
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid #ddd;
+    border: 1px solid var(--border);
     border-radius: 4px;
     margin-bottom: 1rem;
+    background: var(--bg-secondary);
+    color: var(--text);
     resize: vertical;
 }
-.modal-footer {
+.feedback-form-control:focus {
+    border-color: var(--primary-text);
+    outline: none;
+}
+.feedback-modal-footer {
     display: flex;
     justify-content: flex-end;
     gap: 1rem;
@@ -195,6 +215,8 @@
 </style>
 
 <script>
+let replyDialogTrigger = null;
+
 async function updateFeedbackStatus(id, status) {
     try {
         const formData = new FormData();
@@ -218,14 +240,31 @@ async function updateFeedbackStatus(id, status) {
 }
 
 function showReplyDialog(id) {
+    replyDialogTrigger = document.activeElement;
     document.getElementById('reply-feedback-id').value = id;
     document.getElementById('reply-text').value = '';
-    document.getElementById('reply-dialog').style.display = 'flex';
+    const dialog = document.getElementById('reply-dialog');
+    dialog.style.display = 'flex';
+    dialog.setAttribute('aria-hidden', 'false');
+    document.getElementById('reply-text').focus();
 }
 
 function closeReplyDialog() {
-    document.getElementById('reply-dialog').style.display = 'none';
+    const dialog = document.getElementById('reply-dialog');
+    dialog.style.display = 'none';
+    dialog.setAttribute('aria-hidden', 'true');
+    if (replyDialogTrigger) replyDialogTrigger.focus();
 }
+
+document.getElementById('reply-dialog').addEventListener('click', event => {
+    if (event.target === event.currentTarget) closeReplyDialog();
+});
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById('reply-dialog').style.display !== 'none') {
+        closeReplyDialog();
+    }
+});
 
 async function submitReply() {
     const id = document.getElementById('reply-feedback-id').value;

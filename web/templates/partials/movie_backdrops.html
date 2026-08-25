@@ -4,7 +4,7 @@
     <div class="backdrops-grid" id="backdropsGrid">
         {{ range $i, $url := .Backdrops }}{{ if lt $i 8 }}
         <div class="backdrop-item" onclick="openLightbox({{ $i }})">
-            <img src="{{ proxyImg $url }}" loading="lazy" alt="电影剧照">
+            <img src="{{ proxyImg $url }}" loading="lazy" alt="电影剧照" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
             {{ if and (eq $i 7) (gt $total 8) }}<span class="backdrop-more backdrop-more-pc">+{{ sub $total 8 }}</span>{{ end }}
             {{ if and (eq $i 3) (gt $total 4) }}<span class="backdrop-more backdrop-more-mb">+{{ sub $total 4 }}</span>{{ end }}
         </div>
@@ -14,7 +14,7 @@
 
 <div id="backdropLightbox" class="backdrop-lightbox">
     <button type="button" class="lightbox-nav lightbox-prev" onclick="stepLightbox(-1)" aria-label="上一张">&#8249;</button>
-    <img id="lightboxImg" src="" alt="剧照大图">
+    <img id="lightboxImg" alt="剧照大图" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
     <button type="button" class="lightbox-nav lightbox-next" onclick="stepLightbox(1)" aria-label="下一张">&#8250;</button>
     <div class="lightbox-counter"><span id="lightboxIndex">1</span> / <span id="lightboxTotal">1</span></div>
     <button type="button" class="lightbox-close" onclick="closeLightbox()" aria-label="关闭">&times;</button>
@@ -56,7 +56,7 @@ var MOOVIE_BACKDROPS = [{{ range $i, $url := .Backdrops }}{{ if $i }},{{ end }}{
 }
 
 .backdrop-item:hover {
-    border-color: var(--primary);
+    border-color: var(--primary-text);
     transform: translateY(-2px);
 }
 
@@ -181,7 +181,7 @@ var MOOVIE_BACKDROPS = [{{ range $i, $url := .Backdrops }}{{ if $i }},{{ end }}{
 
 .lightbox-close:hover {
     transform: scale(1.2);
-    color: var(--primary);
+    color: var(--primary-text);
 }
 
 @media (max-width: 768px) {
@@ -213,11 +213,13 @@ var MOOVIE_BACKDROPS = [{{ range $i, $url := .Backdrops }}{{ if $i }},{{ end }}{
     function preload(i) {
         if (i < 0 || i >= MOOVIE_BACKDROPS.length) return;
         var im = new Image();
+        im.onerror = function() { this.onerror = null; this.src = '/static/img/placeholder.svg'; };
         im.src = srcFor(MOOVIE_BACKDROPS[i]);
     }
 
     function render() {
         var img = document.getElementById('lightboxImg');
+        img.onerror = function() { this.onerror = null; this.src = '/static/img/placeholder.svg'; };
         img.src = srcFor(MOOVIE_BACKDROPS[idx]);
         document.getElementById('lightboxIndex').textContent = idx + 1;
         document.getElementById('lightboxTotal').textContent = MOOVIE_BACKDROPS.length;
@@ -245,7 +247,8 @@ var MOOVIE_BACKDROPS = [{{ range $i, $url := .Backdrops }}{{ if $i }},{{ end }}{
         lightbox.classList.remove('active');
         document.body.style.overflow = '';
         setTimeout(function () {
-            if (!lightbox.classList.contains('active')) img.src = '';
+            // 关闭后移除地址，空 src 会让部分浏览器重复请求当前详情页。
+            if (!lightbox.classList.contains('active')) img.removeAttribute('src');
         }, 300);
     };
 
