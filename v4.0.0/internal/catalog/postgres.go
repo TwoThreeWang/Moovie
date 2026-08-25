@@ -106,7 +106,13 @@ func (store *PostgresStore) FindByID(ctx context.Context, id int) (*Movie, error
 
 // FindSimilar 用向量距离找相似影片（详情页的「相关推荐」）。
 func (store *PostgresStore) FindSimilar(ctx context.Context, doubanID string, limit int) ([]Movie, error) {
-	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+`
+	rows, err := store.database.Query(ctx, `SELECT m.id, m.douban_id, m.title, m.original_title, m.year, m.poster, m.rating_douban,
+m.genres, m.countries, m.directors, m.actors, m.summary, m.duration,
+COALESCE((SELECT external_id FROM media_external_ids x WHERE x.media_id = m.id AND x.provider = 'imdb'
+ORDER BY x.is_primary DESC, x.updated_at DESC LIMIT 1), ''),
+m.media_type, m.series_status, m.backdrops, '' AS embedding_content, '' AS semantic_hash, '[]' AS reviews_json,
+m.reviews_updated_at, m.metadata_status, m.completeness_score, m.next_refresh_at, m.updated_at,
+''
 FROM media m
 JOIN LATERAL (SELECT embedding FROM media WHERE douban_id = $1 AND embedding IS NOT NULL) target ON true
 WHERE m.douban_id != $1 AND m.embedding IS NOT NULL

@@ -247,7 +247,7 @@ img { max-width: 100%; height: auto; display: block; }
 .card-sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .source-item { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.75rem; transition: 0.2s ease; }
 .search-loading-state, .movie-search-loading-state { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 3rem; color: var(--text-muted); }
-.search-loading-state.htmx-request, .movie-search-loading-state.htmx-request { display: flex; }
+.search-loading-state.htmx-request, .movie-search-loading-state.htmx-request, .htmx-request > .movie-search-loading-state { display: flex; }
 .search-loading-spinner { width: 40px; height: 40px; margin-bottom: 1rem; border: 3px solid var(--border); border-top-color: var(--primary-text); border-radius: 50%; animation: spin 1s ease-in-out infinite; }
 .ad-slot { min-height: 1px; text-align: center; }
 @media (max-width: 600px) {
