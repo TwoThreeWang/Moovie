@@ -166,7 +166,7 @@ MAX(um.created_at)
 FROM user_movies um
 LEFT JOIN media ON media.id = um.media_id
 JOIN users u ON u.id = um.user_id
-WHERE um.status = 'watched' AND u.is_public = TRUE AND um.created_at >= $1
+WHERE um.status IN ('watched', 'watching') AND u.is_public = TRUE AND um.created_at >= $1
 GROUP BY um.movie_id, media.title, media.poster, media.year
 ORDER BY MAX(um.created_at) DESC, COUNT(DISTINCT um.user_id) DESC
 LIMIT $2`, since, limit)
