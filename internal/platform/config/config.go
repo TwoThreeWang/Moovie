@@ -247,7 +247,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	catalogAITimeoutSeconds, err := positiveIntEnv("CATALOG_AI_TIMEOUT_SECONDS", 90)
+	catalogAITimeoutSeconds, err := positiveIntEnv("CATALOG_AI_TIMEOUT_SECONDS", 120)
 	if err != nil {
 		return Config{}, err
 	}

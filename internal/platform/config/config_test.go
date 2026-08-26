@@ -164,7 +164,7 @@ func TestLoadUsesIsolatedDefaults(t *testing.T) {
 		t.Fatalf("catalog external defaults changed: %+v", cfg.Catalog)
 	}
 	// AI Gateway 的超时必须远大于搜索源超时，否则非流式 chat completion 必然超时。
-	if cfg.Catalog.AITimeout != 90*time.Second || cfg.Catalog.AITimeout <= cfg.Search.SourceTimeout {
+	if cfg.Catalog.AITimeout != 120*time.Second || cfg.Catalog.AITimeout <= cfg.Search.SourceTimeout {
 		t.Fatalf("catalog AI timeout = %s (search source timeout %s)", cfg.Catalog.AITimeout, cfg.Search.SourceTimeout)
 	}
 	if cfg.Catalog.IMDbLookupInterval != 1200*time.Millisecond || cfg.Catalog.IMDbBackfillBatch != 200 {
