@@ -29,7 +29,7 @@ func TestDoubanProviderFallsBackAcrossMediaTypesAndMapsMovie(t *testing.T) {
 		t.Fatal(err)
 	}
 	movie, _ := store.FindByDoubanID(t.Context(), "1292052")
-	if movie == nil || movie.Title != "肖申克的救赎" || movie.Rating != 9.7 || movie.Duration != "142分钟" || movie.Directors != `[{"id":"1","name":"弗兰克"}]` {
+	if movie == nil || movie.Title != "肖申克的救赎" || movie.MediaType != "tv" || movie.Rating != 9.7 || movie.Duration != "142分钟" || movie.Directors != `[{"id":"1","name":"弗兰克"}]` {
 		t.Fatalf("mapped movie = %+v", movie)
 	}
 	if len(requests) != 2 || !strings.Contains(requests[0].URL.Path, "/movie/") || !strings.Contains(requests[1].URL.Path, "/tv/") {
@@ -47,12 +47,16 @@ func TestDoubanProviderUsesSuccessfulDetailEndpointForCanonicalMediaType(t *test
 		}
 		return jsonResponse(request, http.StatusOK, `{
 "id":"30181230","title":"测试剧集","aka":["别名甲","别名乙"],"year":"2026","genres":["剧情"],
-"rating":{"value":8.6},"pic":{"large":"https://img.example/tv.jpg"}}`), nil
+		"rating":{"value":8.6},"pic":{"large":"https://img.example/tv.jpg"}}`), nil
 	})}
 	writer := &canonicalWriterStub{}
-	provider := NewDoubanProvider(client, NewPostgresStore(testdb.Pool(t)), WithDoubanCanonicalWriter(writer))
+	database := &catalogFakeDatabase{}
+	provider := NewDoubanProvider(client, NewPostgresStore(database), WithDoubanCanonicalWriter(writer))
 	if err := provider.Fetch(t.Context(), "30181230", false); err != nil {
 		t.Fatal(err)
+	}
+	if len(database.arguments) != 20 || database.arguments[19] != "tv" {
+		t.Fatalf("legacy media type = %#v, want tv", database.arguments)
 	}
 	if writer.media.MediaType != "tv" {
 		t.Fatalf("canonical media type = %q, want tv", writer.media.MediaType)

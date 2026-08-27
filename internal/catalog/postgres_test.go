@@ -12,16 +12,24 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
-func TestPostgresStorePreservesMovieIdentityAndExistingEmbeddingOnMetadataUpdate(t *testing.T) {
+func TestPostgresStorePreservesIndependentEnrichmentOnSparseMetadataUpdate(t *testing.T) {
 	fake := &catalogFakeDatabase{}
 	store := NewPostgresStore(fake)
-	if err := store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克", EmbeddingContent: "推荐语"}); err != nil {
+	if err := store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克", MediaType: "tv", EmbeddingContent: "推荐语"}); err != nil {
 		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"VALUES ($20,$1", "backdrops=CASE WHEN EXCLUDED.backdrops <> ''", "ELSE media.backdrops END",
+		"reviews_json=CASE WHEN EXCLUDED.reviews_json <> ''", "ELSE media.reviews_json END",
+	} {
+		if !strings.Contains(fake.execQuery, expected) {
+			t.Fatalf("upsert query missing %q: %s", expected, fake.execQuery)
+		}
 	}
 	if !strings.Contains(fake.execQuery, "ON CONFLICT (douban_id)") || strings.Contains(fake.execQuery, "embedding_content=EXCLUDED.embedding_content") {
 		t.Fatalf("unsafe upsert query: %s", fake.execQuery)
 	}
-	if len(fake.arguments) != 19 || fake.arguments[0] != "1292052" || fake.arguments[1] != "肖申克" || fake.arguments[14] != "推荐语" || fake.arguments[18] != "" {
+	if len(fake.arguments) != 20 || fake.arguments[0] != "1292052" || fake.arguments[1] != "肖申克" || fake.arguments[14] != "推荐语" || fake.arguments[18] != "" || fake.arguments[19] != "tv" {
 		t.Fatalf("upsert arguments = %#v", fake.arguments)
 	}
 	if updated, ok := fake.arguments[16].(time.Time); !ok || updated.IsZero() {
@@ -35,7 +43,7 @@ func TestPostgresStoreScopesIMDbIdentityForSeasonPages(t *testing.T) {
 	if err := store.Upsert(t.Context(), Movie{DoubanID: "36444323", Title: "末日地堡 第二季", IMDbID: "tt14688458"}); err != nil {
 		t.Fatal(err)
 	}
-	if fake.arguments[18] != "tv_season_2" || !strings.Contains(fake.execQuery, "WHEN $19 <> '' THEN $19") {
+	if fake.arguments[18] != "tv_season_2" || fake.arguments[19] != "movie" || !strings.Contains(fake.execQuery, "WHEN $19 <> '' THEN $19") {
 		t.Fatalf("season external identity = %#v/query=%s", fake.arguments[18], fake.execQuery)
 	}
 }
@@ -44,9 +52,9 @@ func TestPostgresStoreFindAndSitemapOrdering(t *testing.T) {
 	updatedAt := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
 	reviewsAt := updatedAt.Add(-time.Hour)
 	nextRefreshAt := updatedAt.Add(24 * time.Hour)
-	// 列顺序与 movieColumns 一致：… imdb_id, media_type, series_status, backdrops, embedding_content, semantic_hash, reviews_json,
+	// 列顺序与 movieColumns 一致：… imdb_id, media_type, series_status, backdrops, embedding_content, reviews_json,
 	// reviews_updated_at, metadata_status, completeness_score, next_refresh_at, updated_at, embedding::text。
-	values := []any{1, "1292052", "肖申克", "Original", "1994", "poster", 9.7, "剧情", "美国", "[]", "[]", "简介", "142分钟", "tt0111161", "movie", "Ended", "", "推荐语", "semantic-hash", "[]", reviewsAt, "ready", 92, &nextRefreshAt, updatedAt, ""}
+	values := []any{1, "1292052", "肖申克", "Original", "1994", "poster", 9.7, "剧情", "美国", "[]", "[]", "简介", "142分钟", "tt0111161", "movie", "Ended", "", "推荐语", "[]", reviewsAt, "ready", 92, &nextRefreshAt, updatedAt, ""}
 	fake := &catalogFakeDatabase{rows: &catalogFakeRows{values: [][]any{values}}}
 	store := NewPostgresStore(fake)
 	movie, err := store.FindByDoubanID(t.Context(), "1292052")
@@ -140,22 +148,22 @@ func TestPostgresUpdateEmbeddingUsesValidatedVectorCast(t *testing.T) {
 	store := NewPostgresStore(fake)
 	vector := make([]float32, 768)
 	vector[1] = 0.25
-	if err := store.UpdateEmbedding(t.Context(), "1292052", "语义文本", "semantic-hash", vector); err != nil {
+	if err := store.UpdateEmbedding(t.Context(), "1292052", "语义文本", vector); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(fake.execQuery, "embedding = $4::vector") || !strings.Contains(fake.execQuery, "semantic_hash = $3") || !strings.Contains(fake.execQuery, "updated_at = NOW()") {
+	if !strings.Contains(fake.execQuery, "embedding = $3::vector") || !strings.Contains(fake.execQuery, "updated_at = NOW()") {
 		t.Fatalf("update query = %s", fake.execQuery)
 	}
-	if len(fake.arguments) != 4 || fake.arguments[0] != "1292052" || fake.arguments[1] != "语义文本" || fake.arguments[2] != "semantic-hash" {
+	if len(fake.arguments) != 3 || fake.arguments[0] != "1292052" || fake.arguments[1] != "语义文本" {
 		t.Fatalf("arguments = %#v", fake.arguments)
 	}
-	encoded, ok := fake.arguments[3].(string)
+	encoded, ok := fake.arguments[2].(string)
 	if !ok || !strings.HasPrefix(encoded, "[0,0.25,") || strings.Count(encoded, ",") != 767 {
-		t.Fatalf("vector literal = %T %.80v", fake.arguments[3], fake.arguments[3])
+		t.Fatalf("vector literal = %T %.80v", fake.arguments[2], fake.arguments[2])
 	}
 	bad := make([]float32, 768)
 	bad[3] = float32(math.NaN())
-	if err := store.UpdateEmbedding(t.Context(), "1292052", "bad", "hash", bad); err == nil {
+	if err := store.UpdateEmbedding(t.Context(), "1292052", "bad", bad); err == nil {
 		t.Fatal("non-finite vector was accepted")
 	}
 }
@@ -195,8 +203,8 @@ func TestPostgresMetadataRefreshQueueUsesUnifiedWorkerJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		"metadata_status <> 'partial'", "completeness_score >= 70", "task_type = 'embedding'",
-		"status = 'completed'", "last_content_change_at", "embedding_backfill",
+		"metadata_status <> 'partial'", "completeness_score >= 70",
+		"embedding_backfill",
 		"m.embedding IS NULL", "status IN ('pending', 'running')", "LIMIT $1",
 	} {
 		if !strings.Contains(fake.execQuery, expected) {

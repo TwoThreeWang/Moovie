@@ -522,7 +522,8 @@ func normalizeExternalType(provider, externalType, mediaType string) string {
 	}
 }
 
-// mergedMetadataState 是合并完成后的资料快照，用来算内容哈希和完整度评分。
+// mergedMetadataState 是刷新退避所关注的合并资料快照，用来算 content_hash
+// 和完整度。content_hash 跨任务保留“上一版”指纹，供刷新退避判断资料是否连续未变。
 type mergedMetadataState struct {
 	MediaType     string  `json:"media_type"`
 	Title         string  `json:"title"`
@@ -545,29 +546,32 @@ type mergedMetadataState struct {
 	MediaUnits    int     `json:"media_unit_count"`
 }
 
-// updateRefreshState 每次合并后重算：内容有没有变、完整度多少分、下次什么时候再刷。
-// 内容连续多次没变就逐步拉长间隔，今年/去年的新片则强制不超过 3 天/7 天。
+// updateRefreshState 每次规范合并后重算完整资料哈希、语义哈希、完整度和下次候选刷新时间。
+// 调度器只会继续轮转 partial 或低于 70 分的记录；达标记录的 next_refresh_at 会被清空。
 func (store *PostgresStore) updateRefreshState(ctx context.Context, mediaID int) error {
 	var state mergedMetadataState
-	var previousHash string
+	var doubanID string
+	var previousHash, previousSemanticHash string
 	var unchangedCount int
-	if err := store.database.QueryRow(ctx, `SELECT media_type, title, original_title, year, poster, backdrops,
+	if err := store.database.QueryRow(ctx, `SELECT douban_id, media_type, title, original_title, year, poster, backdrops,
 summary, genres, countries, directors, actors, duration, rating_douban, rating_tmdb,
 vote_count_tmdb,
 (SELECT COALESCE(string_agg(provider || ':' || external_type || ':' || external_id, '|' ORDER BY provider, external_type, external_id), '') FROM media_external_ids WHERE media_id = media.id),
 (SELECT COUNT(*) FROM media_external_ids WHERE media_id = media.id),
 (SELECT COALESCE(string_agg(unit_type || ':' || season_number::text || ':' || episode_key, '|' ORDER BY unit_type, season_number, episode_key), '') FROM media_units WHERE media_id = media.id),
 (SELECT COUNT(*) FROM media_units WHERE media_id = media.id),
-content_hash, unchanged_refresh_count FROM media WHERE id = $1`, mediaID).Scan(
-		&state.MediaType, &state.Title, &state.OriginalTitle, &state.Year, &state.Poster, &state.Backdrops,
+content_hash, unchanged_refresh_count, semantic_hash FROM media WHERE id = $1`, mediaID).Scan(
+		&doubanID, &state.MediaType, &state.Title, &state.OriginalTitle, &state.Year, &state.Poster, &state.Backdrops,
 		&state.Summary, &state.Genres, &state.Countries, &state.Directors, &state.Actors, &state.Duration,
 		&state.RatingDouban, &state.RatingTMDB, &state.VoteCountTMDB, &state.ExternalIDKey, &state.ExternalIDs,
 		&state.MediaUnitKey, &state.MediaUnits,
-		&previousHash, &unchangedCount,
+		&previousHash, &unchangedCount, &previousSemanticHash,
 	); err != nil {
 		return fmt.Errorf("read merged metadata state: %w", err)
 	}
 	contentHash := stableJSONHash(state)
+	// semantic_hash 只包含会改变语义描述的字段；海报、剧照、评分、外部 ID
+	// 和季集数据只会改变 content_hash，不会触发向量重算。
 	semanticHash := stableJSONHash(struct {
 		Title, OriginalTitle, Year, Summary, Genres, Countries, Directors, Actors string
 	}{state.Title, state.OriginalTitle, state.Year, state.Summary, state.Genres, state.Countries, state.Directors, state.Actors})
@@ -579,7 +583,7 @@ content_hash, unchanged_refresh_count FROM media WHERE id = $1`, mediaID).Scan(
 	}
 	completeness := metadataCompleteness(state)
 	delay := metadataRefreshDelay(unchangedCount, completeness)
-	// 新上映内容需要更频繁刷新，才能及时获得更新后的剧集、纠正资料和新增剧照/评分。
+	// 对仍处于轮转中的不完整新作限制最大间隔，避免补全速度过慢。
 	currentYear := time.Now().Year()
 	if yearInt := parseMediaYear(state.Year); yearInt >= currentYear {
 		if delay > 3*24*time.Hour {
@@ -591,6 +595,7 @@ content_hash, unchanged_refresh_count FROM media WHERE id = $1`, mediaID).Scan(
 		}
 	}
 	nextRefresh := time.Now().Add(delay)
+	semanticChanged := semanticHash != previousSemanticHash
 	_, err := store.database.Exec(ctx, `UPDATE media SET
 metadata_status = CASE WHEN title <> '' AND (summary <> '' OR original_title <> '') THEN 'ready' ELSE 'partial' END,
 content_hash = $2, semantic_hash = $3, completeness_score = $4,
@@ -601,6 +606,15 @@ WHERE id = $1`, mediaID, contentHash,
 		semanticHash, completeness, mergeRuleVersion, unchangedCount, nextRefresh, changed)
 	if err != nil {
 		return fmt.Errorf("update media refresh state: %w", err)
+	}
+	// semanticChanged 是“需要重算”的变化触发器；metadataReady 是“允许重算”的质量门槛。
+	// 两者必须同时成立，并不冲突。
+	metadataReady := state.Title != "" && (state.Summary != "" || state.OriginalTitle != "") && completeness >= 70
+	if semanticChanged && doubanID != "" && metadataReady {
+		_, _ = store.database.Exec(ctx, `INSERT INTO worker_jobs
+(task_type, subject_key, payload, reason, status, priority, available_at)
+VALUES ('embedding', $1, jsonb_build_object('douban_id', $1), 'semantic_change', 'pending', 0, NOW())
+ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO NOTHING`, doubanID)
 	}
 	return nil
 }

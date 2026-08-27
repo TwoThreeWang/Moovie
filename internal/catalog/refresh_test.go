@@ -22,20 +22,20 @@ func TestRefreshHandlerDispatchesAllMetadataTypesAndChainsWork(t *testing.T) {
 	if len(fetcher.ids) != 1 || len(reviews.ids) != 1 || len(backdrops.ids) != 1 || len(vectors.ids) != 1 {
 		t.Fatalf("dispatch = fetch:%v reviews:%v backdrops:%v vectors:%v", fetcher.ids, reviews.ids, backdrops.ids, vectors.ids)
 	}
-	if len(queue.jobs) != 2 || queue.jobs[0].TaskType != RefreshProviderTMDB || queue.jobs[1].TaskType != RefreshProviderEmbedding {
+	if len(queue.jobs) != 1 || queue.jobs[0].TaskType != RefreshProviderTMDB {
 		t.Fatalf("chained jobs = %+v", queue.jobs)
 	}
 }
 
-func TestRefreshHandlerQueuesEmbeddingDirectlyWhenTMDBIsAlreadySatisfied(t *testing.T) {
+func TestRefreshHandlerDoesNotChainEmbeddingWhenTMDBSatisfied(t *testing.T) {
 	queue := &refreshQueueStub{}
 	handler := NewRefreshHandler(queue, &recordingFetcher{}, &recordingVectorEnricher{},
 		WithRefreshBackdrops(&recordingBackdropSyncer{}))
 	if err := handler.Handle(t.Context(), workqueue.Job{TaskType: RefreshProviderDouban, SubjectKey: "1292052"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(queue.jobs) != 1 || queue.jobs[0].TaskType != RefreshProviderEmbedding {
-		t.Fatalf("chained jobs = %+v", queue.jobs)
+	if len(queue.jobs) != 0 {
+		t.Fatalf("unexpected chained jobs = %+v", queue.jobs)
 	}
 }
 

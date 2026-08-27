@@ -30,15 +30,15 @@ func (store *PostgresStore) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-// UpdateEmbedding 写入向量及其来源文本和语义哈希。
-func (store *PostgresStore) UpdateEmbedding(ctx context.Context, doubanID, content, semanticHash string, embedding []float32) error {
+// UpdateEmbedding 写入向量及其来源文本。semantic_hash 由规范元数据合并维护，
+// 这里不会用 AI 改写后的文本覆盖它。
+func (store *PostgresStore) UpdateEmbedding(ctx context.Context, doubanID, content string, embedding []float32) error {
 	vector, err := vectorLiteral(embedding)
 	if err != nil {
 		return err
 	}
 	_, err = store.database.Exec(ctx, `UPDATE media SET embedding_content = $2,
-semantic_hash = $3, embedding = $4::vector,
-updated_at = NOW() WHERE douban_id = $1`, doubanID, content, semanticHash, vector)
+embedding = $3::vector, updated_at = NOW() WHERE douban_id = $1`, doubanID, content, vector)
 	if err != nil {
 		return fmt.Errorf("update media embedding: %w", err)
 	}
@@ -66,7 +66,7 @@ const movieColumns = `m.id, m.douban_id, m.title, m.original_title, m.year, m.po
 m.genres, m.countries, m.directors, m.actors, m.summary, m.duration,
 COALESCE((SELECT external_id FROM media_external_ids x WHERE x.media_id = m.id AND x.provider = 'imdb'
 ORDER BY x.is_primary DESC, x.updated_at DESC LIMIT 1), ''),
-m.media_type, m.series_status, m.backdrops, m.embedding_content, m.semantic_hash, m.reviews_json,
+m.media_type, m.series_status, m.backdrops, m.embedding_content, m.reviews_json,
 m.reviews_updated_at, m.metadata_status, m.completeness_score, m.next_refresh_at, m.updated_at,
 COALESCE(m.embedding::text, '')`
 
@@ -110,7 +110,7 @@ func (store *PostgresStore) FindSimilar(ctx context.Context, doubanID string, li
 m.genres, m.countries, m.directors, m.actors, m.summary, m.duration,
 COALESCE((SELECT external_id FROM media_external_ids x WHERE x.media_id = m.id AND x.provider = 'imdb'
 ORDER BY x.is_primary DESC, x.updated_at DESC LIMIT 1), ''),
-m.media_type, m.series_status, m.backdrops, '' AS embedding_content, '' AS semantic_hash, '[]' AS reviews_json,
+m.media_type, m.series_status, m.backdrops, '' AS embedding_content, '[]' AS reviews_json,
 m.reviews_updated_at, m.metadata_status, m.completeness_score, m.next_refresh_at, m.updated_at,
 ''
 FROM media m
@@ -177,10 +177,15 @@ ORDER BY CAST(SUBSTRING(external.external_type FROM '^tv_season_([0-9]+)$') AS I
 }
 
 // Upsert 写入或更新一部影片，同时把 IMDb ID 写进外部 ID 表。
+// 豆瓣主资料端点不返回 TMDB 剧照和独立抓取的短评；这两项输入为空时保留已有值。
 // 标题里带「第 N 季」时，external_type 会写成 tv_season_N，季度导航靠它归拢。
 func (store *PostgresStore) Upsert(ctx context.Context, movie Movie) error {
 	if movie.ReviewsUpdatedAt.IsZero() {
 		movie.ReviewsUpdatedAt = time.Unix(0, 0).UTC()
+	}
+	mediaType := "movie"
+	if strings.EqualFold(strings.TrimSpace(movie.MediaType), "tv") {
+		mediaType = "tv"
 	}
 	externalType := ""
 	if season := mediaidentity.TitleSeasonNumber(movie.Title, movie.OriginalTitle); season > 0 {
@@ -190,14 +195,16 @@ func (store *PostgresStore) Upsert(ctx context.Context, movie Movie) error {
 INSERT INTO media
 (media_type, douban_id, title, original_title, year, poster, rating_douban, genres, countries, directors, actors,
 summary, duration, backdrops, embedding_content, reviews_json, reviews_updated_at, series_status, metadata_status, updated_at)
-VALUES ('movie',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14,$15,$16,$17,$18,
+VALUES ($20,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14,$15,$16,$17,$18,
 CASE WHEN $2 <> '' THEN 'partial' ELSE 'empty' END,NOW())
 ON CONFLICT (douban_id) WHERE douban_id <> '' DO UPDATE SET title=EXCLUDED.title,
 original_title=EXCLUDED.original_title, year=EXCLUDED.year, poster=EXCLUDED.poster,
 rating_douban=EXCLUDED.rating_douban, genres=EXCLUDED.genres, countries=EXCLUDED.countries,
 directors=EXCLUDED.directors, actors=EXCLUDED.actors, summary=EXCLUDED.summary,
-duration=EXCLUDED.duration, backdrops=EXCLUDED.backdrops,
-reviews_json=EXCLUDED.reviews_json, reviews_updated_at=EXCLUDED.reviews_updated_at,
+duration=EXCLUDED.duration,
+backdrops=CASE WHEN EXCLUDED.backdrops <> '' THEN EXCLUDED.backdrops ELSE media.backdrops END,
+reviews_json=CASE WHEN EXCLUDED.reviews_json <> '' THEN EXCLUDED.reviews_json ELSE media.reviews_json END,
+reviews_updated_at=CASE WHEN EXCLUDED.reviews_json <> '' THEN EXCLUDED.reviews_updated_at ELSE media.reviews_updated_at END,
 series_status=CASE WHEN EXCLUDED.series_status <> '' THEN EXCLUDED.series_status ELSE media.series_status END,
 updated_at=NOW()
 RETURNING id, media_type
@@ -211,7 +218,7 @@ media_id=EXCLUDED.media_id, is_primary=TRUE, verified_at=NOW(), updated_at=NOW()
 		movie.DoubanID, movie.Title, movie.OriginalTitle, movie.Year, movie.Poster, movie.Rating,
 		movie.Genres, movie.Countries, movie.Directors, movie.Actors, movie.Summary, movie.Duration,
 		movie.IMDbID, movie.Backdrops, movie.EmbeddingContent, movie.ReviewsJSON, movie.ReviewsUpdatedAt,
-		movie.SeriesStatus, externalType)
+		movie.SeriesStatus, externalType, mediaType)
 	if err != nil {
 		return fmt.Errorf("upsert media: %w", err)
 	}
@@ -427,7 +434,7 @@ func scanMovie(row interface{ Scan(...any) error }) (Movie, error) {
 	err := row.Scan(&movie.ID, &movie.DoubanID, &movie.Title, &movie.OriginalTitle, &movie.Year,
 		&movie.Poster, &movie.Rating, &movie.Genres, &movie.Countries, &movie.Directors, &movie.Actors,
 		&movie.Summary, &movie.Duration, &movie.IMDbID, &movie.MediaType, &movie.SeriesStatus, &movie.Backdrops,
-		&movie.EmbeddingContent, &movie.EmbeddingSemanticHash, &movie.ReviewsJSON,
+		&movie.EmbeddingContent, &movie.ReviewsJSON,
 		&movie.ReviewsUpdatedAt, &movie.MetadataStatus, &movie.CompletenessScore,
 		&movie.NextRefreshAt, &movie.UpdatedAt, &embeddingText)
 	if err != nil {

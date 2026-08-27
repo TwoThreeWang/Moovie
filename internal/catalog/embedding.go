@@ -3,8 +3,6 @@ package catalog
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -86,7 +84,8 @@ func (service *EmbeddingService) Enrich(ctx context.Context, doubanID string) er
 	return err
 }
 
-// enrich 先比对语义哈希：元数据没变且向量维度正确就直接跳过，不重复调用模型。
+// enrich 为一部影片生成语义向量。元数据是否变化由上游（updateRefreshState）判断，
+// 这里只管拿到当前元数据、调 AI 改写、生成向量、写回。
 func (service *EmbeddingService) enrich(ctx context.Context, doubanID string) error {
 	movie, err := service.store.FindByDoubanID(ctx, doubanID)
 	if err != nil {
@@ -99,13 +98,7 @@ func (service *EmbeddingService) enrich(ctx context.Context, doubanID string) er
 		return fmt.Errorf("movie metadata incomplete for embedding: %s (status=%s, completeness=%d)",
 			doubanID, movie.MetadataStatus, movie.CompletenessScore)
 	}
-	// 哈希只对元数据取，不对最终送进模型的文本取。AI 每次改写的措辞都不同，
-	// 如果哈希包含 AI 输出，worker 每轮都会判定「内容变了」而无限重算。
-	if embeddingUpToDate(movie) {
-		return nil
-	}
 	metadata := strings.TrimSpace(embeddingInput(*movie))
-	semanticHash := contentHash(metadata)
 	content := service.semanticContent(ctx, *movie, metadata)
 	vector, err := service.generateVector(ctx, content)
 	if err != nil {
@@ -114,29 +107,20 @@ func (service *EmbeddingService) enrich(ctx context.Context, doubanID string) er
 	if len(vector) != embeddingDimensions {
 		return fmt.Errorf("embedding dimension mismatch: want %d, got %d", embeddingDimensions, len(vector))
 	}
-	if err := service.store.UpdateEmbedding(ctx, doubanID, content, semanticHash, vector); err != nil {
+	if err := service.store.UpdateEmbedding(ctx, doubanID, content, vector); err != nil {
 		return fmt.Errorf("persist embedding: %w", err)
 	}
 	return nil
 }
 
-// embeddingMetadataComplete 复用主资料刷新完成条件。只有主资料达到可用状态后，
-// 才允许把内容发给 AI/Ollama；半成品记录继续等待资料刷新链路补全。
+// embeddingMetadataComplete 同时检查“基础资料已就绪”和“完整度达到 70”。
+// 两项是独立条件：分数达标不代表 metadata_status 一定不是 partial。
 func embeddingMetadataComplete(movie *Movie) bool {
 	return movie != nil && movie.MetadataStatus != "partial" && movie.CompletenessScore >= 70
 }
 
-// embeddingUpToDate 判断现有向量是否仍对应当前元数据。仅判断“有向量”不够：
-// 简介、类型或主创变化后，旧向量必须重算。
-func embeddingUpToDate(movie *Movie) bool {
-	if movie == nil || len(movie.Embedding) != embeddingDimensions {
-		return false
-	}
-	metadata := strings.TrimSpace(embeddingInput(*movie))
-	return movie.EmbeddingSemanticHash == contentHash(metadata)
-}
-
-// embeddingInput 是元数据的规范表示：既用于组装 AI prompt，也是语义哈希的唯一来源。
+// embeddingInput 是发给 AI 改写层的规范元数据文本。
+// semantic_hash 在 updateRefreshState 中直接对对应的规范字段取哈希，不包含 AI 输出。
 // 它不直接送进向量模型，所以不受 512 token 限制。
 func embeddingInput(movie Movie) string {
 	directors := peopleNames(movie.Directors, 0)
@@ -264,12 +248,6 @@ func (service *EmbeddingService) generateSemanticSummary(ctx context.Context, me
 		return "", fmt.Errorf("AI Gateway 未返回内容")
 	}
 	return response.Choices[0].Message.Content, nil
-}
-
-// contentHash 取内容的 SHA-256，用于判断元数据是否变化。
-func contentHash(content string) string {
-	hash := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(hash[:])
 }
 
 // peopleNames 从导演/演员 JSON 里取人名，limit<=0 表示不限。

@@ -34,9 +34,8 @@ type Movie struct {
 	MediaType             string
 	SeriesStatus          string
 	Backdrops             string
-	EmbeddingContent      string
-	EmbeddingSemanticHash string
-	Embedding             []float32
+	EmbeddingContent string
+	Embedding        []float32
 	ReviewsJSON           string
 	ReviewsUpdatedAt      time.Time
 	MetadataStatus        string

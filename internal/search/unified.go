@@ -103,7 +103,7 @@ type UnifiedCatalog interface {
 // UnifiedSearchOption 是统一搜索服务的可选装配项。
 type UnifiedSearchOption func(*UnifiedSearchService)
 
-// UnifiedSuggestionFetcher 在本地没有规范影片时提供豆瓣联想兜底。
+// UnifiedSuggestionFetcher 在资源与 media 支路都没有产生媒体卡片时提供豆瓣联想兜底。
 type UnifiedSuggestionFetcher func(ctx context.Context, keyword string, limit int) ([]UnifiedItem, error)
 
 // WithUnifiedCatalog 注入媒体库检索；不注入时只返回资源侧结果。
@@ -111,7 +111,7 @@ func WithUnifiedCatalog(catalog UnifiedCatalog) UnifiedSearchOption {
 	return func(service *UnifiedSearchService) { service.catalog = catalog }
 }
 
-// WithUnifiedSuggestions 注入豆瓣联想兜底。
+// WithUnifiedSuggestions 注入统一结果为空时使用的豆瓣联想兜底。
 func WithUnifiedSuggestions(fetcher UnifiedSuggestionFetcher) UnifiedSearchOption {
 	return func(service *UnifiedSearchService) { service.suggestions = fetcher }
 }

@@ -54,7 +54,7 @@ func TestEmbeddingServiceUsesLocalMetadataAndPersistsExactly768Dimensions(t *tes
 		t.Fatal(err)
 	}
 	movie, _ := store.FindByDoubanID(t.Context(), "1292052")
-	if vectorCalls.Load() != 1 || movie.EmbeddingSemanticHash == "" || len(movie.Embedding) != embeddingDimensions {
+	if vectorCalls.Load() != 1 || len(movie.Embedding) != embeddingDimensions {
 		t.Fatalf("calls/movie = %d/%+v", vectorCalls.Load(), movie)
 	}
 }
@@ -272,21 +272,6 @@ func TestEmbeddingServiceRejectsIncompleteMetadataBeforeCallingModels(t *testing
 	}
 }
 
-func TestEmbeddingUpToDateRequiresCurrentMetadataHashAndDimensions(t *testing.T) {
-	movie := Movie{
-		DoubanID: "1292052", Title: "标题", Summary: "简介",
-		MetadataStatus: "ready", CompletenessScore: 70,
-		Embedding: make([]float32, embeddingDimensions),
-	}
-	movie.EmbeddingSemanticHash = contentHash(strings.TrimSpace(embeddingInput(movie)))
-	if !embeddingMetadataComplete(&movie) || !embeddingUpToDate(&movie) {
-		t.Fatal("完整资料的当前向量应该被识别为已完成")
-	}
-	movie.Summary = "更新后的简介"
-	if embeddingUpToDate(&movie) {
-		t.Fatal("元数据变化后不应复用旧向量")
-	}
-}
 
 type embeddingStoreStub struct {
 	Store

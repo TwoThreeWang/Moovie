@@ -52,7 +52,7 @@ type MediaRefreshQueue interface {
 	EnqueueMediaRefresh(ctx context.Context, mediaID int, reason string, requestedBy int) (int, error)
 }
 
-// TMDBRefreshChecker 判断一部影片是否还缺首次 TMDB 资料采集。
+// TMDBRefreshChecker 判断已有 IMDb 映射的条目是否仍缺剧照或 TMDB 映射。
 type TMDBRefreshChecker interface {
 	NeedsTMDBRefresh(ctx context.Context, doubanID string) (bool, error)
 }
@@ -73,7 +73,7 @@ func (store *PostgresStore) EnqueueRefresh(ctx context.Context, doubanID, provid
 		if err != nil {
 			return 0, err
 		}
-		if !embeddingMetadataComplete(movie) || embeddingUpToDate(movie) {
+		if !embeddingMetadataComplete(movie) {
 			return 0, nil
 		}
 	} else {
@@ -229,8 +229,8 @@ ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO N
 	return nil
 }
 
-// ScheduleEmbeddingBackfills 低优先级补齐历史向量。已有最新成功任务的影片不再入队；
-// 向量本身是否过期由 EmbeddingService 的元数据哈希作最终判断。
+// ScheduleEmbeddingBackfills 低优先级补齐从未生成过向量的影片。
+// 元数据变化触发的重算由 updateRefreshState 直接入队，这里只管首次生成。
 func (store *PostgresStore) ScheduleEmbeddingBackfills(ctx context.Context, limit int) error {
 	if limit <= 0 {
 		limit = embeddingBackfillBatchSize
@@ -240,20 +240,13 @@ func (store *PostgresStore) ScheduleEmbeddingBackfills(ctx context.Context, limi
     FROM media m
     WHERE m.douban_id <> ''
       AND m.metadata_status <> 'partial' AND m.completeness_score >= 70
-      AND NOT EXISTS (
-        SELECT 1 FROM worker_jobs done
-        WHERE done.task_type = 'embedding' AND done.subject_key = m.douban_id
-          AND done.status = 'completed'
-          AND done.finished_at >= COALESCE(m.last_content_change_at, m.created_at)
-      )
+      AND m.embedding IS NULL
       AND NOT EXISTS (
         SELECT 1 FROM worker_jobs blocked
         WHERE blocked.task_type = 'embedding' AND blocked.subject_key = m.douban_id
-          AND (blocked.status IN ('pending', 'running') OR
-            (blocked.status = 'failed' AND blocked.finished_at >= COALESCE(m.last_content_change_at, m.created_at)))
+          AND blocked.status IN ('pending', 'running')
       )
-    ORDER BY (m.embedding IS NULL OR m.embedding_content = '') DESC,
-             COALESCE(m.last_content_change_at, m.created_at), m.id
+    ORDER BY m.embedding IS NULL DESC, m.id
     LIMIT $1
 )
 INSERT INTO worker_jobs (task_type, subject_key, payload, reason, status, priority, available_at)
@@ -298,8 +291,9 @@ func NewRefreshHandler(queue RefreshQueue, fetcher Fetcher, vectors VectorEnrich
 	return handler
 }
 
-// Handle 执行一个刷新任务。主资料抓完后先补必要的 TMDB 资料，
-// 只有最后一个元数据任务成功后才派生向量任务。
+// Handle 执行一个刷新任务。豆瓣主资料成功后只按需补 TMDB；
+// 向量任务不在这里串行派生，而是每次规范合并后由 updateRefreshState
+// 在 semantic_hash 变化且资料达标时入队。
 func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) error {
 	doubanID := job.SubjectKey
 	switch job.TaskType {
@@ -318,20 +312,10 @@ func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) er
 					return err
 				}
 				if needed {
-					jobID, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderTMDB, job.Reason, job.RequestedBy)
-					if err != nil {
+					if _, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderTMDB, job.Reason, job.RequestedBy); err != nil {
 						return err
 					}
-					// TMDB 会合并语义字段，因此它真正入队时要等其成功后再生成向量。
-					if jobID != 0 {
-						return nil
-					}
 				}
-			}
-		}
-		if handler.vectors != nil {
-			if _, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderEmbedding, job.Reason, job.RequestedBy); err != nil {
-				return err
 			}
 		}
 		return nil
@@ -344,15 +328,7 @@ func (handler *RefreshHandler) Handle(ctx context.Context, job workqueue.Job) er
 		if handler.backdrops == nil {
 			return workqueue.Terminal(fmt.Errorf("TMDB refresher is not configured"))
 		}
-		if err := handler.backdrops.SyncBackdrops(ctx, doubanID); err != nil {
-			return err
-		}
-		if handler.vectors != nil {
-			if _, err := handler.queue.EnqueueRefresh(ctx, doubanID, RefreshProviderEmbedding, job.Reason, job.RequestedBy); err != nil {
-				return err
-			}
-		}
-		return nil
+		return handler.backdrops.SyncBackdrops(ctx, doubanID)
 	case RefreshProviderEmbedding:
 		if handler.vectors == nil {
 			return workqueue.Terminal(fmt.Errorf("embedding refresher is not configured"))

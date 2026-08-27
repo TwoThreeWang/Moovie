@@ -258,10 +258,13 @@ func (provider *DoubanProvider) Fetch(ctx context.Context, doubanID string, _ bo
 				continue
 			}
 			movie := mapRexxarMovie(response)
+			// 成功的详情端点已经给出了可靠类型，旧表和规范合并都直接使用它，
+			// 不再先按 movie 落库、再等待规范合并纠正。
+			movie.MediaType = canonicalDoubanMediaType(mediaType)
 			if err := provider.store.Upsert(ctx, movie); err != nil {
 				return nil, fmt.Errorf("save Douban movie: %w", err)
 			}
-			mediaID, syncErr := syncCanonical(ctx, provider.canonical, movie, canonicalDoubanMediaType(mediaType), "douban", response,
+			mediaID, syncErr := syncCanonical(ctx, provider.canonical, movie, movie.MediaType, "douban", response,
 				mediaidentity.ExternalID{Provider: "douban", ExternalID: movie.DoubanID, IsPrimary: true})
 			if syncErr != nil {
 				// 分阶段迁移期间继续保留旧豆瓣同步路径。

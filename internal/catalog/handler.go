@@ -347,7 +347,8 @@ func (handler *Handler) reviewList(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/reviews.html", gin.H{"Reviews": nil, "Message": "正在从豆瓣采集精彩短评..."})
 }
 
-// backdropList 返回剧照片段，逻辑与 reviewList 相同：缺数据就排任务并提示稍后刷新。
+// backdropList 返回剧照片段。已有 IMDb 映射但仍缺剧照/TMDB 映射时，
+// 按 missing_backdrops 的七天冷却规则排 TMDB 任务；没有 IMDb 映射时不会在这里强制抓取。
 func (handler *Handler) backdropList(c *gin.Context) {
 	doubanID := c.Query("douban_id")
 	if doubanID == "" {
@@ -484,9 +485,9 @@ func (handler *Handler) movieActions(c *gin.Context) {
 	mediaID, _ := strconv.Atoi(c.Query("media_id"))
 
 	var (
-		playback                            search.PlaybackSummary
-		isWish, isWatched                   bool
-		watchedByCount, wishByCount         int
+		playback                    search.PlaybackSummary
+		isWish, isWatched           bool
+		watchedByCount, wishByCount int
 	)
 	playback.MediaID = mediaID
 
@@ -504,12 +505,24 @@ func (handler *Handler) movieActions(c *gin.Context) {
 	if handler.userMovies != nil {
 		if userID > 0 {
 			wg.Add(2)
-			go func() { defer wg.Done(); isWish, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, doubanID, "wish") }()
-			go func() { defer wg.Done(); isWatched, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, doubanID, "watched") }()
+			go func() {
+				defer wg.Done()
+				isWish, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, doubanID, "wish")
+			}()
+			go func() {
+				defer wg.Done()
+				isWatched, _ = handler.userMovies.IsMarked(c.Request.Context(), userID, doubanID, "watched")
+			}()
 		}
 		wg.Add(2)
-		go func() { defer wg.Done(); watchedByCount, _ = handler.userMovies.CountByMovie(c.Request.Context(), doubanID, "watched") }()
-		go func() { defer wg.Done(); wishByCount, _ = handler.userMovies.CountByMovie(c.Request.Context(), doubanID, "wish") }()
+		go func() {
+			defer wg.Done()
+			watchedByCount, _ = handler.userMovies.CountByMovie(c.Request.Context(), doubanID, "watched")
+		}()
+		go func() {
+			defer wg.Done()
+			wishByCount, _ = handler.userMovies.CountByMovie(c.Request.Context(), doubanID, "wish")
+		}()
 	}
 	wg.Wait()
 

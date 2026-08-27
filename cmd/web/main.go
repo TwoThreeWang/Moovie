@@ -192,7 +192,8 @@ func main() {
 		CFGatewayURL: cfg.Catalog.CFGatewayURL, CFAPIToken: cfg.Catalog.CFAPIToken,
 		CFAIModel: cfg.Catalog.CFAIModel,
 	}, catalog.WithEmbeddingAIClient(aiClient))
-	// 主资料刷新：豆瓣抓取 → 可选 TMDB 合并 → 向量化，串行由后台任务驱动。
+	// 刷新执行器处理豆瓣主资料/短评、TMDB 和向量任务。
+	// 豆瓣成功后会按需补 TMDB；每次规范合并检测到语义字段变化时独立入队向量任务。
 	var metadataRefreshHandler *catalog.RefreshHandler
 	if metadataRefreshJobs != nil {
 		refreshOptions := []catalog.RefreshHandlerOption{catalog.WithRefreshReviews(doubanProvider)}

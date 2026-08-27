@@ -12,6 +12,6 @@ type Store interface {
 	Latest(ctx context.Context, limit int) ([]Movie, error)
 	Suggest(ctx context.Context, keyword string, limit int) ([]Movie, error)
 	Popular(ctx context.Context, limit int) ([]Movie, error)
-	UpdateEmbedding(ctx context.Context, doubanID, content, semanticHash string, embedding []float32) error
+	UpdateEmbedding(ctx context.Context, doubanID, content string, embedding []float32) error
 	Count(ctx context.Context) (int, error)
 }
