@@ -96,6 +96,15 @@ WHERE EXCLUDED.activity_at >= playback_positions.activity_at`, append(arguments,
 	if err != nil {
 		return fmt.Errorf("upsert playback position: %w", err)
 	}
+	if operation.MediaID > 0 && operation.Type != "delete" {
+		_, _ = executor.Exec(ctx, `DELETE FROM playback_positions
+WHERE user_id = $1 AND media_id = $2 AND deleted_at IS NULL
+  AND activity_at < $3 AND id != (
+    SELECT id FROM playback_positions
+    WHERE user_id = $1 AND media_id = $2 AND deleted_at IS NULL
+    ORDER BY activity_at DESC LIMIT 1
+  )`, userID, operation.MediaID, activityAt)
+	}
 	return nil
 }
 

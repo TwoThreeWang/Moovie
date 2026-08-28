@@ -11,14 +11,8 @@ func MergeContinue(records []Record) []Record {
 	merged := make(map[string]Record, len(records))
 	for _, record := range records {
 		key := record.Source + "\x00" + record.VodID + "\x00" + record.Episode
-		if record.MediaUnitID > 0 {
-			key = "unit:" + itoa(record.MediaUnitID)
-		} else if record.MediaID > 0 {
-			episodeKey := record.EpisodeKey
-			if episodeKey == "" {
-				episodeKey = record.Episode
-			}
-			key = "media:" + itoa(record.MediaID) + ":" + itoa(record.SeasonNumber) + ":" + episodeKey
+		if record.MediaUnitID > 0 || record.MediaID > 0 {
+			key = "media:" + itoa(record.MediaID)
 		}
 		current, exists := merged[key]
 		if !exists || recordTime(record).After(recordTime(current)) ||
