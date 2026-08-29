@@ -641,7 +641,7 @@ func (handler *Handler) renderPlayPage(c *gin.Context, sourceKey, vodID, doubanI
 	}
 	c.HTML(http.StatusOK, "play.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
 		Title: title, Description: fmt.Sprintf("在线观看 %s - %s", view.Title, handler.config.SiteName),
-		Keywords: fmt.Sprintf("%s,在线播放,高清视频,%s", view.Title, handler.config.SiteName), Cover: view.Poster,
+		Keywords: fmt.Sprintf("%s,在线播放,高清视频,%s", view.Title, handler.config.SiteName), Cover: view.Poster, Robots: "noindex, follow",
 	}, extra))
 }
 
@@ -886,6 +886,7 @@ func (handler *Handler) watch(c *gin.Context) {
 		Description: fmt.Sprintf("在线观看 %s - %s", canonical.Title, handler.config.SiteName),
 		Keywords:    fmt.Sprintf("%s,在线播放,高清视频,%s", canonical.Title, handler.config.SiteName),
 		Cover:       view.Poster,
+		Robots:      "noindex, follow",
 	}, gin.H{
 		"DoubanID":            doubanID,
 		"MediaID":             canonical.ID,
@@ -1226,13 +1227,14 @@ func (handler *Handler) iptv(c *gin.Context) {
 		Title:       fmt.Sprintf("IPTV电视直播 - 全国卫视央视在线观看 - %s", handler.config.SiteName),
 		Description: fmt.Sprintf("%s 提供的免费 IPTV 电视直播播放器。支持导入 M3U 直播源，观看央视、卫视等频道。", handler.config.SiteName),
 		Keywords:    fmt.Sprintf("IPTV,电视直播,央视,卫视,在线观看,%s", handler.config.SiteName),
+		Canonical:   platformweb.CanonicalURL(handler.config.SiteURL, "/iptv"),
 	}
 	c.HTML(http.StatusOK, "iptv.html", platformweb.NewData(c, handler.config, metadata, gin.H{"ContentClass": "full-width"}))
 }
 
 // tvbox 是 TVBox 配置说明页。
 func (handler *Handler) tvbox(c *gin.Context) {
-	metadata := platformweb.Metadata{Title: "TVBox 配置指南 - " + handler.config.SiteName}
+	metadata := platformweb.Metadata{Title: "TVBox 配置指南 - " + handler.config.SiteName, Canonical: platformweb.CanonicalURL(handler.config.SiteURL, "/tvbox")}
 	c.HTML(http.StatusOK, "tvbox.html", platformweb.NewData(c, handler.config, metadata, gin.H{
 		"TVBoxAPIURL": strings.TrimRight(handler.config.SiteURL, "/") + "/api/tvbox.json",
 	}))

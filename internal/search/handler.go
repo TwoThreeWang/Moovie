@@ -196,7 +196,7 @@ func (handler *Handler) searchPage(c *gin.Context) {
 	view := platformweb.NewViewModel(c, handler.config, platformweb.Metadata{
 		Title:       keyword + "在线观看 - " + keyword + "免费高清资源搜索 - " + handler.config.SiteName,
 		Description: "Moovie影牛 为您找到关于“" + keyword + "”的相关资源。包含最新电影、电视剧在线观看线路，支持4K/高清多源码切换。",
-		Canonical:   fmt.Sprintf("%s/search?kw=%s", handler.config.SiteURL, keyword),
+		Robots:      "noindex, follow",
 	})
 	view.Keyword = keyword
 	view.Bypass = c.Query("bypass") == "1"

@@ -24,7 +24,7 @@ func newViewModel(c *gin.Context, cfg config.Config, metadata Metadata) ViewMode
 	return platformweb.NewViewModel(c, cfg, metadata)
 }
 
-// canonicalURL 拼接规范链接（仅测试使用，实际渲染走 platform/web）。
+// canonicalURL 拼接规范链接。
 func canonicalURL(siteURL, path string) string {
 	return platformweb.CanonicalURL(siteURL, path)
 }

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/content"
 )
@@ -12,20 +13,20 @@ type SitemapProvider struct{ store Store }
 // NewSitemapProvider 创建站点地图数据源。
 func NewSitemapProvider(store Store) SitemapProvider { return SitemapProvider{store: store} }
 
-// LatestForSitemap 优先用只查两列的轻量实现；存储层不支持时才退回加载完整影片。
-func (provider SitemapProvider) LatestForSitemap(ctx context.Context, limit int) ([]content.SitemapMovie, error) {
+func (provider SitemapProvider) CountForSitemap(ctx context.Context, kind content.SitemapKind) (int, error) {
 	if optimized, ok := provider.store.(interface {
-		LatestForSitemap(context.Context, int) ([]content.SitemapMovie, error)
+		CountForSitemap(context.Context, content.SitemapKind) (int, error)
 	}); ok {
-		return optimized.LatestForSitemap(ctx, limit)
+		return optimized.CountForSitemap(ctx, kind)
 	}
-	movies, err := provider.store.Latest(ctx, limit)
-	if err != nil {
-		return nil, err
+	return 0, fmt.Errorf("catalog store does not support sitemap counts")
+}
+
+func (provider SitemapProvider) PageForSitemap(ctx context.Context, kind content.SitemapKind, limit, offset int) ([]content.SitemapMovie, error) {
+	if optimized, ok := provider.store.(interface {
+		PageForSitemap(context.Context, content.SitemapKind, int, int) ([]content.SitemapMovie, error)
+	}); ok {
+		return optimized.PageForSitemap(ctx, kind, limit, offset)
 	}
-	result := make([]content.SitemapMovie, 0, len(movies))
-	for _, movie := range movies {
-		result = append(result, content.SitemapMovie{DoubanID: movie.DoubanID, UpdatedAt: movie.UpdatedAt})
-	}
-	return result, nil
+	return nil, fmt.Errorf("catalog store does not support sitemap pages")
 }

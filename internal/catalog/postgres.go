@@ -114,8 +114,8 @@ m.media_type, m.series_status, m.backdrops, '' AS embedding_content, '[]' AS rev
 m.reviews_updated_at, m.metadata_status, m.completeness_score, m.next_refresh_at, m.updated_at,
 ''
 FROM media m
-JOIN LATERAL (SELECT embedding FROM media WHERE douban_id = $1 AND embedding IS NOT NULL) target ON true
-WHERE m.douban_id != $1 AND m.embedding IS NOT NULL
+JOIN LATERAL (SELECT embedding, media_type FROM media WHERE douban_id = $1 AND embedding IS NOT NULL) target ON true
+WHERE m.douban_id != $1 AND m.embedding IS NOT NULL AND m.media_type = target.media_type
 ORDER BY m.embedding <-> target.embedding LIMIT $2`, doubanID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("find similar movies: %w", err)
@@ -355,12 +355,27 @@ func (store *PostgresStore) Latest(ctx context.Context, limit int) ([]Movie, err
 	return movies, nil
 }
 
-// LatestForSitemap 刻意只查询生成 XML 所需的两个字段。
-// 普通 Latest 还会加载简介、演员、剧照和评论；若 sitemap 也使用它，数据增长后 SEO 端点会无谓变重。
-func (store *PostgresStore) LatestForSitemap(ctx context.Context, limit int) ([]content.SitemapMovie, error) {
-	rows, err := store.database.Query(ctx, `SELECT douban_id, updated_at FROM media ORDER BY updated_at DESC LIMIT $1`, limit)
+func (store *PostgresStore) CountForSitemap(ctx context.Context, kind content.SitemapKind) (int, error) {
+	condition, err := sitemapCondition(kind)
 	if err != nil {
-		return nil, fmt.Errorf("latest sitemap movies: %w", err)
+		return 0, err
+	}
+	var count int
+	if err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM media WHERE `+condition).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count sitemap movies: %w", err)
+	}
+	return count, nil
+}
+
+// PageForSitemap 只查询生成 XML 所需的两列，并按主键稳定分片。
+func (store *PostgresStore) PageForSitemap(ctx context.Context, kind content.SitemapKind, limit, offset int) ([]content.SitemapMovie, error) {
+	condition, err := sitemapCondition(kind)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := store.database.Query(ctx, `SELECT douban_id, updated_at FROM media WHERE `+condition+` ORDER BY id ASC LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("sitemap movie page: %w", err)
 	}
 	defer rows.Close()
 	movies := make([]content.SitemapMovie, 0)
@@ -375,6 +390,18 @@ func (store *PostgresStore) LatestForSitemap(ctx context.Context, limit int) ([]
 		return nil, fmt.Errorf("iterate sitemap movies: %w", err)
 	}
 	return movies, nil
+}
+
+func sitemapCondition(kind content.SitemapKind) (string, error) {
+	condition := `douban_id <> '' AND title <> ''`
+	switch kind {
+	case content.SitemapMovies:
+		return condition, nil
+	case content.SitemapSimilar:
+		return condition + ` AND embedding IS NOT NULL`, nil
+	default:
+		return "", fmt.Errorf("unsupported sitemap kind %q", kind)
+	}
 }
 
 // Suggest 按标题模糊搜索，完全相同 > 前缀匹配 > 其他，同档再按年份和评分排。

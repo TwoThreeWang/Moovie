@@ -2,8 +2,8 @@ package recommendation
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -64,7 +64,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 
 // forYouPage 渲染「为你推荐」页面骨架，内容由 HTMX 异步加载。
 func (handler *Handler) forYouPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "foryou.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "为你推荐 - " + handler.config.SiteName}, nil))
+	c.HTML(http.StatusOK, "foryou.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "为你推荐 - " + handler.config.SiteName, Robots: "noindex, follow"}, nil))
 }
 
 // forYou 返回「为你推荐」的内容片段。
@@ -266,46 +266,51 @@ func (handler *Handler) page(c *gin.Context) {
 		handler.notFound(c, "电影未找到 - "+handler.config.SiteName)
 		return
 	}
-	directors := directorNames(source.Directors)
-	primaryGenre := ""
-	if parts := strings.Split(source.Genres, ","); len(parts) > 0 {
-		primaryGenre = strings.TrimSpace(parts[0])
+	mediaLabel, discoverURL := "电影", "/discover/movie"
+	if source.MediaType != "" && source.MediaType != "movie" {
+		mediaLabel, discoverURL = "剧集", "/discover/tv"
 	}
-	description := fmt.Sprintf("为您精选多部类似《%s》的电影。", source.Title)
-	reason := "基于剧情内核"
-	if directors != "" {
-		reason += "、导演" + directors + "风格"
-	}
-	if primaryGenre != "" {
-		reason += "及" + primaryGenre + "题材"
-	}
-	reason += "，结合向量相似度，为您推荐"
+	description := fmt.Sprintf("寻找类似《%s》的%s？按内容相似度整理相关作品", source.Title, mediaLabel)
 	if len(movies) > 1 {
-		reason += fmt.Sprintf(" 《%s》、《%s》等高相关佳作。", movies[0].Movie.Title, movies[1].Movie.Title)
+		description += fmt.Sprintf("，包括《%s》《%s》等。", movies[0].Movie.Title, movies[1].Movie.Title)
 	} else if len(movies) == 1 {
-		reason += fmt.Sprintf(" 《%s》等高相关佳作。", movies[0].Movie.Title)
+		description += fmt.Sprintf("，包括《%s》等。", movies[0].Movie.Title)
+	} else {
+		description += "。"
 	}
-	description = strings.TrimSpace(description + " " + reason)
-	title := fmt.Sprintf("类似《%s》的电影推荐_和《%s》差不多的电影 - %s", source.Title, source.Title, handler.config.SiteName)
-	c.HTML(http.StatusOK, "recommendations.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title, Description: description, Canonical: fmt.Sprintf("%s/similar/%s", handler.config.SiteURL, source.DoubanID)}, gin.H{"SourceMovie": source, "SimilarMovies": movies, "PrimaryGenre": primaryGenre}))
-}
-
-// directorNames 截取前几位导演用于页面展示。
-func directorNames(value string) string {
-	var directors []catalog.Director
-	if json.Unmarshal([]byte(value), &directors) != nil {
-		return ""
+	canonical := platformweb.CanonicalURL(handler.config.SiteURL, "/similar/"+source.DoubanID)
+	items := make([]map[string]any, 0, len(movies))
+	for index, movie := range movies {
+		items = append(items, map[string]any{
+			"@type": "ListItem", "position": index + 1,
+			"url": platformweb.CanonicalURL(handler.config.SiteURL, "/movie/"+movie.Movie.DoubanID),
+		})
 	}
-	names := make([]string, 0, len(directors))
-	for _, director := range directors {
-		if director.Name != "" {
-			names = append(names, director.Name)
-		}
+	itemListJSONLD, _ := platformweb.JSONLD(map[string]any{
+		"@context": "https://schema.org", "@type": "ItemList",
+		"name":          fmt.Sprintf("类似《%s》的%s推荐", source.Title, mediaLabel),
+		"numberOfItems": len(items), "itemListElement": items,
+	})
+	breadcrumbJSONLD, _ := platformweb.JSONLD(map[string]any{
+		"@context": "https://schema.org", "@type": "BreadcrumbList",
+		"itemListElement": []map[string]any{
+			{"@type": "ListItem", "position": 1, "name": "首页", "item": platformweb.CanonicalURL(handler.config.SiteURL, "/")},
+			{"@type": "ListItem", "position": 2, "name": source.Title, "item": platformweb.CanonicalURL(handler.config.SiteURL, "/movie/"+source.DoubanID)},
+			{"@type": "ListItem", "position": 3, "name": "相似推荐", "item": canonical},
+		},
+	})
+	title := fmt.Sprintf("类似《%s》的%s推荐 - %s", source.Title, mediaLabel, handler.config.SiteName)
+	metadata := platformweb.Metadata{Title: title, Description: description, Canonical: canonical, JSONLD: []template.JS{itemListJSONLD, breadcrumbJSONLD}}
+	if len(movies) == 0 {
+		metadata.Robots = "noindex, follow"
 	}
-	return strings.Join(names, "、")
+	c.HTML(http.StatusOK, "recommendations.html", platformweb.NewData(c, handler.config, metadata, gin.H{
+		"SourceMovie": source, "SimilarMovies": movies,
+		"MediaLabel": mediaLabel, "DiscoverURL": discoverURL,
+	}))
 }
 
 // notFound 渲染 404。
 func (handler *Handler) notFound(c *gin.Context, title string) {
-	c.HTML(http.StatusNotFound, "404.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title}, nil))
+	c.HTML(http.StatusNotFound, "404.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title, Robots: "noindex, follow"}, nil))
 }

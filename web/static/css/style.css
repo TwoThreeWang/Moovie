@@ -335,6 +335,10 @@ body.sidebar-open { overflow: hidden; }
 
 /* ==================== 电影详情页（豆瓣风格） ==================== */
 .movie-page { max-width: 900px; margin: 0 auto; }
+.movie-page > .breadcrumbs { margin-bottom: 18px; font-size: 0.875rem; color: var(--text-muted); }
+.movie-page > .breadcrumbs a { color: var(--text-secondary); text-decoration: none; }
+.movie-page > .breadcrumbs a:hover { color: var(--primary-text); }
+.movie-page > .breadcrumbs .breadcrumbs-sep { margin: 0 0.25rem; color: var(--text-muted); }
 .movie-header { display: flex; gap: 24px; margin-bottom: 30px; }
 .movie-poster-col { flex-shrink: 0; width: 135px; }
 .movie-poster-img { width: 100%; border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
@@ -405,6 +409,10 @@ a.movie-series-season:hover { color: var(--primary-text); background: var(--bg-s
 .btn-favorite.favorited .icon { color: var(--primary-text); }
 .movie-section { margin-bottom: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
 .movie-section .section-title { font-size: 0.875rem; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.movie-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+.movie-section-heading .section-title { margin-bottom: 0; }
+.movie-section-heading .section-more { flex-shrink: 0; color: var(--text-secondary); font-size: 0.8125rem; text-decoration: none; }
+.movie-section-heading .section-more:hover { color: var(--primary-text); }
 .movie-summary { font-size: 0.875rem; line-height: 1.8; color: var(--text-secondary); text-indent: 2em; }
 .similar-movies-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1.25rem; }
 .similar-movie-card { display: flex; flex-direction: column; color: inherit; }
@@ -452,6 +460,55 @@ a.movie-series-season:hover { color: var(--primary-text); background: var(--bg-s
 .similar-movies-grid { grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
 .similar-movie-title { font-size: 0.75rem; }
 .similar-movie-rating { padding: 2px 6px; font-size: 0.6875rem; }
+}
+
+/* ==================== 相似内容页 ==================== */
+.recommendations-container { width: 100%; max-width: 900px; margin: 0 auto; }
+.recommendations-container .breadcrumbs { margin-bottom: 18px; color: var(--text-muted); font-size: 0.875rem; }
+.recommendations-container .breadcrumbs a { color: var(--text-secondary); text-decoration: none; }
+.recommendations-container .breadcrumbs a:hover { color: var(--primary-text); }
+.recommendations-container .breadcrumbs-sep { margin: 0 0.25rem; color: var(--text-muted); }
+.recommendations-header { margin-bottom: 26px; }
+.recommendations-header .page-title { margin-bottom: 6px; font-size: clamp(1.35rem, 2.4vw, 1.75rem); line-height: 1.35; }
+.recommendations-header .page-subtitle { margin: 0; color: var(--text-muted); font-size: 0.875rem; line-height: 1.6; }
+.source-movie-card { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 18px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.source-movie-poster, .recommendation-poster { position: relative; display: block; overflow: hidden; border-radius: 6px; background: var(--bg-secondary); }
+.source-movie-poster { width: 92px; aspect-ratio: 2 / 3; }
+.source-movie-poster img, .recommendation-poster img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.source-movie-rating-badge, .recommendation-rating-badge { position: absolute; top: 6px; right: 6px; padding: 3px 6px; border-radius: 4px; background: rgba(24, 22, 22, 0.82); color: var(--rating); font-size: 0.6875rem; font-weight: 650; white-space: nowrap; }
+.source-movie-content, .recommendation-content { min-width: 0; }
+.source-movie-kicker { display: block; margin-bottom: 3px; color: var(--text-muted); font-size: 0.75rem; }
+.source-movie-title, .recommendation-title { margin: 0; line-height: 1.35; }
+.source-movie-title { font-size: 1.125rem; }
+.source-movie-title a, .recommendation-title a { color: var(--text); text-decoration: none; }
+.source-movie-title a:hover, .recommendation-title a:hover { color: var(--primary-text); }
+.source-movie-meta, .recommendation-meta { display: flex; flex-wrap: wrap; margin-top: 6px; color: var(--text-muted); font-size: 0.8125rem; }
+.source-movie-meta span:not(:last-child)::after, .recommendation-meta span:not(:last-child)::after { content: "·"; margin: 0 7px; color: var(--border-strong); }
+.source-movie-summary { display: -webkit-box; margin: 9px 0 0; overflow: hidden; color: var(--text-secondary); font-size: 0.875rem; line-height: 1.65; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.source-movie-link, .back-link { color: var(--primary-text); font-size: 0.875rem; text-decoration: none; }
+.source-movie-link { display: inline-block; margin-top: 8px; }
+.source-movie-link:hover, .back-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.recommendations-section { margin-top: 30px; }
+.recommendations-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 4px; }
+.recommendations-section-heading .section-title { margin: 0; font-size: 1.125rem; }
+.recommendations-section-heading > span { color: var(--text-muted); font-size: 0.8125rem; }
+.recommendations-list { display: flex; flex-direction: column; }
+.recommendation-card { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+.recommendation-poster { width: 80px; aspect-ratio: 2 / 3; }
+.recommendation-title { font-size: 1rem; }
+.recommendation-reason { margin: 8px 0 0; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.55; }
+.recommendation-reason > span { margin-right: 7px; color: var(--primary-text); font-weight: 600; }
+.recommendation-summary { display: -webkit-box; margin: 6px 0 0; overflow: hidden; color: var(--text-muted); font-size: 0.8125rem; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.recommendations-empty { padding: 28px 0; color: var(--text-secondary); }
+.recommendations-empty p { margin: 0 0 8px; }
+.back-section { margin-top: 26px; }
+.recommendations-container a:focus-visible { border-radius: 3px; outline: 2px solid var(--primary-text); outline-offset: 3px; }
+@media (max-width: 600px) {
+.source-movie-card { grid-template-columns: 72px minmax(0, 1fr); gap: 14px; }
+.source-movie-poster { width: 72px; }
+.recommendation-card { grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 14px 0; }
+.recommendation-poster { width: 64px; }
+.source-movie-rating-badge, .recommendation-rating-badge { position: static; display: block; border-radius: 0; text-align: center; }
 }
 
 /* ==================== 认证页面（登录/注册） ==================== */

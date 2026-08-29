@@ -41,7 +41,7 @@ func TestSearchPageRedirectsAndPreservesSEOFormula(t *testing.T) {
 	if snapshot.Description != "Moovie影牛 为您找到关于“肖申克”的相关资源。包含最新电影、电视剧在线观看线路，支持4K/高清多源码切换。" {
 		t.Fatalf("description = %q", snapshot.Description)
 	}
-	if snapshot.Canonical != "https://moovie.example/search?kw=%e8%82%96%e7%94%b3%e5%85%8b" || snapshot.Robots != "index, follow" {
+	if snapshot.Canonical != "" || snapshot.Robots != "noindex, follow" {
 		t.Fatalf("canonical/robots = %q/%q", snapshot.Canonical, snapshot.Robots)
 	}
 	body := responseBody(t, app.client, app.baseURL+"/search?kw=%E8%82%96%E7%94%B3%E5%85%8B")

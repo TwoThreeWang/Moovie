@@ -23,18 +23,20 @@ var testPages = []string{"home", "about", "advertise", "changelog", "dmca", "cop
 func TestPublicPagesPreserveStatusAndSEO(t *testing.T) {
 	app := newTestApp(t, nil)
 	cases := []struct {
-		path  string
-		title string
-		h1    string
+		path      string
+		title     string
+		h1        string
+		canonical string
+		robots    string
 	}{
-		{path: "/", title: "Moovie影牛 - 发现你的下一部电影", h1: "Moovie 影牛"},
-		{path: "/about", title: "关于 - Moovie影牛", h1: "关于 Moovie 影牛"},
-		{path: "/advertise", title: "广告合作 - Moovie影牛", h1: "广告合作"},
-		{path: "/changelog", title: "更新记录 - Moovie影牛", h1: "更新记录 (Changelog)"},
-		{path: "/dmca", title: "DMCA 声明 - Moovie影牛", h1: "DMCA 声明"},
-		{path: "/copyright-restricted?title=%E6%B5%8B%E8%AF%95", title: "版权限制 - Moovie影牛", h1: "版权限制"},
-		{path: "/privacy", title: "隐私政策 - Moovie影牛", h1: "隐私政策"},
-		{path: "/terms", title: "服务协议 - Moovie影牛", h1: "服务协议"},
+		{path: "/", title: "Moovie影牛 - 发现你的下一部电影", h1: "Moovie 影牛", canonical: "https://moovie.example/", robots: "index, follow"},
+		{path: "/about", title: "关于 - Moovie影牛", h1: "关于 Moovie 影牛", canonical: "https://moovie.example/about", robots: "index, follow"},
+		{path: "/advertise", title: "广告合作 - Moovie影牛", h1: "广告合作", canonical: "https://moovie.example/advertise", robots: "index, follow"},
+		{path: "/changelog", title: "更新记录 - Moovie影牛", h1: "更新记录 (Changelog)", canonical: "https://moovie.example/changelog", robots: "index, follow"},
+		{path: "/dmca", title: "DMCA 声明 - Moovie影牛", h1: "DMCA 声明", canonical: "https://moovie.example/dmca", robots: "index, follow"},
+		{path: "/copyright-restricted?title=%E6%B5%8B%E8%AF%95", title: "版权限制 - Moovie影牛", h1: "版权限制", robots: "noindex, follow"},
+		{path: "/privacy", title: "隐私政策 - Moovie影牛", h1: "隐私政策", canonical: "https://moovie.example/privacy", robots: "index, follow"},
+		{path: "/terms", title: "服务协议 - Moovie影牛", h1: "服务协议", canonical: "https://moovie.example/terms", robots: "index, follow"},
 	}
 
 	client := app.client
@@ -53,11 +55,11 @@ func TestPublicPagesPreserveStatusAndSEO(t *testing.T) {
 			if snapshot.Description != DefaultDescription {
 				t.Fatalf("description = %q, want legacy default", snapshot.Description)
 			}
-			if snapshot.Keywords != DefaultKeywords || snapshot.Robots != "index, follow" {
+			if snapshot.Keywords != DefaultKeywords || snapshot.Robots != testCase.robots {
 				t.Fatalf("keywords/robots changed: %q/%q", snapshot.Keywords, snapshot.Robots)
 			}
-			if snapshot.Canonical != "" {
-				t.Fatalf("canonical = %q, legacy static page has no canonical", snapshot.Canonical)
+			if snapshot.Canonical != testCase.canonical {
+				t.Fatalf("canonical = %q, want %q", snapshot.Canonical, testCase.canonical)
 			}
 			if snapshot.OGTitle != testCase.title || snapshot.TwitterTitle != testCase.title {
 				t.Fatalf("social titles changed: og=%q twitter=%q", snapshot.OGTitle, snapshot.TwitterTitle)
@@ -75,6 +77,9 @@ func TestNotFoundIsNotSoft404(t *testing.T) {
 	if snapshot.Status != http.StatusNotFound || snapshot.Title != "页面未找到 - Moovie影牛" || snapshot.H1 != "404" {
 		t.Fatalf("unexpected 404 snapshot: status=%d title=%q h1=%q", snapshot.Status, snapshot.Title, snapshot.H1)
 	}
+	if snapshot.Robots != "noindex, follow" {
+		t.Fatalf("404 robots = %q", snapshot.Robots)
+	}
 }
 
 func TestRobotsAndVerificationBodiesMatchLegacy(t *testing.T) {
@@ -91,29 +96,31 @@ func TestRobotsAndVerificationBodiesMatchLegacy(t *testing.T) {
 	}
 }
 
-func TestSitemapPreservesStaticAndDynamicURLs(t *testing.T) {
-	provider := &fakeSitemapProvider{movies: []SitemapMovie{{DoubanID: "1292052", UpdatedAt: time.Date(2026, time.July, 29, 9, 0, 0, 0, time.UTC)}}}
+func TestSitemapIndexAndShardsPreserveStaticAndDynamicURLs(t *testing.T) {
+	provider := &fakeSitemapProvider{counts: map[SitemapKind]int{SitemapMovies: 5001, SitemapSimilar: 1}, movies: []SitemapMovie{{DoubanID: "1292052", UpdatedAt: time.Date(2026, time.July, 29, 9, 0, 0, 0, time.UTC)}}}
 	app := newTestApp(t, provider)
-	body := getBody(t, app.client, app.baseURL+"/sitemap.xml")
-
-	for _, expected := range []string{
-		"<loc>https://moovie.example/</loc>",
-		"<loc>https://moovie.example/discover/cartoon</loc>",
-		"<loc>https://moovie.example/movie/1292052</loc>",
-		"<loc>https://moovie.example/similar/1292052</loc>",
-		"<lastmod>2026-07-29</lastmod>",
-	} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("sitemap missing %q", expected)
+	index := getBody(t, app.client, app.baseURL+"/sitemap.xml")
+	for _, expected := range []string{"/sitemaps/static.xml", "/sitemaps/movies/1.xml", "/sitemaps/movies/2.xml", "/sitemaps/similar/1.xml"} {
+		if !strings.Contains(index, expected) {
+			t.Fatalf("sitemap index missing %q", expected)
 		}
 	}
-	if provider.limit != sitemapMovieLimit {
-		t.Fatalf("provider limit = %d, want %d", provider.limit, sitemapMovieLimit)
+	staticBody := getBody(t, app.client, app.baseURL+"/sitemaps/static.xml")
+	if !strings.Contains(staticBody, "<loc>https://moovie.example/</loc>") || !strings.Contains(staticBody, "<loc>https://moovie.example/cinema</loc>") {
+		t.Fatalf("static sitemap missing URLs: %s", staticBody)
+	}
+	movieBody := getBody(t, app.client, app.baseURL+"/sitemaps/movies/1.xml")
+	similarBody := getBody(t, app.client, app.baseURL+"/sitemaps/similar/1.xml")
+	if !strings.Contains(movieBody, "/movie/1292052</loc>") || !strings.Contains(similarBody, "/similar/1292052</loc>") || !strings.Contains(movieBody, "<lastmod>2026-07-29</lastmod>") {
+		t.Fatalf("dynamic sitemap bodies = %s / %s", movieBody, similarBody)
+	}
+	if provider.limit != sitemapPageSize || provider.offset != 0 {
+		t.Fatalf("provider page args = %d/%d", provider.limit, provider.offset)
 	}
 }
 
 func TestSitemapCachesGeneratedDocument(t *testing.T) {
-	provider := &fakeSitemapProvider{movies: []SitemapMovie{{DoubanID: "1292052", UpdatedAt: time.Now()}}}
+	provider := &fakeSitemapProvider{counts: map[SitemapKind]int{SitemapMovies: 1, SitemapSimilar: 0}, movies: []SitemapMovie{{DoubanID: "1292052", UpdatedAt: time.Now()}}}
 	app := newTestApp(t, provider)
 	for index := 0; index < 3; index++ {
 		response, err := app.client.Get(app.baseURL + "/sitemap.xml")
@@ -125,16 +132,20 @@ func TestSitemapCachesGeneratedDocument(t *testing.T) {
 			t.Fatalf("sitemap response = status:%d cache:%q", response.StatusCode, response.Header.Get("Cache-Control"))
 		}
 	}
-	if provider.calls != 1 {
-		t.Fatalf("sitemap provider calls = %d, want 1", provider.calls)
+	if provider.countCalls != 2 {
+		t.Fatalf("sitemap provider count calls = %d, want 2", provider.countCalls)
 	}
 }
 
-func TestSitemapKeepsStaticURLsWhenMovieProviderFails(t *testing.T) {
+func TestSitemapErrorsAreNotCached(t *testing.T) {
 	app := newTestApp(t, &fakeSitemapProvider{err: errors.New("database unavailable")})
-	body := getBody(t, app.client, app.baseURL+"/sitemap.xml")
-	if !strings.Contains(body, "https://moovie.example/about") || strings.Contains(body, "/movie/") {
-		t.Fatalf("unexpected degraded sitemap: %s", body)
+	response, err := app.client.Get(app.baseURL + "/sitemap.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusInternalServerError || response.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("error sitemap = status:%d cache:%q", response.StatusCode, response.Header.Get("Cache-Control"))
 	}
 }
 
@@ -151,15 +162,21 @@ func TestStaticAssetsAreServedFromNewTree(t *testing.T) {
 }
 
 type fakeSitemapProvider struct {
-	movies []SitemapMovie
-	err    error
-	limit  int
-	calls  int
+	counts     map[SitemapKind]int
+	movies     []SitemapMovie
+	err        error
+	limit      int
+	offset     int
+	countCalls int
 }
 
-func (p *fakeSitemapProvider) LatestForSitemap(_ context.Context, limit int) ([]SitemapMovie, error) {
-	p.calls++
-	p.limit = limit
+func (p *fakeSitemapProvider) CountForSitemap(_ context.Context, kind SitemapKind) (int, error) {
+	p.countCalls++
+	return p.counts[kind], p.err
+}
+
+func (p *fakeSitemapProvider) PageForSitemap(_ context.Context, _ SitemapKind, limit, offset int) ([]SitemapMovie, error) {
+	p.limit, p.offset = limit, offset
 	return p.movies, p.err
 }
 

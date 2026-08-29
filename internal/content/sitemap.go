@@ -8,21 +8,25 @@ import (
 	"time"
 )
 
-// sitemapMovieLimit 限制进 sitemap 的影片数量。
-const sitemapMovieLimit = 1000
+const sitemapPageSize = 5000
 
-// SitemapMovie 是 sitemap 需要的影片信息。
+type SitemapKind string
+
+const (
+	SitemapMovies  SitemapKind = "movies"
+	SitemapSimilar SitemapKind = "similar"
+)
+
 type SitemapMovie struct {
 	DoubanID  string
 	UpdatedAt time.Time
 }
 
-// SitemapMovieProvider 由 catalog 实现，提供最近更新的影片。
 type SitemapMovieProvider interface {
-	LatestForSitemap(ctx context.Context, limit int) ([]SitemapMovie, error)
+	CountForSitemap(ctx context.Context, kind SitemapKind) (int, error)
+	PageForSitemap(ctx context.Context, kind SitemapKind, limit, offset int) ([]SitemapMovie, error)
 }
 
-// sitemapURL 是 sitemap 中的一条 URL。
 type sitemapURL struct {
 	Location   string `xml:"loc"`
 	LastMod    string `xml:"lastmod,omitempty"`
@@ -30,14 +34,22 @@ type sitemapURL struct {
 	Priority   string `xml:"priority"`
 }
 
-// sitemapDocument 是 sitemap 的 XML 根节点。
 type sitemapDocument struct {
 	XMLName xml.Name     `xml:"urlset"`
 	XMLNS   string       `xml:"xmlns,attr"`
 	URLs    []sitemapURL `xml:"url"`
 }
 
-// staticSitemapPages 是固定收录的页面及其权重。
+type sitemapIndexEntry struct {
+	Location string `xml:"loc"`
+}
+
+type sitemapIndexDocument struct {
+	XMLName xml.Name            `xml:"sitemapindex"`
+	XMLNS   string              `xml:"xmlns,attr"`
+	Entries []sitemapIndexEntry `xml:"sitemap"`
+}
+
 var staticSitemapPages = []struct {
 	path      string
 	priority  string
@@ -49,43 +61,76 @@ var staticSitemapPages = []struct {
 	{path: "/discover/show", priority: "0.8", frequency: "daily"},
 	{path: "/discover/cartoon", priority: "0.8", frequency: "daily"},
 	{path: "/trends", priority: "0.8", frequency: "daily"},
+	{path: "/cinema", priority: "0.7", frequency: "daily"},
+	{path: "/player", priority: "0.6", frequency: "weekly"},
+	{path: "/iptv", priority: "0.6", frequency: "weekly"},
+	{path: "/tvbox", priority: "0.6", frequency: "weekly"},
 	{path: "/feedback", priority: "0.5", frequency: "monthly"},
 	{path: "/changelog", priority: "0.5", frequency: "weekly"},
 	{path: "/about", priority: "0.5", frequency: "monthly"},
+	{path: "/advertise", priority: "0.5", frequency: "monthly"},
 	{path: "/dmca", priority: "0.5", frequency: "monthly"},
 	{path: "/privacy", priority: "0.5", frequency: "monthly"},
 	{path: "/terms", priority: "0.5", frequency: "monthly"},
 }
 
-// buildSitemap 生成 sitemap：固定页面 + 最近更新的影片详情页和相似推荐页。
-// 取影片失败时只返回固定页面，不让整个 sitemap 挂掉。
-func buildSitemap(ctx context.Context, siteURL string, provider SitemapMovieProvider) ([]byte, error) {
+func buildSitemapIndex(ctx context.Context, siteURL string, provider SitemapMovieProvider) ([]byte, error) {
 	baseURL := strings.TrimRight(siteURL, "/")
-	document := sitemapDocument{
-		XMLNS: "http://www.sitemaps.org/schemas/sitemap/0.9",
-		URLs:  make([]sitemapURL, 0, len(staticSitemapPages)),
-	}
-	for _, page := range staticSitemapPages {
-		document.URLs = append(document.URLs, sitemapURL{
-			Location:   baseURL + page.path,
-			ChangeFreq: page.frequency,
-			Priority:   page.priority,
-		})
-	}
-
+	document := sitemapIndexDocument{XMLNS: "http://www.sitemaps.org/schemas/sitemap/0.9", Entries: []sitemapIndexEntry{{Location: baseURL + "/sitemaps/static.xml"}}}
 	if provider != nil {
-		movies, err := provider.LatestForSitemap(ctx, sitemapMovieLimit)
-		if err == nil {
-			for _, movie := range movies {
-				lastModified := movie.UpdatedAt.Format("2006-01-02")
-				document.URLs = append(document.URLs,
-					sitemapURL{Location: fmt.Sprintf("%s/movie/%s", baseURL, movie.DoubanID), LastMod: lastModified, ChangeFreq: "weekly", Priority: "0.7"},
-					sitemapURL{Location: fmt.Sprintf("%s/similar/%s", baseURL, movie.DoubanID), LastMod: lastModified, ChangeFreq: "weekly", Priority: "0.6"},
-				)
+		for _, kind := range []SitemapKind{SitemapMovies, SitemapSimilar} {
+			count, err := provider.CountForSitemap(ctx, kind)
+			if err != nil {
+				return nil, fmt.Errorf("count %s sitemap: %w", kind, err)
+			}
+			for page := 1; page <= sitemapPageCount(count); page++ {
+				document.Entries = append(document.Entries, sitemapIndexEntry{Location: fmt.Sprintf("%s/sitemaps/%s/%d.xml", baseURL, kind, page)})
 			}
 		}
 	}
+	return marshalSitemap(document)
+}
 
+func buildStaticSitemap(siteURL string) ([]byte, error) {
+	baseURL := strings.TrimRight(siteURL, "/")
+	document := sitemapDocument{XMLNS: "http://www.sitemaps.org/schemas/sitemap/0.9", URLs: make([]sitemapURL, 0, len(staticSitemapPages))}
+	for _, page := range staticSitemapPages {
+		document.URLs = append(document.URLs, sitemapURL{Location: baseURL + page.path, ChangeFreq: page.frequency, Priority: page.priority})
+	}
+	return marshalSitemap(document)
+}
+
+func buildMediaSitemap(ctx context.Context, siteURL string, provider SitemapMovieProvider, kind SitemapKind, page int) ([]byte, bool, error) {
+	if provider == nil || page < 1 {
+		return nil, false, nil
+	}
+	count, err := provider.CountForSitemap(ctx, kind)
+	if err != nil {
+		return nil, false, fmt.Errorf("count %s sitemap: %w", kind, err)
+	}
+	if page > sitemapPageCount(count) {
+		return nil, false, nil
+	}
+	movies, err := provider.PageForSitemap(ctx, kind, sitemapPageSize, (page-1)*sitemapPageSize)
+	if err != nil {
+		return nil, false, fmt.Errorf("load %s sitemap page %d: %w", kind, page, err)
+	}
+	baseURL := strings.TrimRight(siteURL, "/")
+	document := sitemapDocument{XMLNS: "http://www.sitemaps.org/schemas/sitemap/0.9", URLs: make([]sitemapURL, 0, len(movies))}
+	for _, movie := range movies {
+		path, priority := "/movie/", "0.7"
+		if kind == SitemapSimilar {
+			path, priority = "/similar/", "0.6"
+		}
+		document.URLs = append(document.URLs, sitemapURL{Location: baseURL + path + movie.DoubanID, LastMod: movie.UpdatedAt.Format("2006-01-02"), ChangeFreq: "weekly", Priority: priority})
+	}
+	body, err := marshalSitemap(document)
+	return body, true, err
+}
+
+func sitemapPageCount(count int) int { return (count + sitemapPageSize - 1) / sitemapPageSize }
+
+func marshalSitemap(document any) ([]byte, error) {
 	body, err := xml.MarshalIndent(document, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal sitemap: %w", err)

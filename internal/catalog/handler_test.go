@@ -50,7 +50,9 @@ func TestMoviePagePreservesIndexedSEOJSONLDAndUserSignals(t *testing.T) {
 		"《肖申克的救赎》 (1994) - 剧情介绍/演职员表 - Moovie影牛",
 		`<link rel="canonical" href="https://moovie.example/movie/1292052">`,
 		`content="` + strings.Repeat("剧", 150) + `..."`,
-		`"@type": "Movie"`, `"name": "弗兰克·德拉邦特"`, "已看过", "1 人看过", "1 人想看",
+		`"@type":"Movie"`, `"name":"弗兰克·德拉邦特"`, `"@type":"BreadcrumbList"`,
+		`aria-label="面包屑"`, `href="/discover/movie"`, `喜欢这部电影的人也喜欢`, `class="section-more" href="/similar/1292052"`,
+		`hx-get="/api/htmx/similar?douban_id=1292052"`, "已看过", "1 人看过", "1 人想看",
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("movie page missing %q", expected)
@@ -58,6 +60,9 @@ func TestMoviePagePreservesIndexedSEOJSONLDAndUserSignals(t *testing.T) {
 	}
 	if strings.Contains(body, `<meta name="robots" content="noindex`) {
 		t.Fatal("indexed movie unexpectedly became noindex")
+	}
+	if strings.Contains(body, "aggregateRating") || strings.Contains(body, `"ratingCount":"100"`) {
+		t.Fatal("external Douban rating was mislabeled as an onsite aggregate rating")
 	}
 	if strings.Contains(body, "向量输入不应作为推荐语展示") || strings.Contains(body, "Moovie 推荐语") {
 		t.Fatal("embedding input leaked into the user-facing movie page")

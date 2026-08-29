@@ -32,8 +32,26 @@
             <strong>放宽 AI 请求时间</strong>：目录 AI 默认超时从 90 秒调整为 120 秒，降低语义描述在模型响应较慢时过早回退的概率。
           </li>
         </ul>
+        <h3>🔎 搜索与收录 (SEO)</h3>
+        <ul>
+          <li>
+            <strong>站点地图改为分片索引</strong>：<code>/sitemap.xml</code> 现在按固定页面、影片详情和相似推荐生成 sitemap index，每片最多 5000 条，不再只收录最近更新的少量影片。
+          </li>
+          <li>
+            <strong>完善结构化数据与页面路径</strong>：详情页按电影或剧集输出 <code>Movie</code>/<code>TVSeries</code> 与 <code>BreadcrumbList</code>，相似页输出安全序列化的 <code>ItemList</code> 与面包屑，并为主要静态页面补充 canonical。
+          </li>
+          <li>
+            <strong>收紧低价值页面索引范围</strong>：搜索结果、播放页、资料抓取等待页、版权提示、404、空相似页和个性化推荐页统一使用 <code>noindex, follow</code>，将抓取资源集中到规范详情页。
+          </li>
+          <li>
+            <strong>相似推荐结果更准确</strong>：电影和剧集不再混排，同一系列最多保留一个其他季度；推荐理由改为基于共同类型、导演和演员的克制描述。
+          </li>
+        </ul>
         <h3>💅 界面优化 (UI)</h3>
         <ul>
+          <li>
+            <strong>详情页与相似页导航整理</strong>：详情页新增可见面包屑和「查看全部」普通链接；相似页改为更紧凑的响应式纵向列表，保留豆瓣评分、推荐理由和普通详情链接，并移除大面积卡片效果与页面内联样式。
+          </li>
           <li>
             <strong>手机播放页减少广告占高</strong>：四个横幅广告在手机端改为两行两列，保持全部可见，不再纵向占据大量页面空间。
           </li>

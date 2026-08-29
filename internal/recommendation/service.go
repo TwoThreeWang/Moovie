@@ -105,20 +105,46 @@ func (service *Service) Popular(ctx context.Context, limit int) ([]catalog.Movie
 	return service.store.Popular(ctx, limit)
 }
 
-// FindSimilarWithReasons 在相似影片基础上补上推荐理由并按相似度重排。
+// FindSimilarWithReasons 保留向量相似度排序，过滤重复季度并补上可解释理由。
 func (service *Service) FindSimilarWithReasons(ctx context.Context, doubanID string, limit int) ([]SimilarMovie, *catalog.Movie, error) {
 	source, err := service.store.FindByDoubanID(ctx, doubanID)
 	if err != nil || source == nil {
 		return nil, source, err
 	}
-	movies, err := service.store.FindSimilar(ctx, doubanID, limit)
+	candidateLimit := limit
+	if limit > 0 {
+		candidateLimit = limit * 2
+	}
+	movies, err := service.store.FindSimilar(ctx, doubanID, candidateLimit)
 	if err != nil {
 		return nil, source, err
 	}
+	seriesIDs := make(map[string]bool)
+	if finder, ok := service.store.(interface {
+		FindSeriesSeasons(context.Context, string) ([]catalog.SeriesSeason, error)
+	}); ok {
+		if seasons, findErr := finder.FindSeriesSeasons(ctx, doubanID); findErr == nil {
+			for _, season := range seasons {
+				if season.DoubanID != doubanID {
+					seriesIDs[season.DoubanID] = true
+				}
+			}
+		}
+	}
 	result := make([]SimilarMovie, 0, len(movies))
+	seriesIncluded := false
 	for _, movie := range movies {
+		if seriesIDs[movie.DoubanID] {
+			if seriesIncluded {
+				continue
+			}
+			seriesIncluded = true
+		}
 		reason, reasonType, similarity := GenerateReason(*source, movie)
 		result = append(result, SimilarMovie{Movie: movie, Reason: reason, ReasonType: reasonType, Similarity: similarity})
+		if limit > 0 && len(result) == limit {
+			break
+		}
 	}
 	return result, source, nil
 }
@@ -128,20 +154,19 @@ type features struct {
 	genres, directors, actors map[string]bool
 	year                      int
 	rating                    float64
-	title                     string
 }
 
 // extract 从影片里抽取特征。
 func extract(movie catalog.Movie) features {
 	return features{
 		genres: peopleOrList(movie.Genres), directors: peopleOrList(movie.Directors), actors: peopleOrList(movie.Actors),
-		year: parseYear(movie.Year), rating: movie.Rating, title: movie.Title,
+		year: parseYear(movie.Year), rating: movie.Rating,
 	}
 }
 
 // GenerateReason 生成推荐理由和相似度。
 // 相似度权重：类型 0.40、导演 0.25、演员 0.20、评分 0.10、年代 0.05。
-// 理由从多个候选里挑分数最高的一条，系列续作优先级最高，都不满足时用通用话术兜底。
+// 理由从多个候选里挑分数最高的一条，都不满足时用通用话术兜底。
 func GenerateReason(source, target catalog.Movie) (string, string, float64) {
 	src, dst := extract(source), extract(target)
 	genreScore, commonGenres := overlap(src.genres, dst.genres)
@@ -156,25 +181,16 @@ func GenerateReason(source, target catalog.Movie) (string, string, float64) {
 		score      float64
 	}
 	candidates := []candidate{}
-	if src.title != "" && dst.title != "" && (strings.HasPrefix(dst.title, src.title) || strings.HasPrefix(src.title, dst.title)) {
-		candidates = append(candidates, candidate{"该系列作品的延续，带你深入了解其光影宇宙", "series", 1.5})
-	}
 	if directorScore > 0.4 && len(commonDirectors) > 0 {
-		candidates = append(candidates, candidate{fmt.Sprintf("由同位导演 %s 执导，叙事风格与艺术造诣一脉相承", commonDirectors[0]), "director", 0.9 + directorScore})
+		candidates = append(candidates, candidate{fmt.Sprintf("同由 %s 执导", commonDirectors[0]), "director", 0.9 + directorScore})
 	}
 	if actorScore > 0.2 && len(commonActors) > 0 {
-		candidates = append(candidates, candidate{fmt.Sprintf("同样由 %s 主演，演技表现与角色气质依然出众", commonActors[0]), "actor", 0.8 + actorScore})
+		candidates = append(candidates, candidate{fmt.Sprintf("同样由 %s 主演", commonActors[0]), "actor", 0.8 + actorScore})
 	}
 	if len(commonGenres) > 0 {
-		candidates = append(candidates, candidate{fmt.Sprintf("同属优质%s片，风格与本作高度契合", strings.Join(commonGenres, "、")), "genre", 0.7 + genreScore})
+		candidates = append(candidates, candidate{fmt.Sprintf("同属%s类型，内容风格接近", strings.Join(commonGenres, "、")), "genre", 0.7 + genreScore})
 	}
-	if source.Rating > 8.5 && target.Rating > 8.5 && genreScore > 0.3 {
-		candidates = append(candidates, candidate{"两部作品均为 8.5+ 的顶级神作，艺术水准极高", "masterpiece", 1.2})
-	}
-	if target.EmbeddingContent != "" {
-		candidates = append(candidates, candidate{fmt.Sprintf("剧情内核高度相关，共同探讨了关于 %s 的深刻主题", strings.Join(semanticKeywords(target.EmbeddingContent), "、")), "semantic", 0.6 + similarity*0.5})
-	}
-	best := candidate{"基于内容相似度深度推荐", "general", 0}
+	best := candidate{"内容主题与本作较为接近", "general", 0}
 	for _, item := range candidates {
 		if item.score > best.score {
 			best = item
@@ -260,22 +276,4 @@ func eraSimilarity(left, right int) float64 {
 	default:
 		return 0.2
 	}
-}
-
-// semanticKeywords 从简介里挑几个关键词拼进推荐理由。
-func semanticKeywords(value string) []string {
-	patterns := []string{"爱情", "友情", "亲情", "成长", "奋斗", "梦想", "现实", "社会", "人性", "犯罪", "悬疑", "科幻", "家庭", "战争"}
-	result := make([]string, 0, 3)
-	for _, pattern := range patterns {
-		if strings.Contains(value, pattern) {
-			result = append(result, pattern)
-			if len(result) == 3 {
-				break
-			}
-		}
-	}
-	if len(result) == 0 {
-		return []string{"人性、情感"}
-	}
-	return result
 }

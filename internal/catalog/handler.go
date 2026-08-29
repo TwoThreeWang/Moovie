@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
@@ -432,7 +433,7 @@ func (handler *Handler) movie(c *gin.Context) {
 		if queueErr != nil {
 			requestmeta.Logger(c.Request.Context()).Warn("queue missing metadata", "douban_id", doubanID, "error", queueErr)
 		}
-		c.HTML(http.StatusOK, "fetching.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: searchTitle}, gin.H{
+		c.HTML(http.StatusOK, "fetching.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: searchTitle, Robots: "noindex, follow"}, gin.H{
 			"Title": searchTitle, "DoubanID": doubanID,
 		}))
 		return
@@ -455,13 +456,59 @@ func (handler *Handler) movie(c *gin.Context) {
 	if json.Unmarshal([]byte(movie.Directors), &directors) != nil {
 		directors = []Director{}
 	}
+	canonical := fmt.Sprintf("%s/movie/%s", strings.TrimRight(handler.config.SiteURL, "/"), movie.DoubanID)
+	discoverURL, discoverLabel, schemaType := "/discover/movie", "电影", "Movie"
+	if movie.MediaType != "movie" && movie.MediaType != "" {
+		discoverURL, discoverLabel, schemaType = "/discover/tv", "剧集", "TVSeries"
+	}
+	mediaSchema := map[string]any{
+		"@context": "https://schema.org", "@type": schemaType,
+		"name": movie.Title, "url": canonical,
+	}
+	sameAs := []string{"https://movie.douban.com/subject/" + movie.DoubanID + "/"}
+	if movie.IMDbID != "" {
+		sameAs = append(sameAs, "https://www.imdb.com/title/"+movie.IMDbID+"/")
+	}
+	mediaSchema["sameAs"] = sameAs
+	if movie.Poster != "" {
+		mediaSchema["image"] = movie.Poster
+	}
+	if movie.Year != "" {
+		mediaSchema["dateCreated"] = movie.Year
+	}
+	if movie.Summary != "" {
+		mediaSchema["description"] = movie.Summary
+	}
+	if len(directors) > 0 {
+		people := make([]map[string]string, 0, len(directors))
+		for _, director := range directors {
+			if director.Name != "" {
+				people = append(people, map[string]string{"@type": "Person", "name": director.Name})
+			}
+		}
+		if len(people) > 0 {
+			mediaSchema["director"] = people
+		}
+	}
+	breadcrumbSchema := map[string]any{
+		"@context": "https://schema.org", "@type": "BreadcrumbList",
+		"itemListElement": []map[string]any{
+			{"@type": "ListItem", "position": 1, "name": "首页", "item": strings.TrimRight(handler.config.SiteURL, "/") + "/"},
+			{"@type": "ListItem", "position": 2, "name": discoverLabel, "item": strings.TrimRight(handler.config.SiteURL, "/") + discoverURL},
+			{"@type": "ListItem", "position": 3, "name": movie.Title, "item": canonical},
+		},
+	}
+	mediaJSONLD, _ := platformweb.JSONLD(mediaSchema)
+	breadcrumbJSONLD, _ := platformweb.JSONLD(breadcrumbSchema)
 
 	c.HTML(http.StatusOK, "movie.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
 		Title:       "《" + movie.Title + "》 (" + movie.Year + ") - 剧情介绍/演职员表 - " + handler.config.SiteName,
 		Description: truncateDescription(movie.Summary, 150), Keywords: strings.Join(keywords, ","),
-		Cover: proxyImageURL(movie.Poster), Canonical: fmt.Sprintf("%s/movie/%s", handler.config.SiteURL, movie.DoubanID),
+		Cover: proxyImageURL(movie.Poster), Canonical: canonical,
+		JSONLD: []template.JS{mediaJSONLD, breadcrumbJSONLD},
 	}, gin.H{
 		"Movie": movie, "DirectorList": directors, "SearchTitle": searchTitle,
+		"DiscoverURL": discoverURL, "DiscoverLabel": discoverLabel,
 	}))
 }
 

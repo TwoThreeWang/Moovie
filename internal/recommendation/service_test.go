@@ -1,6 +1,7 @@
 package recommendation
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -12,7 +13,7 @@ func TestGenerateReasonPreservesPriorityAndSimilarityDimensions(t *testing.T) {
 	source := catalog.Movie{Title: "银翼杀手", Year: "1982", Rating: 8.6, Genres: "科幻,犯罪", Directors: `[{"name":"雷德利·斯科特"}]`, Actors: `[{"name":"哈里森·福特"}]`}
 	target := catalog.Movie{Title: "银翼杀手2049", Year: "2017", Rating: 8.3, Genres: "科幻,犯罪", Directors: `[{"name":"丹尼斯"}]`, Actors: `[{"name":"哈里森·福特"}]`}
 	reason, reasonType, score := GenerateReason(source, target)
-	if reasonType != "actor" || !strings.Contains(reason, "哈里森·福特") || score <= 0.6 {
+	if reasonType != "actor" || reason != "同样由 哈里森·福特 主演" || score <= 0.6 {
 		t.Fatalf("reason/type/score = %q/%q/%f", reason, reasonType, score)
 	}
 
@@ -21,6 +22,56 @@ func TestGenerateReasonPreservesPriorityAndSimilarityDimensions(t *testing.T) {
 	if reasonType != "director" || !strings.Contains(reason, "雷德利·斯科特") {
 		t.Fatalf("director reason/type = %q/%q", reason, reasonType)
 	}
+}
+
+func TestFindSimilarWithReasonsKeepsOnlyOneSiblingSeason(t *testing.T) {
+	store := &similarStoreStub{
+		source: &catalog.Movie{DoubanID: "season-1", Title: "第一季", MediaType: "tv", Genres: "科幻"},
+		movies: []catalog.Movie{
+			{DoubanID: "season-2", Title: "第二季", MediaType: "tv", Genres: "科幻"},
+			{DoubanID: "season-3", Title: "第三季", MediaType: "tv", Genres: "科幻"},
+			{DoubanID: "other", Title: "其他剧集", MediaType: "tv", Genres: "科幻"},
+		},
+		seasons: []catalog.SeriesSeason{{DoubanID: "season-1"}, {DoubanID: "season-2"}, {DoubanID: "season-3"}},
+	}
+	result, source, err := NewService(store).FindSimilarWithReasons(t.Context(), "season-1", 2)
+	if err != nil || source == nil {
+		t.Fatalf("source/error = %+v/%v", source, err)
+	}
+	if store.requestedLimit != 4 {
+		t.Fatalf("candidate limit = %d, want 4", store.requestedLimit)
+	}
+	if len(result) != 2 || result[0].Movie.DoubanID != "season-2" || result[1].Movie.DoubanID != "other" {
+		t.Fatalf("filtered results = %+v", result)
+	}
+}
+
+type similarStoreStub struct {
+	source         *catalog.Movie
+	movies         []catalog.Movie
+	seasons        []catalog.SeriesSeason
+	requestedLimit int
+}
+
+func (store *similarStoreStub) FindByDoubanID(context.Context, string) (*catalog.Movie, error) {
+	return store.source, nil
+}
+
+func (store *similarStoreStub) FindByID(context.Context, int) (*catalog.Movie, error) {
+	return nil, nil
+}
+
+func (store *similarStoreStub) FindSimilar(_ context.Context, _ string, limit int) ([]catalog.Movie, error) {
+	store.requestedLimit = limit
+	return store.movies, nil
+}
+
+func (store *similarStoreStub) Popular(context.Context, int) ([]catalog.Movie, error) {
+	return nil, nil
+}
+
+func (store *similarStoreStub) FindSeriesSeasons(context.Context, string) ([]catalog.SeriesSeason, error) {
+	return store.seasons, nil
 }
 
 func TestServiceReturnsSourceAndReasonedMovies(t *testing.T) {

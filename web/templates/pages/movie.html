@@ -1,35 +1,12 @@
 {{ define "content" }}
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "Movie",
-  "name": "{{ .Movie.Title }}",
-  "image": "{{ .Movie.Poster }}",
-  "datePublished": "{{ .Movie.Year }}",
-  {{ if .DirectorList }}
-  "director": [
-    {{ range $index, $d := .DirectorList }}
-      {{ if $index }},{{ end }}
-      {
-        "@type": "Person",
-        "name": "{{ $d.Name | js }}"
-      }
-    {{ end }}
-  ],
-  {{ end }}
-  {{ if .Movie.Rating }}
-  "aggregateRating": {
-    "@type": "AggregateRating",
-    "ratingValue": "{{ .Movie.Rating }}",
-    "bestRating": "10",
-    "ratingCount": "100"
-  },
-  {{ end }}
-  "description": "{{ .Movie.Summary | js }}"
-}
-</script>
-
 <div class="movie-page">
+    <nav class="breadcrumbs" aria-label="面包屑">
+        <a href="/">首页</a>
+        <span class="breadcrumbs-sep">›</span>
+        <a href="{{ .DiscoverURL }}">{{ .DiscoverLabel }}</a>
+        <span class="breadcrumbs-sep">›</span>
+        <span aria-current="page">{{ .Movie.Title }}</span>
+    </nav>
     <!-- 主要内容区：左海报+右信息 -->
     <div class="movie-header">
         <!-- 海报 -->
@@ -202,7 +179,10 @@
 
     <!-- 相似电影推荐 -->
     <div class="movie-section">
-        <h2 class="section-title">喜欢这部剧集的人也喜欢</h2>
+        <div class="movie-section-heading">
+            <h2 class="section-title">喜欢这部{{ .DiscoverLabel }}的人也喜欢</h2>
+            <a class="section-more" href="/similar/{{ .Movie.DoubanID }}">查看全部 ›</a>
+        </div>
         <div hx-get="/api/htmx/similar?douban_id={{ .Movie.DoubanID }}"
              hx-trigger="load"
              hx-swap="innerHTML">

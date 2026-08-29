@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/content"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
@@ -80,12 +81,17 @@ func TestPostgresStoreFindAndSitemapOrdering(t *testing.T) {
 		t.Fatalf("latest query/args = %s/%#v", fake.query, fake.arguments)
 	}
 
+	fake.row = catalogFakeRow{values: []any{1}}
+	count, err := store.CountForSitemap(t.Context(), content.SitemapMovies)
+	if err != nil || count != 1 || !strings.Contains(fake.query, "SELECT COUNT(*) FROM media") || strings.Contains(fake.query, "embedding IS NOT NULL") {
+		t.Fatalf("sitemap count/error/query = %d/%v/%s", count, err, fake.query)
+	}
 	fake.rows = &catalogFakeRows{values: [][]any{{"1292052", updatedAt}}}
-	sitemapMovies, err := store.LatestForSitemap(t.Context(), 1000)
+	sitemapMovies, err := store.PageForSitemap(t.Context(), content.SitemapSimilar, 5000, 0)
 	if err != nil || len(sitemapMovies) != 1 || sitemapMovies[0].DoubanID != "1292052" || !sitemapMovies[0].UpdatedAt.Equal(updatedAt) {
 		t.Fatalf("sitemap movies/error = %+v/%v", sitemapMovies, err)
 	}
-	if !strings.Contains(fake.query, "SELECT douban_id, updated_at FROM media") || !strings.Contains(fake.query, "ORDER BY updated_at DESC LIMIT $1") || !reflect.DeepEqual(fake.arguments, []any{1000}) {
+	if !strings.Contains(fake.query, "SELECT douban_id, updated_at FROM media") || !strings.Contains(fake.query, "embedding IS NOT NULL") || !strings.Contains(fake.query, "ORDER BY id ASC LIMIT $1 OFFSET $2") || !reflect.DeepEqual(fake.arguments, []any{5000, 0}) {
 		t.Fatalf("sitemap query/args = %s/%#v", fake.query, fake.arguments)
 	}
 }
@@ -97,7 +103,7 @@ func TestPostgresSimilarQueryUsesVectorDistanceAndExcludesSource(t *testing.T) {
 	if err != nil || len(movies) != 0 {
 		t.Fatalf("movies/error = %+v/%v", movies, err)
 	}
-	for _, expected := range []string{"embedding IS NOT NULL", "m.douban_id != $1", "ORDER BY m.embedding <-> target.embedding", "LIMIT $2"} {
+	for _, expected := range []string{"embedding IS NOT NULL", "m.douban_id != $1", "m.media_type = target.media_type", "ORDER BY m.embedding <-> target.embedding", "LIMIT $2"} {
 		if !strings.Contains(fake.query, expected) {
 			t.Fatalf("similar query missing %q: %s", expected, fake.query)
 		}

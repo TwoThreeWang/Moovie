@@ -29,12 +29,18 @@ func TestRecommendationsPagePreservesPathSEOJSONLDAndReasons(t *testing.T) {
 		t.Fatalf("status/body = %d/%s", recorder.Code, body)
 	}
 	for _, expected := range []string{
-		"类似《肖申克的救赎》的电影推荐_和《肖申克的救赎》差不多的电影 - Moovie影牛",
+		"类似《肖申克的救赎》的电影推荐 - Moovie影牛",
 		`<link rel="canonical" href="https://moovie.example/similar/1292052">`,
-		`"@type": "ItemList"`, `"@type": "BreadcrumbList"`, "目标电影", "推荐",
+		`"@type":"ItemList"`, `"@type":"BreadcrumbList"`, `"position":1`,
+		`"url":"https://moovie.example/movie/target"`, "目标电影", "按内容相似度排序", "豆瓣 9.1", "推荐理由",
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("page missing %q", expected)
+		}
+	}
+	for _, unexpected := range []string{"差不多的电影", "<style>"} {
+		if strings.Contains(body, unexpected) {
+			t.Fatalf("page unexpectedly contains %q", unexpected)
 		}
 	}
 
@@ -47,6 +53,35 @@ func TestRecommendationsPagePreservesPathSEOJSONLDAndReasons(t *testing.T) {
 	router.ServeHTTP(reasoned, httptest.NewRequest(http.MethodGet, "/api/htmx/similar-with-reason/1292052", nil))
 	if reasoned.Code != http.StatusOK || !strings.Contains(reasoned.Body.String(), "目标电影") || !strings.Contains(reasoned.Body.String(), "reason-tag-") {
 		t.Fatalf("reasoned partial = %d/%s", reasoned.Code, reasoned.Body.String())
+	}
+}
+
+func TestRecommendationsPageRendersTVCopyAndEscapedJSONLDWithoutDatabase(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &similarStoreStub{
+		source: &catalog.Movie{DoubanID: "tv-source", Title: `带"引号"的剧`, MediaType: "tv", Genres: "剧情", Rating: 8.8},
+		movies: []catalog.Movie{{DoubanID: "tv-target", Title: "目标剧集", MediaType: "tv", Genres: "剧情", Rating: 8.5}},
+	}
+	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"recommendations", "404"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.HTMLRender = renderer
+	NewHandler(config.Config{SiteName: "Moovie影牛", SiteURL: "https://moovie.example"}, NewService(store), nil).Register(router)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/similar/tv-source", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status/body = %d/%s", recorder.Code, body)
+	}
+	for _, expected := range []string{
+		`类似《带&#34;引号&#34;的剧》的剧集推荐`, "相似剧集", "参考剧集", "目标剧集",
+		`"name":"类似《带\"引号\"的剧》的剧集推荐"`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("page missing %q: %s", expected, body)
+		}
 	}
 }
 
@@ -167,8 +202,8 @@ func recommendationTestRouter(t *testing.T) (*gin.Engine, int) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	store := catalog.NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(t.Context(), catalog.Movie{DoubanID: "1292052", Title: "肖申克的救赎", Year: "1994", Genres: "剧情,犯罪", Directors: `[{"name":"弗兰克"}]`, Rating: 9.7, Poster: "https://img3.doubanio.com/source.jpg"})
-	_ = store.Upsert(t.Context(), catalog.Movie{DoubanID: "target", Title: "目标电影", Year: "1995", Genres: "剧情", Directors: `[{"name":"弗兰克"}]`, Rating: 9.1, Poster: "https://img3.doubanio.com/target.jpg"})
+	_ = store.Upsert(t.Context(), catalog.Movie{DoubanID: "1292052", Title: "肖申克的救赎", Year: "1994", Genres: "剧情,犯罪", Directors: `[{"name":"弗兰克"}]`, Rating: 9.7, Poster: "https://img3.doubanio.com/source.jpg", MediaType: "movie"})
+	_ = store.Upsert(t.Context(), catalog.Movie{DoubanID: "target", Title: "目标电影", Year: "1995", Genres: "剧情", Directors: `[{"name":"弗兰克"}]`, Rating: 9.1, Poster: "https://img3.doubanio.com/target.jpg", MediaType: "movie"})
 	seedEmbedding(t, store, "1292052")
 	seedEmbedding(t, store, "target")
 	source, _ := store.FindByDoubanID(t.Context(), "1292052")

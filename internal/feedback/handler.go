@@ -36,7 +36,7 @@ func (handler *Handler) Register(router *gin.Engine) {
 
 // page 渲染反馈页。
 func (handler *Handler) page(c *gin.Context) {
-	c.HTML(http.StatusOK, "feedback.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "反馈建议 - " + handler.config.SiteName}, nil))
+	c.HTML(http.StatusOK, "feedback.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "反馈建议 - " + handler.config.SiteName, Canonical: platformweb.CanonicalURL(handler.config.SiteURL, "/feedback")}, nil))
 }
 
 // submit 提交反馈，返回 HTMX 片段而不是 JSON；内容上限 5000 字。
