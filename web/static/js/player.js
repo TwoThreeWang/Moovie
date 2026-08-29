@@ -792,8 +792,9 @@ function adSkipShowPrompt(container, cand, state) {
 }
 
 function adSkipShowToast(container, cand, state) {
-    if (state.toastShown[cand.hex]) return;
-    state.toastShown[cand.hex] = true;
+    var toastKey = cand.hex + ':' + cand.start + ':' + cand.end;
+    if (state.toastShown[toastKey]) return;
+    state.toastShown[toastKey] = true;
     var el = document.createElement('div');
     el.className = 'ad-skip-toast';
     el.innerHTML = '已跳过 ' + Math.round(cand.dur) + ' 秒广告　<a class="ad-skip-undo">撤销本次</a>';
@@ -828,7 +829,8 @@ function adSkipMonitor(state) {
         for (var i = 0; i < state.candidates.length; i++) {
             var c = state.candidates[i];
             if (!c.hex) continue;
-            if (c.status === 'confirmed' && !state.undone[c.hex] && !state.toastShown[c.hex]) {
+            var toastKey = c.hex + ':' + c.start + ':' + c.end;
+            if (c.status === 'confirmed' && !state.undone[c.hex] && !state.toastShown[toastKey]) {
                 if (t >= c.start && t <= c.end + 3) adSkipShowToast(container, c, state);
             } else if (c.status === 'unknown' || c.status === 'pending') {
                 if (t >= c.start && t < c.end) {

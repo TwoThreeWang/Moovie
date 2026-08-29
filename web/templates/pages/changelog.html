@@ -4,6 +4,55 @@
   <p class="lead-text">所有重要的更新、修改和修复都将记录在此页面中。</p>
 
   <div class="changelog-container">
+    <!-- v4.0.5 -->
+    <section class="changelog-item">
+      <div class="version-badge">v4.0.5 <small>2026-08-29</small></div>
+      <div class="changelog-details">
+        <p>
+          <strong>播放稳定性、观看记录与资料刷新维护。</strong>统一升级 HLS 播放内核，收敛重复的播放进度，并简化影片资料与向量的更新链路。
+        </p>
+        <h3>🛠️ 修复 (Fixed)</h3>
+        <ul>
+          <li>
+            <strong>HLS 跨分片播放更稳定</strong>：<code>/play</code>、<code>/watch</code>、独立播放器、IPTV 和嵌入播放器统一升级到 hls.js <code>1.7.1</code>，改善跨 <code>EXT-X-GAP</code> 时的停顿与音频管线恢复。
+          </li>
+          <li>
+            <strong>清理重复播放进度</strong>：同一用户、同一影片写入新进度后自动清理较旧的有效记录，继续观看列表统一按影片合并，避免同一内容重复出现。
+          </li>
+          <li>
+            <strong>修正资料刷新覆盖</strong>：豆瓣主资料刷新时正确保留已有剧照和短评，并使用详情接口返回的真实影视类型，不再默认按电影处理。
+          </li>
+        </ul>
+        <h3>🚀 性能优化 (Performance)</h3>
+        <ul>
+          <li>
+            <strong>向量只在语义资料变化时重算</strong>：标题、简介、类型和主创等语义字段变化后直接排入向量任务，历史补全只处理从未生成向量的影片，减少重复 AI 调用。
+          </li>
+          <li>
+            <strong>放宽 AI 请求时间</strong>：目录 AI 默认超时从 90 秒调整为 120 秒，降低语义描述在模型响应较慢时过早回退的概率。
+          </li>
+        </ul>
+        <h3>💅 界面优化 (UI)</h3>
+        <ul>
+          <li>
+            <strong>手机播放页减少广告占高</strong>：四个横幅广告在手机端改为两行两列，保持全部可见，不再纵向占据大量页面空间。
+          </li>
+          <li>
+            <strong>后台窄屏布局改善</strong>：标题与菜单分为两行，标签栏支持横向滚动，表格保持内容自然宽度，避免窄屏下挤压变形。
+          </li>
+          <li>
+            <strong>播放入口整理</strong>：更新 IPTV 默认频道源，并隐藏侧边栏的 TVBox 配置入口；TVBox 页面与 API 仍保持可用。
+          </li>
+        </ul>
+        <h3>🎬 片场 (Cinema)</h3>
+        <ul>
+          <li>
+            <strong>本周放映单纳入「在看」</strong>：除了已看过的公开记录，正在观看的影片也会进入本周影片统计，更及时反映片友动态。
+          </li>
+        </ul>
+      </div>
+    </section>
+
     <!-- v4.0.4 -->
     <section class="changelog-item">
       <div class="version-badge">v4.0.4 <small>2026-08-25</small></div>
