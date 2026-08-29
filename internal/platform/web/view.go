@@ -95,6 +95,9 @@ func JSONLD(value any) (template.JS, error) {
 
 // ActiveMenu 根据路径决定导航栏高亮哪一项。
 func ActiveMenu(path, searchType string) string {
+	if path == "/notifications" {
+		return "notifications"
+	}
 	if strings.HasPrefix(path, "/dashboard") || path == "/history" || path == "/settings" {
 		return "user"
 	}

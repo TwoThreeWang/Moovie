@@ -48,7 +48,7 @@
     {{ range .JSONLD }}<script type="application/ld+json">{{ . }}</script>{{ end }}
 
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=4.1.8">
+    <link rel="stylesheet" href="/static/css/style.css?v=4.2.0">
 
     <!-- htmx -->
     <script src="/static/js/htmx.min.js?v=0.1" defer></script>
@@ -232,6 +232,14 @@
 
             <div class="sidebar-footer">
                 {{ if .UserInfo }}
+                <a href="/notifications" class="nav-item {{ if eq .ActiveMenu "notifications" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+                        <path d="M10 21h4"></path>
+                    </svg>
+                    <span>消息</span>
+                    <span class="notification-badge-slot" hx-get="/api/notifications/unread-count" hx-trigger="load, every 60s, notificationsChanged from:body" hx-swap="innerHTML"></span>
+                </a>
                 <a href="/dashboard" class="nav-item {{ if eq .ActiveMenu "user" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -270,6 +278,13 @@
                 </a>
                 <div class="mobile-header-actions">
                     {{ if .UserInfo }}
+                    <a href="/notifications" class="mobile-user mobile-notifications" title="消息" aria-label="查看消息">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+                            <path d="M10 21h4"></path>
+                        </svg>
+                        <span class="notification-badge-slot" hx-get="/api/notifications/unread-count" hx-trigger="load, every 60s, notificationsChanged from:body" hx-swap="innerHTML"></span>
+                    </a>
                     <a href="/dashboard" class="mobile-user" title="{{ .UserInfo.Username }}" aria-label="进入 {{ .UserInfo.Username }} 的个人中心">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>

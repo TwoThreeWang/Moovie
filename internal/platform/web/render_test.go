@@ -105,6 +105,45 @@ func TestLoadRendererMakesSharedPartialsAvailableToPages(t *testing.T) {
 	}
 }
 
+func TestNotificationsPageRendersItsStylesAndOnlyOneActiveSidebarItem(t *testing.T) {
+	renderer, err := LoadRenderer(filepath.Join("..", "..", "..", "web", "templates"), []string{"notifications"})
+	if err != nil {
+		t.Fatalf("LoadRenderer() error = %v", err)
+	}
+	compiled := renderer.templates["notifications.html"]
+	data := map[string]any{
+		"Title": "消息", "ActiveMenu": "notifications", "Notifications": []any{},
+		"UserInfo": struct {
+			ID       int
+			Username string
+			Role     string
+		}{ID: 1, Username: "tester", Role: "user"},
+	}
+	var output bytes.Buffer
+	if err := compiled.template.ExecuteTemplate(&output, compiled.entry, data); err != nil {
+		t.Fatalf("render notifications page: %v", err)
+	}
+	html := output.String()
+	if !strings.Contains(html, ".notifications-page {") {
+		t.Fatal("notifications page styles were not rendered")
+	}
+	if strings.Count(html, `class="nav-item active"`) != 1 {
+		t.Fatalf("active sidebar items = %d, want 1", strings.Count(html, `class="nav-item active"`))
+	}
+}
+
+func TestSettingsTogglesDoNotBypassCSRFSubmitHandler(t *testing.T) {
+	for _, name := range []string{"dashboard.html", "settings.html"} {
+		contents, err := os.ReadFile(filepath.Join("..", "..", "..", "web", "templates", "pages", name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if strings.Contains(string(contents), ".form."+"submit()") {
+			t.Fatalf("%s bypasses the submit event and CSRF token injection", name)
+		}
+	}
+}
+
 func TestStandalonePartialCanRenderAnotherPartial(t *testing.T) {
 	templatesDir := t.TempDir()
 	for _, directory := range []string{"layouts", "pages", "partials"} {

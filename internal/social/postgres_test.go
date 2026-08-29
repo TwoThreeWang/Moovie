@@ -20,7 +20,7 @@ func TestPostgresToggleLikeIsAtomicAndUsesUniqueConflictGuard(t *testing.T) {
 	if err != nil || !liked || count != 3 {
 		t.Fatalf("ToggleLike() = %d/%v/%v", count, liked, err)
 	}
-	for _, expected := range []string{"WITH deleted AS", "DELETE FROM comment_likes", "INSERT INTO comment_likes", "ON CONFLICT (user_movie_id, user_id) DO NOTHING"} {
+	for _, expected := range []string{"WITH target AS", "deleted AS", "DELETE FROM comment_likes", "INSERT INTO comment_likes", "saved_notification AS", "ON CONFLICT (user_movie_id, user_id) DO NOTHING"} {
 		if !strings.Contains(fake.queries[0], expected) {
 			t.Fatalf("toggle query missing %q: %s", expected, fake.queries[0])
 		}

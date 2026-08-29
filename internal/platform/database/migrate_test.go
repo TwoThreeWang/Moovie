@@ -17,7 +17,7 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		versions = append(versions, migration.version)
 	}
-	expectedVersions := make([]string, 52)
+	expectedVersions := make([]string, 56)
 	for index := range expectedVersions {
 		expectedVersions[index] = fmt.Sprintf("%04d", index+1)
 	}
@@ -28,7 +28,7 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		upperSQL += "\n" + strings.ToUpper(migration.sql)
 	}
-	for _, required := range []string{"CREATE TABLE SITES", "CREATE TABLE VOD_ITEMS", "CREATE TABLE COPYRIGHT_FILTERS", "CREATE TABLE CATEGORY_FILTERS", "CREATE TABLE SEARCH_LOGS", "CREATE TABLE SITE_STATS", "CREATE TABLE WATCH_HISTORIES", "CREATE TABLE USERS", "CREATE TABLE USER_MOVIES", "CREATE TABLE MOVIES", "CREATE TABLE DOUBAN_SYNC_JOBS", "CREATE TABLE MONTHLY_REPORTS", "CREATE TABLE COMMENT_LIKES", "CREATE TABLE COMMENT_REPLIES", "CREATE TABLE FEEDBACKS", "CREATE TABLE DANMAKUS", "CREATE TABLE IF NOT EXISTS MEDIA_FIELD_SOURCES", "ALTER TABLE VOD_ITEMS ADD COLUMN IF NOT EXISTS RESOURCE_STATUS", "CREATE TABLE IF NOT EXISTS RESOURCE_PLAYBACK_HEALTH", "CREATE TABLE IF NOT EXISTS HISTORY_SYNC_EVENTS", "CREATE TABLE USER_RECOMMENDATION_SNAPSHOTS", "PLAYBACK_ATTEMPT_EVENTS_TRENDING_IDX"} {
+	for _, required := range []string{"CREATE TABLE SITES", "CREATE TABLE VOD_ITEMS", "CREATE TABLE COPYRIGHT_FILTERS", "CREATE TABLE CATEGORY_FILTERS", "CREATE TABLE SEARCH_LOGS", "CREATE TABLE SITE_STATS", "CREATE TABLE WATCH_HISTORIES", "CREATE TABLE USERS", "CREATE TABLE USER_MOVIES", "CREATE TABLE MOVIES", "CREATE TABLE DOUBAN_SYNC_JOBS", "CREATE TABLE MONTHLY_REPORTS", "CREATE TABLE COMMENT_LIKES", "CREATE TABLE COMMENT_REPLIES", "CREATE TABLE SOCIAL_NOTIFICATIONS", "CREATE TABLE FEEDBACKS", "CREATE TABLE DANMAKUS", "CREATE TABLE IF NOT EXISTS MEDIA_FIELD_SOURCES", "ALTER TABLE VOD_ITEMS ADD COLUMN IF NOT EXISTS RESOURCE_STATUS", "CREATE TABLE IF NOT EXISTS RESOURCE_PLAYBACK_HEALTH", "CREATE TABLE IF NOT EXISTS HISTORY_SYNC_EVENTS", "CREATE TABLE USER_RECOMMENDATION_SNAPSHOTS", "PLAYBACK_ATTEMPT_EVENTS_TRENDING_IDX"} {
 		if !strings.Contains(upperSQL, required) {
 			t.Fatalf("migration missing %q", required)
 		}
@@ -120,7 +120,7 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	// 迁移编号在 0031 之后仍会继续增长，因此这里按版本号定位割接迁移，
 	// 而不是取最后一个文件——否则每加一条新迁移都会误报。
 	const cutoverVersion = "0031"
-	allowedTableDrops := map[string]bool{"0036": true, "0044": true, "0047": true, "0048": true, "0050": true}
+	allowedTableDrops := map[string]bool{"0036": true, "0044": true, "0047": true, "0048": true, "0050": true, "0055": true}
 	cutoverSQL := ""
 	for _, migration := range migrations {
 		if migration.version == cutoverVersion {

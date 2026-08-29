@@ -373,6 +373,9 @@ func TestReviewedHTMXLoadingEnhancements(t *testing.T) {
 			`.load-more-container`,
 		},
 		"static/js/player.js": {
+			`function setupEpisodeNavigation(options)`,
+			`findCurrentEpisodeIndex(episodes, options.episode)`,
+			`items.length <= 30`,
 			`function failoverToHealthyEpisode(options)`,
 			`var MAX_AUTOMATIC_FAILOVERS = 2`,
 			`var MIN_AUTOMATIC_MAPPING_CONFIDENCE = 0.90`,

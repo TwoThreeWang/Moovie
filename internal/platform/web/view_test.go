@@ -22,6 +22,7 @@ func TestActiveMenuPreservesLegacyNavigationRules(t *testing.T) {
 		{path: "/search", want: "search"},
 		{path: "/search", searchType: "movie", want: "movie"},
 		{path: "/dashboard/settings", want: "user"},
+		{path: "/notifications", want: "notifications"},
 		{path: "/admin/sites", want: "admin"},
 		{path: "/movie/1292052", want: ""},
 	}

@@ -148,7 +148,7 @@
                                 <p class="settings-field-hint">开启后，任何人都可以查看你的想看和已看列表；已看与短评也可能出现在片场</p>
                             </div>
                             <label class="toggle-wrap">
-                                <input type="checkbox" name="is_public" {{ if .User.IsPublic }}checked{{ end }} onchange="this.form.submit()">
+                                <input type="checkbox" name="is_public" {{ if .User.IsPublic }}checked{{ end }} onchange="this.form.requestSubmit()">
                                 <span class="toggle-track {{ if .User.IsPublic }}on{{ end }}"></span>
                             </label>
                         </div>
@@ -182,7 +182,7 @@
                                 <p class="settings-field-hint">开启后自动跳过已确认广告，并询问高度疑似的广告片段；设置会同步到所有设备</p>
                             </div>
                             <label class="toggle-wrap">
-                                <input type="checkbox" name="ad_skip_enabled" {{ if .User.AdSkipEnabled }}checked{{ end }} onchange="this.form.submit()">
+                                <input type="checkbox" name="ad_skip_enabled" {{ if .User.AdSkipEnabled }}checked{{ end }} onchange="this.form.requestSubmit()">
                                 <span class="toggle-track {{ if .User.AdSkipEnabled }}on{{ end }}"></span>
                             </label>
                         </div>

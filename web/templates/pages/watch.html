@@ -82,11 +82,12 @@
         <div hx-get="/api/htmx/watch-schedule?douban_id={{ .DoubanID }}"
              hx-trigger="load"
              hx-swap="innerHTML"></div>
+        {{ if .EpisodeGrid }}<nav id="episode-navigation" class="episode-navigation" aria-label="剧集导航"></nav>{{ end }}
 
         <!-- 集数网格 -->
         {{ if .EpisodeGrid }}
         <div class="watch-section">
-            <div class="episodes-list" id="episodesGrid">
+            <div class="episodes-list" id="episodesGrid" data-episode-list>
                 {{ range .EpisodeGrid }}
                 <div class="ep-btn {{ if .IsPlaying }}active{{ end }}"
                      data-ep-key="{{ .EpisodeKey }}" data-ep-label="{{ .EpisodeLabel }}"

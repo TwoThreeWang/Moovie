@@ -95,12 +95,26 @@ func (store *PostgresStore) LikedByUser(ctx context.Context, ids []int, userID i
 // ToggleLike 点赞或取消点赞并返回最新数量。
 func (store *PostgresStore) ToggleLike(ctx context.Context, userMovieID, userID int) (int, bool, error) {
 	// 删除、插入和计数合并在一条 PostgreSQL 语句中，两个并发点击不会留下重复点赞。
-	row := store.database.QueryRow(ctx, `WITH deleted AS (
+	row := store.database.QueryRow(ctx, `WITH target AS (
+  SELECT user_id AS recipient_user_id FROM user_movies WHERE id = $1
+), deleted AS (
   DELETE FROM comment_likes WHERE user_movie_id = $1 AND user_id = $2 RETURNING 1
 ), inserted AS (
   INSERT INTO comment_likes (user_movie_id, user_id)
-  SELECT $1, $2 WHERE NOT EXISTS (SELECT 1 FROM deleted)
+  SELECT $1, $2 FROM target WHERE NOT EXISTS (SELECT 1 FROM deleted)
   ON CONFLICT (user_movie_id, user_id) DO NOTHING RETURNING 1
+), removed_notification AS (
+  DELETE FROM social_notifications
+  WHERE type = 'comment_like' AND user_movie_id = $1 AND actor_user_id = $2
+    AND EXISTS (SELECT 1 FROM deleted)
+  RETURNING id
+), saved_notification AS (
+  INSERT INTO social_notifications (recipient_user_id, actor_user_id, type, user_movie_id)
+  SELECT recipient_user_id, $2, 'comment_like', $1 FROM target
+  WHERE recipient_user_id <> $2 AND EXISTS (SELECT 1 FROM inserted)
+  ON CONFLICT (type, actor_user_id, user_movie_id, (COALESCE(reply_id, 0)))
+  DO UPDATE SET read_at = NULL, created_at = NOW()
+  RETURNING id
 )
 SELECT EXISTS (SELECT 1 FROM inserted)`, userMovieID, userID)
 	var liked bool
@@ -146,11 +160,151 @@ WHERE r.user_movie_id = $1 ORDER BY r.created_at ASC`, userMovieID)
 // CreateReply 新建回复并带出作者信息。
 func (store *PostgresStore) CreateReply(ctx context.Context, userMovieID, userID int, content string) (*Reply, error) {
 	reply := &Reply{UserMovieID: userMovieID, UserID: userID, Content: content}
-	if err := store.database.QueryRow(ctx, `INSERT INTO comment_replies (user_movie_id, user_id, content)
-VALUES ($1,$2,$3) RETURNING id, created_at`, userMovieID, userID, content).Scan(&reply.ID, &reply.CreatedAt); err != nil {
+	if err := store.database.QueryRow(ctx, `WITH reply AS (
+  INSERT INTO comment_replies (user_movie_id, user_id, content)
+  VALUES ($1,$2,$3) RETURNING id, created_at
+), saved_notification AS (
+  INSERT INTO social_notifications (recipient_user_id, actor_user_id, type, user_movie_id, reply_id)
+  SELECT um.user_id, $2, 'comment_reply', $1, reply.id
+  FROM reply JOIN user_movies um ON um.id = $1
+  WHERE um.user_id <> $2
+  RETURNING id
+)
+SELECT id, created_at FROM reply`, userMovieID, userID, content).Scan(&reply.ID, &reply.CreatedAt); err != nil {
 		return nil, fmt.Errorf("create comment reply: %w", err)
 	}
 	return reply, nil
+}
+
+// CountUnreadNotifications 返回消息页中的未读项数；同一短评的多个赞只算一项。
+func (store *PostgresStore) CountUnreadNotifications(ctx context.Context, userID int) (int, error) {
+	var count int
+	err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM (
+  SELECT user_movie_id FROM social_notifications
+  WHERE recipient_user_id = $1 AND type = 'comment_like' AND read_at IS NULL
+  GROUP BY user_movie_id
+  UNION ALL
+  SELECT id FROM social_notifications
+  WHERE recipient_user_id = $1 AND type = 'comment_reply' AND read_at IS NULL
+) unread`, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count unread notifications: %w", err)
+	}
+	return count, nil
+}
+
+// ListNotifications 列出互动消息；点赞按短评聚合，回复逐条展示。
+func (store *PostgresStore) ListNotifications(ctx context.Context, userID, limit int) ([]Notification, error) {
+	rows, err := store.database.Query(ctx, `WITH like_counts AS (
+  SELECT user_movie_id, COUNT(*)::int AS actor_count, BOOL_OR(read_at IS NULL) AS unread,
+         MAX(created_at) AS created_at
+  FROM social_notifications
+  WHERE recipient_user_id = $1 AND type = 'comment_like'
+  GROUP BY user_movie_id
+), latest_likes AS (
+  SELECT DISTINCT ON (user_movie_id) id, user_movie_id, actor_user_id
+  FROM social_notifications
+  WHERE recipient_user_id = $1 AND type = 'comment_like'
+  ORDER BY user_movie_id, created_at DESC, id DESC
+), items AS (
+  SELECT latest.id, 'comment_like'::text AS type, latest.user_movie_id, um.movie_id,
+         COALESCE(NULLIF(media.title, ''), um.title) AS movie_title,
+         actor.username AS actor_name, actor.avatar AS actor_avatar,
+         ''::text AS content, likes.actor_count, likes.unread, likes.created_at
+  FROM like_counts likes
+  JOIN latest_likes latest ON latest.user_movie_id = likes.user_movie_id
+  JOIN user_movies um ON um.id = latest.user_movie_id
+  LEFT JOIN media ON media.id = um.media_id
+  JOIN users actor ON actor.id = latest.actor_user_id
+  UNION ALL
+  SELECT notification.id, notification.type, notification.user_movie_id, um.movie_id,
+         COALESCE(NULLIF(media.title, ''), um.title), actor.username, actor.avatar,
+         reply.content, 1, notification.read_at IS NULL, notification.created_at
+  FROM social_notifications notification
+  JOIN user_movies um ON um.id = notification.user_movie_id
+  LEFT JOIN media ON media.id = um.media_id
+  JOIN users actor ON actor.id = notification.actor_user_id
+  JOIN comment_replies reply ON reply.id = notification.reply_id
+  WHERE notification.recipient_user_id = $1 AND notification.type = 'comment_reply'
+)
+SELECT id, type, user_movie_id, movie_id, movie_title, actor_name, actor_avatar, content,
+       actor_count, unread, created_at
+FROM items ORDER BY created_at DESC LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list notifications: %w", err)
+	}
+	defer rows.Close()
+	notifications := make([]Notification, 0)
+	for rows.Next() {
+		var notification Notification
+		if err := rows.Scan(&notification.ID, &notification.Type, &notification.UserMovieID,
+			&notification.MovieID, &notification.MovieTitle, &notification.ActorName,
+			&notification.ActorAvatar, &notification.Content, &notification.ActorCount,
+			&notification.Unread, &notification.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan notification: %w", err)
+		}
+		notifications = append(notifications, notification)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate notifications: %w", err)
+	}
+	return notifications, nil
+}
+
+// ReadNotification 标记一项已读并返回服务端计算的短评落点。
+func (store *PostgresStore) ReadNotification(ctx context.Context, notificationID, userID int) (string, int, error) {
+	var movieID string
+	var userMovieID int
+	err := store.database.QueryRow(ctx, `WITH selected AS (
+  SELECT id, type, user_movie_id FROM social_notifications
+  WHERE id = $1 AND recipient_user_id = $2
+), marked AS (
+  UPDATE social_notifications notification SET read_at = COALESCE(notification.read_at, NOW())
+  FROM selected
+  WHERE notification.recipient_user_id = $2
+    AND (notification.id = selected.id OR
+         (selected.type = 'comment_like' AND notification.type = 'comment_like'
+          AND notification.user_movie_id = selected.user_movie_id))
+)
+SELECT um.movie_id, selected.user_movie_id
+FROM selected JOIN user_movies um ON um.id = selected.user_movie_id`, notificationID, userID).Scan(&movieID, &userMovieID)
+	if err != nil {
+		return "", 0, fmt.Errorf("read notification: %w", err)
+	}
+	return movieID, userMovieID, nil
+}
+
+// ReadAllNotifications 标记当前用户的所有互动消息已读。
+func (store *PostgresStore) ReadAllNotifications(ctx context.Context, userID int) error {
+	if _, err := store.database.Exec(ctx, `UPDATE social_notifications SET read_at = NOW()
+WHERE recipient_user_id = $1 AND read_at IS NULL`, userID); err != nil {
+		return fmt.Errorf("read all notifications: %w", err)
+	}
+	return nil
+}
+
+// DeleteNotification 物理删除一条消息；点赞消息按页面展示的聚合组整体删除。
+func (store *PostgresStore) DeleteNotification(ctx context.Context, notificationID, userID int) error {
+	var deleted bool
+	err := store.database.QueryRow(ctx, `WITH selected AS (
+  SELECT id, type, user_movie_id FROM social_notifications
+  WHERE id = $1 AND recipient_user_id = $2
+), deleted AS (
+  DELETE FROM social_notifications notification USING selected
+  WHERE notification.recipient_user_id = $2
+    AND (notification.id = selected.id OR
+         (selected.type = 'comment_like' AND notification.type = 'comment_like'
+          AND notification.user_movie_id = selected.user_movie_id))
+  RETURNING notification.id
+)
+SELECT EXISTS (SELECT 1 FROM deleted)`, notificationID, userID).Scan(&deleted)
+	if err != nil {
+		return fmt.Errorf("delete notification: %w", err)
+	}
+	if !deleted {
+		return fmt.Errorf("delete notification: not found")
+	}
+	return nil
 }
 
 // ListWeeklyFilms 统计本周被标记最多的影片。

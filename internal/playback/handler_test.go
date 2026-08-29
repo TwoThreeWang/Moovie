@@ -620,7 +620,9 @@ func TestPlayerPagesShareTheSamePlayerAndLazySections(t *testing.T) {
 	shared := []string{
 		`<div id="artplayer-app"></div>`,                      // play_container.html
 		`class="play-disclaimer"`,                             // play_container.html 里挂的免责条
-		`src="/static/js/player.js?v=0.11"`,                   // play_scripts.html
+		`src="/static/js/player.js?v=4.1"`,                    // play_scripts.html
+		`id="episode-navigation"`,                            // 手动上一集 / 下一集
+		`data-episode-list`,                                   // 长集数折叠
 		`npm/artplayer-plugin-danmuku`,                        // play_scripts.html：弹幕插件
 		`hx-get="/api/htmx/movie-comments?douban_id=1292052"`, // play_comments.html
 		`hx-get="/api/htmx/similar?douban_id=1292052"`,        // play_similar.html

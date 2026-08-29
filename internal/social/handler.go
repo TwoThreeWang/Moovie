@@ -1,7 +1,9 @@
 package social
 
 import (
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +41,12 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/api/comments/:id/like", optional, handler.toggleLike)
 	router.GET("/api/comments/:id/replies", optional, handler.replies)
 	router.POST("/api/comments/:id/replies", optional, handler.createReply)
+	require := auth.Require(handler.config.AppSecret, handler.config.Env == "production")
+	router.GET("/notifications", require, handler.notifications)
+	router.GET("/api/notifications/unread-count", require, handler.unreadNotificationCount)
+	router.POST("/notifications/read-all", require, handler.readAllNotifications)
+	router.POST("/notifications/:id/read", require, handler.readNotification)
+	router.DELETE("/notifications/:id", require, handler.deleteNotification)
 }
 
 // cinema 渲染片场首页：本周热门 + 精选短评 + 片友推荐。
@@ -172,6 +180,80 @@ func (handler *Handler) renderReplies(c *gin.Context, userMovieID, userID int) {
 		return
 	}
 	c.HTML(http.StatusOK, "partials/comment_replies.html", gin.H{"UserMovieID": userMovieID, "Replies": replies, "CurrentUserID": userID})
+}
+
+// notifications 展示当前用户收到的短评互动。
+func (handler *Handler) notifications(c *gin.Context) {
+	notifications, err := handler.store.ListNotifications(c.Request.Context(), auth.UserID(c), 50)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "消息暂时无法加载")
+		return
+	}
+	c.HTML(http.StatusOK, "notifications.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
+		Title: "消息 - " + handler.config.SiteName, Robots: "noindex, nofollow",
+	}, gin.H{"Notifications": notifications}))
+}
+
+// unreadNotificationCount 返回全局导航使用的聚合未读数。
+func (handler *Handler) unreadNotificationCount(c *gin.Context) {
+	count, err := handler.store.CountUnreadNotifications(c.Request.Context(), auth.UserID(c))
+	if err != nil {
+		c.String(http.StatusOK, "")
+		return
+	}
+	c.HTML(http.StatusOK, "partials/notification_badge.html", gin.H{"Count": count})
+}
+
+// readNotification 标记一项已读，再跳到对应电影的原短评。
+func (handler *Handler) readNotification(c *gin.Context) {
+	id, err := positiveID(c.Param("id"))
+	if err != nil {
+		c.String(http.StatusBadRequest, "")
+		return
+	}
+	movieID, userMovieID, err := handler.store.ReadNotification(c.Request.Context(), id, auth.UserID(c))
+	if err != nil {
+		c.String(http.StatusNotFound, "消息不存在")
+		return
+	}
+	destination := fmt.Sprintf("/movie/%s?comment=%d#comment-%d", url.PathEscape(movieID), userMovieID, userMovieID)
+	c.Header("HX-Redirect", destination)
+	c.Status(http.StatusOK)
+}
+
+// readAllNotifications 标记全部已读并重绘列表。
+func (handler *Handler) readAllNotifications(c *gin.Context) {
+	userID := auth.UserID(c)
+	if err := handler.store.ReadAllNotifications(c.Request.Context(), userID); err != nil {
+		c.String(http.StatusInternalServerError, "标记已读失败")
+		return
+	}
+	handler.renderNotificationList(c, userID)
+}
+
+// deleteNotification 物理删除当前用户的一条消息并重绘列表。
+func (handler *Handler) deleteNotification(c *gin.Context) {
+	id, err := positiveID(c.Param("id"))
+	if err != nil {
+		c.String(http.StatusBadRequest, "")
+		return
+	}
+	userID := auth.UserID(c)
+	if err := handler.store.DeleteNotification(c.Request.Context(), id, userID); err != nil {
+		c.String(http.StatusNotFound, "消息不存在")
+		return
+	}
+	handler.renderNotificationList(c, userID)
+}
+
+func (handler *Handler) renderNotificationList(c *gin.Context, userID int) {
+	notifications, err := handler.store.ListNotifications(c.Request.Context(), userID, 50)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "消息暂时无法加载")
+		return
+	}
+	c.Header("HX-Trigger", "notificationsChanged")
+	c.HTML(http.StatusOK, "partials/notification_list.html", gin.H{"Notifications": notifications})
 }
 
 // startOfWeek 取本周一零点，作为「本周」的起点。

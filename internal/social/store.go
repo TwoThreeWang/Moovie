@@ -17,4 +17,9 @@ type Store interface {
 	ListWeeklyFilms(ctx context.Context, since time.Time, limit int) ([]WeeklyFilm, error)
 	ListFeaturedComments(ctx context.Context, limit int) ([]Activity, error)
 	ListFilmFriends(ctx context.Context, currentUserID, limit int) ([]FilmFriend, error)
+	CountUnreadNotifications(ctx context.Context, userID int) (int, error)
+	ListNotifications(ctx context.Context, userID, limit int) ([]Notification, error)
+	ReadNotification(ctx context.Context, notificationID, userID int) (movieID string, userMovieID int, err error)
+	ReadAllNotifications(ctx context.Context, userID int) error
+	DeleteNotification(ctx context.Context, notificationID, userID int) error
 }

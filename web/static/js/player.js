@@ -331,21 +331,84 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function findCurrentEpisodeIndex(episodes, currentEpisode) {
+    for (var i = 0; i < episodes.length; i++) {
+        if (episodes[i].title === currentEpisode) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// 播放器下方的手动上下集导航，并折叠过长的选集列表。
+function setupEpisodeNavigation(options) {
+    var episodes = options.episodes || [];
+    if (episodes.length < 2) return;
+
+    var currentIndex = findCurrentEpisodeIndex(episodes, options.episode);
+    if (currentIndex < 0) return;
+
+    var navigation = document.getElementById('episode-navigation');
+    if (navigation) {
+        var current = episodes[currentIndex];
+        var previous = currentIndex > 0 ? episodes[currentIndex - 1] : null;
+        var next = currentIndex < episodes.length - 1 ? episodes[currentIndex + 1] : null;
+        var episodeLink = function(item, direction, label) {
+            if (!item) {
+                return '<span class="episode-nav-link ' + direction + ' disabled" aria-disabled="true"><span>' + label + '</span></span>';
+            }
+            return '<a class="episode-nav-link ' + direction + '" href="' + escapeHtml(item.url) + '"><span>' + label + '</span><small>' + escapeHtml(item.title) + '</small></a>';
+        };
+        navigation.innerHTML =
+            episodeLink(previous, 'previous', '‹ 上一集') +
+            '<span class="episode-nav-current"><small>当前播放</small><strong>' + escapeHtml(current.title) + '</strong></span>' +
+            episodeLink(next, 'next', next ? '下一集 ›' : '已是最后一集');
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-episode-list]'), function(list) {
+        var items = Array.prototype.slice.call(list.querySelectorAll('.ep-btn'));
+        if (items.length <= 30) return;
+
+        var expanded = false;
+        var toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'episodes-expand-toggle';
+        toggle.setAttribute('aria-controls', list.id);
+        list.insertAdjacentElement('afterend', toggle);
+
+        function render() {
+            Array.prototype.forEach.call(list.querySelectorAll('.episode-gap'), function(gap) { gap.remove(); });
+            var lastVisible = -1;
+            items.forEach(function(item, index) {
+                var visible = expanded || index < 2 || index >= items.length - 2 || Math.abs(index - currentIndex) <= 2;
+                item.hidden = !visible;
+                if (!expanded && visible && lastVisible >= 0 && index - lastVisible > 1) {
+                    var gap = document.createElement('span');
+                    gap.className = 'episode-gap';
+                    gap.textContent = '…';
+                    gap.setAttribute('aria-hidden', 'true');
+                    list.insertBefore(gap, item);
+                }
+                if (visible) lastVisible = index;
+            });
+            toggle.textContent = expanded ? '收起选集' : '展开全部 ' + items.length + ' 集';
+            toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        }
+
+        toggle.addEventListener('click', function() {
+            expanded = !expanded;
+            render();
+        });
+        render();
+    });
+}
+
 // 自动播放下一集管理器
 function createAutoPlayManager(options) {
     var AUTO_PLAY_KEY = 'moovie_auto_play_next';
     var COUNTDOWN_SECONDS = 15;
     var episodes = options.episodes;
-    var currentEpisode = options.episode;
-
-    // 找到当前集索引
-    var currentIndex = -1;
-    for (var i = 0; i < episodes.length; i++) {
-        if (episodes[i].title === currentEpisode) {
-            currentIndex = i;
-            break;
-        }
-    }
+    var currentIndex = findCurrentEpisodeIndex(episodes, options.episode);
 
     // 最后一集或未找到，不触发
     if (currentIndex < 0 || currentIndex >= episodes.length - 1) {
@@ -859,6 +922,8 @@ function adSkipMonitor(state) {
 function initPlayer(containerId, url, options) {
     options = options || {};
     options._current_url = url;
+
+    setupEpisodeNavigation(options);
 
     var adState = options.adSkipEnabled ? {
         enabled: true, playlistURL: '', originalPlaylist: '',

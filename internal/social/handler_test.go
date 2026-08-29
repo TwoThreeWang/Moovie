@@ -14,9 +14,9 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestCommentsLikesAndRepliesPreserveLegacyHTMXBehavior(t *testing.T) {
@@ -96,6 +96,84 @@ func TestCinemaBuildsProgramCommentsAndFilmFriendRadar(t *testing.T) {
 	}
 }
 
+func TestInteractionNotificationsAggregateLikesAndTrackReadState(t *testing.T) {
+	router, users, movies, store, owner, ownerToken := socialTestRouter(t)
+	now := time.Now()
+	if err := movies.Upsert(t.Context(), library.Record{UserID: owner.ID, MovieID: "1292052", Title: "肖申克的救赎", Status: library.StatusWatched, Comment: "值得重看", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	comment, _ := movies.GetByUserAndMovie(t.Context(), owner.ID, "1292052")
+
+	actor, _ := users.Create(t.Context(), identity.User{Email: "actor@example.com", Username: "片友甲", Role: "user", Avatar: "🍿", IsPublic: true, CreatedAt: now})
+	secondActor, _ := users.Create(t.Context(), identity.User{Email: "actor2@example.com", Username: "片友乙", Role: "user", Avatar: "📽️", IsPublic: true, CreatedAt: now})
+	actorToken := signedToken(t, actor)
+	secondActorToken := signedToken(t, secondActor)
+
+	performRequest(router, http.MethodPost, "/api/comments/"+itoa(comment.ID)+"/like", "", actorToken)
+	performRequest(router, http.MethodPost, "/api/comments/"+itoa(comment.ID)+"/like", "", secondActorToken)
+	count, _ := store.CountUnreadNotifications(t.Context(), owner.ID)
+	if count != 1 {
+		t.Fatalf("aggregated unread likes = %d, want 1", count)
+	}
+	page := performRequest(router, http.MethodGet, "/notifications", "", ownerToken)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "等 2 人") || !strings.Contains(page.Body.String(), "肖申克的救赎") || !strings.Contains(page.Body.String(), `hx-delete="/notifications/`) {
+		t.Fatalf("notifications page = %d/%s", page.Code, page.Body.String())
+	}
+
+	performRequest(router, http.MethodPost, "/api/comments/"+itoa(comment.ID)+"/like", "", actorToken)
+	notifications, _ := store.ListNotifications(t.Context(), owner.ID, 50)
+	if len(notifications) != 1 || notifications[0].ActorCount != 1 {
+		t.Fatalf("notifications after unlike = %+v", notifications)
+	}
+
+	replied := performRequest(router, http.MethodPost, "/api/comments/"+itoa(comment.ID)+"/replies", url.Values{"content": {"我也这么觉得"}}.Encode(), actorToken)
+	if replied.Code != http.StatusOK {
+		t.Fatalf("reply = %d/%s", replied.Code, replied.Body.String())
+	}
+	notifications, _ = store.ListNotifications(t.Context(), owner.ID, 50)
+	if len(notifications) != 2 || notifications[0].Type != "comment_reply" || notifications[0].Content != "我也这么觉得" {
+		t.Fatalf("notifications after reply = %+v", notifications)
+	}
+	replyNotificationID := notifications[0].ID
+	likeNotificationID := notifications[1].ID
+	forbiddenDelete := performRequest(router, http.MethodDelete, "/notifications/"+itoa(replyNotificationID), "", actorToken)
+	if forbiddenDelete.Code != http.StatusNotFound {
+		t.Fatalf("delete another user's notification = %d, want 404", forbiddenDelete.Code)
+	}
+	read := performRequest(router, http.MethodPost, "/notifications/"+itoa(notifications[0].ID)+"/read", "", ownerToken)
+	if read.Code != http.StatusOK || read.Header().Get("HX-Redirect") != "/movie/1292052?comment="+itoa(comment.ID)+"#comment-"+itoa(comment.ID) {
+		t.Fatalf("read redirect = %d/%q", read.Code, read.Header().Get("HX-Redirect"))
+	}
+	count, _ = store.CountUnreadNotifications(t.Context(), owner.ID)
+	if count != 1 {
+		t.Fatalf("unread after reading reply = %d, want 1", count)
+	}
+	readAll := performRequest(router, http.MethodPost, "/notifications/read-all", "", ownerToken)
+	count, _ = store.CountUnreadNotifications(t.Context(), owner.ID)
+	if readAll.Code != http.StatusOK || count != 0 || readAll.Header().Get("HX-Trigger") != "notificationsChanged" {
+		t.Fatalf("read all = %d/count=%d/trigger=%q", readAll.Code, count, readAll.Header().Get("HX-Trigger"))
+	}
+	deletedReply := performRequest(router, http.MethodDelete, "/notifications/"+itoa(replyNotificationID), "", ownerToken)
+	notifications, _ = store.ListNotifications(t.Context(), owner.ID, 50)
+	if deletedReply.Code != http.StatusOK || deletedReply.Header().Get("HX-Trigger") != "notificationsChanged" || len(notifications) != 1 || notifications[0].Type != "comment_like" {
+		t.Fatalf("delete reply notification = %d/%q/%+v", deletedReply.Code, deletedReply.Header().Get("HX-Trigger"), notifications)
+	}
+	deletedLikes := performRequest(router, http.MethodDelete, "/notifications/"+itoa(likeNotificationID), "", ownerToken)
+	notifications, _ = store.ListNotifications(t.Context(), owner.ID, 50)
+	likeCounts, _ := store.CountLikes(t.Context(), []int{comment.ID})
+	replies, _ := store.ListReplies(t.Context(), comment.ID)
+	if deletedLikes.Code != http.StatusOK || len(notifications) != 0 || likeCounts[comment.ID] != 1 || len(replies) != 1 || !strings.Contains(deletedLikes.Body.String(), "还没有互动消息") {
+		t.Fatalf("hard delete notifications = %d/notifications=%+v/likes=%d/replies=%d", deletedLikes.Code, notifications, likeCounts[comment.ID], len(replies))
+	}
+
+	performRequest(router, http.MethodPost, "/api/comments/"+itoa(comment.ID)+"/like", "", ownerToken)
+	performRequest(router, http.MethodPost, "/api/comments/"+itoa(comment.ID)+"/replies", "content=self", ownerToken)
+	count, _ = store.CountUnreadNotifications(t.Context(), owner.ID)
+	if count != 0 {
+		t.Fatalf("self interactions created notifications: %d", count)
+	}
+}
+
 func socialTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *library.PostgresStore, *PostgresStore, *identity.User, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -104,7 +182,7 @@ func socialTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *libr
 	movies := library.NewPostgresStore(testdb.Pool(t))
 	store := NewPostgresStore(testdb.Pool(t))
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
-	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"cinema"})
+	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"cinema", "notifications"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +192,16 @@ func socialTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *libr
 	now := time.Now()
 	token, _ := auth.Sign(auth.Claims{UserID: publicUser.ID, Email: publicUser.Email, Role: publicUser.Role, Issued: now.Unix(), Expiry: now.Add(time.Hour).Unix()}, "secret")
 	return router, users, movies, store, publicUser, token
+}
+
+func signedToken(t *testing.T, user *identity.User) string {
+	t.Helper()
+	now := time.Now()
+	token, err := auth.Sign(auth.Claims{UserID: user.ID, Email: user.Email, Role: user.Role, Issued: now.Unix(), Expiry: now.Add(time.Hour).Unix()}, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
 }
 
 func performRequest(router http.Handler, method, target, body, token string) *httptest.ResponseRecorder {

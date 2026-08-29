@@ -151,6 +151,7 @@
 
         {{/* 追剧更新时间：放在选集区之上，是用户在播放页最想确认的信息 */}}
         {{ with .AirSchedule }}{{ template "air_schedule.html" . }}{{ end }}
+        {{ if .Episodes }}<nav id="episode-navigation" class="episode-navigation" aria-label="剧集导航"></nav>{{ end }}
 
         <!-- 选集播放 -->
         {{ if .Episodes }}
@@ -171,7 +172,7 @@
                 </div>
                 {{ end }}
             </div>
-            <div class="episodes-list">
+            <div class="episodes-list" id="episodesGrid" data-episode-list>
                 {{ range .Episodes }}
                 <a href="/play/{{ $.SourceKey }}/{{ $.VodID }}?source={{ $.Source }}&ep={{ .Title }}{{ if $.DoubanID }}&douban_id={{ $.DoubanID }}{{ end }}"
                    class="ep-btn {{ if eq .Title $.Episode }}active{{ end }}">
@@ -193,7 +194,7 @@
                 </svg>
                 <span>选集下载</span>
             </div>
-            <div class="episodes-list">
+            <div class="episodes-list" id="downloadEpisodesGrid" data-episode-list>
                 {{ range .Episodes }}
                 <a href="https://www.zngg.net/tool/detail/M3U8V2Pro?url={{ .URL }}" target="_blank" rel="noopener nofollow"
                    class="ep-btn">

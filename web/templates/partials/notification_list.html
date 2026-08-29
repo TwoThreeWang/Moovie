@@ -1,0 +1,38 @@
+{{ define "notification_list.html" }}
+{{ if .Notifications }}
+<div class="notification-list">
+    {{ range .Notifications }}
+    <div class="notification-item{{ if .Unread }} is-unread{{ end }}">
+        <button type="button" class="notification-open"
+                hx-post="/notifications/{{ .ID }}/read" aria-label="查看这条消息对应的短评">
+            <span class="notification-avatar">{{ default "🎬" .ActorAvatar }}</span>
+            <span class="notification-copy">
+                <span class="notification-summary">
+                    <strong>{{ default "一位片友" .ActorName }}</strong>
+                    {{ if eq .Type "comment_like" }}{{ if gt .ActorCount 1 }}等 {{ .ActorCount }} 人{{ end }}赞了你对《{{ .MovieTitle }}》的短评
+                    {{ else }}回复了你对《{{ .MovieTitle }}》的短评{{ end }}
+                </span>
+                {{ if .Content }}<span class="notification-content">{{ .Content }}</span>{{ end }}
+                <time>{{ .CreatedAt.Format "2006-01-02 15:04" }}</time>
+            </span>
+            {{ if .Unread }}<span class="notification-unread-dot" aria-label="未读"></span>{{ end }}
+        </button>
+        <button type="button" class="notification-delete" title="删除消息" aria-label="删除这条消息"
+                hx-delete="/notifications/{{ .ID }}" hx-target="#notification-list" hx-swap="innerHTML"
+                hx-confirm="确定删除这条消息吗？此操作无法撤销。" hx-disabled-elt="this">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6l-1 14H6L5 6m3 0V4h8v2"></path>
+            </svg>
+        </button>
+    </div>
+    {{ end }}
+</div>
+{{ else }}
+<div class="notifications-empty">
+    <span>🎞️</span>
+    <p>还没有互动消息</p>
+    <small>片友点赞或回复你的短评后，会出现在这里。</small>
+</div>
+{{ end }}
+{{ end }}

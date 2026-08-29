@@ -44,7 +44,7 @@ import (
 
 // contentPages 列出需要与共享 layout、partial 一起解析的页面模板。
 // 显式维护清单可以让模板缺失或重名在启动阶段暴露，而不是等用户访问时才报错。
-var contentPages = []string{"home", "search", "trends", "about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "404", "player", "player_embed", "iptv", "tvbox", "play", "watch", "login", "register", "dashboard", "settings", "movie", "fetching", "recommendations", "foryou", "share", "share_monthly", "cinema", "feedback", "admin_feedback", "discover", "admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_copyright", "admin_category", "admin_nsfw", "admin_matches", "admin_jobs"}
+var contentPages = []string{"home", "search", "trends", "about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "404", "player", "player_embed", "iptv", "tvbox", "play", "watch", "login", "register", "dashboard", "settings", "notifications", "movie", "fetching", "recommendations", "foryou", "share", "share_monthly", "cinema", "feedback", "admin_feedback", "discover", "admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_copyright", "admin_category", "admin_nsfw", "admin_matches", "admin_jobs"}
 
 // discoverPopularAdapter 把播放域的热门结果转换成发现页需要的轻量结构。
 type discoverPopularAdapter struct{ provider playback.PopularProvider }

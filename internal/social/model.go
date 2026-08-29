@@ -51,3 +51,18 @@ type Reply struct {
 	CreatedAt   time.Time
 	User        identity.User
 }
+
+// Notification 是消息页的一条互动；同一短评的点赞在查询时聚合。
+type Notification struct {
+	ID          int
+	Type        string
+	UserMovieID int
+	MovieID     string
+	MovieTitle  string
+	ActorName   string
+	ActorAvatar string
+	Content     string
+	ActorCount  int
+	Unread      bool
+	CreatedAt   time.Time
+}

@@ -1,7 +1,7 @@
 {{ if .Comments }}
 <div class="user-comments-list">
     {{ range .Comments }}
-    <div class="user-comment-item">
+    <div class="user-comment-item" id="comment-{{ .ID }}">
         <div class="user-comment-meta">
             {{ if .User.IsPublic }}
             <a class="comment-user comment-user-link" href="/user/{{ .User.ID }}" title="查看 {{ .User.Username }} 的主页">
@@ -269,3 +269,13 @@
     }
 }
 </style>
+
+<script>
+requestAnimationFrame(function () {
+    if (!location.hash.startsWith('#comment-')) return;
+    const comment = document.getElementById(location.hash.slice(1));
+    if (!comment) return;
+    comment.classList.add('notification-comment-target');
+    comment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+</script>

@@ -75,6 +75,11 @@ var Routes = []Route{
 	{Method: "POST", Path: "/dashboard/settings/douban/bind", Surface: SurfaceDashboard},
 	{Method: "POST", Path: "/dashboard/settings/douban/unbind", Surface: SurfaceDashboard},
 	{Method: "POST", Path: "/dashboard/settings/douban/sync", Surface: SurfaceDashboard},
+	{Method: "GET", Path: "/notifications", Surface: SurfaceDashboard},
+	{Method: "GET", Path: "/api/notifications/unread-count", Surface: SurfaceHTMX},
+	{Method: "POST", Path: "/notifications/read-all", Surface: SurfaceHTMX},
+	{Method: "POST", Path: "/notifications/:id/read", Surface: SurfaceHTMX},
+	{Method: "DELETE", Path: "/notifications/:id", Surface: SurfaceHTMX},
 
 	{Method: "GET", Path: "/api/tvbox.json", Surface: SurfacePublicAPI},
 	{Method: "GET", Path: "/api/vod", Surface: SurfacePublicAPI},

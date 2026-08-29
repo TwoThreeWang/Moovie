@@ -1,6 +1,6 @@
 # Moovie New
 
-`new/` 是 Moovie 的重构系统。它不是只替换页面样式，而是把搜索、影视资料、播放、用户、观影记录、社区和后台能力重新整理成一套可以独立运行、测试和发布的 Go Web 应用。Web 端使用 Gin、Go HTML Template、HTMX 和浏览器端 JavaScript；新系统上线后直接使用最终数据模型，不在运行时读取旧表、双写旧表或保留已废弃的客户端 API。
+`V4.0` 是 Moovie 的重构系统。它不是只替换页面样式，而是把搜索、影视资料、播放、用户、观影记录、社区和后台能力重新整理成一套可以独立运行、测试和发布的 Go Web 应用。Web 端使用 Gin、Go HTML Template、HTMX 和浏览器端 JavaScript；新系统上线后直接使用最终数据模型，不在运行时读取旧表、双写旧表或保留已废弃的客户端 API。
 
 这份 README 主要写给第一次接触本项目、Go Web 或分层架构的开发者。建议先阅读“系统如何运行”和“推荐的代码阅读顺序”，再启动程序。
 
@@ -513,6 +513,7 @@ flowchart TD
 | | `user_movies` | 片单：想看 / 看过 / 评分 / 短评。短评没有独立的表，就是这张表上的 `comment` 字段 |
 | | `comment_likes` | 短评点赞，挂在 `user_movie_id` 上 |
 | | `comment_replies` | 短评回复，同样挂在 `user_movie_id` 上 |
+| | `social_notifications` | 短评点赞与回复通知；点赞按短评聚合展示，支持未读状态与硬删除 |
 | | `feedbacks` | 用户反馈 |
 | | `monthly_reports` | 月度观影报告，每人每月一行，由定时任务算好存起来 |
 | | `user_recommendation_snapshots` | 个性化推荐快照，每用户一行；过期先返回旧结果，再由 Worker 刷新 |

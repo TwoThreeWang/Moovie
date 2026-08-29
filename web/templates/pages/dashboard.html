@@ -160,7 +160,7 @@
                             </div>
                         </div>
                         <label class="toggle-wrap">
-                            <input type="checkbox" name="is_public" aria-label="公开个人主页" {{ if .User.IsPublic }}checked{{ end }} onchange="this.form.submit()">
+                            <input type="checkbox" name="is_public" aria-label="公开个人主页" {{ if .User.IsPublic }}checked{{ end }} onchange="this.form.requestSubmit()">
                             <span class="toggle-track {{ if .User.IsPublic }}on{{ end }}"></span>
                         </label>
                     </div>
