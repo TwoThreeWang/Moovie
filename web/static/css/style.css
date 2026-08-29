@@ -803,8 +803,11 @@ to { transform: rotate(360deg); }
 .play-disclaimer .disclaimer-text em { font-style: normal; font-weight: 600; color: var(--text); }
 .play-disclaimer .disclaimer-sub { margin-top: 4px; color: var(--text-muted); }
 @media (max-width: 576px) {
-.play-disclaimer { gap: 10px; padding: 10px 12px; }
-.play-disclaimer .disclaimer-text { font-size: 0.75rem; }
+.play-disclaimer { gap: 8px; padding: 8px 10px; border-left-width: 2px; }
+.play-disclaimer .disclaimer-icon { width: 16px; height: 16px; margin-top: 1px; }
+.play-disclaimer .disclaimer-title { margin-bottom: 2px; font-size: 0.78rem; line-height: 1.35; }
+.play-disclaimer .disclaimer-text { font-size: 0.74rem; line-height: 1.45; }
+.play-disclaimer .disclaimer-sub { margin-top: 2px; }
 }
 .video-actions-bar { display: flex; flex-wrap: wrap; gap: 12px; padding-bottom: 20px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
 .video-action-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 1rem; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: 0.2s ease; white-space: nowrap; text-decoration: none; width: auto; height: auto; }

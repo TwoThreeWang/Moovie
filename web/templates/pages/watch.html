@@ -167,6 +167,14 @@
 document.addEventListener('DOMContentLoaded', function() {
     var doubanID = '{{ .DoubanID }}';
     var episode = '{{ .Episode }}';
+    var episodeList = Array.prototype.map.call(document.querySelectorAll('#episodesGrid .ep-btn'), function(el) {
+        var epLabel = el.getAttribute('data-ep-label');
+        var url = new URL(window.location.href);
+        url.searchParams.set('ep', epLabel);
+        url.searchParams.set('source_key', '{{ .SourceKey }}');
+        url.searchParams.set('vod_id', '{{ .VodID }}');
+        return { title: el.classList.contains('active') ? episode : epLabel, url: url.pathname + url.search };
+    });
 
     // --- Player init ---
     var art = null;
@@ -186,7 +194,7 @@ document.addEventListener('DOMContentLoaded', function() {
             sourceKey: '{{ .SourceKey }}',
             vodId: '{{ .VodID }}',
             episode: episode,
-            episodes: [],
+            episodes: episodeList,
             vodName: '{{ .View.Title }}',
             canSendDanmaku: {{ if .LoggedIn }}true{{ else }}false{{ end }},
             adSkipEnabled: {{ if and .LoggedIn .UserInfo }}{{ if .UserInfo.AdSkipEnabled }}true{{ else }}false{{ end }}{{ else }}false{{ end }},
@@ -198,7 +206,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Episode switching (page reload) ---
     window.switchEpisode = function(el) {
         var epLabel = el.getAttribute('data-ep-label');
-        window.location.href = '/watch/' + doubanID + '?ep=' + encodeURIComponent(epLabel);
+        var url = new URL(window.location.href);
+        url.searchParams.set('ep', epLabel);
+        window.location.href = url.pathname + url.search;
     };
 
     // --- Source switching (page reload, stay on watch page) ---
