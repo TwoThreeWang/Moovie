@@ -566,7 +566,7 @@ function buildDanmakuPlugin(options) {
         },
         speed: 10,
         opacity: 1,
-        fontSize: 22,
+        fontSize: '3%',
         margin: [10, '30%'],
         mode: 0,
         modes: [0, 1, 2],
