@@ -756,7 +756,7 @@ span.health-bad { background: #ef4444; color: #fff; }
 .status-resolved { background: var(--success-bg); color: var(--success); }
 .status-rejected { background: #ffebee; color: #c62828; }
 .content-cell { max-width: 300px; }
-.feedback-content { max-height: 60px; overflow: hidden; text-overflow: ellipsis; font-size: 0.875rem; color: var(--text-secondary); line-height: 1.4; }
+.feedback-content { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6; }
 .link-btn { font-size: 0.75rem; color: var(--primary-text); }
 .link-btn:hover { text-decoration: underline; }
 .text-muted { color: var(--text-muted); }

@@ -33,7 +33,7 @@
             <span class="badge">{{ if .Feedbacks }}{{ len .Feedbacks }}{{ else }}0{{ end }} 条反馈</span>
         </div>
         <div class="admin-table-wrapper">
-            <table class="admin-table">
+            <table class="admin-table feedback-admin-table">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -134,6 +134,9 @@
 </div>
 
 <style>
+.feedback-admin-table td {
+    vertical-align: top;
+}
 .feedback-reply {
     margin-top: 0.5rem;
     padding: 0.5rem;
@@ -150,6 +153,8 @@
 .reply-content {
     font-size: 0.9rem;
     color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .feedback-modal-overlay {
