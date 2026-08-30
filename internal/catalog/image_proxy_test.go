@@ -11,7 +11,6 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestImageProxyPreservesLegacyEncodingHeadersAndBody(t *testing.T) {
@@ -33,7 +32,7 @@ func TestImageProxyPreservesLegacyEncodingHeadersAndBody(t *testing.T) {
 		t.Fatalf("proxy response = %d/%q/%q", recorder.Code, recorder.Header().Get("Content-Type"), recorder.Body.String())
 	}
 	if recorder.Header().Get("Cache-Control") != "private, max-age=2592000" || recorder.Header().Get("Expires") == "" ||
-		recorder.Header().Get("Vary") != "Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode" ||
+		recorder.Header().Get("Vary") != "Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode, Referer" ||
 		recorder.Header().Get("Cross-Origin-Resource-Policy") != "same-origin" {
 		t.Fatalf("cache headers = %#v", recorder.Header())
 	}
@@ -161,11 +160,48 @@ func TestImageProxyPublicIPClassification(t *testing.T) {
 	}
 }
 
+func TestImageProxyRequestOriginPolicy(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		site    string
+		dest    string
+		mode    string
+		referer string
+		allowed bool
+	}{
+		{name: "complete fetch metadata", site: "same-origin", dest: "image", mode: "no-cors", allowed: true},
+		{name: "explicit cross site", site: "cross-site", dest: "image", mode: "no-cors", referer: "https://moovie.example/movie/1", allowed: false},
+		{name: "legacy browser referer", dest: "image", mode: "no-cors", referer: "https://moovie.example/movie/1", allowed: true},
+		{name: "default https port", referer: "https://moovie.example:443/movie/1", allowed: true},
+		{name: "foreign referer", referer: "https://example.com/movie/1", allowed: false},
+		{name: "missing metadata and referer", allowed: false},
+		{name: "wrong destination", dest: "document", referer: "https://moovie.example/movie/1", allowed: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/api/proxy/image/test", nil)
+			request.Header.Set("Sec-Fetch-Site", test.site)
+			request.Header.Set("Sec-Fetch-Dest", test.dest)
+			request.Header.Set("Sec-Fetch-Mode", test.mode)
+			request.Header.Set("Referer", test.referer)
+			if got := isSameOriginImageRequest(request, "https://moovie.example"); got != test.allowed {
+				t.Fatalf("isSameOriginImageRequest() = %t, want %t", got, test.allowed)
+			}
+		})
+	}
+}
+
+func TestHotlinkDeniedSVGMatchesPosterAspectRatio(t *testing.T) {
+	if !strings.Contains(hotlinkDeniedSVG, `width="400" height="600" viewBox="0 0 400 600"`) ||
+		!strings.Contains(hotlinkDeniedSVG, ">仅限 Moovie 内部使用</text>") {
+		t.Fatalf("unexpected hotlink SVG: %s", hotlinkDeniedSVG)
+	}
+}
+
 func imageProxyRouter(t *testing.T, client *http.Client) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	NewHandler(config.Config{SiteURL: "https://moovie.example"}, NewPostgresStore(testdb.Pool(t)), WithHTTPClient(client)).Register(router)
+	NewHandler(config.Config{SiteURL: "https://moovie.example"}, nil, WithHTTPClient(client)).Register(router)
 	return router
 }
 

@@ -17,7 +17,7 @@
     {{ end }}
     <a href="{{ $playUrl }}" class="movie-card{{ if and $.BlurNSFW .NSFW }} nsfw-blur{{ end }}" title="点击续播 {{ .Title }}"{{ if and $.BlurNSFW .NSFW }} onclick="if(this.classList.contains('nsfw-blur')){event.preventDefault();this.classList.remove('nsfw-blur')}"{{ end }}>
         <div class="movie-poster">
-            <img src="{{ if .Poster }}{{ proxyImg .Poster }}{{ else }}/static/img/placeholder.svg{{ end }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            <img src="{{ if .Poster }}{{ proxyImg .Poster }}{{ else }}/static/img/placeholder.svg{{ end }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
             {{ if gt .Progress 0 }}
             <div class="progress-bar-container">
                 <div class="progress-bar" style="width: {{ .Progress }}%"></div>

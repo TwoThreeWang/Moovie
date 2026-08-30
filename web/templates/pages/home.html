@@ -167,7 +167,6 @@
             image.src = posterURL;
             image.alt = item.title || '';
             image.loading = 'lazy';
-            image.referrerPolicy = 'no-referrer';
             image.onerror = function() { this.onerror = null; this.src = '/static/img/placeholder.svg'; };
             const progressContainer = document.createElement('div');
             progressContainer.className = 'progress-bar-container';

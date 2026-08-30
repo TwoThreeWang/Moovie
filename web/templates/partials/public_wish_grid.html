@@ -2,7 +2,7 @@
 {{ range .WishList }}
 <a href="/movie/{{ .MovieID }}?title={{ .Title }}" class="pub-wish-card">
     <div class="pub-wish-poster">
-        <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+        <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
         {{ if .Rating }}<span class="pub-wish-rating">{{ .Rating }}</span>{{ end }}
     </div>
     <div class="pub-wish-info">

@@ -414,7 +414,6 @@ function renderSuggestions(suggestions) {
         image.alt = item.title || '';
         image.className = 'suggestion-poster';
         image.loading = 'lazy';
-        image.referrerPolicy = 'no-referrer';
         image.onerror = function() {
             this.onerror = null;
             this.src = '/static/img/placeholder.svg';

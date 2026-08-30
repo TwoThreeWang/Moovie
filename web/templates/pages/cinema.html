@@ -26,7 +26,7 @@
             {{ range $index, $film := .WeeklyFilms }}
             <article class="cinema-program-item{{ if eq $index 0 }} cinema-program-feature{{ end }}">
                 <a class="cinema-program-poster" href="/movie/{{ $film.MovieID }}?title={{ urlquery $film.Title }}">
-                    <img src="{{ proxyImg $film.Poster }}" alt="{{ $film.Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                    <img src="{{ proxyImg $film.Poster }}" alt="{{ $film.Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                 </a>
                 <div class="cinema-program-copy">
                     <p class="cinema-program-seen">{{ $film.ViewerCount }} 位片友看过</p>
@@ -63,7 +63,7 @@
                 {{ range .FeaturedComments }}
                 <article class="cinema-comment">
                     <a class="cinema-comment-poster" href="/movie/{{ .MovieID }}?title={{ urlquery .Title }}">
-                        <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                        <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                     </a>
                     <div class="cinema-comment-body">
                         <div class="cinema-comment-meta">

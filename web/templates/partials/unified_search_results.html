@@ -12,7 +12,7 @@
     {{ range .Result.Items }}
         <article class="search-result-card" data-media-id="{{ .MediaID }}">
         {{ if .DoubanID }}<a href="/movie/{{ .DoubanID }}?title={{ urlquery .Title }}" class="card-poster" aria-label="查看《{{ .Title }}》详情">{{ else }}<div class="card-poster">{{ end }}
-            <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
+            <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
             {{ with .BestResource }}{{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}{{ end }}
         {{ if .DoubanID }}</a>{{ else }}</div>{{ end }}
         <div class="card-content">
@@ -56,7 +56,7 @@
         {{ range .Result.Unmatched }}
         <a href="/play/{{ .SourceKey }}/{{ .VodId }}" class="search-result-card">
             <div class="card-poster">
-                <img src="{{ proxyImg .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'" referrerpolicy="no-referrer">
+                <img src="{{ proxyImg .VodPic }}" alt="{{ .VodName }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
                 {{ if .VodRemarks }}<span class="card-badge">{{ .VodRemarks }}</span>{{ end }}
             </div>
             <div class="card-content">

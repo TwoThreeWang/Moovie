@@ -49,14 +49,14 @@ var (
 )
 
 // hotlinkDeniedSVG 是被判定为盗链时返回的占位图。
-const hotlinkDeniedSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#111827"/><text x="320" y="180" fill="#f9fafb" font-family="system-ui,sans-serif" font-size="28" text-anchor="middle" dominant-baseline="middle">仅限 Moovie 内部使用</text></svg>`
+const hotlinkDeniedSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600"><rect width="400" height="600" fill="#111827"/><text x="200" y="300" fill="#f9fafb" font-family="system-ui,sans-serif" font-size="26" text-anchor="middle" dominant-baseline="middle">仅限 Moovie 内部使用</text></svg>`
 
 // proxyImage 代理外站图片。豆瓣图片有防盗链，必须由服务端带 Referer 去取；
 // 同时这个接口本身也要防着被别人当免费图床用（同源校验 + 目标地址白名单校验）。
 func (handler *Handler) proxyImage(c *gin.Context) {
-	c.Header("Vary", "Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode")
+	c.Header("Vary", "Sec-Fetch-Site, Sec-Fetch-Dest, Sec-Fetch-Mode, Referer")
 	c.Header("Cache-Control", "private, no-store")
-	if !isSameOriginImageRequest(c.Request) {
+	if !isSameOriginImageRequest(c.Request, handler.config.SiteURL) {
 		writeHotlinkDeniedSVG(c)
 		return
 	}
@@ -126,10 +126,34 @@ func (handler *Handler) proxyImage(c *gin.Context) {
 }
 
 // isSameOriginImageRequest 用浏览器发的 Sec-Fetch-* 头判断是不是本站页面在加载图片。
-func isSameOriginImageRequest(request *http.Request) bool {
-	return request.Header.Get("Sec-Fetch-Site") == "same-origin" &&
-		request.Header.Get("Sec-Fetch-Dest") == "image" &&
-		request.Header.Get("Sec-Fetch-Mode") == "no-cors"
+func isSameOriginImageRequest(request *http.Request, siteURL string) bool {
+	site := request.Header.Get("Sec-Fetch-Site")
+	destination := request.Header.Get("Sec-Fetch-Dest")
+	mode := request.Header.Get("Sec-Fetch-Mode")
+	if site != "" {
+		return site == "same-origin" && destination == "image" && mode == "no-cors"
+	}
+	if destination != "" && destination != "image" || mode != "" && mode != "no-cors" {
+		return false
+	}
+	referer, refererErr := url.Parse(request.Referer())
+	configured, configuredErr := url.Parse(siteURL)
+	if refererErr != nil || configuredErr != nil || referer.Hostname() == "" || configured.Hostname() == "" {
+		return false
+	}
+	return strings.EqualFold(referer.Scheme, configured.Scheme) &&
+		strings.EqualFold(referer.Hostname(), configured.Hostname()) &&
+		effectiveURLPort(referer) == effectiveURLPort(configured)
+}
+
+func effectiveURLPort(parsed *url.URL) string {
+	if parsed.Port() != "" {
+		return parsed.Port()
+	}
+	if strings.EqualFold(parsed.Scheme, "https") {
+		return "443"
+	}
+	return "80"
 }
 
 // writeHotlinkDeniedSVG 返回占位图，而不是报错，免得别人站上出现一堆裂图报警。

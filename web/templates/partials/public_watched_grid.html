@@ -3,7 +3,7 @@
 <div class="pub-tl-item">
     <div class="pub-tl-poster">
         <a href="/movie/{{ .MovieID }}?title={{ .Title }}">
-            <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            <img src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy" onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
         </a>
     </div>
     <div class="pub-tl-body">
