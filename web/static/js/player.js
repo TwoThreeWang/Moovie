@@ -823,6 +823,55 @@ function adSkipHidePrompt() {
     if (el) el.remove();
 }
 
+function adSkipCandidateKey(cand) {
+    return cand.hex + ':' + cand.start + ':' + cand.end;
+}
+
+function adSkipRecoveryTarget(video, cand) {
+    var boundary = Number(cand.end) || 0;
+    var fallback = boundary + 0.2;
+    var ranges = video && video.buffered;
+    if (!ranges) return fallback;
+    try {
+        for (var i = 0; i < ranges.length; i++) {
+            var start = ranges.start(i), end = ranges.end(i);
+            if (end <= boundary) continue;
+            if (start > boundary + 0.5) break;
+            var target = Math.max(boundary + 0.05, start + 0.05);
+            if (target < end) return Math.min(target, boundary + 0.5);
+        }
+    } catch(e) {}
+    return fallback;
+}
+
+function adSkipFindRecoveryCandidate(state, time) {
+    if (!state || !state.enabled) return null;
+    for (var i = 0; i < state.candidates.length; i++) {
+        var cand = state.candidates[i];
+        var confirmed = cand.status === 'confirmed' || state.confirmedLocal[cand.hex];
+        if (confirmed && !state.undone[cand.hex] && time >= cand.start - 0.5 && time <= cand.end + 0.45) return cand;
+    }
+    return null;
+}
+
+function adSkipRecoverBoundary(cand, state) {
+    if (!cand || !state || !state.enabled || !state.art || !state.art.video) return false;
+    var key = adSkipCandidateKey(cand);
+    if (state.boundaryRecovered[key]) return false;
+    var target = adSkipRecoveryTarget(state.art.video, cand);
+    var current = Number(state.art.currentTime) || 0;
+    if (target <= current + 0.01) return false;
+    try {
+        state.art.currentTime = target;
+        state.boundaryRecovered[key] = true;
+        if (state.art.hls) state.art.hls.startLoad();
+        state.art.video.play().catch(function() {});
+        return true;
+    } catch(e) {
+        return false;
+    }
+}
+
 function adSkipShowPrompt(container, cand, state) {
     adSkipHidePrompt();
     var el = document.createElement('div');
@@ -835,7 +884,7 @@ function adSkipShowPrompt(container, cand, state) {
     el.querySelector('.confirm').onclick = function() {
         state.confirmedLocal[cand.hex] = true;
         state.voted[cand.hex] = true;
-        if (state.art) try { state.art.currentTime = cand.end; } catch(e) {}
+        adSkipRecoverBoundary(cand, state);
         fetch('/api/ad-fingerprints/vote', { method: 'POST', headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin', keepalive: true,
             body: JSON.stringify({ fingerprint: cand.hex, vote: 'confirm' }) }).catch(function() {});
@@ -898,7 +947,7 @@ function adSkipMonitor(state) {
             } else if (c.status === 'unknown' || c.status === 'pending') {
                 if (t >= c.start && t < c.end) {
                     if (state.confirmedLocal[c.hex]) {
-                        try { state.art.currentTime = c.end; } catch(e) {}
+                        adSkipRecoverBoundary(c, state);
                     } else if (!state.prompted[c.hex] && !state.voted[c.hex]) {
                         adSkipShowPrompt(container, c, state);
                     }
@@ -928,7 +977,7 @@ function initPlayer(containerId, url, options) {
     var adState = options.adSkipEnabled ? {
         enabled: true, playlistURL: '', originalPlaylist: '',
         candidates: [], prompted: {}, voted: {}, confirmedLocal: {},
-        undone: {}, toastShown: {}, art: null
+        undone: {}, toastShown: {}, boundaryRecovered: {}, art: null
     } : null;
 
     // 自动播放下一集
@@ -1212,23 +1261,33 @@ function initPlayer(containerId, url, options) {
 
             // 保存引用供 destroy 时清理
             var recoverTimer = null;
+            var clearRecoverTimer = function() {
+                if (!recoverTimer) return;
+                clearTimeout(recoverTimer);
+                recoverTimer = null;
+                art._recoverTimer = null;
+            };
             var waitingHandler = function() {
                 reportPlaybackEvent('rebuffer', 0, 'waiting', options);
                 lastPlaybackTick = 0;
                 if (recoverTimer) return;
+                var adCandidate = adSkipFindRecoveryCandidate(adState, video.currentTime);
                 recoverTimer = setTimeout(function() {
-                    console.log('iOS卡顿自动恢复');
-                    if (art.hls) {
+                    var recovered = adSkipRecoverBoundary(adSkipFindRecoveryCandidate(adState, video.currentTime), adState);
+                    if (!recovered && art.hls) {
                         art.hls.startLoad();
                     }
                     video.play().catch(function(){});
                     recoverTimer = null;
                     art._recoverTimer = null;
-                }, 1200);
+                }, adCandidate ? 400 : 1200);
                 art._recoverTimer = recoverTimer;
             };
+            var playingHandler = function() { clearRecoverTimer(); };
             video.addEventListener('waiting', waitingHandler);
+            video.addEventListener('playing', playingHandler);
             art._waitingHandler = waitingHandler;
+            art._playingHandler = playingHandler;
 
             // 获取上次播放进度并自动跳转
             var playState = Storage.find(options.sourceKey + options.vodId);
@@ -1330,6 +1389,9 @@ function initPlayer(containerId, url, options) {
             if (art._recoverTimer) clearTimeout(art._recoverTimer);
             if (art._waitingHandler && art.video) {
                 art.video.removeEventListener('waiting', art._waitingHandler);
+            }
+            if (art._playingHandler && art.video) {
+                art.video.removeEventListener('playing', art._playingHandler);
             }
             if (autoPlayState) {
                 autoPlayState.destroy();
