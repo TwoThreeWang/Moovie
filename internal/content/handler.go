@@ -5,6 +5,7 @@ package content
 
 import (
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,6 +54,7 @@ func (h *Handler) Register(router *gin.Engine, staticDir string) {
 	router.GET("/sitemaps/:kind/:page", h.mediaSitemap)
 	router.GET("/robots.txt", h.robots)
 	router.GET("/monoo-verify.txt", h.verification)
+	router.GET("/ads.txt", func(c *gin.Context) { c.File(filepath.Join(staticDir, "ads.txt")) })
 
 	router.NoRoute(h.notFound)
 }

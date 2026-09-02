@@ -46,6 +46,7 @@ var Routes = []Route{
 	{Method: "GET", Path: "/sitemap.xml", Surface: SurfaceOperational},
 	{Method: "GET", Path: "/robots.txt", Surface: SurfaceOperational},
 	{Method: "GET", Path: "/monoo-verify.txt", Surface: SurfaceOperational},
+	{Method: "GET", Path: "/ads.txt", Surface: SurfaceOperational},
 	{Method: "GET", Path: "/movie/:id", Surface: SurfacePublicPage},
 	{Method: "GET", Path: "/play/:source_key/:vod_id", Surface: SurfacePublicPage},
 	{Method: "GET", Path: "/watch/:douban_id", Surface: SurfacePublicPage},
