@@ -19,13 +19,57 @@
 
 <div id="search-results-container"
 	 hx-get="/api/htmx/search?q={{ urlquery .Keyword }}{{ if .Bypass }}&bypass=1{{ end }}"
-	 hx-trigger="load"
-     hx-indicator="#search-loading">
-    <div id="search-loading" class="htmx-indicator search-loading-state">
+	 hx-trigger="load, search-retry"
+     hx-request='{"timeout":45000}'>
+    <div id="search-loading" class="search-loading-state">
         <div class="search-loading-spinner" aria-hidden="true"></div>
-        <p>正在匹配影片与播放资源...</p>
+        <p role="status">正在匹配影片与播放资源...</p>
+        <div id="search-retry" hidden><button type="button" class="btn btn-secondary">重试</button></div>
     </div>
 </div>
+<script>
+(function () {
+    const container = document.getElementById('search-results-container');
+    const spinner = container.querySelector('.search-loading-spinner');
+    const message = container.querySelector('[role="status"]');
+    const retry = document.getElementById('search-retry');
+    let started = false;
+
+    function showError(text) {
+        spinner.hidden = true;
+        message.textContent = text;
+        retry.hidden = false;
+    }
+
+    // HTMX 尚未下载或初始化时，也要能从等待状态恢复。
+    const startupTimeout = setTimeout(function () {
+        showError('页面加载较慢或网络异常，请重试');
+    }, 30000);
+
+    container.addEventListener('htmx:beforeRequest', function () {
+        clearTimeout(startupTimeout);
+        started = true;
+        spinner.hidden = false;
+        message.textContent = '正在匹配影片与播放资源...';
+        retry.hidden = true;
+    });
+    container.addEventListener('htmx:afterRequest', function (event) {
+        if (!event.detail.successful) {
+            showError('搜索加载失败，请检查网络后重试');
+        }
+    });
+    container.addEventListener('htmx:timeout', function () {
+        showError('搜索请求超时，请重试');
+    });
+    retry.querySelector('button').addEventListener('click', function () {
+        if (!started || typeof htmx === 'undefined') {
+            window.location.reload();
+            return;
+        }
+        htmx.trigger(container, 'search-retry');
+    });
+})();
+</script>
 <br>
 <div class="ad-slot">
 <script async type="application/javascript" src="https://a.magsrv.com/ad-provider.js"></script>

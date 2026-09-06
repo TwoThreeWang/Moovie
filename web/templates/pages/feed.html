@@ -1,0 +1,121 @@
+{{ define "content" }}
+<div class="feed-page">
+    <header class="feed-header">
+        <div>
+            <p class="feed-kicker">FOLLOWING</p>
+            <h1>关注动态</h1>
+            <p>你关注的片友最近在看什么。</p>
+        </div>
+        <a class="btn btn-secondary btn-sm" href="/following">管理关注{{ if gt .FollowingCount 0 }}（{{ .FollowingCount }}）{{ end }}</a>
+    </header>
+
+    {{ if .Activities }}
+    <div class="feed-list">
+        {{ range .Activities }}
+        <article class="feed-item">
+            <a class="feed-poster-link" href="/movie/{{ .MovieID }}?title={{ urlquery .Title }}">
+                <img class="feed-poster" src="{{ proxyImg .Poster }}" alt="{{ .Title }}" loading="lazy"
+                     onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            </a>
+            <div class="feed-body">
+                <div class="feed-meta">
+                    {{ if .User.IsPublic }}
+                    <a href="/user/{{ .User.ID }}"><span>{{ default "🎬" .User.Avatar }}</span> {{ default "匿名片友" .User.Username }}</a>
+                    {{ else }}
+                    <span>{{ default "🎬" .User.Avatar }} {{ default "匿名片友" .User.Username }}</span>
+                    {{ end }}
+                    <span class="feed-action">{{ if eq .Status "watched" }}看过{{ else }}想看{{ end }}</span>
+                    {{ if gt .Rating 0 }}
+                    <span class="feed-stars">{{ $rating := .Rating }}{{ range $i := seq 1 5 }}<span class="star {{ if le $i $rating }}filled{{ end }}">★</span>{{ end }}</span>
+                    {{ end }}
+                    <span>{{ .UpdatedAt.Format "01-02" }}</span>
+                </div>
+                <a class="feed-title" href="/movie/{{ .MovieID }}?title={{ urlquery .Title }}">{{ .Title }}{{ if .Year }} ({{ .Year }}){{ end }}</a>
+                {{ if .Comment }}
+                <p class="feed-comment">{{ .Comment }}</p>
+                <div class="feed-actions">
+                    {{ template "comment_like_button.html" (dict "UserMovieID" .ID "LikeCount" (index $.LikeCounts .ID) "Liked" (index $.Liked .ID)) }}
+                    <a class="feed-permalink" href="/review/{{ .ID }}">
+                        {{ $rc := index $.ReplyCounts .ID }}{{ if gt $rc 0 }}{{ $rc }} 条回复{{ else }}查看短评{{ end }}
+                    </a>
+                </div>
+                {{ end }}
+            </div>
+        </article>
+        {{ end }}
+    </div>
+    {{ if .HasMore }}
+    <div class="feed-more"><a class="btn btn-ghost btn-sm" href="/feed?page={{ .NextPage }}">看更早的动态</a></div>
+    {{ end }}
+    {{ if gt .Page 1 }}
+    <div class="feed-more"><a class="btn btn-ghost btn-sm" href="/feed?page={{ sub .Page 1 }}">回到上一页</a></div>
+    {{ end }}
+
+    {{ else if eq .FollowingCount 0 }}
+    <div class="feed-empty">
+        <p>你还没有关注任何人。关注几位口味相近的片友，这里就会有他们的观影动态。</p>
+        {{ if .FilmFriends }}
+        <div class="feed-suggest">
+            {{ range .FilmFriends }}
+            <div class="feed-suggest-item">
+                <span>{{ default "🎬" .Avatar }}</span>
+                <a class="name" href="/user/{{ .UserID }}">
+                    {{ default "匿名片友" .Username }}
+                    <small>
+                        {{ if gt .SharedCount 0 }}与你共同看过 {{ .SharedCount }} 部
+                        {{ else if gt .CommentCount 0 }}留下 {{ .CommentCount }} 条短评
+                        {{ else }}记录了 {{ .WatchedCount }} 部电影{{ end }}
+                    </small>
+                </a>
+                {{ template "follow_button.html" (dict "UserID" .UserID "Following" false "Followers" 0 "CurrentUserID" $.CurrentUserID) }}
+            </div>
+            {{ end }}
+        </div>
+        {{ else }}
+        <a class="btn btn-primary btn-sm" href="/cinema">去片场找片友</a>
+        {{ end }}
+    </div>
+
+    {{ else }}
+    <div class="feed-empty">
+        <p>你关注的片友最近还没有新动态。</p>
+        <a class="btn btn-ghost btn-sm" href="/cinema">去片场看看</a>
+    </div>
+    {{ end }}
+</div>
+{{ end }}
+
+{{ define "extra_head" }}
+<style>
+.feed-page { max-width: 760px; margin: 0 auto; padding: 1.25rem 0 3rem; }
+.feed-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
+.feed-header h1 { margin: .15rem 0 .35rem; font-size: 2rem; }
+.feed-header p { margin: 0; color: var(--text-muted); }
+.feed-header small { color: var(--text-muted); font-size: .8rem; white-space: nowrap; }
+.feed-kicker { color: var(--primary) !important; font-size: .68rem; font-weight: 700; letter-spacing: .14em; }
+.feed-list { display: flex; flex-direction: column; gap: 14px; }
+.feed-item { display: flex; gap: 14px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elevated); }
+.feed-poster-link { flex-shrink: 0; }
+.feed-poster { width: 64px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.feed-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.feed-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .8rem; color: var(--text-muted); }
+.feed-meta a:hover { color: var(--primary-text); }
+.feed-action { color: var(--text-secondary); }
+.feed-stars { color: var(--border-strong); font-size: .7rem; letter-spacing: -2px; }
+.feed-stars .star.filled { color: var(--rating-star); }
+.feed-title { font-size: .95rem; font-weight: 600; color: var(--text); }
+.feed-title:hover { color: var(--primary-text); }
+.feed-comment { font-size: .85rem; line-height: 1.6; color: var(--text-secondary); word-break: break-word; }
+.feed-actions { display: flex; align-items: center; gap: 16px; margin-top: 2px; }
+.feed-permalink { font-size: .75rem; color: var(--text-muted); }
+.feed-permalink:hover { color: var(--primary-text); }
+.feed-empty { padding: 32px 20px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
+.feed-empty p { color: var(--text-muted); margin: 0 0 18px; }
+.feed-suggest { display: flex; flex-direction: column; gap: 10px; max-width: 420px; margin: 0 auto; }
+.feed-suggest-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.feed-suggest-item .name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
+.feed-suggest-item .name small { display: block; color: var(--text-muted); font-size: .72rem; }
+.feed-more { margin-top: 18px; text-align: center; }
+@media (max-width: 768px) { .feed-poster { width: 52px; } .feed-header h1 { font-size: 1.5rem; } }
+</style>
+{{ end }}

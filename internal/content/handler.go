@@ -25,15 +25,17 @@ type sitemapCacheEntry struct {
 
 // Handler 负责静态页面，并在内存里缓存 sitemap。
 type Handler struct {
-	config          config.Config
-	sitemapProvider SitemapMovieProvider
-	sitemapMu       sync.Mutex
-	sitemapCache    map[string]sitemapCacheEntry
+	config             config.Config
+	sitemapProvider    SitemapMovieProvider
+	collectionProvider SitemapCollectionProvider
+	sitemapMu          sync.Mutex
+	sitemapCache       map[string]sitemapCacheEntry
 }
 
-// NewHandler 创建静态页面处理器。
-func NewHandler(cfg config.Config, sitemapProvider SitemapMovieProvider) *Handler {
-	return &Handler{config: cfg, sitemapProvider: sitemapProvider, sitemapCache: make(map[string]sitemapCacheEntry)}
+// NewHandler 创建静态页面处理器。collectionProvider 为 nil 时 sitemap 不含片单。
+func NewHandler(cfg config.Config, sitemapProvider SitemapMovieProvider, collectionProvider SitemapCollectionProvider) *Handler {
+	return &Handler{config: cfg, sitemapProvider: sitemapProvider, collectionProvider: collectionProvider,
+		sitemapCache: make(map[string]sitemapCacheEntry)}
 }
 
 // Register 注册静态资源目录、各固定页面和 404 兜底。
@@ -81,8 +83,9 @@ func (h *Handler) sitemapIndex(c *gin.Context) {
 }
 
 func (h *Handler) staticSitemap(c *gin.Context) {
-	h.serveSitemap(c, "static", 24*time.Hour, "public, max-age=86400", func() ([]byte, bool, error) {
-		body, err := buildStaticSitemap(h.config.SiteURL)
+	// 片单会被编辑，缓存从一天缩到一小时，改完不用等到明天才生效。
+	h.serveSitemap(c, "static", time.Hour, "public, max-age=3600", func() ([]byte, bool, error) {
+		body, err := buildStaticSitemap(c.Request.Context(), h.config.SiteURL, h.collectionProvider)
 		return body, true, err
 	})
 }

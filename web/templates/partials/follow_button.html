@@ -1,0 +1,16 @@
+{{ define "follow_button.html" }}
+{{ if and .CurrentUserID (ne .CurrentUserID .UserID) }}
+<button type="button"
+        class="follow-btn{{ if .Following }} following{{ end }}"
+        id="follow-btn-{{ .UserID }}"
+        hx-post="/api/users/{{ .UserID }}/follow"
+        hx-target="#follow-btn-{{ .UserID }}"
+        hx-swap="outerHTML"
+        title="{{ if .Following }}取消关注{{ else }}关注 TA 的观影动态{{ end }}">
+    {{ if .Following }}已关注{{ else }}+ 关注{{ end }}
+    {{ if gt .Followers 0 }}<span class="follow-count">{{ .Followers }}</span>{{ end }}
+</button>
+{{ else if not .CurrentUserID }}
+<a class="follow-btn" href="/auth/login" title="登录后可以关注">+ 关注</a>
+{{ end }}
+{{ end }}

@@ -1,0 +1,65 @@
+{{ define "content" }}
+<div class="lists-page">
+    <header class="lists-header">
+        <p class="lists-kicker">COLLECTIONS</p>
+        <h1>片单</h1>
+        <p>按主题整理的片子，每一部都写清楚了为什么值得看。</p>
+    </header>
+
+    {{ if .Collections }}
+    <div class="lists-grid">
+        {{ range .Collections }}
+        <a class="list-card" href="/list/{{ .Slug }}">
+            <span class="list-covers">
+                {{ range .Covers }}
+                <img src="{{ proxyImg . }}" alt="" loading="lazy"
+                     onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+                {{ end }}
+            </span>
+            <span class="list-card-copy">
+                <strong>{{ .Title }}</strong>
+                {{ if .Description }}<small>{{ .Description }}</small>{{ end }}
+                <em>{{ .ItemCount }} 部</em>
+            </span>
+        </a>
+        {{ end }}
+    </div>
+    {{ if .HasMore }}
+    <div class="lists-more"><a class="btn btn-ghost btn-sm" href="/list?page={{ .NextPage }}">看更多片单</a></div>
+    {{ end }}
+    {{ else }}
+    <div class="lists-empty">
+        <span>🎞️</span>
+        <p>还没有发布的片单。</p>
+    </div>
+    {{ end }}
+</div>
+{{ end }}
+
+{{ define "extra_head" }}
+<style>
+.lists-page { max-width: 960px; margin: 0 auto; padding: 1.25rem 0 3rem; }
+.lists-header { margin-bottom: 1.75rem; }
+.lists-header h1 { margin: .15rem 0 .35rem; font-size: 2rem; }
+.lists-header p { margin: 0; color: var(--text-muted); }
+.lists-kicker { color: var(--primary) !important; font-size: .68rem; font-weight: 700; letter-spacing: .14em; }
+.lists-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.list-card { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elevated); overflow: hidden; transition: var(--transition); }
+.list-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow); }
+/* 按实际封面数均分：固定四列时，只有 1-3 部的片单右边会留一条灰缝。
+   封面条本身锁死 8:3（四张 2:3 海报并排的比例），否则封面少的卡片会更高，
+   一排卡片的标题就对不齐了。 */
+.list-covers { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; aspect-ratio: 8 / 3; overflow: hidden; background: var(--bg-secondary); }
+/* min-height: 0 是必须的：grid 子项的自动最小尺寸等于图片固有高度，
+   不解开的话封面少的卡片会把行高顶起来，上面那条 aspect-ratio 形同虚设。 */
+.list-covers img { width: 100%; height: 100%; min-height: 0; object-fit: cover; }
+.list-card-copy { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; }
+.list-card-copy strong { font-size: .95rem; color: var(--text); }
+.list-card-copy small { color: var(--text-muted); font-size: .78rem; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.list-card-copy em { color: var(--primary-text); font-size: .74rem; font-style: normal; font-weight: 600; }
+.lists-more { margin-top: 20px; text-align: center; }
+.lists-empty { padding: 40px 20px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); color: var(--text-muted); }
+.lists-empty span { font-size: 2rem; }
+@media (max-width: 768px) { .lists-grid { grid-template-columns: 1fr; } .lists-header h1 { font-size: 1.5rem; } }
+</style>
+{{ end }}

@@ -1,0 +1,64 @@
+{{ define "content" }}
+{{ $collection := .Collection }}
+<div class="list-detail">
+    <header class="list-detail-header">
+        {{ if not $collection.Featured }}<p class="list-draft">草稿 · 只有管理员能看到这一页</p>{{ end }}
+        <h1>{{ $collection.Title }}</h1>
+        {{ if $collection.Description }}<p class="list-intro">{{ $collection.Description }}</p>{{ end }}
+        <p class="list-meta">
+            {{ if $collection.Official }}Moovie 编辑部{{ else }}片友整理{{ end }}
+            · {{ $collection.ItemCount }} 部
+            · 更新于 {{ $collection.UpdatedAt.Format "2006-01-02" }}
+        </p>
+    </header>
+
+    <ol class="list-items">
+        {{ range $index, $item := .Items }}
+        <li class="list-item">
+            <span class="list-index">{{ add $index 1 }}</span>
+            <a class="list-item-poster" href="/movie/{{ $item.DoubanID }}?title={{ urlquery $item.Title }}">
+                <img src="{{ proxyImg $item.Poster }}" alt="{{ $item.Title }}" loading="lazy"
+                     onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+            </a>
+            <div class="list-item-copy">
+                <a class="list-item-title" href="/movie/{{ $item.DoubanID }}?title={{ urlquery $item.Title }}">
+                    {{ $item.Title }}{{ if $item.Year }} <span>({{ $item.Year }})</span>{{ end }}
+                </a>
+                {{ if $item.Note }}<p class="list-item-note">{{ $item.Note }}</p>{{ end }}
+            </div>
+        </li>
+        {{ end }}
+    </ol>
+
+    <p class="list-footer"><a href="/list">← 看看其他片单</a></p>
+</div>
+{{ end }}
+
+{{ define "extra_head" }}
+<style>
+.list-detail { max-width: 760px; margin: 0 auto; padding: 1.25rem 0 3rem; }
+.list-detail-header { padding-bottom: 20px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+.list-draft { display: inline-block; padding: 2px 10px; margin-bottom: 10px; border-radius: 999px; background: var(--warning-bg); color: var(--warning); font-size: .74rem; font-weight: 600; }
+.list-detail-header h1 { margin: 0 0 10px; font-size: 1.75rem; }
+.list-intro { margin: 0 0 12px; color: var(--text-secondary); line-height: 1.7; }
+.list-meta { margin: 0; color: var(--text-muted); font-size: .8rem; }
+.list-items { margin: 0; padding: 0; list-style: none; }
+.list-item { display: flex; gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--border); }
+.list-item:last-child { border-bottom: none; }
+.list-index { flex-shrink: 0; width: 24px; padding-top: 2px; color: var(--text-muted); font-size: .9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.list-item-poster { flex-shrink: 0; }
+.list-item-poster img { width: 72px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.list-item-copy { flex: 1; min-width: 0; }
+.list-item-title { display: inline-block; margin-bottom: 6px; font-size: 1rem; font-weight: 600; color: var(--text); }
+.list-item-title span { color: var(--text-muted); font-weight: 400; font-size: .85rem; }
+.list-item-title:hover { color: var(--primary-text); }
+.list-item-note { margin: 0; color: var(--text-secondary); font-size: .88rem; line-height: 1.65; word-break: break-word; }
+.list-footer { margin-top: 28px; font-size: .85rem; }
+.list-footer a { color: var(--primary-text); }
+@media (max-width: 768px) {
+    .list-detail-header h1 { font-size: 1.35rem; }
+    .list-item-poster img { width: 56px; }
+    .list-index { width: 18px; font-size: .8rem; }
+}
+</style>
+{{ end }}

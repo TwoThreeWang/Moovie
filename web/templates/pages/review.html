@@ -1,0 +1,69 @@
+{{ define "content" }}
+{{ $activity := .Activity }}
+<article class="review-card">
+    <div class="review-film">
+        <a href="/movie/{{ $activity.MovieID }}?title={{ urlquery $activity.Title }}">
+            <img src="{{ proxyImg $activity.Poster }}" alt="{{ $activity.Title }}" loading="lazy"
+                 onerror="this.onerror=null;this.src='/static/img/placeholder.svg'">
+        </a>
+        <div class="review-film-copy">
+            <h1><a href="/movie/{{ $activity.MovieID }}?title={{ urlquery $activity.Title }}">{{ $activity.Title }}</a></h1>
+            {{ if $activity.Year }}<p class="review-year">{{ $activity.Year }}</p>{{ end }}
+            {{ if gt $activity.Rating 0 }}
+            <p class="review-stars">{{ $rating := $activity.Rating }}{{ range $i := seq 1 5 }}<span class="star {{ if le $i $rating }}filled{{ end }}">★</span>{{ end }}</p>
+            {{ end }}
+        </div>
+    </div>
+
+    <div class="review-author">
+        {{ if $activity.User.IsPublic }}
+        <a href="/user/{{ $activity.User.ID }}"><span>{{ default "🎬" $activity.User.Avatar }}</span> {{ default "匿名片友" $activity.User.Username }}</a>
+        {{ else }}
+        <span class="name"><span>{{ default "🎬" $activity.User.Avatar }}</span> {{ default "匿名片友" $activity.User.Username }}</span>
+        {{ end }}
+        <span class="review-date">{{ $activity.UpdatedAt.Format "2006-01-02" }}</span>
+        {{ if or $activity.User.IsPublic .Following }}{{ template "follow_button.html" (dict "UserID" $activity.User.ID "Following" .Following "Followers" .Followers "CurrentUserID" .CurrentUserID) }}{{ end }}
+    </div>
+
+    <p class="review-body">{{ $activity.Comment }}</p>
+
+    <div class="review-actions">
+        {{ template "comment_like_button.html" (dict "UserMovieID" $activity.ID "LikeCount" .LikeCount "Liked" .Liked) }}
+        <button type="button" class="comment-reply-toggle"
+                hx-get="/api/comments/{{ $activity.ID }}/replies"
+                hx-target="#comment-replies-{{ $activity.ID }}"
+                hx-swap="innerHTML">
+            回复{{ if gt .ReplyCount 0 }}（{{ .ReplyCount }}）{{ end }}
+        </button>
+    </div>
+    <div class="comment-replies-container" id="comment-replies-{{ $activity.ID }}">
+        {{ template "comment_replies.html" (dict "UserMovieID" $activity.ID "Replies" .Replies "CurrentUserID" .CurrentUserID) }}
+    </div>
+
+    <p class="review-footer">
+        <a href="/movie/{{ $activity.MovieID }}?title={{ urlquery $activity.Title }}">看看其他人怎么说 →</a>
+    </p>
+</article>
+{{ end }}
+
+{{ define "extra_head" }}
+<style>
+.review-card { max-width: 720px; margin: 0 auto; padding: 1.25rem 0 3rem; }
+.review-film { display: flex; gap: 16px; padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+.review-film img { width: 92px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.review-film-copy h1 { margin: 0 0 6px; font-size: 1.25rem; }
+.review-film-copy h1 a:hover { color: var(--primary-text); }
+.review-year { color: var(--text-muted); font-size: .85rem; margin: 0 0 6px; }
+.review-stars { color: var(--border-strong); font-size: .85rem; letter-spacing: -1px; margin: 0; }
+.review-stars .star.filled { color: var(--rating-star); }
+.review-author { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; font-size: .85rem; }
+.review-author a, .review-author .name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.review-author a:hover { color: var(--primary-text); }
+.review-date { color: var(--text-muted); }
+.review-body { font-size: 1rem; line-height: 1.8; color: var(--text); white-space: pre-wrap; word-break: break-word; margin: 0 0 18px; }
+.review-actions { display: flex; align-items: center; gap: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.review-footer { margin-top: 24px; font-size: .85rem; }
+.review-footer a { color: var(--primary-text); }
+@media (max-width: 768px) { .review-film img { width: 72px; } .review-film-copy h1 { font-size: 1.1rem; } }
+</style>
+{{ end }}

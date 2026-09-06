@@ -1,0 +1,121 @@
+{{ define "content" }}
+<div class="admin-page">
+    <div class="admin-header">
+        <h1 class="admin-title">片单管理</h1>
+        <nav class="admin-tabs">
+            <a href="/admin" class="admin-tab">概览</a>
+            <a href="/admin/users" class="admin-tab">用户</a>
+            <a href="/admin/feedback" class="admin-tab">反馈</a>
+            <a href="/admin/sites" class="admin-tab">资源网</a>
+            <a href="/admin/data" class="admin-tab">数据管理</a>
+            <a href="/admin/jobs" class="admin-tab">任务队列</a>
+            <a href="/admin/matches" class="admin-tab">匹配复核</a>
+            <a href="/admin/collections" class="admin-tab active">片单</a>
+            <a href="/admin/copyright" class="admin-tab">版权限制</a>
+            <a href="/admin/category" class="admin-tab">分类过滤</a>
+            <a href="/admin/nsfw" class="admin-tab">NSFW</a>
+        </nav>
+    </div>
+
+    {{ if .Notice }}<div class="admin-notice">{{ .Notice }}</div>{{ end }}
+    {{ if .Error }}<div class="admin-notice is-error">{{ .Error }}</div>{{ end }}
+    {{ if .Unknown }}<div class="admin-notice is-warning">这些豆瓣 ID 库里没有，已跳过：{{ .Unknown }}。先在站内搜一次把影片入库，再回来添加。</div>{{ end }}
+
+    <!-- 平时收起来：展开的表单有十几行高，会把下面的片单列表整个挤出首屏。
+         编辑和校验失败时必须自动展开，否则用户看不到自己要改的东西。 -->
+    <details class="admin-card admin-collapse" {{ if or .Editing .Error }}open{{ end }}>
+        <summary class="admin-card-header">
+            <h3>{{ if and .Editing .Editing.ID }}编辑《{{ .Editing.Title }}》{{ else }}＋ 新建片单{{ end }}</h3>
+        </summary>
+        <form class="admin-form" method="POST" action="/admin/collections">
+            <input type="hidden" name="id" value="{{ with .Editing }}{{ .ID }}{{ end }}">
+            <div class="form-row">
+                <div class="form-group flex-2">
+                    <label for="title">标题</label>
+                    <input type="text" id="title" name="title" required maxlength="80"
+                           placeholder="例如：2024 年最好的十部悬疑片"
+                           value="{{ with .Editing }}{{ .Title }}{{ end }}">
+                </div>
+                <div class="form-group flex-2">
+                    <label for="slug">地址</label>
+                    <!-- 留空则尝试由标题生成；服务端校验失败会保留整个表单。 -->
+                    <input type="text" id="slug" name="slug" maxlength="60"
+                           pattern="[a-z0-9]([a-z0-9\-]{0,58}[a-z0-9])?"
+                           title="只能用小写字母、数字和连字符，且不能以连字符开头或结尾"
+                           placeholder="best-mystery-2024，留空则由标题生成"
+                           value="{{ with .Editing }}{{ .Slug }}{{ end }}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="description">导语</label>
+                <textarea id="description" name="description" rows="2"
+                          placeholder="一段话说清楚这个片单在选什么">{{ with .Editing }}{{ .Description }}{{ end }}</textarea>
+            </div>
+            <div class="form-group">
+                <label for="items">条目（每行一条：豆瓣ID | 推荐语）</label>
+                <textarea id="items" name="items" rows="12" class="admin-items"
+                          placeholder="1292052 | 越狱片的天花板，重点根本不在越狱&#10;1291546 | 张国荣把程蝶衣演成了不可替代">{{ .EditingItems }}</textarea>
+                <p class="form-help">顺序就是展示顺序。推荐语是片单和收藏夹的区别，别省。认不出的豆瓣 ID 会在保存后列出来。</p>
+            </div>
+            <div class="form-row">
+                <label class="admin-check">
+                    <input type="checkbox" name="featured" {{ with .Editing }}{{ if .Featured }}checked{{ end }}{{ end }}>
+                    <span>发布（进入 /list 和 sitemap；不勾选则只有管理员能预览）</span>
+                </label>
+                <button type="submit" class="btn btn-primary">保存</button>
+                {{ if and .Editing .Editing.ID }}<a class="btn btn-ghost btn-sm" href="/admin/collections">取消编辑</a>{{ end }}
+            </div>
+        </form>
+    </details>
+
+    <div class="admin-card">
+        <div class="admin-card-header"><h3>全部片单（{{ len .Collections }}）</h3></div>
+        <div class="admin-table-wrapper">
+        <table class="admin-table">
+            <thead>
+                <tr><th>标题</th><th>地址</th><th>条目</th><th>状态</th><th>更新时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+                {{ if not .Collections }}
+                <tr><td colspan="6" class="empty-cell">还没有片单。先建一个，勾上「发布」才会出现在站点上。</td></tr>
+                {{ end }}
+                {{ range .Collections }}
+                <tr>
+                    <td>{{ .Title }}</td>
+                    <td><a href="/list/{{ .Slug }}" target="_blank" rel="noopener">/list/{{ .Slug }}</a></td>
+                    <td>{{ .ItemCount }}</td>
+                    <td>{{ if .Featured }}<span class="badge badge-success">已发布</span>{{ else }}<span class="badge">草稿</span>{{ end }}</td>
+                    <td>{{ .UpdatedAt.Format "2006-01-02 15:04" }}</td>
+                    <td>
+                        <a class="btn btn-ghost btn-sm" href="/admin/collections?edit={{ .Slug }}">编辑</a>
+                        <button type="button" class="btn btn-danger btn-sm"
+                                hx-delete="/admin/collections/{{ .ID }}"
+                                hx-confirm="确定删除《{{ .Title }}》吗？此操作无法撤销。">删除</button>
+                    </td>
+                </tr>
+                {{ end }}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{{ end }}
+
+{{ define "extra_head" }}
+<style>
+.admin-notice { padding: 10px 14px; margin-bottom: 16px; border-radius: var(--radius); background: var(--success-bg); color: var(--success); font-size: .85rem; }
+.admin-notice.is-warning { background: var(--warning-bg); color: var(--warning); }
+.admin-notice.is-error { background: var(--error-bg); color: var(--error); }
+/* 折叠卡片：summary 用原生箭头，只把它变成可点的整行。 */
+.admin-collapse > summary { cursor: pointer; list-style: revert; }
+.admin-collapse > summary::-webkit-details-marker { display: revert; }
+.admin-collapse > summary:hover h3 { color: var(--primary-text); }
+.admin-collapse:not([open]) > summary { border-bottom: none; }
+.admin-items { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; line-height: 1.7; }
+.admin-check { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--text-secondary); }
+.admin-check input { accent-color: var(--primary-solid); }
+/* 全局的 .badge 只在 .admin-card-header 下有样式，表格里用会变成裸文本。 */
+.admin-table .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--bg-secondary); color: var(--text-muted); font-size: .74rem; }
+.admin-table .badge-success { background: var(--success-bg); color: var(--success); }
+</style>
+{{ end }}

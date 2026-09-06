@@ -194,7 +194,7 @@ func newTestApp(t *testing.T, provider SitemapMovieProvider) testApp {
 		t.Fatalf("LoadRenderer() error = %v", err)
 	}
 	cfg := config.Config{Env: "test", Port: "5008", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", WebRoot: webRoot}
-	handler := NewHandler(cfg, provider)
+	handler := NewHandler(cfg, provider, nil)
 	server := httpserver.New(cfg, nil, func(router *gin.Engine) {
 		router.HTMLRender = renderer
 		handler.Register(router, filepath.Join(webRoot, "static"))

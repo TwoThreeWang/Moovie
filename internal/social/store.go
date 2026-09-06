@@ -17,9 +17,16 @@ type Store interface {
 	ListWeeklyFilms(ctx context.Context, since time.Time, limit int) ([]WeeklyFilm, error)
 	ListFeaturedComments(ctx context.Context, limit int) ([]Activity, error)
 	ListFilmFriends(ctx context.Context, currentUserID, limit int) ([]FilmFriend, error)
+	GetComment(ctx context.Context, userMovieID int) (*Activity, error)
+	ToggleFollow(ctx context.Context, followerID, followeeID int) (following bool, err error)
+	Unfollow(ctx context.Context, followerID, followeeID int) error
+	ListFollowing(ctx context.Context, followerID, limit, offset int) ([]FollowedUser, error)
+	FollowingSet(ctx context.Context, followerID int, followeeIDs []int) (map[int]bool, error)
+	CountFollow(ctx context.Context, userID int) (followers int, following int, err error)
+	ListFeed(ctx context.Context, followerID, limit, offset int) ([]Activity, error)
 	CountUnreadNotifications(ctx context.Context, userID int) (int, error)
 	ListNotifications(ctx context.Context, userID, limit int) ([]Notification, error)
-	ReadNotification(ctx context.Context, notificationID, userID int) (movieID string, userMovieID int, err error)
+	ReadNotification(ctx context.Context, notificationID, userID int) (NotificationTarget, error)
 	ReadAllNotifications(ctx context.Context, userID int) error
 	DeleteNotification(ctx context.Context, notificationID, userID int) error
 }

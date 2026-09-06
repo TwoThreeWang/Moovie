@@ -7,7 +7,7 @@ import (
 )
 
 func TestFinalRouteInventory(t *testing.T) {
-	const expected = 138
+	const expected = 147
 	if len(Routes) != expected {
 		t.Fatalf("route count = %d, want %d", len(Routes), expected)
 	}
@@ -37,6 +37,8 @@ func TestCriticalIndexedRoutesRemainInContract(t *testing.T) {
 		"GET /user/:user_id",
 		"GET /user/:user_id/monthly/:year_month",
 		"GET /sitemap.xml",
+		"GET /sitemaps/static.xml",
+		"GET /sitemaps/:kind/:page",
 		"GET /robots.txt",
 	}
 

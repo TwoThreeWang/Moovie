@@ -186,6 +186,9 @@ img { max-width: 100%; height: auto; display: block; }
 .btn-primary:hover { background: var(--primary-dark); }
 .btn-secondary { background: var(--bg-secondary); color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover { border-color: var(--primary-text); color: var(--primary-text); }
+/* 原先在 settings.html 和 dashboard.html 各写了一份，notifications.html 用了却没定义。 */
+.btn-ghost { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-ghost:hover { color: var(--primary-text); border-color: var(--primary-text); }
 
 /* ==================== 表单 ==================== */
 .auth-form { max-width: 400px; margin: 0 auto; padding: 32px; }
@@ -247,6 +250,7 @@ img { max-width: 100%; height: auto; display: block; }
 .card-sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .source-item { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 0.75rem; transition: 0.2s ease; }
 .search-loading-state, .movie-search-loading-state { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 3rem; color: var(--text-muted); }
+.search-loading-state { display: flex; }
 .search-loading-state.htmx-request, .movie-search-loading-state.htmx-request, .htmx-request > .movie-search-loading-state { display: flex; }
 .search-loading-spinner { width: 40px; height: 40px; margin-bottom: 1rem; border: 3px solid var(--border); border-top-color: var(--primary-text); border-radius: 50%; animation: spin 1s ease-in-out infinite; }
 .ad-slot { min-height: 1px; text-align: center; }
@@ -539,6 +543,9 @@ a.movie-series-season:hover { color: var(--primary-text); background: var(--bg-s
 .auth-input-wrapper input:focus { outline: none; border-color: var(--primary-text); background: var(--bg); box-shadow: 0 0 0 3px var(--primary-alpha); }
 .auth-input-wrapper input:focus + .auth-input-icon, .auth-input-wrapper:focus-within .auth-input-icon { color: var(--primary-text); }
 .auth-hint { display: block; margin-top: 6px; font-size: 0.75rem; color: var(--text-muted); }
+/* 注册页的主页公开开关 */
+.auth-consent { display: flex; align-items: flex-start; gap: 8px; margin-top: 4px; font-size: 0.82rem; line-height: 1.45; color: var(--text-secondary); cursor: pointer; }
+.auth-consent input { margin-top: 2px; flex-shrink: 0; accent-color: var(--primary-solid); }
 .auth-submit { width: 100%; padding: 14px 24px; font-size: 1rem; font-weight: 600; color: var(--on-primary); background: var(--primary-solid); border: none; border-radius: 10px; cursor: pointer; transition: 0.2s ease; margin-top: 8px; }
 .auth-submit:hover { transform: translateY(-2px); box-shadow: 0 6px 20px var(--primary-alpha-high); }
 .auth-submit:active { transform: translateY(0); }
@@ -707,6 +714,11 @@ span.health-bad { background: #ef4444; color: #fff; }
 .queue-pagination { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; }
 .url-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; color: var(--text-muted); }
 .empty-cell { text-align: center; color: var(--text-muted); padding: 40px !important; }
+/* 表单下方的说明文字。admin_copyright / admin_category / admin_nsfw / admin_collections
+   都在用这个类，但一直没有定义，所以显示成了正文大小。
+   直接挂在 .admin-card 下时还要自己补内边距：卡片本身没有 padding。 */
+.form-help { color: var(--text-muted); font-size: 0.8rem; line-height: 1.6; }
+.admin-card > .form-help { padding: 0 20px 16px; }
 .user-cell { display: flex; align-items: center; gap: 10px; }
 .user-avatar-sm { width: 32px; height: 32px; border-radius: 50%; background: var(--primary-alpha); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; line-height: 1; }
 .actions-cell { display: flex; gap: 8px; }
@@ -1345,13 +1357,12 @@ body .htmx-panel-indicator.htmx-request { animation-duration: 1ms; }
 .cinema-radar { align-self: start; }
 .cinema-friend-list { margin: 0; padding: 0; border-top: 1px solid var(--text); list-style: none; }
 .cinema-friend-list li { border-bottom: 1px solid var(--border); }
-.cinema-friend { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 17px 0; color: var(--text); text-decoration: none; }
+.cinema-friend-row { display: flex; align-items: center; gap: 10px; }
+.cinema-friend { flex: 1; min-width: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 12px; padding: 17px 0; color: var(--text); text-decoration: none; }
 .cinema-friend-avatar { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-secondary); font-size: 1.1rem; }
 .cinema-friend-copy { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .cinema-friend-copy strong { overflow: hidden; font-size: 0.88rem; text-overflow: ellipsis; white-space: nowrap; }
 .cinema-friend-copy small { color: var(--text-muted); font-size: 0.74rem; }
-.cinema-friend-arrow { color: var(--text-muted); transition: transform 220ms ease, color 220ms ease; }
-.cinema-friend:hover .cinema-friend-arrow { color: var(--cinema-accent); transform: translate(2px, -2px); }
 .cinema-quiet-state, .cinema-radar-empty { padding: 36px; border: 1px dashed var(--border); color: var(--text-muted); }
 .cinema-quiet-state p, .cinema-radar-empty p { margin: 0 0 9px; }
 .cinema-quiet-state a, .cinema-radar-empty a { color: var(--cinema-accent); text-decoration: none; }
@@ -1375,7 +1386,7 @@ body .htmx-panel-indicator.htmx-request { animation-duration: 1ms; }
 .cinema-comment-actions { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-.cinema-program-poster img, .cinema-comment-poster img, .cinema-friend-arrow { transition: none; }
+.cinema-program-poster img, .cinema-comment-poster img { transition: none; }
 }
 
 /* ==================== Watch 页面（内容优先） ==================== */
@@ -1506,4 +1517,140 @@ body .htmx-panel-indicator.htmx-request { animation-duration: 1ms; }
 @media (max-width: 480px) {
   .ad-skip-prompt { top: auto; bottom: 56px; right: 8px; left: 8px; max-width: none; }
   .ad-skip-toast { top: auto; bottom: 56px; right: 8px; }
+}
+
+/* -- 关注按钮：片场、公开主页、短评页和关注动态共用 -- */
+.follow-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; font-size: 0.78rem; font-weight: 600; line-height: 1.6; color: var(--on-primary); background: var(--primary-solid); border: 1px solid transparent; border-radius: 999px; cursor: pointer; white-space: nowrap; transition: var(--transition-fast); }
+.follow-btn:hover { background: var(--primary-solid-hover); }
+.follow-btn.following { color: var(--text-muted); background: transparent; border-color: var(--border); }
+.follow-btn.following:hover { color: var(--error); border-color: var(--error-border); background: transparent; }
+.follow-count { font-weight: 500; opacity: 0.75; }
+
+/* -- 短评互动（点赞 / 回复）：详情页、片场、关注动态和短评页共用 -- */
+.user-comment-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 2px;
+}
+
+.comment-like-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text-muted, #888);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.comment-like-btn:hover {
+    color: #ff5c7a;
+}
+
+.comment-like-btn.liked {
+    color: #ff5c7a;
+}
+
+.comment-like-count {
+    min-width: 8px;
+}
+
+.comment-reply-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text-muted, #888);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.comment-reply-toggle:hover {
+    color: var(--primary, #4f8cff);
+}
+
+.comment-replies-container:empty {
+    display: none;
+}
+
+.comment-replies-container {
+    width: 100%;
+    margin-top: 6px;
+    padding-left: 12px;
+    border-left: 2px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.comment-reply-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.comment-reply-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 0.78rem;
+}
+
+.comment-reply-user {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--text-muted, #888);
+    flex-shrink: 0;
+}
+
+.comment-reply-avatar {
+    font-size: 12px;
+    line-height: 1;
+}
+
+.comment-reply-text {
+    color: var(--text-secondary, #e0e0e0);
+    word-break: break-all;
+}
+
+.comment-reply-time {
+    color: var(--text-muted, #888);
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.comment-reply-form {
+    display: flex;
+    gap: 6px;
+}
+
+.comment-reply-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    border: 1px solid var(--border, rgba(255,255,255,0.15));
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text, inherit);
+}
+
+.comment-reply-submit {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.comment-reply-login-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted, #888);
+    margin: 0;
+}
+
+.comment-reply-login-hint a {
+    color: var(--primary, #4f8cff);
 }

@@ -1,6 +1,7 @@
 package social
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -19,6 +20,7 @@ const (
 	weeklyFilmLimit      = 6
 	featuredCommentLimit = 6
 	filmFriendLimit      = 5
+	feedPageSize         = 20
 )
 
 // Handler 提供片场页面和短评互动接口。
@@ -41,7 +43,12 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/api/comments/:id/like", optional, handler.toggleLike)
 	router.GET("/api/comments/:id/replies", optional, handler.replies)
 	router.POST("/api/comments/:id/replies", optional, handler.createReply)
+	router.GET("/review/:id", optional, handler.review)
 	require := auth.Require(handler.config.AppSecret, handler.config.Env == "production")
+	router.GET("/feed", require, handler.feed)
+	router.GET("/following", require, handler.following)
+	router.POST("/api/users/:user_id/follow", require, handler.toggleFollow)
+	router.DELETE("/api/users/:user_id/follow", require, handler.unfollow)
 	router.GET("/notifications", require, handler.notifications)
 	router.GET("/api/notifications/unread-count", require, handler.unreadNotificationCount)
 	router.POST("/notifications/read-all", require, handler.readAllNotifications)
@@ -77,6 +84,11 @@ func (handler *Handler) cinema(c *gin.Context) {
 	likeCounts, _ := handler.store.CountLikes(c.Request.Context(), commentIDs)
 	replyCounts, _ := handler.store.CountReplies(c.Request.Context(), commentIDs)
 	liked, _ := handler.store.LikedByUser(c.Request.Context(), commentIDs, currentUserID)
+	friendIDs := make([]int, 0, len(friends))
+	for _, friend := range friends {
+		friendIDs = append(friendIDs, friend.UserID)
+	}
+	following, _ := handler.store.FollowingSet(c.Request.Context(), currentUserID, friendIDs)
 
 	c.HTML(http.StatusOK, "cinema.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
 		Title:       "片场 - " + handler.config.SiteName,
@@ -84,7 +96,7 @@ func (handler *Handler) cinema(c *gin.Context) {
 		Canonical:   platformweb.CanonicalURL(handler.config.SiteURL, "/cinema"),
 	}, gin.H{
 		"WeeklyFilms": weeklyFilms, "FeaturedComments": comments, "FilmFriends": friends,
-		"LikeCounts": likeCounts, "ReplyCounts": replyCounts, "Liked": liked,
+		"LikeCounts": likeCounts, "ReplyCounts": replyCounts, "Liked": liked, "Following": following,
 		"CurrentUserID": currentUserID, "WeekStart": weekStart, "WeekEnd": weekStart.AddDate(0, 0, 6),
 	}))
 }
@@ -182,6 +194,155 @@ func (handler *Handler) renderReplies(c *gin.Context, userMovieID, userID int) {
 	c.HTML(http.StatusOK, "partials/comment_replies.html", gin.H{"UserMovieID": userMovieID, "Replies": replies, "CurrentUserID": userID})
 }
 
+// toggleFollow 关注或取消关注某个用户，返回刷新后的按钮片段。
+func (handler *Handler) toggleFollow(c *gin.Context) {
+	followerID := auth.UserID(c)
+	followeeID, err := positiveID(c.Param("user_id"))
+	if err != nil || followeeID == followerID {
+		c.String(http.StatusBadRequest, "")
+		return
+	}
+	following, err := handler.store.ToggleFollow(c.Request.Context(), followerID, followeeID)
+	if errors.Is(err, ErrFollowUnavailable) {
+		c.String(http.StatusNotFound, "用户不存在或未公开主页")
+		return
+	}
+	if err != nil {
+		c.String(http.StatusInternalServerError, "")
+		return
+	}
+	followers, _, _ := handler.store.CountFollow(c.Request.Context(), followeeID)
+	c.HTML(http.StatusOK, "partials/follow_button.html", gin.H{
+		"UserID": followeeID, "Following": following, "Followers": followers, "CurrentUserID": followerID,
+	})
+}
+
+func (handler *Handler) unfollow(c *gin.Context) {
+	id, err := positiveID(c.Param("user_id"))
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	if err := handler.store.Unfollow(c.Request.Context(), auth.UserID(c), id); err != nil {
+		c.String(http.StatusInternalServerError, "取消关注失败，请重试")
+		return
+	}
+	c.Header("HX-Refresh", "true")
+	c.Status(http.StatusOK)
+}
+
+func (handler *Handler) following(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 || page > 100000 {
+		page = 1
+	}
+	users, err := handler.store.ListFollowing(c.Request.Context(), auth.UserID(c), feedPageSize+1, (page-1)*feedPageSize)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "关注列表暂时无法加载")
+		return
+	}
+	hasMore := len(users) > feedPageSize
+	if hasMore {
+		users = users[:feedPageSize]
+	}
+	c.HTML(http.StatusOK, "following.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
+		Title: "我关注的人 - " + handler.config.SiteName, Robots: "noindex, nofollow",
+	}, gin.H{"FollowingUsers": users, "Page": page, "NextPage": page + 1, "HasMore": hasMore}))
+}
+
+// feed 展示关注的人的最新动态。没有关注任何人时退回片友推荐，
+// 空页面比没有内容更劝退，至少要给一条继续走下去的路。
+func (handler *Handler) feed(c *gin.Context) {
+	userID := auth.UserID(c)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * feedPageSize
+	activities, err := handler.store.ListFeed(c.Request.Context(), userID, feedPageSize, offset)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "动态暂时无法加载")
+		return
+	}
+	commentIDs := make([]int, 0, len(activities))
+	for _, activity := range activities {
+		commentIDs = append(commentIDs, activity.ID)
+	}
+	likeCounts, _ := handler.store.CountLikes(c.Request.Context(), commentIDs)
+	replyCounts, _ := handler.store.CountReplies(c.Request.Context(), commentIDs)
+	liked, _ := handler.store.LikedByUser(c.Request.Context(), commentIDs, userID)
+	_, followingCount, _ := handler.store.CountFollow(c.Request.Context(), userID)
+
+	data := gin.H{
+		"Activities": activities, "LikeCounts": likeCounts, "ReplyCounts": replyCounts, "Liked": liked,
+		"CurrentUserID": userID, "FollowingCount": followingCount,
+		"HasMore": len(activities) == feedPageSize, "NextPage": page + 1, "Page": page,
+	}
+	if followingCount == 0 {
+		friends, _ := handler.store.ListFilmFriends(c.Request.Context(), userID, filmFriendLimit)
+		data["FilmFriends"] = friends
+		data["Following"] = map[int]bool{}
+	}
+	c.HTML(http.StatusOK, "feed.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
+		Title: "关注动态 - " + handler.config.SiteName, Robots: "noindex, nofollow",
+	}, data))
+}
+
+// review 是单条短评的永久链接页。短评现在是 user_movies 上的一个字段，
+// 没有独立 URL 就无法被分享、收录或引用；这一页让它成为可以被链接的内容。
+func (handler *Handler) review(c *gin.Context) {
+	userMovieID, err := positiveID(c.Param("id"))
+	if err != nil {
+		handler.reviewNotFound(c)
+		return
+	}
+	activity, err := handler.store.GetComment(c.Request.Context(), userMovieID)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "短评暂时无法加载")
+		return
+	}
+	if activity == nil {
+		handler.reviewNotFound(c)
+		return
+	}
+	currentUserID := auth.UserID(c)
+	ids := []int{activity.ID}
+	likeCounts, _ := handler.store.CountLikes(c.Request.Context(), ids)
+	replyCounts, _ := handler.store.CountReplies(c.Request.Context(), ids)
+	liked, _ := handler.store.LikedByUser(c.Request.Context(), ids, currentUserID)
+	replies, _ := handler.store.ListReplies(c.Request.Context(), activity.ID)
+	following, _ := handler.store.FollowingSet(c.Request.Context(), currentUserID, []int{activity.UserID})
+	followers, _, _ := handler.store.CountFollow(c.Request.Context(), activity.UserID)
+
+	canonical := platformweb.CanonicalURL(handler.config.SiteURL, "/review/"+strconv.Itoa(activity.ID))
+	c.HTML(http.StatusOK, "review.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
+		Title:       activity.User.Username + "评《" + activity.Title + "》 - " + handler.config.SiteName,
+		Description: summarize(activity.Comment, 120),
+		Canonical:   canonical,
+	}, gin.H{
+		"Activity": activity, "Replies": replies, "CurrentUserID": currentUserID, "Canonical": canonical,
+		"LikeCount": likeCounts[activity.ID], "ReplyCount": replyCounts[activity.ID], "Liked": liked[activity.ID],
+		"Following": following[activity.UserID], "Followers": followers,
+	}))
+}
+
+// reviewNotFound 渲染短评不存在时的 404。
+func (handler *Handler) reviewNotFound(c *gin.Context) {
+	c.HTML(http.StatusNotFound, "404.html", platformweb.NewData(c, handler.config, platformweb.Metadata{
+		Title: "短评未找到 - " + handler.config.SiteName, Robots: "noindex, follow",
+	}, gin.H{"Path": c.Request.URL.Path}))
+}
+
+// summarize 截断文本用于页面描述，按 rune 计数避免把中文截半。
+func summarize(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	characters := []rune(text)
+	if len(characters) <= limit {
+		return text
+	}
+	return string(characters[:limit]) + "…"
+}
+
 // notifications 展示当前用户收到的短评互动。
 func (handler *Handler) notifications(c *gin.Context) {
 	notifications, err := handler.store.ListNotifications(c.Request.Context(), auth.UserID(c), 50)
@@ -211,12 +372,16 @@ func (handler *Handler) readNotification(c *gin.Context) {
 		c.String(http.StatusBadRequest, "")
 		return
 	}
-	movieID, userMovieID, err := handler.store.ReadNotification(c.Request.Context(), id, auth.UserID(c))
+	target, err := handler.store.ReadNotification(c.Request.Context(), id, auth.UserID(c))
 	if err != nil {
 		c.String(http.StatusNotFound, "消息不存在")
 		return
 	}
-	destination := fmt.Sprintf("/movie/%s?comment=%d#comment-%d", url.PathEscape(movieID), userMovieID, userMovieID)
+	destination := fmt.Sprintf("/user/%d", target.ActorUserID)
+	if target.UserMovieID > 0 {
+		destination = fmt.Sprintf("/movie/%s?comment=%d#comment-%d",
+			url.PathEscape(target.MovieID), target.UserMovieID, target.UserMovieID)
+	}
 	c.Header("HX-Redirect", destination)
 	c.Status(http.StatusOK)
 }

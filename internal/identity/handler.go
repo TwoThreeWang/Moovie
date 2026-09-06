@@ -121,7 +121,7 @@ func (handler *Handler) registerPage(c *gin.Context) {
 }
 
 // register 注册新账号：校验邮箱格式、两次密码一致、长度至少 6 位，
-// 默认用户名取邮箱 @ 前的部分，注册成功直接登录。
+// 默认用户名取邮箱 @ 前的部分，主页默认公开，注册成功直接登录。
 func (handler *Handler) register(c *gin.Context) {
 	email, password, confirmation := c.PostForm("email"), c.PostForm("password"), c.PostForm("confirm_password")
 	if !validEmail(email) {
@@ -146,7 +146,10 @@ func (handler *Handler) register(c *gin.Context) {
 		return
 	}
 	username := strings.Split(email, "@")[0]
-	user, err := handler.store.Create(c.Request.Context(), User{Email: email, Username: username, PasswordHash: string(hash), Role: "user", Avatar: "🎬", CreatedAt: handler.now()})
+	// 主页默认公开：片场的精选短评和片友推荐都只认 is_public=true 的用户，
+	// 默认关着等于社区从第一天起就没有公共内容。注册表单里的开关默认勾选，
+	// 想安静看片的人可以在这里或设置页关掉。
+	user, err := handler.store.Create(c.Request.Context(), User{Email: email, Username: username, PasswordHash: string(hash), Role: "user", Avatar: "🎬", IsPublic: c.PostForm("is_public") == "on", CreatedAt: handler.now()})
 	if err != nil {
 		handler.renderRegisterError(c, http.StatusInternalServerError, "注册失败，请重试")
 		return

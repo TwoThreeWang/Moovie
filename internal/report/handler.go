@@ -25,6 +25,12 @@ type PublicUserStore interface {
 	FindByID(ctx context.Context, userID int) (*identity.User, error)
 }
 
+// FollowStore 是公开主页展示关注按钮需要的最小关注读接口，由 social 包实现。
+type FollowStore interface {
+	FollowingSet(ctx context.Context, followerID int, followeeIDs []int) (map[int]bool, error)
+	CountFollow(ctx context.Context, userID int) (followers int, following int, err error)
+}
+
 // Handler 提供用户公开主页和月报页面。
 type Handler struct {
 	config  config.Config
@@ -32,11 +38,12 @@ type Handler struct {
 	library library.Store
 	reports Store
 	service *Service
+	follows FollowStore
 }
 
-// NewHandler 创建月报处理器。
-func NewHandler(cfg config.Config, users PublicUserStore, libraryStore library.Store, reports Store, service *Service) *Handler {
-	return &Handler{config: cfg, users: users, library: libraryStore, reports: reports, service: service}
+// NewHandler 创建月报处理器。follows 为 nil 时主页不显示关注按钮，其余功能不受影响。
+func NewHandler(cfg config.Config, users PublicUserStore, libraryStore library.Store, reports Store, service *Service, follows FollowStore) *Handler {
+	return &Handler{config: cfg, users: users, library: libraryStore, reports: reports, service: service, follows: follows}
 }
 
 // Register 注册公开主页路由和后台的手动生成接口。
@@ -63,6 +70,14 @@ func (handler *Handler) publicProfile(c *gin.Context) {
 	watchedCount, _ := handler.library.CountByUser(c.Request.Context(), user.ID, library.StatusWatched)
 	average, ratedCount, _ := handler.library.AvgRatingByUser(c.Request.Context(), user.ID)
 	reports, _ := handler.reports.ListByUser(c.Request.Context(), user.ID, 6, 0)
+	viewerID := auth.UserID(c)
+	following, followers := false, 0
+	if handler.follows != nil {
+		if set, err := handler.follows.FollowingSet(c.Request.Context(), viewerID, []int{user.ID}); err == nil {
+			following = set[user.ID]
+		}
+		followers, _, _ = handler.follows.CountFollow(c.Request.Context(), user.ID)
+	}
 	canonical := fmt.Sprintf("%s/user/%d", handler.config.SiteURL, user.ID)
 	c.HTML(http.StatusOK, "share.html", platformweb.NewData(c, handler.config,
 		platformweb.Metadata{Title: user.Username + " 的观影记录 - " + handler.config.SiteName, Canonical: canonical}, gin.H{
@@ -70,6 +85,7 @@ func (handler *Handler) publicProfile(c *gin.Context) {
 			"WishHasMore": wishCount > len(wish), "WishNextPage": 2,
 			"WatchedHasMore": watchedCount > len(watched), "WatchedNextPage": 2,
 			"AvgRating": average, "RatedCount": ratedCount, "MonthlyReports": reports, "Canonical": canonical,
+			"CurrentUserID": viewerID, "Following": following, "Followers": followers,
 		}))
 }
 

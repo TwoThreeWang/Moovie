@@ -15,9 +15,9 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestPublicProfileMonthlyAndPrivacyPreserveRoutesAndCanonical(t *testing.T) {
@@ -93,7 +93,7 @@ func reportTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *libr
 	}
 	router := gin.New()
 	router.HTMLRender = renderer
-	NewHandler(cfg, users, libraryStore, reports, service).Register(router)
+	NewHandler(cfg, users, libraryStore, reports, service, nil).Register(router)
 	now := time.Now()
 	token, _ := auth.Sign(auth.Claims{UserID: viewer.ID, Email: viewer.Email, Role: viewer.Role, Issued: now.Unix(), Expiry: now.Add(time.Hour).Unix()}, "secret")
 	return router, users, libraryStore, reports, publicUser, token

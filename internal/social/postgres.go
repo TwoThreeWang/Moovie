@@ -112,7 +112,7 @@ func (store *PostgresStore) ToggleLike(ctx context.Context, userMovieID, userID 
   INSERT INTO social_notifications (recipient_user_id, actor_user_id, type, user_movie_id)
   SELECT recipient_user_id, $2, 'comment_like', $1 FROM target
   WHERE recipient_user_id <> $2 AND EXISTS (SELECT 1 FROM inserted)
-  ON CONFLICT (type, actor_user_id, user_movie_id, (COALESCE(reply_id, 0)))
+  ON CONFLICT (type, actor_user_id, recipient_user_id, (COALESCE(user_movie_id, 0)), (COALESCE(reply_id, 0)))
   DO UPDATE SET read_at = NULL, created_at = NOW()
   RETURNING id
 )
@@ -177,6 +177,8 @@ SELECT id, created_at FROM reply`, userMovieID, userID, content).Scan(&reply.ID,
 }
 
 // CountUnreadNotifications 返回消息页中的未读项数；同一短评的多个赞只算一项。
+// 非点赞的一律逐条计数（不写死 comment_reply），否则每加一种通知类型
+// 都会出现「列表里看得到、红点不涨」这种只能靠肉眼发现的偏差。
 func (store *PostgresStore) CountUnreadNotifications(ctx context.Context, userID int) (int, error) {
 	var count int
 	err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM (
@@ -185,7 +187,7 @@ func (store *PostgresStore) CountUnreadNotifications(ctx context.Context, userID
   GROUP BY user_movie_id
   UNION ALL
   SELECT id FROM social_notifications
-  WHERE recipient_user_id = $1 AND type = 'comment_reply' AND read_at IS NULL
+  WHERE recipient_user_id = $1 AND type <> 'comment_like' AND read_at IS NULL
 ) unread`, userID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count unread notifications: %w", err)
@@ -193,7 +195,9 @@ func (store *PostgresStore) CountUnreadNotifications(ctx context.Context, userID
 	return count, nil
 }
 
-// ListNotifications 列出互动消息；点赞按短评聚合，回复逐条展示。
+// ListNotifications 列出互动消息。只有点赞需要按短评聚合（十个人赞同一条不该刷十行），
+// 其余类型走同一个分支：短评、回复都用 LEFT JOIN 接，缺哪个就是空，
+// 所以再加一种通知类型不用改这条 SQL。
 func (store *PostgresStore) ListNotifications(ctx context.Context, userID, limit int) ([]Notification, error) {
 	rows, err := store.database.Query(ctx, `WITH like_counts AS (
   SELECT user_movie_id, COUNT(*)::int AS actor_count, BOOL_OR(read_at IS NULL) AS unread,
@@ -209,7 +213,7 @@ func (store *PostgresStore) ListNotifications(ctx context.Context, userID, limit
 ), items AS (
   SELECT latest.id, 'comment_like'::text AS type, latest.user_movie_id, um.movie_id,
          COALESCE(NULLIF(media.title, ''), um.title) AS movie_title,
-         actor.username AS actor_name, actor.avatar AS actor_avatar,
+         latest.actor_user_id, actor.username AS actor_name, actor.avatar AS actor_avatar,
          ''::text AS content, likes.actor_count, likes.unread, likes.created_at
   FROM like_counts likes
   JOIN latest_likes latest ON latest.user_movie_id = likes.user_movie_id
@@ -217,18 +221,19 @@ func (store *PostgresStore) ListNotifications(ctx context.Context, userID, limit
   LEFT JOIN media ON media.id = um.media_id
   JOIN users actor ON actor.id = latest.actor_user_id
   UNION ALL
-  SELECT notification.id, notification.type, notification.user_movie_id, um.movie_id,
-         COALESCE(NULLIF(media.title, ''), um.title), actor.username, actor.avatar,
-         reply.content, 1, notification.read_at IS NULL, notification.created_at
+  SELECT notification.id, notification.type, COALESCE(notification.user_movie_id, 0),
+         COALESCE(um.movie_id, ''), COALESCE(NULLIF(media.title, ''), um.title, ''),
+         notification.actor_user_id, actor.username, actor.avatar,
+         COALESCE(reply.content, ''), 1, notification.read_at IS NULL, notification.created_at
   FROM social_notifications notification
-  JOIN user_movies um ON um.id = notification.user_movie_id
+  LEFT JOIN user_movies um ON um.id = notification.user_movie_id
   LEFT JOIN media ON media.id = um.media_id
   JOIN users actor ON actor.id = notification.actor_user_id
-  JOIN comment_replies reply ON reply.id = notification.reply_id
-  WHERE notification.recipient_user_id = $1 AND notification.type = 'comment_reply'
+  LEFT JOIN comment_replies reply ON reply.id = notification.reply_id
+  WHERE notification.recipient_user_id = $1 AND notification.type <> 'comment_like'
 )
-SELECT id, type, user_movie_id, movie_id, movie_title, actor_name, actor_avatar, content,
-       actor_count, unread, created_at
+SELECT id, type, user_movie_id, movie_id, movie_title, actor_user_id, actor_name, actor_avatar,
+       content, actor_count, unread, created_at
 FROM items ORDER BY created_at DESC LIMIT $2`, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list notifications: %w", err)
@@ -238,9 +243,9 @@ FROM items ORDER BY created_at DESC LIMIT $2`, userID, limit)
 	for rows.Next() {
 		var notification Notification
 		if err := rows.Scan(&notification.ID, &notification.Type, &notification.UserMovieID,
-			&notification.MovieID, &notification.MovieTitle, &notification.ActorName,
-			&notification.ActorAvatar, &notification.Content, &notification.ActorCount,
-			&notification.Unread, &notification.CreatedAt); err != nil {
+			&notification.MovieID, &notification.MovieTitle, &notification.ActorUserID,
+			&notification.ActorName, &notification.ActorAvatar, &notification.Content,
+			&notification.ActorCount, &notification.Unread, &notification.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan notification: %w", err)
 		}
 		notifications = append(notifications, notification)
@@ -252,11 +257,12 @@ FROM items ORDER BY created_at DESC LIMIT $2`, userID, limit)
 }
 
 // ReadNotification 标记一项已读并返回服务端计算的短评落点。
-func (store *PostgresStore) ReadNotification(ctx context.Context, notificationID, userID int) (string, int, error) {
-	var movieID string
-	var userMovieID int
+func (store *PostgresStore) ReadNotification(ctx context.Context, notificationID, userID int) (NotificationTarget, error) {
+	var target NotificationTarget
+	// 短评用 LEFT JOIN 接：关注类通知没有短评主体，用 JOIN 会把整行过滤掉，
+	// 已读标记写进去了却查不到返回值，前端会当成「消息不存在」。
 	err := store.database.QueryRow(ctx, `WITH selected AS (
-  SELECT id, type, user_movie_id FROM social_notifications
+  SELECT id, type, user_movie_id, actor_user_id FROM social_notifications
   WHERE id = $1 AND recipient_user_id = $2
 ), marked AS (
   UPDATE social_notifications notification SET read_at = COALESCE(notification.read_at, NOW())
@@ -266,12 +272,13 @@ func (store *PostgresStore) ReadNotification(ctx context.Context, notificationID
          (selected.type = 'comment_like' AND notification.type = 'comment_like'
           AND notification.user_movie_id = selected.user_movie_id))
 )
-SELECT um.movie_id, selected.user_movie_id
-FROM selected JOIN user_movies um ON um.id = selected.user_movie_id`, notificationID, userID).Scan(&movieID, &userMovieID)
+SELECT COALESCE(um.movie_id, ''), COALESCE(selected.user_movie_id, 0), selected.actor_user_id
+FROM selected LEFT JOIN user_movies um ON um.id = selected.user_movie_id`,
+		notificationID, userID).Scan(&target.MovieID, &target.UserMovieID, &target.ActorUserID)
 	if err != nil {
-		return "", 0, fmt.Errorf("read notification: %w", err)
+		return NotificationTarget{}, fmt.Errorf("read notification: %w", err)
 	}
-	return movieID, userMovieID, nil
+	return target, nil
 }
 
 // ReadAllNotifications 标记当前用户的所有互动消息已读。
@@ -408,4 +415,139 @@ func scanActivities(rows database.Rows) ([]Activity, error) {
 		return nil, fmt.Errorf("iterate social activities: %w", err)
 	}
 	return activities, nil
+}
+
+// GetComment 读取单条短评，供短评永久链接页使用。短评为空的记录不算内容，按不存在处理。
+func (store *PostgresStore) GetComment(ctx context.Context, userMovieID int) (*Activity, error) {
+	rows, err := store.database.Query(ctx, `SELECT `+activityColumns+` FROM user_movies um
+LEFT JOIN media ON media.id = um.media_id
+JOIN users u ON u.id = um.user_id
+WHERE um.id = $1 AND BTRIM(COALESCE(um.comment, '')) <> ''`, userMovieID)
+	if err != nil {
+		return nil, fmt.Errorf("get comment: %w", err)
+	}
+	defer rows.Close()
+	activities, err := scanActivities(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(activities) == 0 {
+		return nil, nil
+	}
+	return &activities[0], nil
+}
+
+// ToggleFollow 关注或取消关注，返回操作后的关注状态。
+// 删除和插入合并在一条语句里，理由和 ToggleLike 一样：两次并发点击不会留下脏状态。
+func (store *PostgresStore) ToggleFollow(ctx context.Context, followerID, followeeID int) (bool, error) {
+	if followerID <= 0 || followeeID <= 0 || followerID == followeeID {
+		return false, fmt.Errorf("invalid follow pair %d -> %d", followerID, followeeID)
+	}
+	row := store.database.QueryRow(ctx, `WITH target AS (
+  SELECT id FROM users WHERE id = $2 AND is_public = TRUE
+), deleted AS (
+  DELETE FROM user_follows WHERE follower_id = $1 AND followee_id = $2 RETURNING 1
+), inserted AS (
+  INSERT INTO user_follows (follower_id, followee_id)
+  SELECT $1, $2 WHERE NOT EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM target)
+  ON CONFLICT DO NOTHING RETURNING 1
+), removed_notification AS (
+  DELETE FROM social_notifications
+  WHERE type = 'follow' AND actor_user_id = $1 AND recipient_user_id = $2
+    AND EXISTS (SELECT 1 FROM deleted)
+  RETURNING id
+), saved_notification AS (
+  INSERT INTO social_notifications (recipient_user_id, actor_user_id, type)
+  SELECT $2, $1, 'follow' WHERE EXISTS (SELECT 1 FROM inserted)
+  ON CONFLICT (type, actor_user_id, recipient_user_id, (COALESCE(user_movie_id, 0)), (COALESCE(reply_id, 0)))
+  DO UPDATE SET read_at = NULL, created_at = NOW()
+  RETURNING id
+)
+SELECT EXISTS (SELECT 1 FROM inserted), EXISTS (SELECT 1 FROM deleted), EXISTS (SELECT 1 FROM target)`, followerID, followeeID)
+	var following, removed, available bool
+	if err := row.Scan(&following, &removed, &available); err != nil {
+		return false, fmt.Errorf("toggle follow: %w", err)
+	}
+	if !removed && !available {
+		return false, ErrFollowUnavailable
+	}
+	return following, nil
+}
+
+// Unfollow 幂等地取消关注，目标关闭主页后也能取消。
+func (store *PostgresStore) Unfollow(ctx context.Context, followerID, followeeID int) error {
+	_, err := store.database.Exec(ctx, `WITH removed AS (
+DELETE FROM user_follows WHERE follower_id = $1 AND followee_id = $2
+)
+DELETE FROM social_notifications WHERE type = 'follow' AND actor_user_id = $1 AND recipient_user_id = $2`, followerID, followeeID)
+	return err
+}
+
+func (store *PostgresStore) ListFollowing(ctx context.Context, followerID, limit, offset int) ([]FollowedUser, error) {
+	rows, err := store.database.Query(ctx, `SELECT u.id, u.username, u.avatar, u.is_public
+FROM user_follows f JOIN users u ON u.id = f.followee_id
+WHERE f.follower_id = $1 ORDER BY f.created_at DESC, f.followee_id DESC LIMIT $2 OFFSET $3`, followerID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]FollowedUser, 0)
+	for rows.Next() {
+		var user FollowedUser
+		if err := rows.Scan(&user.ID, &user.Username, &user.Avatar, &user.IsPublic); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+// FollowingSet 批量查询当前用户是否已关注这批人，一次查完避免每个头像一次查询。
+func (store *PostgresStore) FollowingSet(ctx context.Context, followerID int, followeeIDs []int) (map[int]bool, error) {
+	result := make(map[int]bool, len(followeeIDs))
+	if followerID <= 0 || len(followeeIDs) == 0 {
+		return result, nil
+	}
+	rows, err := store.database.Query(ctx, `SELECT followee_id FROM user_follows
+WHERE follower_id = $1 AND followee_id = ANY($2)`, followerID, followeeIDs)
+	if err != nil {
+		return nil, fmt.Errorf("following set: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var followeeID int
+		if err := rows.Scan(&followeeID); err != nil {
+			return nil, fmt.Errorf("scan following: %w", err)
+		}
+		result[followeeID] = true
+	}
+	return result, rows.Err()
+}
+
+// CountFollow 返回某个用户的粉丝数和关注数。
+func (store *PostgresStore) CountFollow(ctx context.Context, userID int) (int, int, error) {
+	row := store.database.QueryRow(ctx, `SELECT
+(SELECT COUNT(*) FROM user_follows WHERE followee_id = $1),
+(SELECT COUNT(*) FROM user_follows WHERE follower_id = $1)`, userID)
+	var followers, following int
+	if err := row.Scan(&followers, &following); err != nil {
+		return 0, 0, fmt.Errorf("count follow: %w", err)
+	}
+	return followers, following, nil
+}
+
+// ListFeed 返回关注的人最近的观影动态，按记录更新时间倒序。
+// 不限制 status：标记想看也是动态，能看到"他把这部加进片单了"比只看短评更活。
+func (store *PostgresStore) ListFeed(ctx context.Context, followerID, limit, offset int) ([]Activity, error) {
+	rows, err := store.database.Query(ctx, `SELECT `+activityColumns+` FROM user_follows f
+JOIN user_movies um ON um.user_id = f.followee_id
+LEFT JOIN media ON media.id = um.media_id
+JOIN users u ON u.id = um.user_id
+WHERE f.follower_id = $1 AND u.is_public = TRUE
+ORDER BY um.updated_at DESC, um.id DESC LIMIT $2 OFFSET $3`, followerID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list feed: %w", err)
+	}
+	defer rows.Close()
+	return scanActivities(rows)
 }

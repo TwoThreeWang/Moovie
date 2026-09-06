@@ -18,6 +18,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/admin"
 	"github.com/TwoThreeWang/Moovie/new/internal/catalog"
+	"github.com/TwoThreeWang/Moovie/new/internal/collection"
 	"github.com/TwoThreeWang/Moovie/new/internal/content"
 	"github.com/TwoThreeWang/Moovie/new/internal/danmaku"
 	"github.com/TwoThreeWang/Moovie/new/internal/douban"
@@ -44,7 +45,7 @@ import (
 
 // contentPages 列出需要与共享 layout、partial 一起解析的页面模板。
 // 显式维护清单可以让模板缺失或重名在启动阶段暴露，而不是等用户访问时才报错。
-var contentPages = []string{"home", "search", "trends", "about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "404", "player", "player_embed", "iptv", "tvbox", "play", "watch", "login", "register", "dashboard", "settings", "notifications", "movie", "fetching", "recommendations", "foryou", "share", "share_monthly", "cinema", "feedback", "admin_feedback", "discover", "admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_copyright", "admin_category", "admin_nsfw", "admin_matches", "admin_jobs"}
+var contentPages = []string{"home", "search", "trends", "about", "advertise", "changelog", "dmca", "copyright_restricted", "privacy", "terms", "404", "player", "player_embed", "iptv", "tvbox", "play", "watch", "login", "register", "dashboard", "settings", "notifications", "movie", "fetching", "recommendations", "foryou", "share", "share_monthly", "cinema", "feed", "following", "review", "collections", "collection", "admin_collections", "feedback", "admin_feedback", "discover", "admin_dashboard", "admin_users", "admin_sites", "admin_cache", "admin_copyright", "admin_category", "admin_nsfw", "admin_matches", "admin_jobs"}
 
 // discoverPopularAdapter 把播放域的热门结果转换成发现页需要的轻量结构。
 type discoverPopularAdapter struct{ provider playback.PopularProvider }
@@ -151,6 +152,7 @@ func main() {
 	doubanJobStore = douban.NewQueueJobStore(queueStore)
 	reportStore = report.NewPostgresStore(databasePool)
 	socialStore = social.NewPostgresStore(databasePool)
+	collectionStore := collection.NewPostgresStore(databasePool) // 片单：官方精选与用户自建同表
 	feedbackStore = feedback.NewPostgresStore(databasePool)
 	danmakuStore = danmaku.NewPostgresStore(databasePool)
 	readiness = databasePool.Ping
@@ -361,7 +363,7 @@ func main() {
 	libraryHandler := library.NewHandler(libraryStore, cfg.AppSecret)
 	identityHandler := identity.NewHandler(cfg, identityStore, identity.WithHistoryCounter(historyStore), identity.WithLibraryCounter(libraryStore), identity.WithMonthlyReportReader(reportStore), identity.WithFeedbackCounter(feedbackStore))
 	doubanHandler := douban.NewHandler(cfg, doubanUserStore, doubanJobStore, doubanService, doubanTaskHandler)
-	reportHandler := report.NewHandler(cfg, doubanUserStore, libraryStore, reportStore, reportService)
+	reportHandler := report.NewHandler(cfg, doubanUserStore, libraryStore, reportStore, reportService, socialStore)
 	catalogHandlerOptions := []catalog.HandlerOption{
 		catalog.WithUserMovies(libraryStore),
 		catalog.WithFetcher(doubanProvider, searchRunner),
@@ -385,7 +387,7 @@ func main() {
 		catalogHandlerOptions = append(catalogHandlerOptions, catalog.WithAirScheduleReader(airReader))
 	}
 	catalogHandler := catalog.NewHandler(cfg, catalogStore, catalogHandlerOptions...)
-	contentHandler := content.NewHandler(cfg, catalog.NewSitemapProvider(catalogStore))
+	contentHandler := content.NewHandler(cfg, catalog.NewSitemapProvider(catalogStore), collection.NewSitemapProvider(collectionStore))
 	recommendationHandler := recommendation.NewHandler(cfg, recommendationService, recommendationSnapshots).WithRefreshQueue(queueStore)
 	socialHandler := social.NewHandler(cfg, socialStore)
 	feedbackHandler := feedback.NewHandler(cfg, feedbackStore)
@@ -397,6 +399,7 @@ func main() {
 	if retrier, ok := queueStore.(admin.JobRetrier); ok {
 		adminOptions = append(adminOptions, admin.WithJobRetrier(retrier))
 	}
+	collectionHandler := collection.NewHandler(cfg, collectionStore)
 	adminHandler := admin.NewHandler(cfg, identityStore, adminSearchStore, catalogStore, feedbackStore, sourceCrawler, searchHealth,
 		adminOptions...)
 	// ── 阶段 7：路由注册 + HTTP 服务启动 ─────────────────────────
@@ -415,6 +418,7 @@ func main() {
 		catalogHandler.Register(router)
 		recommendationHandler.Register(router)
 		socialHandler.Register(router)
+		collectionHandler.Register(router)
 		feedbackHandler.Register(router)
 		danmakuHandler.Register(router)
 		adminHandler.Register(router)

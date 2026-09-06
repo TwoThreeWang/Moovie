@@ -27,6 +27,18 @@ type SitemapMovieProvider interface {
 	PageForSitemap(ctx context.Context, kind SitemapKind, limit, offset int) ([]SitemapMovie, error)
 }
 
+// SitemapCollection 是一个要收录的片单地址。
+type SitemapCollection struct {
+	Slug      string
+	UpdatedAt time.Time
+}
+
+// SitemapCollectionProvider 提供已发布的片单。片单数量是「几十」这个量级，
+// 直接并进静态 sitemap 即可，不值得为它再开一个分片。
+type SitemapCollectionProvider interface {
+	SlugsForSitemap(ctx context.Context) ([]SitemapCollection, error)
+}
+
 type sitemapURL struct {
 	Location   string `xml:"loc"`
 	LastMod    string `xml:"lastmod,omitempty"`
@@ -62,6 +74,7 @@ var staticSitemapPages = []struct {
 	{path: "/discover/cartoon", priority: "0.8", frequency: "daily"},
 	{path: "/trends", priority: "0.8", frequency: "daily"},
 	{path: "/cinema", priority: "0.7", frequency: "daily"},
+	{path: "/list", priority: "0.8", frequency: "weekly"},
 	{path: "/player", priority: "0.6", frequency: "weekly"},
 	{path: "/iptv", priority: "0.6", frequency: "weekly"},
 	{path: "/tvbox", priority: "0.6", frequency: "weekly"},
@@ -91,11 +104,25 @@ func buildSitemapIndex(ctx context.Context, siteURL string, provider SitemapMovi
 	return marshalSitemap(document)
 }
 
-func buildStaticSitemap(siteURL string) ([]byte, error) {
+func buildStaticSitemap(ctx context.Context, siteURL string, collections SitemapCollectionProvider) ([]byte, error) {
 	baseURL := strings.TrimRight(siteURL, "/")
 	document := sitemapDocument{XMLNS: "http://www.sitemaps.org/schemas/sitemap/0.9", URLs: make([]sitemapURL, 0, len(staticSitemapPages))}
 	for _, page := range staticSitemapPages {
 		document.URLs = append(document.URLs, sitemapURL{Location: baseURL + page.path, ChangeFreq: page.frequency, Priority: page.priority})
+	}
+	if collections != nil {
+		published, err := collections.SlugsForSitemap(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list sitemap collections: %w", err)
+		}
+		for _, item := range published {
+			document.URLs = append(document.URLs, sitemapURL{
+				Location:   baseURL + "/list/" + item.Slug,
+				LastMod:    item.UpdatedAt.Format("2006-01-02"),
+				ChangeFreq: "weekly",
+				Priority:   "0.7",
+			})
+		}
 	}
 	return marshalSitemap(document)
 }

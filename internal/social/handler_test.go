@@ -182,7 +182,7 @@ func socialTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *libr
 	movies := library.NewPostgresStore(testdb.Pool(t))
 	store := NewPostgresStore(testdb.Pool(t))
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
-	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"cinema", "notifications"})
+	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"cinema", "notifications", "feed", "following"})
 	if err != nil {
 		t.Fatal(err)
 	}

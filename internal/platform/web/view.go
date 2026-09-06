@@ -104,6 +104,9 @@ func ActiveMenu(path, searchType string) string {
 	if strings.HasPrefix(path, "/admin") {
 		return "admin"
 	}
+	if strings.HasPrefix(path, "/list") {
+		return "list"
+	}
 	if path == "/search" {
 		if searchType != "" {
 			return searchType
@@ -121,6 +124,10 @@ func ActiveMenu(path, searchType string) string {
 		return "foryou"
 	case "/cinema":
 		return "cinema"
+	case "/list":
+		return "list"
+	case "/feed", "/following":
+		return "feed"
 	case "/player":
 		return "player"
 	case "/iptv":

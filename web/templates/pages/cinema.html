@@ -113,7 +113,7 @@
             {{ if .FilmFriends }}
             <ol class="cinema-friend-list">
                 {{ range .FilmFriends }}
-                <li>
+                <li class="cinema-friend-row">
                     <a href="/user/{{ .UserID }}" class="cinema-friend">
                         <span class="cinema-friend-avatar">{{ default "🎬" .Avatar }}</span>
                         <span class="cinema-friend-copy">
@@ -124,8 +124,8 @@
                                 {{ else }}记录了 {{ .WatchedCount }} 部电影{{ end }}
                             </small>
                         </span>
-                        <span class="cinema-friend-arrow" aria-hidden="true">↗</span>
                     </a>
+                    {{ template "follow_button.html" (dict "UserID" .UserID "Following" (index $.Following .UserID) "Followers" 0 "CurrentUserID" $.CurrentUserID) }}
                 </li>
                 {{ end }}
             </ol>

@@ -7,11 +7,22 @@
 package social
 
 import (
+	"errors"
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
 	"github.com/TwoThreeWang/Moovie/new/internal/library"
 )
+
+var ErrFollowUnavailable = errors.New("用户不存在或未公开主页")
+
+// FollowedUser 仅包含关注管理需要的账号信息，不携带观影记录。
+type FollowedUser struct {
+	ID       int
+	Username string
+	Avatar   string
+	IsPublic bool
+}
 
 // Activity 以 user_movie 记录作为短评事实来源，并补充作者信息。
 type Activity struct {
@@ -42,6 +53,20 @@ type FilmFriend struct {
 	LastActiveAt time.Time
 }
 
+// FollowState 是关注按钮需要的状态：是否已关注、以及目标用户的粉丝数。
+type FollowState struct {
+	Following bool
+	Followers int
+}
+
+// NotificationTarget 是点开一条通知后应该去的地方。
+// UserMovieID 为 0 表示这条通知没有短评主体（例如关注），此时跳作者主页。
+type NotificationTarget struct {
+	MovieID     string
+	UserMovieID int
+	ActorUserID int
+}
+
 // Reply 是一条短评回复。
 type Reply struct {
 	ID          int
@@ -59,6 +84,7 @@ type Notification struct {
 	UserMovieID int
 	MovieID     string
 	MovieTitle  string
+	ActorUserID int
 	ActorName   string
 	ActorAvatar string
 	Content     string

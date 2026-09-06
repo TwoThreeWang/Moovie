@@ -4,13 +4,15 @@
     {{ range .Notifications }}
     <div class="notification-item{{ if .Unread }} is-unread{{ end }}">
         <button type="button" class="notification-open"
-                hx-post="/notifications/{{ .ID }}/read" aria-label="查看这条消息对应的短评">
+                hx-post="/notifications/{{ .ID }}/read" aria-label="查看这条消息">
             <span class="notification-avatar">{{ default "🎬" .ActorAvatar }}</span>
             <span class="notification-copy">
                 <span class="notification-summary">
                     <strong>{{ default "一位片友" .ActorName }}</strong>
                     {{ if eq .Type "comment_like" }}{{ if gt .ActorCount 1 }}等 {{ .ActorCount }} 人{{ end }}赞了你对《{{ .MovieTitle }}》的短评
-                    {{ else }}回复了你对《{{ .MovieTitle }}》的短评{{ end }}
+                    {{ else if eq .Type "comment_reply" }}回复了你对《{{ .MovieTitle }}》的短评
+                    {{ else if eq .Type "follow" }}关注了你
+                    {{ else }}和你有了新的互动{{ end }}
                 </span>
                 {{ if .Content }}<span class="notification-content">{{ .Content }}</span>{{ end }}
                 <time>{{ .CreatedAt.Format "2006-01-02 15:04" }}</time>
@@ -32,7 +34,7 @@
 <div class="notifications-empty">
     <span>🎞️</span>
     <p>还没有互动消息</p>
-    <small>片友点赞或回复你的短评后，会出现在这里。</small>
+    <small>片友关注你、点赞或回复你的短评后，会出现在这里。</small>
 </div>
 {{ end }}
 {{ end }}

@@ -12,10 +12,10 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestAuthPagesPreserveLegacyTemplatesAndRedirectField(t *testing.T) {
@@ -40,13 +40,25 @@ func TestRegisterValidatesAndCreatesLegacyBcryptUser(t *testing.T) {
 		t.Fatalf("invalid register = %d/%s", invalid.Code, invalid.Body.String())
 	}
 
-	registered := postForm(router, "/auth/register", url.Values{"email": {"person@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}})
+	registered := postForm(router, "/auth/register", url.Values{"email": {"person@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}, "is_public": {"on"}})
 	if registered.Code != http.StatusFound || registered.Header().Get("Location") != "/" {
 		t.Fatalf("register status/location = %d/%q", registered.Code, registered.Header().Get("Location"))
 	}
 	user, _ := store.FindByEmail(t.Context(), "person@example.com")
 	if user == nil || user.Username != "person" || user.Role != "user" || user.Avatar != "🎬" || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("secret1")) != nil {
 		t.Fatalf("created user = %+v", user)
+	}
+	// 注册表单默认勾选公开：片场的精选短评和片友推荐只认 is_public=true，
+	// 这个勾没落库的话新用户写的短评永远进不了社区。
+	if !user.IsPublic {
+		t.Fatalf("勾选公开后 IsPublic 应为 true: %+v", user)
+	}
+	quiet := postForm(router, "/auth/register", url.Values{"email": {"quiet@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}})
+	if quiet.Code != http.StatusFound {
+		t.Fatalf("取消勾选注册 = %d", quiet.Code)
+	}
+	if hidden, _ := store.FindByEmail(t.Context(), "quiet@example.com"); hidden == nil || hidden.IsPublic {
+		t.Fatalf("取消勾选后 IsPublic 应为 false: %+v", hidden)
 	}
 	cookie := responseCookie(t, registered, "token")
 	claims, err := auth.Parse(cookie.Value, "secret", now)
@@ -106,7 +118,7 @@ func TestDashboardRequiresAuthAndSettingsUpdateUser(t *testing.T) {
 	dashboardRequest.AddCookie(&http.Cookie{Name: "token", Value: token})
 	dashboard := httptest.NewRecorder()
 	router.ServeHTTP(dashboard, dashboardRequest)
-	if dashboard.Code != http.StatusOK || !strings.Contains(dashboard.Body.String(), "person") || !strings.Contains(dashboard.Body.String(), "部在看") {
+	if dashboard.Code != http.StatusOK || !strings.Contains(dashboard.Body.String(), "person") || !strings.Contains(dashboard.Body.String(), "在看") {
 		t.Fatalf("dashboard status/body = %d/%s", dashboard.Code, dashboard.Body.String())
 	}
 
@@ -134,7 +146,7 @@ func TestDashboardUsesLibraryCounts(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 	body := recorder.Body.String()
-	if recorder.Code != http.StatusOK || !strings.Contains(body, `<span class="stat-value">3</span>`) || !strings.Contains(body, `<span class="stat-value">5</span>`) {
+	if recorder.Code != http.StatusOK || !strings.Contains(body, `<span class="tab-count">3</span>`) || !strings.Contains(body, `<span class="tab-count">5</span>`) {
 		t.Fatalf("dashboard counts = %d/%s", recorder.Code, recorder.Body.String())
 	}
 }

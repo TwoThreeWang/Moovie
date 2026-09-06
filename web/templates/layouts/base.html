@@ -48,7 +48,7 @@
     {{ range .JSONLD }}<script type="application/ld+json">{{ . }}</script>{{ end }}
 
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=4.2.4">
+    <link rel="stylesheet" href="/static/css/style.css?v=4.3.1">
 
     <!-- htmx -->
     <script src="/static/js/htmx.min.js?v=0.1" defer></script>
@@ -60,6 +60,7 @@
     <script async defer src="https://pingoo.c2v2.com/pingoo.js" site-id="4"></script>
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-CGYQX86P0P"></script>
+    <meta name="juicyads-site-verification" content="3912beb23b3848a09668cb7bd744bb13">
     <script>
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
@@ -143,6 +144,17 @@
                     </svg>
                     <span>为你推荐</span>
                 </a>
+                <a href="/list" class="nav-item {{ if eq .ActiveMenu "list" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="8" y1="6" x2="21" y2="6"></line>
+                        <line x1="8" y1="12" x2="21" y2="12"></line>
+                        <line x1="8" y1="18" x2="21" y2="18"></line>
+                        <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                        <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                        <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                    </svg>
+                    <span>片单</span>
+                </a>
                 <a href="/cinema" class="nav-item {{ if eq .ActiveMenu "cinema" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -152,6 +164,16 @@
                     </svg>
                     <span>片场</span>
                 </a>
+                {{ if .UserInfo }}
+                <a href="/feed" class="nav-item {{ if eq .ActiveMenu "feed" }}active{{ end }}">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 11a9 9 0 0 1 9 9"></path>
+                        <path d="M4 4a16 16 0 0 1 16 16"></path>
+                        <circle cx="5" cy="19" r="1"></circle>
+                    </svg>
+                    <span>关注动态</span>
+                </a>
+                {{ end }}
                 <a href="/player" class="nav-item {{ if eq .ActiveMenu "player" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"></circle>
@@ -325,7 +347,7 @@
                         <a href="/sitemap.xml">网站地图</a>
                     </div>
                     <p class="footer-copyright">
-                        © 2026 Moovie 影牛(v4.0.5). 本站不存储任何视频文件，仅提供搜索服务。
+                        © 2026 Moovie 影牛(v4.1.0). 本站不存储任何视频文件，仅提供搜索服务。
                     </p>
                     <p class="footer-also">
                         除了这个项目，我还在做一些方向相近的实验：<a href="https://zhulink.vip/" target="_blank" rel="noopener">竹林</a>（去算法社区）· <a href="https://pockoo.app/" target="_blank" rel="noopener">Pockoo</a>（智能导航）
