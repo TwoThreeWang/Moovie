@@ -1130,10 +1130,24 @@ body .htmx-panel-indicator.htmx-request { animation-duration: 1ms; }
 .pub-ident { flex: 1; min-width: 0; }
 .pub-username { font-size: 1.375rem; font-weight: 700; margin: 0 0 0.25rem; line-height: 1.3; }
 .pub-joined { color: var(--text-muted); font-size: 0.8125rem; margin: 0; }
-.pub-hero-actions { flex-shrink: 0; }
-.pub-share-btn { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.5rem 1rem; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg); color: var(--text-secondary); font-size: 0.8125rem; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+.pub-hero-actions { flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; }
+/* 胶囊按钮的形状和尺寸：分享与关注共用一套。
+   两者在公开主页 hero 里并排，各写各的尺寸必然对不齐。 */
+/* 高度写死而不是用内边距撑：分享按钮里是 16px 图标、关注按钮是文字，
+   移动端分享还会隐藏文字变成纯图标，内容高度三种情况都不同。
+   固定高度 + 居中，无论里面放什么，并排永远等高。 */
+.pub-share-btn, .follow-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem; height: 2.25rem; padding: 0 1rem; border: 1px solid transparent; border-radius: 999px; font-size: 0.8125rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
+/* 描边皮肤：分享，以及已关注状态 */
+.pub-share-btn, .follow-btn.following { background: var(--bg); color: var(--text-secondary); border-color: var(--border-strong); font-weight: 500; }
 .pub-share-btn:hover { border-color: var(--primary-text); color: var(--primary-text); }
 .pub-share-btn.copied { border-color: var(--success); color: var(--success); }
+/* 实心皮肤：还没关注时，关注是这一屏的主操作 */
+.follow-btn { background: var(--primary-solid); color: var(--on-primary); font-weight: 600; }
+/* :not(.following) 不能省：.follow-btn:hover 和 .follow-btn.following 特异性相同，
+   谁写在后面谁赢，会把「已关注」在鼠标悬停时刷回实心红。 */
+.follow-btn:not(.following):hover { background: var(--primary-solid-hover); }
+.follow-btn.following:hover { color: var(--error); border-color: var(--error-border); }
+.follow-count { font-weight: 500; opacity: 0.75; }
 .pub-stats { display: flex; gap: 0; }
 .pub-stat { flex: 1; text-align: center; padding: 0.75rem 0; }
 .pub-stat + .pub-stat { border-left: 1px solid var(--border); }
@@ -1194,7 +1208,7 @@ body .htmx-panel-indicator.htmx-request { animation-duration: 1ms; }
 .pub-avatar { width: 52px; height: 52px; font-size: 1.25rem; }
 .pub-username { font-size: 1.125rem; }
 .pub-share-label { display: none; }
-.pub-share-btn { padding: 0.5rem; }
+.pub-share-btn { padding: 0 0.5rem; }
 .pub-stat-num { font-size: 1.25rem; }
 .pub-tab { padding: 0.625rem 1rem; font-size: 0.875rem; }
 .pub-wish-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.75rem; }
@@ -1518,13 +1532,6 @@ body .htmx-panel-indicator.htmx-request { animation-duration: 1ms; }
   .ad-skip-prompt { top: auto; bottom: 56px; right: 8px; left: 8px; max-width: none; }
   .ad-skip-toast { top: auto; bottom: 56px; right: 8px; }
 }
-
-/* -- 关注按钮：片场、公开主页、短评页和关注动态共用 -- */
-.follow-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; font-size: 0.78rem; font-weight: 600; line-height: 1.6; color: var(--on-primary); background: var(--primary-solid); border: 1px solid transparent; border-radius: 999px; cursor: pointer; white-space: nowrap; transition: var(--transition-fast); }
-.follow-btn:hover { background: var(--primary-solid-hover); }
-.follow-btn.following { color: var(--text-muted); background: transparent; border-color: var(--border); }
-.follow-btn.following:hover { color: var(--error); border-color: var(--error-border); background: transparent; }
-.follow-count { font-weight: 500; opacity: 0.75; }
 
 /* -- 短评互动（点赞 / 回复）：详情页、片场、关注动态和短评页共用 -- */
 .user-comment-actions {
