@@ -2,10 +2,12 @@ package social
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/jackc/pgx/v5"
 )
 
 // PostgresStore 是片场的 PostgreSQL 实现。
@@ -213,7 +215,7 @@ func (store *PostgresStore) ListNotifications(ctx context.Context, userID, limit
 ), items AS (
   SELECT latest.id, 'comment_like'::text AS type, latest.user_movie_id, um.movie_id,
          COALESCE(NULLIF(media.title, ''), um.title) AS movie_title,
-         latest.actor_user_id, actor.username AS actor_name, actor.avatar AS actor_avatar,
+         latest.actor_user_id, actor.username AS actor_name, actor.avatar AS actor_avatar, actor.is_public AS actor_is_public,
          ''::text AS content, likes.actor_count, likes.unread, likes.created_at
   FROM like_counts likes
   JOIN latest_likes latest ON latest.user_movie_id = likes.user_movie_id
@@ -223,7 +225,7 @@ func (store *PostgresStore) ListNotifications(ctx context.Context, userID, limit
   UNION ALL
   SELECT notification.id, notification.type, COALESCE(notification.user_movie_id, 0),
          COALESCE(um.movie_id, ''), COALESCE(NULLIF(media.title, ''), um.title, ''),
-         notification.actor_user_id, actor.username, actor.avatar,
+         notification.actor_user_id, actor.username, actor.avatar, actor.is_public,
          COALESCE(reply.content, ''), 1, notification.read_at IS NULL, notification.created_at
   FROM social_notifications notification
   LEFT JOIN user_movies um ON um.id = notification.user_movie_id
@@ -232,7 +234,7 @@ func (store *PostgresStore) ListNotifications(ctx context.Context, userID, limit
   LEFT JOIN comment_replies reply ON reply.id = notification.reply_id
   WHERE notification.recipient_user_id = $1 AND notification.type <> 'comment_like'
 )
-SELECT id, type, user_movie_id, movie_id, movie_title, actor_user_id, actor_name, actor_avatar,
+SELECT id, type, user_movie_id, movie_id, movie_title, actor_user_id, actor_name, actor_avatar, actor_is_public,
        content, actor_count, unread, created_at
 FROM items ORDER BY created_at DESC LIMIT $2`, userID, limit)
 	if err != nil {
@@ -244,7 +246,7 @@ FROM items ORDER BY created_at DESC LIMIT $2`, userID, limit)
 		var notification Notification
 		if err := rows.Scan(&notification.ID, &notification.Type, &notification.UserMovieID,
 			&notification.MovieID, &notification.MovieTitle, &notification.ActorUserID,
-			&notification.ActorName, &notification.ActorAvatar, &notification.Content,
+			&notification.ActorName, &notification.ActorAvatar, &notification.ActorIsPublic, &notification.Content,
 			&notification.ActorCount, &notification.Unread, &notification.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan notification: %w", err)
 		}
@@ -256,7 +258,7 @@ FROM items ORDER BY created_at DESC LIMIT $2`, userID, limit)
 	return notifications, nil
 }
 
-// ReadNotification 标记一项已读并返回服务端计算的短评落点。
+// ReadNotification 标记一项已读并返回跳转主体及作者当前的主页公开状态。
 func (store *PostgresStore) ReadNotification(ctx context.Context, notificationID, userID int) (NotificationTarget, error) {
 	var target NotificationTarget
 	// 短评用 LEFT JOIN 接：关注类通知没有短评主体，用 JOIN 会把整行过滤掉，
@@ -272,9 +274,13 @@ func (store *PostgresStore) ReadNotification(ctx context.Context, notificationID
          (selected.type = 'comment_like' AND notification.type = 'comment_like'
           AND notification.user_movie_id = selected.user_movie_id))
 )
-SELECT COALESCE(um.movie_id, ''), COALESCE(selected.user_movie_id, 0), selected.actor_user_id
-FROM selected LEFT JOIN user_movies um ON um.id = selected.user_movie_id`,
-		notificationID, userID).Scan(&target.MovieID, &target.UserMovieID, &target.ActorUserID)
+SELECT COALESCE(selected.user_movie_id, 0), BTRIM(COALESCE(um.comment, '')) <> '', selected.actor_user_id, actor.is_public
+FROM selected LEFT JOIN user_movies um ON um.id = selected.user_movie_id
+JOIN users actor ON actor.id = selected.actor_user_id`,
+		notificationID, userID).Scan(&target.UserMovieID, &target.CommentAvailable, &target.ActorUserID, &target.ActorIsPublic)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return NotificationTarget{}, ErrNotificationUnavailable
+	}
 	if err != nil {
 		return NotificationTarget{}, fmt.Errorf("read notification: %w", err)
 	}

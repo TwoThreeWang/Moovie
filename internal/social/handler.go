@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -365,7 +364,7 @@ func (handler *Handler) unreadNotificationCount(c *gin.Context) {
 	c.HTML(http.StatusOK, "partials/notification_badge.html", gin.H{"Count": count})
 }
 
-// readNotification 标记一项已读，再跳到对应电影的原短评。
+// readNotification 标记一项已读，再跳到原短评或公开主页；私密主页留在消息列表。
 func (handler *Handler) readNotification(c *gin.Context) {
 	id, err := positiveID(c.Param("id"))
 	if err != nil {
@@ -373,14 +372,25 @@ func (handler *Handler) readNotification(c *gin.Context) {
 		return
 	}
 	target, err := handler.store.ReadNotification(c.Request.Context(), id, auth.UserID(c))
+	if errors.Is(err, ErrNotificationUnavailable) {
+		handler.renderNotificationList(c, auth.UserID(c), "这条消息已失效或不存在，消息列表已更新。")
+		return
+	}
 	if err != nil {
-		c.String(http.StatusNotFound, "消息不存在")
+		c.String(http.StatusInternalServerError, "消息暂时无法打开，请稍后重试")
+		return
+	}
+	if target.UserMovieID > 0 && !target.CommentAvailable {
+		handler.renderNotificationList(c, auth.UserID(c), "原短评已清空或不可用，消息已标记为已读。")
+		return
+	}
+	if target.UserMovieID == 0 && !target.ActorIsPublic {
+		handler.renderNotificationList(c, auth.UserID(c), "对方主页未公开，消息已标记为已读。")
 		return
 	}
 	destination := fmt.Sprintf("/user/%d", target.ActorUserID)
 	if target.UserMovieID > 0 {
-		destination = fmt.Sprintf("/movie/%s?comment=%d#comment-%d",
-			url.PathEscape(target.MovieID), target.UserMovieID, target.UserMovieID)
+		destination = fmt.Sprintf("/review/%d", target.UserMovieID)
 	}
 	c.Header("HX-Redirect", destination)
 	c.Status(http.StatusOK)
@@ -393,7 +403,7 @@ func (handler *Handler) readAllNotifications(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "标记已读失败")
 		return
 	}
-	handler.renderNotificationList(c, userID)
+	handler.renderNotificationList(c, userID, "")
 }
 
 // deleteNotification 物理删除当前用户的一条消息并重绘列表。
@@ -408,17 +418,19 @@ func (handler *Handler) deleteNotification(c *gin.Context) {
 		c.String(http.StatusNotFound, "消息不存在")
 		return
 	}
-	handler.renderNotificationList(c, userID)
+	handler.renderNotificationList(c, userID, "")
 }
 
-func (handler *Handler) renderNotificationList(c *gin.Context, userID int) {
+func (handler *Handler) renderNotificationList(c *gin.Context, userID int, notice string) {
 	notifications, err := handler.store.ListNotifications(c.Request.Context(), userID, 50)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "消息暂时无法加载")
 		return
 	}
 	c.Header("HX-Trigger", "notificationsChanged")
-	c.HTML(http.StatusOK, "partials/notification_list.html", gin.H{"Notifications": notifications})
+	c.Header("HX-Retarget", "#notification-list")
+	c.Header("HX-Reswap", "innerHTML")
+	c.HTML(http.StatusOK, "partials/notification_list.html", gin.H{"Notifications": notifications, "Notice": notice})
 }
 
 // startOfWeek 取本周一零点，作为「本周」的起点。

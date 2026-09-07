@@ -141,7 +141,7 @@ func TestInteractionNotificationsAggregateLikesAndTrackReadState(t *testing.T) {
 		t.Fatalf("delete another user's notification = %d, want 404", forbiddenDelete.Code)
 	}
 	read := performRequest(router, http.MethodPost, "/notifications/"+itoa(notifications[0].ID)+"/read", "", ownerToken)
-	if read.Code != http.StatusOK || read.Header().Get("HX-Redirect") != "/movie/1292052?comment="+itoa(comment.ID)+"#comment-"+itoa(comment.ID) {
+	if read.Code != http.StatusOK || read.Header().Get("HX-Redirect") != "/review/"+itoa(comment.ID) {
 		t.Fatalf("read redirect = %d/%q", read.Code, read.Header().Get("HX-Redirect"))
 	}
 	count, _ = store.CountUnreadNotifications(t.Context(), owner.ID)
@@ -182,7 +182,7 @@ func socialTestRouter(t *testing.T) (*gin.Engine, *identity.PostgresStore, *libr
 	movies := library.NewPostgresStore(testdb.Pool(t))
 	store := NewPostgresStore(testdb.Pool(t))
 	cfg := config.Config{Env: "test", SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
-	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"cinema", "notifications", "feed", "following"})
+	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"cinema", "notifications", "feed", "following", "share", "review", "404"})
 	if err != nil {
 		t.Fatal(err)
 	}

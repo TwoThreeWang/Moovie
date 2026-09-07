@@ -1,4 +1,5 @@
 {{ define "notification_list.html" }}
+{{ if .Notice }}<p class="notice notice-primary" role="status">{{ .Notice }}</p>{{ end }}
 {{ if .Notifications }}
 <div class="notification-list">
     {{ range .Notifications }}
@@ -15,6 +16,7 @@
                     {{ else }}和你有了新的互动{{ end }}
                 </span>
                 {{ if .Content }}<span class="notification-content">{{ .Content }}</span>{{ end }}
+                {{ if and (eq .Type "follow") (not .ActorIsPublic) }}<span class="notification-content">对方主页未公开</span>{{ end }}
                 <time>{{ .CreatedAt.Format "2006-01-02 15:04" }}</time>
             </span>
             {{ if .Unread }}<span class="notification-unread-dot" aria-label="未读"></span>{{ end }}
