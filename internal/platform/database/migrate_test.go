@@ -17,12 +17,12 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		versions = append(versions, migration.version)
 	}
-	expectedVersions := make([]string, 56)
+	expectedVersions := make([]string, 60)
 	for index := range expectedVersions {
 		expectedVersions[index] = fmt.Sprintf("%04d", index+1)
 	}
 	if !reflect.DeepEqual(versions, expectedVersions) {
-		t.Fatalf("migrations = %+v", migrations)
+		t.Fatalf("migration versions = %v", versions)
 	}
 	upperSQL := ""
 	for _, migration := range migrations {

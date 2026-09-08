@@ -36,11 +36,18 @@ func TestPostgresToggleLikeIsAtomicAndUsesUniqueConflictGuard(t *testing.T) {
 
 func TestCinemaQueriesPreferCanonicalFieldsAndAvoidSingleUserFlooding(t *testing.T) {
 	fake := &socialFakeDatabase{}
-	_, _ = NewPostgresStore(fake).ListWeeklyFilms(t.Context(), time.Now(), 6)
-	for _, expected := range []string{"LEFT JOIN media ON media.id = um.media_id", "COALESCE(NULLIF(media.title, ''), MAX(um.title))", "COUNT(DISTINCT um.user_id)", "um.created_at >= $1"} {
+	since := time.Now()
+	_, _ = NewPostgresStore(fake).ListWeeklyFilms(t.Context(), since, 6)
+	for _, expected := range []string{"LEFT JOIN media ON media.id = um.media_id", "COALESCE(NULLIF(media.title, ''), MAX(um.title))", "COUNT(DISTINCT um.user_id)", "um.status IN ('watched', 'watching')", "u.is_public = TRUE", "um.updated_at >= $1", "ORDER BY MAX(um.updated_at) DESC, COUNT(DISTINCT um.user_id) DESC"} {
 		if !strings.Contains(fake.query, expected) {
 			t.Fatalf("weekly program query missing %q: %s", expected, fake.query)
 		}
+	}
+	if strings.Contains(fake.query, "um.created_at") {
+		t.Fatalf("weekly program still uses creation time: %s", fake.query)
+	}
+	if !strings.Contains(fake.query, "LIMIT $2") || !reflect.DeepEqual(fake.arguments, []any{since, 6}) {
+		t.Fatalf("weekly program limit or arguments changed: %s / %#v", fake.query, fake.arguments)
 	}
 	_, _ = NewPostgresStore(fake).ListFeaturedComments(t.Context(), 6)
 	for _, expected := range []string{"ROW_NUMBER() OVER (PARTITION BY um.user_id", "ranked.user_rank <= 2", "COALESCE(NULLIF(media.title, ''), um.title)"} {

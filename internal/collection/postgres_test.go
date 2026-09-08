@@ -44,7 +44,7 @@ func TestCollectionSaveAndReadRunAgainstPostgres(t *testing.T) {
 	}
 
 	// 再保存一次是整体替换，不是追加。
-	if _, _, err := store.Save(ctx, Collection{ID: id, Slug: "best-2024", Title: "2024 最佳", Featured: true},
+	if _, _, err := store.Save(ctx, Collection{ID: id, Slug: "best-2024", Title: "2024 最佳", Featured: true, Description: "选片说明"},
 		[]ItemInput{{DoubanID: "d3", Note: "换掉了"}}); err != nil {
 		t.Fatalf("二次保存: %v", err)
 	}
@@ -90,12 +90,12 @@ func TestEmptyPublicationRollsBackCollectionAndItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewPostgresStore(pool)
-	id, _, err := store.Save(t.Context(), Collection{Slug: "kept", Title: "原片单", Featured: true}, []ItemInput{{DoubanID: "1292052", Note: "原推荐语"}})
+	id, _, err := store.Save(t.Context(), Collection{Slug: "kept", Title: "原片单", Featured: true, Description: "选片说明"}, []ItemInput{{DoubanID: "1292052", Note: "原推荐语"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, candidate := range []Collection{{Slug: "new-empty", Title: "新片单", Featured: true}, {ID: id, Slug: "changed", Title: "不应保存", Featured: true}} {
-		_, unknown, err := store.Save(t.Context(), candidate, []ItemInput{{DoubanID: "missing"}})
+	for _, candidate := range []Collection{{Slug: "new-empty", Title: "新片单", Featured: true, Description: "选片说明"}, {ID: id, Slug: "changed", Title: "不应保存", Featured: true, Description: "选片说明"}} {
+		_, unknown, err := store.Save(t.Context(), candidate, []ItemInput{{DoubanID: "missing", Note: "推荐理由"}})
 		if !errors.Is(err, ErrEmptyPublished) || len(unknown) != 1 {
 			t.Fatalf("empty publication = %v/%v", unknown, err)
 		}

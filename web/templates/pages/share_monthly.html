@@ -34,7 +34,7 @@
                 </div>
 
                 <div class="mc-persona">
-                    <div class="mc-persona-label">本月你的观影人格是</div>
+                    <div class="mc-persona-label">本月观影侧写</div>
                     <div class="mc-persona-title">{{ .Report.PersonaTitle }}</div>
                     {{ if .Report.PersonaLine }}
                     <div class="mc-persona-line">{{ .Report.PersonaLine }}</div>
@@ -63,12 +63,12 @@
             <div class="mc-stub">
                 <div class="mc-fields">
                     <div>
-                        <div class="mc-field-label">SCREENED 观影</div>
+                        <div class="mc-field-label">WATCHED 看过</div>
                         <div class="mc-field-value">{{ .Report.WatchedCount }} 部</div>
                     </div>
                     {{ if ge .Report.ContinuousDays 2 }}
                     <div>
-                        <div class="mc-field-label">STREAK 连刷</div>
+                        <div class="mc-field-label">STREAK 连续记录</div>
                         <div class="mc-field-value">{{ .Report.ContinuousDays }} 天</div>
                     </div>
                     {{ end }}
@@ -137,7 +137,7 @@
     </div>
     {{ end }}
 
-    <p class="monthly-bottom-note">每月观影小记由 Moovie 自动生成</p>
+    <p class="monthly-bottom-note">按片单记录创建日期归入月份，仅统计当前标记为“看过”的作品；补录或导入日期不代表实际观看时间。类型标签描述观看内容，不代表喜爱程度。</p>
     </div>
 
     <!-- ====== 本月完整片单（与卡片左右并排，不影响卡片本身固定的海报墙） ====== -->
@@ -167,7 +167,7 @@
                         </span>
                         <span class="monthly-movie-score">{{ .Rating }}.0</span>
                         {{ end }}
-                        <time>{{ .UpdatedAt.Format "01-02" }}</time>
+                        <time>{{ .CreatedAt.Format "01-02" }}</time>
                     </div>
                     {{ if .Comment }}
                     <p class="monthly-movie-comment">{{ .Comment }}</p>

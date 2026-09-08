@@ -8,6 +8,7 @@ type Store interface {
 	ListFeatured(ctx context.Context, limit, offset int) ([]Collection, error)
 	CountFeatured(ctx context.Context) (int, error)
 	GetBySlug(ctx context.Context, slug string) (*Collection, error)
+	ListRelated(ctx context.Context, collectionID int, publicOnly bool) ([]RelatedCollection, error)
 	ListItems(ctx context.Context, collectionID int) ([]Item, error)
 	FeaturedForSitemap(ctx context.Context) ([]Collection, error)
 

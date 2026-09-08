@@ -1,6 +1,7 @@
 {{ define "content" }}
 {{ $collection := .Collection }}
 <div class="list-detail">
+    <nav class="list-breadcrumb" aria-label="面包屑"><a href="/">首页</a><span aria-hidden="true"> / </span><a href="/list">片单</a><span aria-hidden="true"> / </span><span aria-current="page">{{ $collection.Title }}</span></nav>
     <header class="list-detail-header">
         {{ if not $collection.Featured }}<p class="list-draft">草稿 · 只有管理员能看到这一页</p>{{ end }}
         <h1>{{ $collection.Title }}</h1>
@@ -30,6 +31,20 @@
         {{ end }}
     </ol>
 
+    {{ if .RelatedCollections }}
+    <section class="related-lists" aria-labelledby="related-lists-title">
+        <h2 id="related-lists-title">继续看片单</h2>
+        <div class="related-lists-grid">
+        {{ range .RelatedCollections }}
+            <a class="related-list-card" href="/list/{{ .Slug }}">
+                <strong>{{ .Title }}</strong>
+                {{ if .Reason }}<p>{{ .Reason }}</p>{{ else if .Description }}<p>{{ .Description }}</p>{{ end }}
+                <span>{{ .ItemCount }} 部</span>
+            </a>
+        {{ end }}
+        </div>
+    </section>
+    {{ end }}
     <p class="list-footer"><a href="/list">← 看看其他片单</a></p>
 </div>
 {{ end }}
@@ -37,6 +52,15 @@
 {{ define "extra_head" }}
 <style>
 .list-detail { max-width: 760px; margin: 0 auto; padding: 1.25rem 0 3rem; }
+.list-breadcrumb { margin-bottom: 16px; color: var(--text-muted); font-size: .8rem; overflow-wrap: anywhere; }
+.related-lists { margin-top: 28px; }
+.related-lists h2 { font-size: 1.15rem; margin-bottom: 12px; }
+.related-lists-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; }
+.related-list-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elevated); overflow-wrap: anywhere; }
+.related-list-card:hover { border-color: var(--primary); }
+.related-list-card strong { color: var(--text); font-size: .95rem; }
+.related-list-card p { margin: 0; color: var(--text-muted); font-size: .85rem; line-height: 1.6; }
+.related-list-card > span { margin-top: auto; color: var(--primary-text); font-size: .75rem; }
 .list-detail-header { padding-bottom: 20px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
 .list-draft { display: inline-block; padding: 2px 10px; margin-bottom: 10px; border-radius: 999px; background: var(--warning-bg); color: var(--warning); font-size: .74rem; font-weight: 600; }
 .list-detail-header h1 { margin: 0 0 10px; font-size: 1.75rem; }

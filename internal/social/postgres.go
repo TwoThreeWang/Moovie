@@ -320,7 +320,7 @@ SELECT EXISTS (SELECT 1 FROM deleted)`, notificationID, userID).Scan(&deleted)
 	return nil
 }
 
-// ListWeeklyFilms 统计本周被标记最多的影片。
+// ListWeeklyFilms 按最近更新时间列出本周有更新的公开观影记录对应的影片。
 func (store *PostgresStore) ListWeeklyFilms(ctx context.Context, since time.Time, limit int) ([]WeeklyFilm, error) {
 	rows, err := store.database.Query(ctx, `SELECT um.movie_id,
 COALESCE(NULLIF(media.title, ''), MAX(um.title)),
@@ -329,13 +329,13 @@ COALESCE(NULLIF(media.year, ''), MAX(um.year)),
 COUNT(DISTINCT um.user_id),
 COUNT(*) FILTER (WHERE BTRIM(COALESCE(um.comment, '')) <> ''),
 COALESCE(AVG(NULLIF(um.rating, 0))::double precision, 0),
-MAX(um.created_at)
+MAX(um.updated_at)
 FROM user_movies um
 LEFT JOIN media ON media.id = um.media_id
 JOIN users u ON u.id = um.user_id
-WHERE um.status IN ('watched', 'watching') AND u.is_public = TRUE AND um.created_at >= $1
+WHERE um.status IN ('watched', 'watching') AND u.is_public = TRUE AND um.updated_at >= $1
 GROUP BY um.movie_id, media.title, media.poster, media.year
-ORDER BY MAX(um.created_at) DESC, COUNT(DISTINCT um.user_id) DESC
+ORDER BY MAX(um.updated_at) DESC, COUNT(DISTINCT um.user_id) DESC
 LIMIT $2`, since, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list weekly films: %w", err)

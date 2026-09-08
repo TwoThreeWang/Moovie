@@ -49,7 +49,7 @@
             <div class="form-group">
                 <label for="description">导语</label>
                 <textarea id="description" name="description" rows="2"
-                          placeholder="一段话说清楚这个片单在选什么">{{ with .Editing }}{{ .Description }}{{ end }}</textarea>
+                          placeholder="说明选片范围、筛选标准和适合的人；涉及年份时交代上映口径">{{ with .Editing }}{{ .Description }}{{ end }}</textarea>
             </div>
             <div class="form-group">
                 <label for="items">条目（每行一条：豆瓣ID | 推荐语）</label>
@@ -57,6 +57,30 @@
                           placeholder="1292052 | 越狱片的天花板，重点根本不在越狱&#10;1291546 | 张国荣把程蝶衣演成了不可替代">{{ .EditingItems }}</textarea>
                 <p class="form-help">顺序就是展示顺序。推荐语是片单和收藏夹的区别，别省。认不出的豆瓣 ID 会在保存后列出来。</p>
             </div>
+            <fieldset class="related-editor">
+                <legend>相关片单（可选，最多 3 个）</legend>
+                <p class="form-help">按下面的顺序展示，只从当前片单推荐到所选片单。优先选择主题相近、能带来新选择的片单，没有合适的就留空。下架或变空后自动隐藏。</p>
+                {{ range $slot, $selected := .RelatedSlots }}
+                <div class="form-row">
+                    <div class="form-group flex-2">
+                        <label for="related-{{ $slot }}">相关片单 {{ add $slot 1 }}</label>
+                        <select id="related-{{ $slot }}" name="related_id_{{ $slot }}">
+                            <option value="">不推荐</option>
+                            {{ range $.Collections }}
+                            {{ if and (or (not $.Editing) (ne .ID $.Editing.ID)) (or (and .Featured .ItemCount) (eq .ID $selected.ID)) }}
+                            <option value="{{ .ID }}" {{ if eq .ID $selected.ID }}selected{{ end }}>{{ .Title }}{{ if or (not .Featured) (eq .ItemCount 0) }}（当前不公开展示）{{ end }}</option>
+                            {{ end }}
+                            {{ end }}
+                        </select>
+                    </div>
+                    <div class="form-group flex-2">
+                        <label for="related-reason-{{ $slot }}">推荐说明（可选）</label>
+                        <input id="related-reason-{{ $slot }}" name="related_reason_{{ $slot }}" type="text" value="{{ $selected.Reason }}" placeholder="例如：继续看封闭环境中的人物博弈">
+                    </div>
+                </div>
+                {{ end }}
+            </fieldset>
+            <p class="form-help">发布前请确认：导语交代了选片标准，每部影片写明入选理由，标题和年份口径与内容一致。发布需填写导语及每条推荐语；草稿可以暂缺。</p>
             <div class="form-row">
                 <label class="admin-check">
                     <input type="checkbox" name="featured" {{ with .Editing }}{{ if .Featured }}checked{{ end }}{{ end }}>
@@ -111,6 +135,10 @@
 .admin-collapse > summary::-webkit-details-marker { display: revert; }
 .admin-collapse > summary:hover h3 { color: var(--primary-text); }
 .admin-collapse:not([open]) > summary { border-bottom: none; }
+.related-editor { min-width: 0; padding: 14px; margin: 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.related-editor .form-row + .form-row { margin-top: 16px; }
+.related-editor legend { padding: 0 6px; font-size: .9rem; }
+.related-editor select { width: 100%; min-width: 0; }
 .admin-items { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; line-height: 1.7; }
 .admin-check { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--text-secondary); }
 .admin-check input { accent-color: var(--primary-solid); }

@@ -24,7 +24,7 @@ func TestCollectionSaveErrorsPreserveFormAndPublicEmptyIsHidden(t *testing.T) {
 	if _, err := pool.Exec(t.Context(), `UPDATE media SET douban_id = '1292052' WHERE id = 1`); err != nil {
 		t.Fatal(err)
 	}
-	id, _, err := store.Save(t.Context(), Collection{Slug: "existing", Title: "原片单", Featured: true}, []ItemInput{{DoubanID: "1292052", Note: "原推荐语"}})
+	id, _, err := store.Save(t.Context(), Collection{Slug: "existing", Title: "原片单", Featured: true, Description: "选片说明"}, []ItemInput{{DoubanID: "1292052", Note: "原推荐语"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestCollectionSaveErrorsPreserveFormAndPublicEmptyIsHidden(t *testing.T) {
 		t.Fatalf("admin empty preview = %d", response.Code)
 	}
 	// 改正输入后仍更新原片单，正常发布继续可用。
-	valid := request(http.MethodPost, "/admin/collections", url.Values{"id": {strconv.Itoa(id)}, "title": {"修正后的片单"}, "slug": {"existing"}, "items": {"1292052 | 新推荐语"}, "featured": {"on"}}, true)
+	valid := request(http.MethodPost, "/admin/collections", url.Values{"id": {strconv.Itoa(id)}, "title": {"修正后的片单"}, "slug": {"existing"}, "description": {"选片说明"}, "items": {"1292052 | 新推荐语"}, "featured": {"on"}}, true)
 	if valid.Code != http.StatusFound {
 		t.Fatalf("valid save = %d/%s", valid.Code, valid.Body.String())
 	}

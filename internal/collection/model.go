@@ -24,11 +24,23 @@ type Collection struct {
 	Featured    bool
 	ItemCount   int
 	UpdatedAt   time.Time
+	Related     []RelatedInput
 	Covers      []string // 前几张海报，用于列表页拼封面，不入库
 }
 
 // Official 判断是不是官方片单。
 func (c Collection) Official() bool { return c.OwnerUserID == 0 }
+
+// RelatedInput 的顺序就是前台推荐顺序，关系只从当前片单指向目标。
+type RelatedInput struct {
+	ID     int
+	Reason string
+}
+
+type RelatedCollection struct {
+	Collection
+	Reason string
+}
 
 // Item 是片单里的一条影片，Note 是这一条的推荐语。
 type Item struct {

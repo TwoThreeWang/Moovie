@@ -24,8 +24,11 @@
         </a>
         {{ end }}
     </div>
-    {{ if .HasMore }}
-    <div class="lists-more"><a class="btn btn-ghost btn-sm" href="/list?page={{ .NextPage }}">看更多片单</a></div>
+    {{ if or .HasMore (gt .Page 1) }}
+    <nav class="lists-more" aria-label="片单分页">
+        {{ if gt .Page 1 }}<a class="btn btn-ghost btn-sm" href="/list">回到首页</a>{{ end }}
+        {{ if .HasMore }}<a class="btn btn-ghost btn-sm" href="/list?page={{ .NextPage }}">看更多片单</a>{{ end }}
+    </nav>
     {{ end }}
     {{ else }}
     <div class="lists-empty">

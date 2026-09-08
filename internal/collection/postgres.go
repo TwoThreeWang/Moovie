@@ -13,6 +13,9 @@ import (
 // coverLimit 是列表页每个片单取几张海报拼封面。
 const coverLimit = 4
 
+var ErrIncompletePublished = errors.New("发布前请填写导语，并为每部影片填写推荐理由")
+var ErrInvalidRelated = errors.New("相关片单最多选择三个，不能重复或选择自身；新增关联请选择已发布且非空的片单")
+
 var ErrEmptyPublished = errors.New("没有有效影片，不能发布空片单")
 
 // PostgresStore 是片单的 PostgreSQL 实现。
@@ -35,7 +38,7 @@ COALESCE((SELECT ARRAY_AGG(cover.poster ORDER BY cover.position)
 func (store *PostgresStore) ListFeatured(ctx context.Context, limit, offset int) ([]Collection, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+collectionColumns+` FROM collections c
 WHERE c.featured AND EXISTS (SELECT 1 FROM collection_items i WHERE i.collection_id = c.id)
-ORDER BY c.updated_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+ORDER BY c.updated_at DESC, c.id DESC LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list featured collections: %w", err)
 	}
@@ -112,10 +115,10 @@ ORDER BY c.updated_at DESC`)
 	return collections, rows.Err()
 }
 
-// ListAll 是后台列表，包含还没发布的片单。
+// ListAll 是后台列表，包含还没发布的片单。limit=0 用于完整的关联选择列表。
 func (store *PostgresStore) ListAll(ctx context.Context, limit, offset int) ([]Collection, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+collectionColumns+` FROM collections c
-ORDER BY c.updated_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+ORDER BY c.updated_at DESC, c.id DESC LIMIT NULLIF($1, 0) OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list collections: %w", err)
 	}
@@ -127,6 +130,26 @@ ORDER BY c.updated_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 // 认不出的豆瓣 ID 通过 unknown 返回给调用方展示，而不是静默丢弃：
 // 策展时粘错一个 ID 却没有任何提示，是最难发现的一类错误。
 func (store *PostgresStore) Save(ctx context.Context, collection Collection, items []ItemInput) (int, []string, error) {
+	if collection.Featured {
+		if strings.TrimSpace(collection.Description) == "" {
+			return 0, nil, ErrIncompletePublished
+		}
+		for _, item := range items {
+			if strings.TrimSpace(item.Note) == "" {
+				return 0, nil, ErrIncompletePublished
+			}
+		}
+	}
+	if len(collection.Related) > 3 {
+		return 0, nil, ErrInvalidRelated
+	}
+	seen := map[int]bool{}
+	for _, related := range collection.Related {
+		if related.ID <= 0 || related.ID == collection.ID || seen[related.ID] {
+			return 0, nil, ErrInvalidRelated
+		}
+		seen[related.ID] = true
+	}
 	pool, ok := store.database.(interface {
 		Begin(ctx context.Context) (database.Transaction, error)
 	})
@@ -176,10 +199,55 @@ VALUES ($1, $2, $3, $4)`, id, mediaID, position, item.Note); err != nil {
 	if collection.Featured && position == 0 {
 		return 0, unknown, ErrEmptyPublished
 	}
+	// 保留已配置但已下架的关联，前台读取时过滤；新增关联必须可公开访问。
+	for _, related := range collection.Related {
+		if related.ID == id {
+			return 0, nil, ErrInvalidRelated
+		}
+		var valid bool
+		if err := transaction.QueryRow(ctx, `SELECT EXISTS (
+            SELECT 1 FROM collections c WHERE c.id=$2 AND (
+                (c.featured AND EXISTS (SELECT 1 FROM collection_items i WHERE i.collection_id=c.id))
+                OR EXISTS (SELECT 1 FROM collection_relations r WHERE r.collection_id=$1 AND r.related_id=c.id)))`, id, related.ID).Scan(&valid); err != nil {
+			return 0, nil, err
+		}
+		if !valid {
+			return 0, nil, ErrInvalidRelated
+		}
+	}
+	if _, err := transaction.Exec(ctx, `DELETE FROM collection_relations WHERE collection_id=$1`, id); err != nil {
+		return 0, nil, err
+	}
+	for position, related := range collection.Related {
+		if _, err := transaction.Exec(ctx, `INSERT INTO collection_relations(collection_id,related_id,position,reason) VALUES($1,$2,$3,$4)`, id, related.ID, position+1, strings.TrimSpace(related.Reason)); err != nil {
+			return 0, nil, err
+		}
+	}
 	if err := transaction.Commit(ctx); err != nil {
 		return 0, nil, fmt.Errorf("commit collection save: %w", err)
 	}
 	return id, unknown, nil
+}
+
+// ListRelated 保留编辑顺序，公开读取时过滤已下架或空的目标。
+func (store *PostgresStore) ListRelated(ctx context.Context, collectionID int, publicOnly bool) ([]RelatedCollection, error) {
+	rows, err := store.database.Query(ctx, `SELECT `+collectionColumns+`, r.reason
+        FROM collection_relations r JOIN collections c ON c.id=r.related_id
+        WHERE r.collection_id=$1 AND (NOT $2 OR (c.featured AND EXISTS
+            (SELECT 1 FROM collection_items i WHERE i.collection_id=c.id))) ORDER BY r.position`, collectionID, publicOnly)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]RelatedCollection, 0)
+	for rows.Next() {
+		var item RelatedCollection
+		if err := rows.Scan(&item.ID, &item.OwnerUserID, &item.Slug, &item.Title, &item.Description, &item.Featured, &item.UpdatedAt, &item.ItemCount, &item.Covers, &item.Reason); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
 }
 
 // Delete 删除片单，条目随外键级联删除。
