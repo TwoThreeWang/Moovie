@@ -59,6 +59,7 @@ type SourceCandidate struct {
 	SeasonNumber      int
 	EpisodeKey        string
 	EpisodeLabel      string
+	Quality           string
 	PlayURL           string
 	MappingConfidence float64
 	Health            PlaybackHealth

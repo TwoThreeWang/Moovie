@@ -17,7 +17,7 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		versions = append(versions, migration.version)
 	}
-	expectedVersions := make([]string, 60)
+	expectedVersions := make([]string, 62)
 	for index := range expectedVersions {
 		expectedVersions[index] = fmt.Sprintf("%04d", index+1)
 	}
@@ -112,9 +112,17 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 			t.Fatalf("playback observability migration missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{"TRUNCATE ", "DELETE FROM"} {
-		if strings.Contains(upperSQL, forbidden) {
-			t.Fatalf("migration contains destructive statement %q", forbidden)
+	// 删行必须是刻意的：0062 清理 0061 折叠错的综艺候选（可由 vod_play_url 重建），
+	// 其余迁移一律不许出现 TRUNCATE / DELETE FROM。
+	allowedRowDeletes := map[string]bool{"0062": true}
+	for _, migration := range migrations {
+		if allowedRowDeletes[migration.version] {
+			continue
+		}
+		for _, forbidden := range []string{"TRUNCATE ", "DELETE FROM"} {
+			if strings.Contains(strings.ToUpper(migration.sql), forbidden) {
+				t.Fatalf("migration %s contains destructive statement %q", migration.version, forbidden)
+			}
 		}
 	}
 	// 迁移编号在 0031 之后仍会继续增长，因此这里按版本号定位割接迁移，

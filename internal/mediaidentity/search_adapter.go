@@ -35,6 +35,14 @@ func (adapter SearchAdapter) IndexResourceEpisodes(ctx context.Context, item sea
 			mediaID = link.MediaID
 		}
 	}
-	episodes := ParseResourceEpisodes(item.SourceKey, item.VodId, mediaID, item.TypeName, item.VodPlayUrl)
+	// 资源站分类名是"动作片""国产剧"这种，判不出电影；只要关联到了规范媒体，
+	// 就用媒体库自己的 media_type，电影的清晰度变体才能正确折叠成一部正片。
+	mediaType := item.TypeName
+	if mediaID > 0 {
+		if media, err := adapter.Store.FindByID(ctx, mediaID); err == nil && media.MediaType != "" {
+			mediaType = media.MediaType
+		}
+	}
+	episodes := ParseResourceEpisodes(item.SourceKey, item.VodId, mediaID, mediaType, item.VodPlayUrl)
 	return adapter.Store.UpsertEpisodes(ctx, episodes)
 }

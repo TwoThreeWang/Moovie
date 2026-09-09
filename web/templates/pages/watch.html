@@ -13,12 +13,35 @@
                 {{ printf "%.1f" .View.Rating }}
             </span>
             {{ end }}
-            <div class="watch-now-source" onclick="toggleSourcePanel()" title="点击切换线路">
+            <div class="watch-now-source" onclick="toggleSourcePanel('sourcePanelTop')" title="点击切换线路">
                 <span class="w-source-dot {{ if .EpisodeSources }}{{ (index .EpisodeSources 0).QualityClass }}{{ end }}"></span>
                 <span id="currentSourceLabel">{{ .SourceLabel }}</span>
                 <svg class="w-icon" viewBox="0 0 24 24" style="width:12px;height:12px"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </div>
         </div>
+        {{/* 顶部快捷浮层：点"当前线路"就地下拉，只管当前这一集，不用滚到下方选集区 */}}
+        {{ if .EpisodeSources }}
+        <div class="watch-source-panel floating" id="sourcePanelTop">
+            <div class="watch-source-header" onclick="toggleSourcePanel('sourcePanelTop')">
+                <span>线路切换 · 当前集共 {{ len .EpisodeSources }} 个来源</span>
+                <span class="watch-arrow">
+                    <svg class="w-icon" viewBox="0 0 24 24" style="width:14px;height:14px"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </span>
+            </div>
+            <div class="watch-source-body">
+                {{ range .EpisodeSources }}
+                <div class="watch-source-chip {{ if .IsCurrent }}active{{ end }}"
+                     data-source-key="{{ .SourceKey }}" data-vod-id="{{ .VodID }}" data-version="{{ .VersionLabel }}"
+                     onclick="switchSource(this)">
+                    <span class="watch-source-name">{{ .SourceLabel }}</span>
+                    {{ if .VersionLabel }}<span class="watch-version-tag">{{ .VersionLabel }}</span>{{ end }}
+                    {{ if .SpeedLabel }}<span class="watch-speed">{{ .SpeedLabel }}</span>{{ end }}
+                    <span class="watch-quality-tag {{ .QualityClass }}">{{ .QualityLabel }}</span>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
     </div>
 
     <!-- 播放器（含紧贴下方的免责条） -->
@@ -82,10 +105,10 @@
         <div hx-get="/api/htmx/watch-schedule?douban_id={{ .DoubanID }}"
              hx-trigger="load"
              hx-swap="innerHTML"></div>
-        {{ if .EpisodeGrid }}<nav id="episode-navigation" class="episode-navigation" aria-label="剧集导航"></nav>{{ end }}
+        {{ if .ShowEpisodeGrid }}<nav id="episode-navigation" class="episode-navigation" aria-label="剧集导航"></nav>{{ end }}
 
-        <!-- 集数网格 -->
-        {{ if .EpisodeGrid }}
+        <!-- 集数网格：电影折叠成单个正片单元，没有集可选就整块不渲染 -->
+        {{ if .ShowEpisodeGrid }}
         <div class="watch-section">
             <div class="episodes-list" id="episodesGrid" data-episode-list>
                 {{ range .EpisodeGrid }}
@@ -99,24 +122,24 @@
         </div>
         {{ end }}
 
-        <!-- 线路切换（默认收起） -->
+        <!-- 线路切换（默认收起）：跟着选集区走，电影没有选集网格时照常显示 -->
         {{ if .EpisodeSources }}
         <div class="watch-source-panel" id="sourcePanel">
-            <div class="watch-source-header" onclick="toggleSourcePanel()">
+            <div class="watch-source-header" onclick="toggleSourcePanel('sourcePanel')">
                 <span>线路切换 · 当前集共 {{ len .EpisodeSources }} 个来源</span>
                 <span class="watch-arrow">
                     <svg class="w-icon" viewBox="0 0 24 24" style="width:14px;height:14px"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </span>
             </div>
-            <div class="watch-source-body" id="sourcePanelBody">
+            <div class="watch-source-body">
                 {{ range .EpisodeSources }}
                 <div class="watch-source-chip {{ if .IsCurrent }}active{{ end }}"
-                     data-source-key="{{ .SourceKey }}" data-vod-id="{{ .VodID }}"
+                     data-source-key="{{ .SourceKey }}" data-vod-id="{{ .VodID }}" data-version="{{ .VersionLabel }}"
                      onclick="switchSource(this)">
-                    <span class="w-source-dot {{ .QualityClass }}"></span>
-                    {{ .SourceLabel }}
-                    <span class="watch-quality-tag {{ .QualityClass }}">{{ .QualityLabel }}</span>
+                    <span class="watch-source-name">{{ .SourceLabel }}</span>
+                    {{ if .VersionLabel }}<span class="watch-version-tag">{{ .VersionLabel }}</span>{{ end }}
                     {{ if .SpeedLabel }}<span class="watch-speed">{{ .SpeedLabel }}</span>{{ end }}
+                    <span class="watch-quality-tag {{ .QualityClass }}">{{ .QualityLabel }}</span>
                 </div>
                 {{ end }}
             </div>
@@ -194,7 +217,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var art = null;
     if (document.getElementById('artplayer-app')) {
         art = initPlayer('artplayer-app', '{{ .PlayURL }}', {
-            title: '{{ .View.Title }}{{ if .Episode }} - {{ .Episode }}{{ end }}',
+            title: '{{ .View.Title }}{{ if .ShowEpisodeGrid }}{{ if .Episode }} - {{ .Episode }}{{ end }}{{ end }}',
             poster: '{{ proxyImg .View.Poster }}',
             douban_id: doubanID,
             media_id: {{ .MediaID }},
@@ -230,20 +253,29 @@ document.addEventListener('DOMContentLoaded', function() {
         if (el.classList.contains('active')) return;
         var sk = el.getAttribute('data-source-key');
         var vid = el.getAttribute('data-vod-id');
+        var ver = el.getAttribute('data-version');
         var url = '/watch/' + doubanID + '?source_key=' + encodeURIComponent(sk) + '&vod_id=' + encodeURIComponent(vid);
+        // 同一条线路可能有多个清晰度版本，ver 才能定位到点中的那一条。
+        if (ver) url += '&ver=' + encodeURIComponent(ver);
         if (episode) url += '&ep=' + encodeURIComponent(episode);
         window.location.href = url;
     };
 
     // --- Source panel toggle ---
-    window.toggleSourcePanel = function() {
-        var panel = document.getElementById('sourcePanel');
-        if (!panel) return;
-        panel.classList.toggle('open');
-        if (panel.classList.contains('open')) {
-            setTimeout(function() { panel.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 50);
-        }
+    // 两块线路列表：顶部 sourcePanelTop 是播放器旁的快捷浮层，
+    // 下方 sourcePanel 跟着选集区，各开各的。
+    window.toggleSourcePanel = function(id) {
+        var panel = document.getElementById(id || 'sourcePanel');
+        if (panel) panel.classList.toggle('open');
     };
+
+    // 只有顶部那块是浮层，盖在播放器上，点它和触发器以外的地方就收起来。
+    document.addEventListener('click', function(event) {
+        var panel = document.getElementById('sourcePanelTop');
+        if (!panel || !panel.classList.contains('open')) return;
+        if (panel.contains(event.target) || event.target.closest('.watch-now-source')) return;
+        panel.classList.remove('open');
+    });
 });
 </script>
 {{ end }}

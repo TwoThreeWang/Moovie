@@ -56,7 +56,8 @@ type EpisodeSourceView struct {
 	VodID        string
 	LineLabel    string
 	SourceLabel  string // "sourceKey · lineLabel"
-	QualityLabel string // 稳定/一般/不稳定/待验证
+	VersionLabel string // 电影的清晰度/语言版本：HD中字、TC国语、正片……剧集为空
+	QualityLabel string // 稳定/一般/较差/未测
 	QualityClass string // stable/normal/unstable/unknown
 	SpeedLabel   string // "0.8秒" or ""
 	SpeedClass   string // fast/normal/slow or ""
@@ -179,7 +180,7 @@ func buildEpisodeSources(candidates []SourceCandidate, currentSourceKey, current
 		}
 		sources = append(sources, EpisodeSourceView{
 			SourceKey: c.SourceKey, VodID: c.VodID, LineLabel: c.LineLabel, SourceLabel: label,
-			QualityLabel: qualityLabel, QualityClass: qualityClass,
+			VersionLabel: c.Quality, QualityLabel: qualityLabel, QualityClass: qualityClass,
 			SpeedLabel: speedLabel, SpeedClass: speedClass,
 			PlayLink: playLink, IsCurrent: isCurrent,
 		})
@@ -187,10 +188,11 @@ func buildEpisodeSources(candidates []SourceCandidate, currentSourceKey, current
 	return sources
 }
 
-// episodeQualityInfo 把质量分转成中文标签：≥0.75 稳定，≥0.5 一般，否则不稳定；没样本是待验证。
+// episodeQualityInfo 把质量分转成中文标签：≥0.75 稳定，≥0.5 一般，否则较差；没样本是未测。
+// 四个标签一律两个字，中文等宽，线路网格里的标签和右侧速度才能自然对齐。
 func episodeQualityInfo(health PlaybackHealth) (string, string) {
 	if health.Total() == 0 {
-		return "待验证", "unknown"
+		return "未测", "unknown"
 	}
 	score := health.Score()
 	if score >= 0.75 {
@@ -199,7 +201,7 @@ func episodeQualityInfo(health PlaybackHealth) (string, string) {
 	if score >= 0.5 {
 		return "一般", "normal"
 	}
-	return "不稳定", "unstable"
+	return "较差", "unstable"
 }
 
 // episodeSpeedInfo 把平均加载耗时转成中文标签：1 秒内快，3 秒内正常，更慢就是慢。
@@ -494,23 +496,16 @@ func sourceCandidate(candidate mediaidentity.ResourceCandidate) SourceCandidate 
 	return SourceCandidate{CandidateID: candidate.CandidateID, LineID: candidate.LineID,
 		LineKey: candidate.LineKey, LineLabel: candidate.LineLabel,
 		SourceKey: candidate.SourceKey, VodID: candidate.VodID, MediaID: candidate.MediaID, MediaUnitID: candidate.MediaUnitID,
-		SeasonNumber: candidate.SeasonNumber, EpisodeKey: candidate.EpisodeKey, EpisodeLabel: candidate.EpisodeLabel, PlayURL: candidate.PlayURL,
+		SeasonNumber: candidate.SeasonNumber, EpisodeKey: candidate.EpisodeKey, EpisodeLabel: candidate.EpisodeLabel,
+		Quality: candidate.Quality, PlayURL: candidate.PlayURL,
 		MappingConfidence: candidate.MappingConfidence,
 		Health:            PlaybackHealth{SuccessCount: candidate.SuccessCount, FailureCount: candidate.FailureCount, AvgLoadMs: candidate.AvgLoadMs}}
 }
 
 // playbackQualityLabel 质量分对应的中文标签（接口版）。
 func playbackQualityLabel(health PlaybackHealth) string {
-	if health.Total() == 0 {
-		return "待验证"
-	}
-	if health.Score() >= 0.75 {
-		return "稳定"
-	}
-	if health.Score() >= 0.5 {
-		return "一般"
-	}
-	return "不稳定"
+	label, _ := episodeQualityInfo(health)
+	return label
 }
 
 // newCandidateSessionID 生成一次播放会话 ID，用于把多条上报事件串成一次播放尝试。
@@ -726,7 +721,10 @@ func (handler *Handler) watch(c *gin.Context) {
 		episodeInfos, _ = handler.episodes.ListAllEpisodes(c.Request.Context(), canonical.ID)
 	}
 	seasonNumber, episodeKey := mediaidentity.NormalizeEpisodeLabel(epParam)
-	if epParam == "" && len(episodeInfos) > 0 {
+	// 电影折叠成唯一的正片单元后，ep 里带的是"HD中字""720P"这类版本名（换源链接、
+	// 老书签、迁移前的收藏都会带上），按它取键必然落空。只有一个单元时不存在选错集的风险，
+	// 直接归到那个单元；剧集有多集时绝不能这样兜底，否则第 3 集换源会退回第 1 集。
+	if len(episodeInfos) > 0 && (epParam == "" || (len(episodeInfos) == 1 && episodeInfos[0].EpisodeKey != episodeKey)) {
 		seasonNumber, episodeKey = episodeInfos[0].SeasonNumber, episodeInfos[0].EpisodeKey
 		epParam = episodeInfos[0].EpisodeLabel
 		if epParam == "" {
@@ -811,9 +809,13 @@ func (handler *Handler) watch(c *gin.Context) {
 	}
 	best := ranked[0]
 	// 查询参数可以强制选择具体来源，用于用户手动换源。
+	// 电影的同一条线路会有多个清晰度候选，source_key+vod_id 不足以区分，
+	// 因此再带上 ver（候选的版本标签）。
 	if forceSource, forceVod := c.Query("source_key"), c.Query("vod_id"); forceSource != "" && forceVod != "" {
+		forceVersion := c.Query("ver")
 		for _, rc := range ranked {
-			if rc.SourceKey == forceSource && rc.VodID == forceVod {
+			if rc.SourceKey == forceSource && rc.VodID == forceVod &&
+				(forceVersion == "" || rc.Quality == forceVersion) {
 				best = rc
 				break
 			}
@@ -869,6 +871,9 @@ func (handler *Handler) watch(c *gin.Context) {
 		}
 	}
 
+	// 电影折叠成一个正片单元后网格只剩一项，没有可选的集，整块选集区和上下集导航都不该出现。
+	showEpisodeGrid := len(episodeGrid) > 1
+
 	// 10. 构建页面 ViewModel 和同集来源列表。
 	view := buildPlayView(&canonical, detail)
 	episodeSources := buildEpisodeSources(ranked, best.SourceKey, best.VodID, playURL, episode, doubanID)
@@ -876,7 +881,7 @@ func (handler *Handler) watch(c *gin.Context) {
 	userID := auth.UserID(c)
 	candidateID, mediaUnitID := best.CandidateID, best.MediaUnitID
 	title := "《" + canonical.Title + "》"
-	if episode != "" {
+	if showEpisodeGrid && episode != "" {
 		title += "(" + episode + ")"
 	}
 	title += " - 在线播放 - " + handler.config.SiteName
@@ -903,6 +908,7 @@ func (handler *Handler) watch(c *gin.Context) {
 		"ContentClass":        "full-width",
 		"View":                view,
 		"EpisodeGrid":         episodeGrid,
+		"ShowEpisodeGrid":     showEpisodeGrid,
 		"EpisodeSources":      episodeSources,
 		"SourceLabel":         best.SourceKey + " · " + best.LineLabel,
 		"AutoFailoverEnabled": true,

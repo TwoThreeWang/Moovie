@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -597,21 +598,25 @@ func TestPlayerPagesShareTheSamePlayerAndLazySections(t *testing.T) {
 	testdb.User(t, testdb.Pool(t), 7)
 	store := search.NewPostgresStore(testdb.Pool(t))
 	_ = store.Upsert(t.Context(), search.VodItem{
-		SourceKey: "source", VodId: "42", VodName: "测试影片", VodDoubanId: "1292052",
-		VodPlayUrl: "正片$https://video.example/main.m3u8",
+		SourceKey: "source", VodId: "42", VodName: "测试剧集", VodDoubanId: "1292052",
+		VodPlayUrl: "第01集$https://video.example/ep1.m3u8#第02集$https://video.example/ep2.m3u8",
 	})
+	// 用剧集而不是电影：电影会被折叠成单个正片单元，本来就不该有选集网格和上下集导航。
 	resolver := mediaResolverFunc(func(_ context.Context, doubanID string) (mediaidentity.Media, error) {
-		return mediaidentity.Media{ID: 7, DoubanID: doubanID, Title: "测试影片", MediaType: "movie"}, nil
+		return mediaidentity.Media{ID: 7, DoubanID: doubanID, Title: "测试剧集", MediaType: "tv"}, nil
 	})
 	reader := combinedEpisodeReader{
 		all: func(context.Context, int) ([]mediaidentity.EpisodeInfo, error) {
-			return []mediaidentity.EpisodeInfo{{SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片", SourceCount: 1}}, nil
+			return []mediaidentity.EpisodeInfo{
+				{SeasonNumber: 1, EpisodeKey: "S01E01", EpisodeLabel: "第01集", SourceCount: 1},
+				{SeasonNumber: 1, EpisodeKey: "S01E02", EpisodeLabel: "第02集", SourceCount: 1},
+			}, nil
 		},
 		byEpisode: episodeReaderFunc(func(context.Context, int, int, string) ([]mediaidentity.ResourceCandidate, error) {
 			return []mediaidentity.ResourceCandidate{{Episode: mediaidentity.Episode{
 				CandidateID: 9, LineID: 8, LineLabel: "默认源", SourceKey: "source", VodID: "42",
-				MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片",
-				PlayURL: "https://video.example/main.m3u8",
+				MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: "S01E01", EpisodeLabel: "第01集",
+				PlayURL: "https://video.example/ep1.m3u8",
 			}, MappingConfidence: 1}}, nil
 		}),
 	}
@@ -637,5 +642,72 @@ func TestPlayerPagesShareTheSamePlayerAndLazySections(t *testing.T) {
 				t.Fatalf("%s is missing the shared fragment %q", path, fragment)
 			}
 		}
+	}
+}
+
+// 电影的"分集"其实是 720P / HD中字 / TC国语 这些清晰度版本，各家资源站叫法还不一样。
+// 它们必须折叠成一个正片单元：选集网格和上下集导航都不出现，版本改挂到线路列表的
+// chip 上，并且同一条线路的多个版本都要保留、都能点到。
+func TestWatchMovieCollapsesQualityVariantsIntoSourceChips(t *testing.T) {
+	testdb.User(t, testdb.Pool(t), 7)
+	store := search.NewPostgresStore(testdb.Pool(t))
+	_ = store.Upsert(t.Context(), search.VodItem{
+		SourceKey: "source", VodId: "42", VodName: "测试影片", VodDoubanId: "1292052",
+		VodPlayUrl: "HD中字$https://video.example/hd.m3u8#TC国语$https://video.example/tc.m3u8",
+	})
+	resolver := mediaResolverFunc(func(_ context.Context, doubanID string) (mediaidentity.Media, error) {
+		return mediaidentity.Media{ID: 7, DoubanID: doubanID, Title: "测试影片", MediaType: "movie"}, nil
+	})
+	candidate := func(quality, playURL string) mediaidentity.ResourceCandidate {
+		return mediaidentity.ResourceCandidate{Episode: mediaidentity.Episode{
+			CandidateID: 9, LineID: 8, LineLabel: "默认源", SourceKey: "source", VodID: "42",
+			MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: mediaidentity.FeatureEpisodeKey,
+			EpisodeLabel: quality, Quality: quality, PlayURL: playURL,
+		}, MappingConfidence: 1}
+	}
+	reader := combinedEpisodeReader{
+		all: func(context.Context, int) ([]mediaidentity.EpisodeInfo, error) {
+			return []mediaidentity.EpisodeInfo{{SeasonNumber: 1, EpisodeKey: mediaidentity.FeatureEpisodeKey,
+				EpisodeLabel: "HD中字", SourceCount: 1}}, nil
+		},
+		byEpisode: episodeReaderFunc(func(context.Context, int, int, string) ([]mediaidentity.ResourceCandidate, error) {
+			return []mediaidentity.ResourceCandidate{
+				candidate("HD中字", "https://video.example/hd.m3u8"),
+				candidate("TC国语", "https://video.example/tc.m3u8"),
+			}, nil
+		}),
+	}
+	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(resolver), WithEpisodeReader(reader))
+
+	response := performRequest(router, "/watch/1292052", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("/watch/1292052 = %d, want 200", response.Code)
+	}
+	body := response.Body.String()
+	for _, forbidden := range []string{`id="episodesGrid"`, `id="episode-navigation"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("电影不该渲染 %s", forbidden)
+		}
+	}
+	// 电影没有选集网格，但顶部快捷浮层和下方的线路区块都要在。
+	for _, required := range []string{`id="sourcePanelTop"`, `id="sourcePanel"`} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("电影缺少线路列表 %s", required)
+		}
+	}
+	// 两个版本都要在线路列表里，并且 data-version 能把同线路的它们区分开。
+	for _, required := range []string{`data-version="HD中字"`, `data-version="TC国语"`,
+		`class="watch-version-tag">HD中字<`, `class="watch-version-tag">TC国语<`} {
+		if strings.Count(body, required) != 2 {
+			t.Fatalf("线路 chip %q 出现 %d 次，两块列表各应有一次", required, strings.Count(body, required))
+		}
+	}
+
+	// ver 决定播哪一个版本；没有它，同线路的第二个版本永远点不到。
+	// 链接里同时带着折叠前的 ep=HD中字（换源链接和老书签都会带），不能因此查不到候选。
+	tc := performRequest(router, "/watch/1292052?source_key=source&vod_id=42&ep="+
+		url.QueryEscape("HD中字")+"&ver="+url.QueryEscape("TC国语"), nil)
+	if !strings.Contains(tc.Body.String(), `video.example\/tc.m3u8`) { // 模板在 JS 上下文里会转义斜杠
+		t.Fatal("ver=TC国语 没有切到对应的播放地址")
 	}
 }

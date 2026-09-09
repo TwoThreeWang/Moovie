@@ -870,11 +870,11 @@ RETURNING id`, episode.SourceKey, episode.VodID, lineKey, lineLabel, episode.Lin
 (line_id, media_id, media_unit_id, season_number, episode_key, episode_label, play_url,
  format, quality, sort_order, resource_status, last_seen_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12,NOW()),NOW())
-ON CONFLICT (line_id, season_number, episode_key) DO UPDATE SET
+ON CONFLICT (line_id, season_number, episode_key, quality) DO UPDATE SET
 media_id = COALESCE(EXCLUDED.media_id, resource_episode_candidates.media_id),
 media_unit_id = COALESCE(EXCLUDED.media_unit_id, resource_episode_candidates.media_unit_id),
 episode_label = EXCLUDED.episode_label, play_url = EXCLUDED.play_url,
-format = EXCLUDED.format, quality = EXCLUDED.quality, sort_order = EXCLUDED.sort_order,
+format = EXCLUDED.format, sort_order = EXCLUDED.sort_order,
 resource_status = 'active', last_seen_at = EXCLUDED.last_seen_at, updated_at = NOW()`,
 			lineID, nullableMediaID(episode.MediaID), nullableMediaID(episode.MediaUnitID), season,
 			episode.EpisodeKey, episode.EpisodeLabel, episode.PlayURL, episode.Format, episode.Quality,
