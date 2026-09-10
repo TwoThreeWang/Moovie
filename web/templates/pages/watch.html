@@ -21,7 +21,7 @@
         </div>
         {{/* 顶部快捷浮层：点"当前线路"就地下拉，只管当前这一集，不用滚到下方选集区 */}}
         {{ if .EpisodeSources }}
-        <div class="watch-source-panel floating" id="sourcePanelTop">
+        <div class="watch-source-panel floating" id="sourcePanelTop" hidden>
             <div class="watch-source-header" onclick="toggleSourcePanel('sourcePanelTop')">
                 <span>线路切换 · 当前集共 {{ len .EpisodeSources }} 个来源</span>
                 <span class="watch-arrow">
@@ -266,7 +266,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 下方 sourcePanel 跟着选集区，各开各的。
     window.toggleSourcePanel = function(id) {
         var panel = document.getElementById(id || 'sourcePanel');
-        if (panel) panel.classList.toggle('open');
+        if (!panel) return;
+        var open = panel.classList.toggle('open');
+        if (panel.id === 'sourcePanelTop') panel.hidden = !open;
     };
 
     // 只有顶部那块是浮层，盖在播放器上，点它和触发器以外的地方就收起来。
@@ -275,6 +277,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!panel || !panel.classList.contains('open')) return;
         if (panel.contains(event.target) || event.target.closest('.watch-now-source')) return;
         panel.classList.remove('open');
+        panel.hidden = true;
     });
 });
 </script>
