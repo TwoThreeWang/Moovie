@@ -113,6 +113,18 @@ func templateFunctions() template.FuncMap {
 			}
 			return value
 		},
+		"jobType": func(value string) string {
+			if name, ok := jobTypeNames[value]; ok {
+				return name
+			}
+			return value
+		},
+		"jobReason": func(value string) string {
+			if name, ok := jobReasonNames[value]; ok {
+				return name
+			}
+			return value
+		},
 		"add":       func(a, b int) int { return a + b },
 		"sub":       func(a, b int) int { return a - b },
 		"daysSince": func(value time.Time) int { return int(time.Since(value).Hours() / 24) },
@@ -197,4 +209,36 @@ func templateFunctions() template.FuncMap {
 			return result, nil
 		},
 	}
+}
+
+// jobTypeNames / jobReasonNames 给后台任务列表做中文映射，没收录的原样显示。
+var jobTypeNames = map[string]string{
+	"douban_metadata":        "豆瓣主资料",
+	"douban_reviews":         "豆瓣精彩短评",
+	"tmdb":                   "TMDB 资料与剧照",
+	"embedding":              "向量补全",
+	"douban_sync":            "豆瓣账号同步",
+	"douban_daily":           "每日豆瓣同步调度",
+	"metadata_schedule":      "资料刷新调度",
+	"imdb_backfill":          "IMDb 映射回填",
+	"popularity_refresh":     "热门榜单刷新",
+	"site_trending_refresh":  "本站热播刷新",
+	"recommendation_refresh": "用户推荐刷新",
+	"operations_cleanup":     "数据清理",
+	"site_health_check":      "站点健康检查",
+}
+
+var jobReasonNames = map[string]string{
+	"manual":               "手动触发",
+	"scheduled":            "定时调度",
+	"active_content":       "近期被播放过",
+	"resource_placeholder": "资源站新片补资料",
+	"embedding_backfill":   "向量首次生成",
+	"partial_metadata":     "资料不完整",
+	"missing_metadata":     "缺主资料",
+	"missing_reviews":      "缺短评",
+	"missing_backdrops":    "缺剧照",
+	"search_discovery":     "搜索发现新片",
+	"imdb_backfill":        "IMDb 映射到手",
+	"account_sync":         "账号同步",
 }

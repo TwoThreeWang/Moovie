@@ -181,7 +181,7 @@ func (store *PostgresStore) ScheduleDueRefreshes(ctx context.Context, limit int)
 	_, err := store.database.Exec(ctx, `WITH due AS (
     SELECT id, douban_id, (metadata_status = 'partial' OR completeness_score < 70) AS incomplete
     FROM media
-    WHERE douban_id <> '' AND next_refresh_at IS NOT NULL AND next_refresh_at <= NOW()
+    WHERE douban_id ~ '^[0-9]{6,9}$' AND next_refresh_at IS NOT NULL AND next_refresh_at <= NOW()
     ORDER BY next_refresh_at, id LIMIT $1
 ), skip_complete AS (
     UPDATE media SET next_refresh_at = NULL
@@ -216,7 +216,7 @@ func (store *PostgresStore) ScheduleActiveContentRefreshes(ctx context.Context, 
 ), stale AS (
     SELECT m.douban_id FROM active
     JOIN media m ON m.id = active.media_id
-    WHERE m.douban_id <> ''
+    WHERE m.douban_id ~ '^[0-9]{6,9}$'
       AND (m.last_metadata_sync_at IS NULL OR m.last_metadata_sync_at < NOW() - INTERVAL '3 days')
       AND (m.metadata_status = 'partial' OR m.completeness_score < 70)
 )

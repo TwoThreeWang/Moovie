@@ -27,7 +27,9 @@ func (store *PostgresStore) RefreshResourceMedia(ctx context.Context, source, vo
 	return mediaunits.ReconcileResource(ctx, store.database, source, vodID)
 }
 
-var resourceDoubanID = regexp.MustCompile(`^[1-9][0-9]{4,11}$`)
+// 位数必须与 catalog.validDoubanID（6~9 位）一致，否则这里放行的 ID 到了 worker
+// 会被判成 invalid Douban ID 永久失败，而快照永远没有成功记录，任务被反复重排。
+var resourceDoubanID = regexp.MustCompile(`^[1-9][0-9]{5,8}$`)
 var resourceHTML = regexp.MustCompile(`<[^>]*>`)
 
 // fillResourceMedia 只补空字段，并立即记录低优先级来源，不能误标为豆瓣资料。
@@ -102,7 +104,7 @@ ON CONFLICT(media_id,field_name) DO UPDATE SET provider='resource',priority=10,v
 		// 资源补齐不更新 last_metadata_sync_at；资料看起来完整也不能跳过豆瓣采集。
 		_, err := store.database.Exec(ctx, `INSERT INTO worker_jobs(task_type,subject_key,payload,reason,status,available_at)
 SELECT 'douban_metadata',douban_id,jsonb_build_object('douban_id',douban_id),'resource_placeholder','pending',NOW()
-FROM media WHERE id=$1 AND douban_id<>'' AND NOT EXISTS(SELECT 1 FROM media_source_snapshots WHERE media_id=media.id AND provider='douban' AND last_success_at IS NOT NULL)
+FROM media WHERE id=$1 AND douban_id ~ '^[0-9]{6,9}$' AND NOT EXISTS(SELECT 1 FROM media_source_snapshots WHERE media_id=media.id AND provider='douban' AND last_success_at IS NOT NULL)
 ON CONFLICT(task_type,subject_key) WHERE status IN ('pending','running') DO NOTHING`, mediaID)
 		if err != nil {
 			return err
