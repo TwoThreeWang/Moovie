@@ -50,6 +50,10 @@ func TestTodayUpdatesUsesFirstScheduledEpisodeAndContinuesHistoryEntry(t *testin
 
 func renderTodayUpdates(t *testing.T, units []mediaidentity.MediaUnit, candidates map[string][]mediaidentity.ResourceCandidate) string {
 	t.Helper()
+	units = append([]mediaidentity.MediaUnit(nil), units...)
+	for i := range units {
+		units[i].HasResource = len(candidates[units[i].EpisodeKey]) > 0
+	}
 	gin.SetMode(gin.TestMode)
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), nil)
 	if err != nil {

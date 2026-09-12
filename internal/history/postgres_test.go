@@ -40,7 +40,7 @@ func TestPostgresStoreDashboardListUsesCanonicalOrderAndPagination(t *testing.T)
 	if !strings.Contains(database.query, "position.user_id = $1 AND position.deleted_at IS NULL") || !strings.Contains(database.query, "ORDER BY position.activity_at DESC LIMIT $2 OFFSET $3") || !reflect.DeepEqual(database.arguments, []any{42, 24, 48}) {
 		t.Fatalf("list query/args = %s / %#v", database.query, database.arguments)
 	}
-	for _, expected := range []string{"COALESCE(NULLIF(media.title, ''), position.title)", "COALESCE(NULLIF(media.poster, ''), position.poster)"} {
+	for _, expected := range []string{"CASE WHEN media.id IS NOT NULL THEN media.title ELSE", "CASE WHEN media.id IS NOT NULL THEN media.poster ELSE"} {
 		if !strings.Contains(database.query, expected) {
 			t.Fatalf("canonical display projection missing %q: %s", expected, database.query)
 		}
@@ -129,12 +129,32 @@ func (fake *historyFakeDatabase) Query(_ context.Context, query string, argument
 	return fake.rows, nil
 }
 
-func (fake *historyFakeDatabase) QueryRow(context.Context, string, ...any) database.Row {
+func (fake *historyFakeDatabase) QueryRow(_ context.Context, query string, args ...any) database.Row {
+	if strings.Contains(query, "COALESCE((SELECT media_id") {
+		return historyValueRow{0}
+	}
+	if strings.Contains(query, "SELECT id FROM media_units WHERE id=") {
+		return historyValueRow{9}
+	}
+	if strings.Contains(query, "SELECT media_id,season_number,episode_key") {
+		return historyValueRow{7, 1, "S01E03"}
+	}
 	return historyFakeRow{err: pgx.ErrNoRows}
 }
 
+type historyValueRow []any
+
+func (row historyValueRow) Scan(dest ...any) error {
+	for i, v := range row {
+		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(v))
+	}
+	return nil
+}
+
 func (fake *historyFakeDatabase) Exec(_ context.Context, query string, arguments ...any) (int64, error) {
-	fake.execQuery, fake.arguments = query, arguments
+	if !strings.HasPrefix(query, "DELETE FROM playback_positions") {
+		fake.execQuery, fake.arguments = query, arguments
+	}
 	return 1, nil
 }
 

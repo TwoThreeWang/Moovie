@@ -150,7 +150,7 @@ func (store *PostgresStore) ListUpcomingUnits(ctx context.Context, mediaID, seas
 	}
 	rows, err := store.database.Query(ctx, `SELECT id, media_id, unit_type, season_number,
 COALESCE(episode_number, 0), COALESCE(absolute_number, 0), episode_key, title, air_date,
-COALESCE(runtime_minutes, 0)
+COALESCE(runtime_minutes, 0), has_resource
 FROM media_units
 WHERE media_id = $1 AND ($2 <= 0 OR season_number = $2)
   AND unit_type = 'episode' AND air_date IS NOT NULL AND air_date >= $3::date
@@ -166,7 +166,7 @@ LIMIT $4`, mediaID, seasonNumber, from, limit)
 		var airDate *time.Time
 		if err := rows.Scan(&unit.ID, &unit.MediaID, &unit.UnitType, &unit.SeasonNumber,
 			&unit.EpisodeNumber, &unit.AbsoluteNumber, &unit.EpisodeKey, &unit.Title,
-			&airDate, &unit.RuntimeMinutes); err != nil {
+			&airDate, &unit.RuntimeMinutes, &unit.HasResource); err != nil {
 			return nil, fmt.Errorf("scan upcoming unit: %w", err)
 		}
 		if airDate != nil {
@@ -200,7 +200,7 @@ func (store *PostgresStore) ListDailyUpdatesForMedia(ctx context.Context, mediaI
 	}
 	rows, err := store.database.Query(ctx, `SELECT id, media_id, unit_type, season_number,
 COALESCE(episode_number, 0), COALESCE(absolute_number, 0), episode_key, title, air_date,
-COALESCE(runtime_minutes, 0)
+COALESCE(runtime_minutes, 0), has_resource
 FROM media_units
 WHERE unit_type = 'episode' AND air_date = $2::date AND media_id = ANY($1::bigint[])
 ORDER BY media_id ASC, season_number ASC, episode_number ASC`, ids, day)
@@ -214,7 +214,7 @@ ORDER BY media_id ASC, season_number ASC, episode_number ASC`, ids, day)
 		var airDate *time.Time
 		if err := rows.Scan(&unit.ID, &unit.MediaID, &unit.UnitType, &unit.SeasonNumber,
 			&unit.EpisodeNumber, &unit.AbsoluteNumber, &unit.EpisodeKey, &unit.Title,
-			&airDate, &unit.RuntimeMinutes); err != nil {
+			&airDate, &unit.RuntimeMinutes, &unit.HasResource); err != nil {
 			return nil, fmt.Errorf("scan daily update: %w", err)
 		}
 		if airDate != nil {

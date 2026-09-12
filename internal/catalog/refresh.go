@@ -208,8 +208,8 @@ func (store *PostgresStore) ScheduleActiveContentRefreshes(ctx context.Context, 
 		limit = 10
 	}
 	_, err := store.database.Exec(ctx, `WITH active AS (
-    SELECT DISTINCT event.media_id FROM playback_attempt_events event
-    WHERE event.event_type = 'played_10s'
+    SELECT DISTINCT event.media_id FROM playback_results event
+    WHERE event.succeeded
       AND event.created_at >= NOW() - INTERVAL '24 hours'
       AND event.media_id > 0
     LIMIT $1
@@ -349,10 +349,10 @@ func (handler *RefreshHandler) Schedule(ctx context.Context, _ workqueue.Job) er
 	if !ok {
 		return nil
 	}
-	if err := store.ScheduleDueRefreshes(ctx, 20); err != nil {
+	if err := store.ScheduleDueRefreshes(ctx, 5); err != nil {
 		return err
 	}
-	if err := store.ScheduleActiveContentRefreshes(ctx, 10); err != nil {
+	if err := store.ScheduleActiveContentRefreshes(ctx, 3); err != nil {
 		return err
 	}
 	return store.ScheduleEmbeddingBackfills(ctx, embeddingBackfillBatchSize)

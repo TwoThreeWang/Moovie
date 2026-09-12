@@ -48,8 +48,9 @@ func (health PlaybackHealth) Score() float64 {
 
 // SourceCandidate 是一个可播放的候选来源，带质量统计和匹配置信度。
 type SourceCandidate struct {
-	CandidateID       int
-	LineID            int
+	CandidateKey      string
+	PlaybackVersion   string
+	Part              string
 	LineKey           string
 	LineLabel         string
 	SourceKey         string
@@ -93,14 +94,14 @@ func RankSameEpisode(candidates []SourceCandidate, season int, episodeKey string
 
 // filterSameEpisode 只保留同一季同一集、且有播放地址的候选。
 func filterSameEpisode(candidates []SourceCandidate, season int, episodeKey string) []SourceCandidate {
-	if season < 1 {
-		season = 1
+	if season < 0 {
+		season = 0
 	}
 	result := make([]SourceCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
 		candidateSeason := candidate.SeasonNumber
-		if candidateSeason < 1 {
-			candidateSeason = 1
+		if candidateSeason < 0 {
+			candidateSeason = 0
 		}
 		if candidateSeason != season || candidate.EpisodeKey != episodeKey || candidate.PlayURL == "" {
 			continue

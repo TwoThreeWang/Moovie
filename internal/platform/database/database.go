@@ -44,6 +44,23 @@ type Beginner interface {
 	Begin(ctx context.Context) (Transaction, error)
 }
 
+// InTransaction 让资源修改与可用性汇总一起提交；已在事务内时直接复用。
+func InTransaction(ctx context.Context, executor Executor, run func(Executor) error) error {
+	beginner, ok := executor.(Beginner)
+	if !ok {
+		return run(executor)
+	}
+	tx, err := beginner.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	if err := run(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // Pool 包装 pgxpool，并对业务层暴露项目统一的数据库接口。
 type Pool struct {
 	pool *pgxpool.Pool

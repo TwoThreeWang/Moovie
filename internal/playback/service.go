@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"fmt"
+	"github.com/TwoThreeWang/Moovie/new/internal/playurl"
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
@@ -28,12 +29,24 @@ func NewDetailService(catalog Catalog, sites SiteCatalog, crawler DetailCrawler,
 // Get 优先读库，读不到才回源抓取。
 func (service *DetailService) Get(ctx context.Context, sourceKey, vodID string) (*search.VodItem, error) {
 	item, err := service.catalog.FindBySourceID(ctx, sourceKey, vodID)
-	if err == nil && item != nil {
+	if err != nil {
+		return nil, err
+	}
+	if item != nil {
+		site, err := service.sites.FindSiteByKey(ctx, sourceKey)
+		if err != nil {
+			return nil, err
+		}
+		if site == nil || !site.Enabled || item.ResourceStatus == "removed" || item.ResourceStatus == "retired" || item.ResourceStatus == "deleted" {
+			item.VodPlayUrl = ""
+			return item, nil
+		}
 		if service.runner != nil {
 			service.runner.Run(func(taskContext context.Context) {
 				_, _ = service.fetch(taskContext, sourceKey, vodID)
 			})
 		}
+		item.VodPlayUrl = playurl.Clean(item.VodPlayUrl, item.VodRemarks)
 		return item, nil
 	}
 	return service.fetch(ctx, sourceKey, vodID)
@@ -52,7 +65,7 @@ func (service *DetailService) fetch(ctx context.Context, sourceKey, vodID string
 		if err != nil {
 			return nil, fmt.Errorf("find source: %w", err)
 		}
-		if site == nil {
+		if site == nil || !site.Enabled {
 			return nil, nil
 		}
 		requestContext := ctx
@@ -66,6 +79,7 @@ func (service *DetailService) fetch(ctx context.Context, sourceKey, vodID string
 			return nil, err
 		}
 		if item != nil {
+			item.VodPlayUrl = playurl.Clean(item.VodPlayUrl, item.VodRemarks)
 			if err := service.catalog.Upsert(ctx, *item); err != nil {
 				return nil, fmt.Errorf("save detail: %w", err)
 			}

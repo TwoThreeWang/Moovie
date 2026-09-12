@@ -9,8 +9,8 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
-	"github.com/gin-gonic/gin"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/gin-gonic/gin"
 )
 
 func TestHTTPContractAlwaysReturnsArrayAndRequiresLoginToSend(t *testing.T) {

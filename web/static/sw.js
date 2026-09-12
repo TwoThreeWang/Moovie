@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moovie-v14';
+const CACHE_NAME = 'moovie-v15';
 const ASSETS_TO_CACHE = [
   '/',
   '/static/css/style.css',

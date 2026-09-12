@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestPostgresStoreSearchUsesPlaybackQualityAndPreservesMapping(t *testing.T) {
@@ -17,7 +18,7 @@ func TestPostgresStoreSearchUsesPlaybackQualityAndPreservesMapping(t *testing.T)
 		"source", "42", "肖申克", "副标题", "Shawshank", "tag", "剧情",
 		"poster", "actor", "director", "blurb", "完结", "1994-01-01",
 		"1", "1", "美国", "英语", "1994", "142分钟", "today", "1292052",
-		"content", "a$m3u8", "电影", visitedAt, int64(800), int64(3), int64(1), "active", int64(0), float64(0), "",
+		"content", "正片$https://video.example/main.m3u8", "电影", visitedAt, int64(800), int64(3), int64(1), "active", int64(0), float64(0), "",
 	}}}}
 	store := NewPostgresStore(database)
 	items, err := store.Search(context.Background(), "肖申克")
@@ -64,7 +65,7 @@ func TestPostgresStoreBuildsReadyPlaybackSummaryFromUsableResources(t *testing.T
 	database := &fakeSQLDatabase{rows: &fakeSQLRows{values: [][]any{{
 		int64(7), "source", "42", "流浪地球", "副标题", "Wandering Earth", "tag", "科幻",
 		"poster", "actor", "director", "blurb", "完结", "2019-01-01", "1", "1",
-		"中国", "国语", "2019", "125分钟", "today", "26266893", "content", "正片$url",
+		"中国", "国语", "2019", "125分钟", "today", "26266893", "content", "正片$https://video.example/main.m3u8",
 		"电影", visitedAt, int64(120), int64(10), int64(1), "active", int64(7), float64(0), "", "ready",
 	}}}}
 	store := NewPostgresStore(database)
@@ -76,33 +77,39 @@ func TestPostgresStoreBuildsReadyPlaybackSummaryFromUsableResources(t *testing.T
 	if !summary.Ready() || summary.ResourceCount != 1 || summary.BestResource == nil || summary.BestResource.VodId != "42" {
 		t.Fatalf("summary = %+v", summary)
 	}
-	for _, expected := range []string{"resource_media_links", "media_link.media_id = ANY($1::bigint[])", "resource_episode_candidates", "candidate.play_url", "vod_play_url", "<> 'removed'"} {
+	for _, expected := range []string{"resource_media_links", "media_link.media_id = ANY($1::bigint[])", "sites.enabled", "vod_play_url", "NOT IN"} {
 		if !strings.Contains(database.query, expected) {
 			t.Fatalf("resource query missing %q: %s", expected, database.query)
 		}
 	}
 }
 
-func TestPostgresStoreUpsertOnlyRefreshesSourceMetadata(t *testing.T) {
-	database := &fakeSQLDatabase{}
-	store := NewPostgresStore(database)
-	item := VodItem{SourceKey: "source", VodId: "42", VodName: "name"}
-	if err := store.Upsert(context.Background(), item); err != nil {
-		t.Fatalf("Upsert() error = %v", err)
+func TestPostgresStoreUpsertRefreshesMetadataAndResetsOnlyChangedPlaylist(t *testing.T) {
+	pool := testdb.Pool(t)
+	store := NewPostgresStore(pool)
+	item := VodItem{SourceKey: "source", VodId: "42", VodName: "name", TypeName: "电影", VodPlayUrl: "HD$https://video.example/a.m3u8"}
+	if err := store.Upsert(t.Context(), item); err != nil {
+		t.Fatal(err)
 	}
-	if len(database.arguments) != 28 {
-		t.Fatalf("upsert arguments = %d, want 28", len(database.arguments))
+	if _, err := pool.Exec(t.Context(), `UPDATE vod_items SET success_count=2,total_load_ms=800 WHERE vod_id='42'`); err != nil {
+		t.Fatal(err)
 	}
-	for _, expected := range []string{"vod_name = EXCLUDED.vod_name", "vod_sub = EXCLUDED.vod_sub", "vod_remarks = EXCLUDED.vod_remarks", "vod_time = EXCLUDED.vod_time", "vod_play_url = EXCLUDED.vod_play_url", "last_visited_at = EXCLUDED.last_visited_at", "metadata_hash = EXCLUDED.metadata_hash", "metadata_version = CASE"} {
-		if !strings.Contains(database.execQuery, expected) {
-			t.Fatalf("upsert missing %q: %s", expected, database.execQuery)
-		}
+	item.TypeName = "动漫"
+	item.VodPic = "new-poster"
+	if err := store.Upsert(t.Context(), item); err != nil {
+		t.Fatal(err)
 	}
-	if database.arguments[26] != StableResourceHash(item) || database.arguments[27] == nil {
-		t.Fatalf("upsert lifecycle arguments = %#v", database.arguments[26:])
+	got, err := store.FindBySourceID(t.Context(), "source", "42")
+	if err != nil || got.TypeName != "动漫" || got.VodPic != "new-poster" || got.SampleCount != 2 || got.AvgSpeedMs != 400 {
+		t.Fatalf("got=%+v err=%v", got, err)
 	}
-	if strings.Contains(database.execQuery, "vod_pic = EXCLUDED.vod_pic") || strings.Contains(database.execQuery, "vod_actor = EXCLUDED.vod_actor") {
-		t.Fatalf("upsert overwrites fields maintained by the resource repository: %s", database.execQuery)
+	item.VodPlayUrl = "TC$https://video.example/tc.m3u8"
+	if err := store.Upsert(t.Context(), item); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.FindBySourceID(t.Context(), "source", "42")
+	if err != nil || got.ResourceStatus != "removed" || got.VodPlayUrl != "" || got.SampleCount != 0 {
+		t.Fatalf("filtered=%+v err=%v", got, err)
 	}
 }
 
@@ -146,7 +153,7 @@ func TestPostgresStoreSupportsPlaybackLookups(t *testing.T) {
 		"source", "42", "肖申克", "副标题", "Shawshank", "tag", "剧情",
 		"poster", "actor", "director", "blurb", "完结", "1994-01-01",
 		"1", "1", "美国", "英语", "1994", "142分钟", "today", "1292052",
-		"content", "a$m3u8", "电影", visitedAt, int64(800), int64(3), int64(1), "active", int64(0), float64(0), "",
+		"content", "正片$https://video.example/main.m3u8", "电影", visitedAt, int64(800), int64(3), int64(1), "active", int64(0), float64(0), "",
 	}
 	database := &fakeSQLDatabase{rows: &fakeSQLRows{values: [][]any{vodRow}}}
 	store := NewPostgresStore(database)
@@ -263,6 +270,9 @@ type fakeSQLDatabase struct {
 func (fake *fakeSQLDatabase) Query(_ context.Context, query string, arguments ...any) (database.Rows, error) {
 	fake.query = query
 	fake.arguments = arguments
+	if fake.rows == nil {
+		return &fakeSQLRows{}, fake.err
+	}
 	return fake.rows, fake.err
 }
 

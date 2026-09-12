@@ -3,12 +3,21 @@ package search
 import (
 	"context"
 	"fmt"
+	"github.com/TwoThreeWang/Moovie/new/internal/playurl"
 	"sort"
 	"strings"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/mediatitle"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
+
+const unifiedMediaSelect = `SELECT media.id, media.title, media.original_title,
+       COALESCE(ARRAY(SELECT alias.alias FROM media_aliases alias
+         WHERE alias.media_id = media.id AND alias.alias_type = 'aka' ORDER BY alias.id), ARRAY[]::text[]), media.year,
+       media.media_type, media.poster, media.douban_id,
+       COALESCE(media.rating_douban, 0), COALESCE(LEFT(media.summary, 120), ''),
+       media.genres, media.countries, media.directors, media.actors, media.duration
+FROM media`
 
 // SearchUnifiedMedia 只读取规范媒体元数据。资源行会单独加载，
 // 避免同一个媒体实体因为多个别名或来源而重复出现。
@@ -18,13 +27,7 @@ func (store *PostgresStore) SearchUnifiedMedia(ctx context.Context, query Unifie
 	if normalizedKeyword := mediatitle.Normalize(query.Keyword); normalizedKeyword != "" {
 		normalizedPattern = "%" + normalizedKeyword + "%"
 	}
-	rows, err := store.database.Query(ctx, `SELECT media.id, media.title, media.original_title,
-       COALESCE(ARRAY(SELECT alias.alias FROM media_aliases alias
-         WHERE alias.media_id = media.id AND alias.alias_type = 'aka' ORDER BY alias.id), ARRAY[]::text[]), media.year,
-       media.media_type, media.poster, media.douban_id,
-       COALESCE(media.rating_douban, 0), COALESCE(LEFT(media.summary, 120), ''),
-       media.genres, media.countries, media.directors, media.actors, media.duration
-FROM media
+	rows, err := store.database.Query(ctx, unifiedMediaSelect+`
 WHERE media.douban_id <> '' AND (media.title ILIKE $1 OR media.original_title ILIKE $1 OR EXISTS (
     SELECT 1 FROM media_aliases alias
     WHERE alias.media_id = media.id AND $2 <> '' AND alias.normalized_alias LIKE $2
@@ -40,6 +43,22 @@ LIMIT $6`, pattern, normalizedPattern, strings.TrimSpace(query.Year), normalizeM
 	if err != nil {
 		return nil, fmt.Errorf("search unified media: %w", err)
 	}
+	return scanUnifiedMedia(rows)
+}
+
+// ListUnifiedMedia 批量补齐资源侧命中的规范资料；也用于刷新旧搜索缓存。
+func (store *PostgresStore) ListUnifiedMedia(ctx context.Context, ids []int) ([]UnifiedItem, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := store.database.Query(ctx, unifiedMediaSelect+` WHERE media.id=ANY($1::bigint[])`, ids)
+	if err != nil {
+		return nil, err
+	}
+	return scanUnifiedMedia(rows)
+}
+
+func scanUnifiedMedia(rows database.Rows) ([]UnifiedItem, error) {
 	defer rows.Close()
 	items := make([]UnifiedItem, 0)
 	for rows.Next() {
@@ -70,20 +89,14 @@ func (store *PostgresStore) ListUnifiedResources(ctx context.Context, mediaIDs [
 	// 这里已经 JOIN 了 resource_media_links，所以不再叠 resourceMediaLinkJoin
 	// 那个 LATERAL——同一张表查两遍纯属浪费。
 	rows, err := store.database.Query(ctx, `SELECT media_link.media_id, `+vodItemColumns+`,
-	CASE WHEN EXISTS (
-	    SELECT 1 FROM resource_episode_candidates candidate
-	    JOIN resource_play_lines line ON line.id = candidate.line_id
-	    WHERE candidate.media_id = media_link.media_id
-	      AND line.source_key = media_link.source_key AND line.vod_id = media_link.vod_id
-	      AND candidate.resource_status NOT IN ('retired', 'deleted')
-	      AND line.resource_status NOT IN ('retired', 'deleted')
-	      AND COALESCE(candidate.play_url, '') <> ''
-	) THEN 'ready' ELSE 'direct' END
+	'ready'
+
 FROM resource_media_links media_link
 JOIN vod_items resource ON resource.source_key = media_link.source_key AND resource.vod_id = media_link.vod_id
 WHERE media_link.media_id = ANY($1::bigint[])
-  AND COALESCE(resource.resource_status, 'active') <> 'removed'
+  AND COALESCE(resource.resource_status, 'active') NOT IN ('removed','retired','deleted')
   AND COALESCE(resource.vod_play_url, '') <> ''
+  AND EXISTS(SELECT 1 FROM sites WHERE sites.key=resource.source_key AND sites.enabled)
 ORDER BY media_link.media_id, resource.last_visited_at DESC`, identifiers)
 	if err != nil {
 		return nil, fmt.Errorf("list unified resources: %w", err)
@@ -148,7 +161,10 @@ func scanUnifiedResources(rows database.Rows) ([]VodItem, error) {
 		); err != nil {
 			return nil, fmt.Errorf("scan unified resource: %w", err)
 		}
-		items = append(items, item)
+		item.VodPlayUrl = playurl.Clean(item.VodPlayUrl, item.VodRemarks)
+		if item.VodPlayUrl != "" {
+			items = append(items, item)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate unified resources: %w", err)

@@ -116,8 +116,10 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 		return fmt.Errorf("fetch TMDB images: %v; fetch details: %v", imagesErr, detailsErr)
 	}
 	applyTMDBData(movie, images, details)
-	if err := provider.store.Upsert(ctx, *movie); err != nil {
-		return fmt.Errorf("save TMDB movie data: %w", err)
+	if provider.canonical == nil {
+		if err := provider.store.Upsert(ctx, *movie); err != nil {
+			return err
+		}
 	}
 	payload := struct {
 		DoubanID  string `json:"douban_id"`
@@ -150,9 +152,7 @@ func (provider *TMDBProvider) sync(ctx context.Context, doubanID string) error {
 		mediaidentity.ExternalID{Provider: "imdb", ExternalType: externalType, ExternalID: movie.IMDbID, IsPrimary: true},
 		mediaidentity.ExternalID{Provider: "tmdb", ExternalType: externalType, ExternalID: fmt.Sprintf("%d", tmdbID), IsPrimary: true})
 	if err != nil {
-		// 旧 catalog 已经更新成功；规范持久化只是附加副作用。
-		// migration 0013 不可用时，不能把一次成功的 TMDB 刷新变成用户可见失败。
-		return nil
+		return fmt.Errorf("merge TMDB metadata: %w", err)
 	}
 	// 电视剧还需要把季集元数据同步到 media_units。
 	if mediaType == "tv" && mediaID > 0 {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaunits"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -188,12 +189,13 @@ WHERE resource_media_links.is_locked = FALSE OR resource_media_links.media_id = 
 		if affected == 0 {
 			return errors.New("resource is already locked to another media")
 		}
-		if _, err := transaction.Exec(ctx, `UPDATE resource_episode_candidates candidate
-SET media_id = $3, updated_at = NOW()
-FROM resource_play_lines line
-WHERE candidate.line_id = line.id AND line.source_key = $1 AND line.vod_id = $2`, sourceKey, vodID, resolvedMediaID); err != nil {
-			return fmt.Errorf("bind structured resource candidates: %w", err)
+		if err := mediaunits.Reconcile(ctx, transaction, mediaID); err != nil {
+			return err
 		}
+		if err := NewPostgresStore(transaction).RefreshResourceMedia(ctx, sourceKey, vodID); err != nil {
+			return err
+		}
+
 	}
 	if _, err := transaction.Exec(ctx, `UPDATE resource_match_candidates
 SET status = $2, resolved_media_id = $3, updated_at = NOW()

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
-	"github.com/gin-gonic/gin"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/gin-gonic/gin"
 )
 
 func TestLoadUserRestoresPublicPageUserContext(t *testing.T) {

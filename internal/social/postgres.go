@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaview"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 	"github.com/jackc/pgx/v5"
 )
@@ -19,16 +20,16 @@ func NewPostgresStore(executor database.Executor) *PostgresStore {
 }
 
 // activityColumns 是短评查询共用的字段（短评 + 作者信息）。
-const activityColumns = `um.id, um.user_id, um.movie_id,
-COALESCE(NULLIF(media.title, ''), um.title),
-COALESCE(NULLIF(media.poster, ''), um.poster),
-COALESCE(NULLIF(media.year, ''), um.year), um.status, um.rating, um.comment,
+var activityColumns = `um.id, um.user_id, um.movie_id,
+` + mediaview.Column("title", "COALESCE(display_resource.vod_name,um.title)") + `,
+` + mediaview.Column("poster", "COALESCE(display_resource.vod_pic,um.poster)") + `,
+` + mediaview.Column("year", "COALESCE(display_resource.vod_year,um.year)") + `, um.status, um.rating, um.comment,
 um.created_at, um.updated_at, u.id, u.email, u.username, u.password_hash, u.role, u.douban_user_id, u.is_public, u.avatar, u.created_at`
 
 // ListCommentsByMovie 列出某部片子的短评。
 func (store *PostgresStore) ListCommentsByMovie(ctx context.Context, movieID string, limit int) ([]Activity, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+activityColumns+` FROM user_movies um
-LEFT JOIN media ON media.id = um.media_id
+LEFT JOIN media ON media.id = um.media_id `+mediaview.ResourceJoin("um.movie_id")+`
 JOIN users u ON u.id = um.user_id
 WHERE um.movie_id = $1 AND um.status = 'watched' AND um.comment IS NOT NULL AND um.comment <> ''
 ORDER BY um.updated_at DESC LIMIT $2`, movieID, limit)
@@ -214,22 +215,22 @@ func (store *PostgresStore) ListNotifications(ctx context.Context, userID, limit
   ORDER BY user_movie_id, created_at DESC, id DESC
 ), items AS (
   SELECT latest.id, 'comment_like'::text AS type, latest.user_movie_id, um.movie_id,
-         COALESCE(NULLIF(media.title, ''), um.title) AS movie_title,
+         `+mediaview.Column("title", "COALESCE(display_resource.vod_name,um.title)")+` AS movie_title,
          latest.actor_user_id, actor.username AS actor_name, actor.avatar AS actor_avatar, actor.is_public AS actor_is_public,
          ''::text AS content, likes.actor_count, likes.unread, likes.created_at
   FROM like_counts likes
   JOIN latest_likes latest ON latest.user_movie_id = likes.user_movie_id
   JOIN user_movies um ON um.id = latest.user_movie_id
-  LEFT JOIN media ON media.id = um.media_id
+  LEFT JOIN media ON media.id = um.media_id `+mediaview.ResourceJoin("um.movie_id")+`
   JOIN users actor ON actor.id = latest.actor_user_id
   UNION ALL
   SELECT notification.id, notification.type, COALESCE(notification.user_movie_id, 0),
-         COALESCE(um.movie_id, ''), COALESCE(NULLIF(media.title, ''), um.title, ''),
+         COALESCE(um.movie_id, ''), `+mediaview.Column("title", "COALESCE(display_resource.vod_name,um.title,'')")+`,
          notification.actor_user_id, actor.username, actor.avatar, actor.is_public,
          COALESCE(reply.content, ''), 1, notification.read_at IS NULL, notification.created_at
   FROM social_notifications notification
   LEFT JOIN user_movies um ON um.id = notification.user_movie_id
-  LEFT JOIN media ON media.id = um.media_id
+  LEFT JOIN media ON media.id = um.media_id `+mediaview.ResourceJoin("um.movie_id")+`
   JOIN users actor ON actor.id = notification.actor_user_id
   LEFT JOIN comment_replies reply ON reply.id = notification.reply_id
   WHERE notification.recipient_user_id = $1 AND notification.type <> 'comment_like'
@@ -323,18 +324,18 @@ SELECT EXISTS (SELECT 1 FROM deleted)`, notificationID, userID).Scan(&deleted)
 // ListWeeklyFilms 按最近更新时间列出本周有更新的公开观影记录对应的影片。
 func (store *PostgresStore) ListWeeklyFilms(ctx context.Context, since time.Time, limit int) ([]WeeklyFilm, error) {
 	rows, err := store.database.Query(ctx, `SELECT um.movie_id,
-COALESCE(NULLIF(media.title, ''), MAX(um.title)),
-COALESCE(NULLIF(media.poster, ''), MAX(um.poster)),
-COALESCE(NULLIF(media.year, ''), MAX(um.year)),
+`+mediaview.Column("title", "COALESCE(MAX(display_resource.vod_name),MAX(um.title))")+`,
+`+mediaview.Column("poster", "COALESCE(MAX(display_resource.vod_pic),MAX(um.poster))")+`,
+`+mediaview.Column("year", "COALESCE(MAX(display_resource.vod_year),MAX(um.year))")+`,
 COUNT(DISTINCT um.user_id),
 COUNT(*) FILTER (WHERE BTRIM(COALESCE(um.comment, '')) <> ''),
 COALESCE(AVG(NULLIF(um.rating, 0))::double precision, 0),
 MAX(um.updated_at)
 FROM user_movies um
-LEFT JOIN media ON media.id = um.media_id
+LEFT JOIN media ON media.id = um.media_id `+mediaview.ResourceJoin("um.movie_id")+`
 JOIN users u ON u.id = um.user_id
 WHERE um.status IN ('watched', 'watching') AND u.is_public = TRUE AND um.updated_at >= $1
-GROUP BY um.movie_id, media.title, media.poster, media.year
+GROUP BY um.movie_id, media.id, media.title, media.poster, media.year
 ORDER BY MAX(um.updated_at) DESC, COUNT(DISTINCT um.user_id) DESC
 LIMIT $2`, since, limit)
 	if err != nil {
@@ -362,7 +363,7 @@ func (store *PostgresStore) ListFeaturedComments(ctx context.Context, limit int)
 )
 SELECT `+activityColumns+` FROM ranked
 JOIN user_movies um ON um.id = ranked.id
-LEFT JOIN media ON media.id = um.media_id
+LEFT JOIN media ON media.id = um.media_id `+mediaview.ResourceJoin("um.movie_id")+`
 JOIN users u ON u.id = um.user_id
 WHERE ranked.user_rank <= 2
 ORDER BY um.updated_at DESC, um.id DESC LIMIT $1`, limit)
@@ -426,7 +427,7 @@ func scanActivities(rows database.Rows) ([]Activity, error) {
 // GetComment 读取单条短评，供短评永久链接页使用。短评为空的记录不算内容，按不存在处理。
 func (store *PostgresStore) GetComment(ctx context.Context, userMovieID int) (*Activity, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+activityColumns+` FROM user_movies um
-LEFT JOIN media ON media.id = um.media_id
+LEFT JOIN media ON media.id = um.media_id `+mediaview.ResourceJoin("um.movie_id")+`
 JOIN users u ON u.id = um.user_id
 WHERE um.id = $1 AND BTRIM(COALESCE(um.comment, '')) <> ''`, userMovieID)
 	if err != nil {
@@ -547,7 +548,7 @@ func (store *PostgresStore) CountFollow(ctx context.Context, userID int) (int, i
 func (store *PostgresStore) ListFeed(ctx context.Context, followerID, limit, offset int) ([]Activity, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+activityColumns+` FROM user_follows f
 JOIN user_movies um ON um.user_id = f.followee_id
-LEFT JOIN media ON media.id = um.media_id
+LEFT JOIN media ON media.id = um.media_id `+mediaview.ResourceJoin("um.movie_id")+`
 JOIN users u ON u.id = um.user_id
 WHERE f.follower_id = $1 AND u.is_public = TRUE
 ORDER BY um.updated_at DESC, um.id DESC LIMIT $2 OFFSET $3`, followerID, limit, offset)

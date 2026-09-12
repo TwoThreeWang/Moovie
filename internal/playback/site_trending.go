@@ -7,7 +7,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
-// SiteTrendingProvider 从 playback_attempt_events 统计最近 7 天播放次数最多的影片。
+// SiteTrendingProvider 从 playback_results 统计最近 7 天播放次数最多的影片。
 type SiteTrendingProvider struct {
 	db database.Executor
 }
@@ -19,9 +19,9 @@ func NewSiteTrendingProvider(db database.Executor) *SiteTrendingProvider {
 func (p *SiteTrendingProvider) Popular(ctx context.Context, _ string) ([]PopularSubject, error) {
 	rows, err := p.db.Query(ctx, `
 		SELECT m.douban_id, m.title, m.poster, m.rating_douban, m.year
-		FROM playback_attempt_events e
+		FROM playback_results e
 		JOIN media m ON m.id = e.media_id
-		WHERE e.event_type = 'played_10s'
+		WHERE e.succeeded
 		  AND e.created_at > NOW() - INTERVAL '7 days'
 		  AND m.douban_id <> ''
 		GROUP BY m.id, m.douban_id, m.title, m.poster, m.rating_douban, m.year

@@ -11,6 +11,7 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/cache"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
+	"github.com/TwoThreeWang/Moovie/new/internal/playurl"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -41,7 +42,6 @@ type Service struct {
 	config        ServiceConfig
 	singleflight  singleflight.Group
 	identity      MediaIdentity
-	episodes      ResourceEpisodeIndexer
 	identityCache *cache.TTL[mediaIdentityResult]
 }
 
@@ -107,22 +107,12 @@ type ScoredMediaIdentity interface {
 	MatchResource(ctx context.Context, request MediaMatchRequest) (MediaMatchResult, error)
 }
 
-// ResourceEpisodeIndexer 把资源的播放地址解析成结构化的剧集候选。
-type ResourceEpisodeIndexer interface {
-	IndexResourceEpisodes(ctx context.Context, item VodItem) error
-}
-
 // ServiceOption 是 Service 的可选装配项。
 type ServiceOption func(*Service)
 
 // WithMediaIdentity 注入媒体身份匹配实现；不注入时搜索仍可用，只是不做归一。
 func WithMediaIdentity(identity MediaIdentity) ServiceOption {
 	return func(service *Service) { service.identity = identity }
-}
-
-// WithResourceEpisodeIndexer 注入剧集索引器。
-func WithResourceEpisodeIndexer(indexer ResourceEpisodeIndexer) ServiceOption {
-	return func(service *Service) { service.episodes = indexer }
 }
 
 // NewService 应用安全默认值并创建有界身份缓存；所有上游异步任务必须经 runner 执行。
@@ -175,6 +165,14 @@ func (service *Service) Search(ctx context.Context, keyword string, bypassFilter
 			items = mergeSearchItems(items, fresh)
 		}
 	}
+	usable := items[:0]
+	for _, item := range items {
+		item.VodPlayUrl = playurl.Clean(item.VodPlayUrl, item.VodRemarks)
+		if item.VodPlayUrl != "" && item.ResourceStatus != "removed" {
+			usable = append(usable, item)
+		}
+	}
+	items = usable
 	service.enrichMediaIdentity(ctx, items)
 
 	filteredCount := 0
@@ -452,20 +450,20 @@ func (service *Service) fetchAndSave(ctx context.Context, keyword string) ([]Vod
 			requestmeta.Logger(ctx).Warn("persist source item failed", "source", item.SourceKey, "vod_id", item.VodId, "error", err)
 		}
 	}
+	// 即时搜索返回的也是过滤后的列表，不能绕过数据库过滤泄露禁用播放项。
+	for i := range items {
+		items[i].VodPlayUrl = playurl.Clean(items[i].VodPlayUrl, items[i].VodRemarks)
+	}
 	service.enrichMediaIdentity(persistCtx, items)
 	return items, nil
 }
 
-// persistItem 带重试地写入一条资源；成功后顺带做剧集索引。
+// persistItem 带重试地保存资源；存储层负责资料补齐和可用性汇总。
 func (service *Service) persistItem(ctx context.Context, item VodItem) error {
 	var lastErr error
 	for attempt := 0; attempt <= service.config.PersistRetries; attempt++ {
 		if err := service.items.Upsert(ctx, item); err == nil {
-			if service.episodes != nil && item.VodPlayUrl != "" {
-				if indexErr := service.episodes.IndexResourceEpisodes(ctx, item); indexErr != nil {
-					requestmeta.Logger(ctx).Debug("shadow resource episode indexing failed", "source", item.SourceKey, "vod_id", item.VodId, "error", indexErr)
-				}
-			}
+
 			return nil
 		} else {
 			lastErr = err

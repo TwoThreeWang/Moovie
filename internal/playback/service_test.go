@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/TwoThreeWang/Moovie/new/internal/search"
 )
 
 type queuedRunner struct {
@@ -19,7 +19,8 @@ func (runner *queuedRunner) Run(task func(context.Context)) {
 func TestDetailServiceUsesLocalItemAndQueuesRefresh(t *testing.T) {
 	testdb.User(t, testdb.Pool(t), 7)
 	store := search.NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(context.Background(), search.VodItem{SourceKey: "source", VodId: "42", VodName: "local"})
+	_ = store.Upsert(context.Background(), search.VodItem{SourceKey: "source", VodId: "42", VodName: "local", VodPlayUrl: "正片$https://video.example/local.m3u8"})
+	_, _ = store.CreateSite(t.Context(), search.Site{Key: "source", Enabled: true})
 	runner := &queuedRunner{}
 	service := NewDetailService(store, store, detailCrawlerFunc(func(context.Context, string, string, string) (*search.VodItem, error) {
 		t.Fatal("crawler ran before queued background task")

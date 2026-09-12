@@ -10,7 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/mediatype"
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaunits"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/TwoThreeWang/Moovie/new/internal/search"
 )
 
 // Store 是规范媒体的核心读写接口。
@@ -37,13 +40,11 @@ type SnapshotWriter interface {
 	WriteSourceSnapshot(ctx context.Context, mediaID int, provider string, payload []byte, success bool, errorMessage string) error
 }
 
-// EpisodeWriter 写入资源的剧集候选。
-type EpisodeWriter interface {
-	UpsertEpisodes(ctx context.Context, episodes []Episode) error
-}
-
 // EpisodeInfo 是播放页使用的轻量剧集描述，不加载完整候选也能渲染选集网格。
 type EpisodeInfo struct {
+	UnitID       int
+	UnitType     string
+	HasResource  bool
 	SeasonNumber int
 	EpisodeKey   string
 	EpisodeLabel string
@@ -80,14 +81,27 @@ type sourceField struct {
 }
 
 // mergeRuleVersion 是合并规则的版本号，改优先级表时应当同步递增，便于识别历史数据。
-const mergeRuleVersion = 1
+const mergeRuleVersion = 2
 
 // MergeSource 是规范数据的第二阶段写入路径。它为每个字段分别保留获胜来源，
 // 不允许最后完成的豆瓣/TMDB 任务覆盖无关字段。空输入会被忽略；优先级相同时，
 // 较新的成功刷新可以替换旧数据。
 func (store *PostgresStore) MergeSource(ctx context.Context, provider string, media Media, payload []byte, externalIDs ...ExternalID) (Media, error) {
+	var result Media
+	err := database.InTransaction(ctx, store.database, func(db database.Executor) error {
+		var err error
+		result, err = NewPostgresStore(db).mergeSource(ctx, provider, media, payload, externalIDs...)
+		return err
+	})
+	return result, err
+}
+
+func (store *PostgresStore) mergeSource(ctx context.Context, provider string, media Media, payload []byte, externalIDs ...ExternalID) (Media, error) {
 	canonical, err := store.ensureMergeBase(ctx, media)
 	if err != nil {
+		return Media{}, err
+	}
+	if _, err := store.database.Exec(ctx, `SELECT id FROM media WHERE id=$1 FOR UPDATE`, canonical.ID); err != nil {
 		return Media{}, err
 	}
 	for _, field := range sourceFields(provider, media) {
@@ -153,6 +167,9 @@ WHERE EXCLUDED.priority >= media_field_sources.priority`, canonical.ID, field.co
 	if err := store.WriteSourceSnapshot(ctx, canonical.ID, provider, payload, true, ""); err != nil {
 		return Media{}, err
 	}
+	if err := mediaunits.Reconcile(ctx, store.database, canonical.ID); err != nil {
+		return Media{}, err
+	}
 	return store.FindByID(ctx, canonical.ID)
 }
 
@@ -198,15 +215,8 @@ func sourceFields(provider string, media Media) []sourceField {
 	}
 }
 
-// normalizeMediaType 把各种类型写法收敛成 movie / tv 两类，不认识的按电影处理。
-func normalizeMediaType(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "tv", "series", "season", "show", "animation", "cartoon":
-		return "tv"
-	default:
-		return "movie"
-	}
-}
+// normalizeMediaType 与资源和搜索共享四分类，未知类型不猜电影。
+func normalizeMediaType(value string) string { return mediatype.Normalize(value) }
 
 // maxInt 取较大值。
 func maxInt(left, right int) int {
@@ -270,7 +280,7 @@ ON CONFLICT (douban_id) WHERE douban_id <> '' DO NOTHING`, media.MediaType, medi
 // prepareMedia 补齐写库前的默认值。
 func prepareMedia(media *Media) {
 	if media.MediaType == "" {
-		media.MediaType = "movie"
+		media.MediaType = ""
 	}
 	if media.MetadataVersion == 0 {
 		media.MetadataVersion = 1
@@ -286,6 +296,10 @@ func prepareMedia(media *Media) {
 // 已有 media 行可能早于字段来源记录。这里仅一次性把现有字段视为豆瓣基线，
 // 避免第一次 TMDB 刷新仅因缺少来源记录就替换稳定值。
 func (store *PostgresStore) seedExistingFieldSources(ctx context.Context, media Media) error {
+	// 资源站占位不属于豆瓣基线，不能把尚未采集的资料锁成高优先级。
+	if media.LastMetadataSyncAt.IsZero() {
+		return nil
+	}
 	for _, field := range sourceFields("douban", media) {
 		if field.priority <= 0 || field.text == "" {
 			continue
@@ -447,8 +461,8 @@ title = CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title ELSE media_units.titl
 air_date = COALESCE(EXCLUDED.air_date, media_units.air_date),
 runtime_minutes = COALESCE(EXCLUDED.runtime_minutes, media_units.runtime_minutes),
 updated_at = NOW()
-RETURNING id`, unit.MediaID, unit.UnitType, unit.SeasonNumber, nullableUnitInt(unit.EpisodeNumber),
-		nullableUnitInt(unit.AbsoluteNumber), unit.EpisodeKey, unit.Title, nullableTime(unit.AirDate), nullableUnitInt(unit.RuntimeMinutes))
+RETURNING id`, unit.MediaID, unit.UnitType, unit.SeasonNumber, nullableMediaID(unit.EpisodeNumber),
+		nullableMediaID(unit.AbsoluteNumber), unit.EpisodeKey, unit.Title, nullableTime(unit.AirDate), nullableMediaID(unit.RuntimeMinutes))
 	if err := row.Scan(&unit.ID); err != nil {
 		return MediaUnit{}, fmt.Errorf("ensure media unit: %w", err)
 	}
@@ -749,33 +763,30 @@ changed_at = CASE
 	return nil
 }
 
-// LinkResource 建立「资源 → 媒体」的关联，并把该资源下所有剧集候选的 media_id 一起补上。
-// 已锁定（人工确认过）的关联不会被自动匹配改掉。
+// LinkResource 只保存资源归属，关联改变后同步重算新旧作品的单元状态。
 func (store *PostgresStore) LinkResource(ctx context.Context, link ResourceLink) error {
 	if link.Confidence <= 0 {
 		link.Confidence = 1
 	}
-	_, err := store.database.Exec(ctx, `INSERT INTO resource_media_links
-(source_key, vod_id, media_id, confidence, matched_by, is_locked, verified_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7)
-ON CONFLICT (source_key, vod_id) DO UPDATE SET
-media_id = CASE WHEN resource_media_links.is_locked THEN resource_media_links.media_id ELSE EXCLUDED.media_id END,
-confidence = CASE WHEN resource_media_links.is_locked THEN resource_media_links.confidence ELSE EXCLUDED.confidence END,
-matched_by = CASE WHEN resource_media_links.is_locked THEN resource_media_links.matched_by ELSE EXCLUDED.matched_by END,
-verified_at = COALESCE(EXCLUDED.verified_at, resource_media_links.verified_at), updated_at = NOW()`,
-		link.SourceKey, link.VodID, link.MediaID, link.Confidence, link.MatchedBy, link.IsLocked, nullableTime(link.VerifiedAt))
-	if err != nil {
-		return fmt.Errorf("link resource media: %w", err)
-	}
-	if link.MediaID > 0 {
-		if _, err := store.database.Exec(ctx, `UPDATE resource_episode_candidates candidate
-SET media_id = $3, updated_at = NOW()
-FROM resource_play_lines line
-WHERE candidate.line_id = line.id AND line.source_key = $1 AND line.vod_id = $2`, link.SourceKey, link.VodID, link.MediaID); err != nil {
-			return fmt.Errorf("bind structured resource candidates: %w", err)
+	return database.InTransaction(ctx, store.database, func(db database.Executor) error {
+		var oldID int
+		if err := db.QueryRow(ctx, `SELECT COALESCE((SELECT media_id FROM resource_media_links WHERE source_key=$1 AND vod_id=$2),0)`, link.SourceKey, link.VodID).Scan(&oldID); err != nil {
+			return err
 		}
-	}
-	return nil
+		_, err := db.Exec(ctx, `INSERT INTO resource_media_links(source_key,vod_id,media_id,confidence,matched_by,is_locked,verified_at)
+VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(source_key,vod_id) DO UPDATE SET
+media_id=EXCLUDED.media_id,confidence=EXCLUDED.confidence,matched_by=EXCLUDED.matched_by,verified_at=EXCLUDED.verified_at,updated_at=NOW()
+WHERE NOT resource_media_links.is_locked OR resource_media_links.media_id=EXCLUDED.media_id`, link.SourceKey, link.VodID, link.MediaID, link.Confidence, link.MatchedBy, link.IsLocked, nullableTime(link.VerifiedAt))
+		if err != nil {
+			return err
+		}
+		if oldID > 0 && oldID != link.MediaID {
+			if err := mediaunits.Reconcile(ctx, db, oldID); err != nil {
+				return err
+			}
+		}
+		return search.NewPostgresStore(db).RefreshResourceMedia(ctx, link.SourceKey, link.VodID)
+	})
 }
 
 // RecordMatchCandidate 记录一条待复核候选（理由只有方法名和置信度）。
@@ -809,200 +820,6 @@ reason = EXCLUDED.reason, updated_at = NOW()`, sourceKey, vodID, mediaID, confid
 		return fmt.Errorf("record resource match candidate: %w", err)
 	}
 	return nil
-}
-
-// UpsertEpisodes 写入资源的播放线路和分集候选：
-// 先按需建 media_units，再写 resource_play_lines，最后写 resource_episode_candidates。
-func (store *PostgresStore) UpsertEpisodes(ctx context.Context, episodes []Episode) error {
-	for _, episode := range episodes {
-		if episode.SourceKey == "" || episode.VodID == "" || episode.EpisodeKey == "" || episode.PlayURL == "" {
-			continue
-		}
-		season := episode.SeasonNumber
-		if season < 1 {
-			season = 1
-		}
-		status := episode.ResourceStatus
-		if status == "" {
-			status = "active"
-		}
-		if episode.MediaID > 0 {
-			unitType := strings.ToLower(strings.TrimSpace(episode.UnitType))
-			if unitType == "" {
-				unitType = "episode"
-			}
-			unit, err := store.EnsureMediaUnit(ctx, MediaUnit{MediaID: episode.MediaID, UnitType: unitType,
-				SeasonNumber: season, EpisodeKey: episode.EpisodeKey, Title: episode.EpisodeLabel})
-			if err != nil {
-				return fmt.Errorf("ensure resource media unit %s/%s/%s: %w", episode.SourceKey, episode.VodID, episode.EpisodeKey, err)
-			}
-			episode.MediaUnitID = unit.ID
-		}
-		lineKey := strings.ToLower(strings.TrimSpace(episode.LineKey))
-		if lineKey == "" {
-			if episode.LineOrder == 0 {
-				lineKey = "default"
-			} else {
-				lineKey = fmt.Sprintf("line-%02d", episode.LineOrder+1)
-			}
-		}
-		lineLabel := strings.TrimSpace(episode.LineLabel)
-		if lineLabel == "" {
-			if episode.LineOrder == 0 {
-				lineLabel = "默认源"
-			} else {
-				lineLabel = fmt.Sprintf("备用源 %c", 'A'+episode.LineOrder)
-			}
-		}
-
-		var lineID int
-		if err := store.database.QueryRow(ctx, `INSERT INTO resource_play_lines
-(source_key, vod_id, line_key, line_label, sort_order, resource_status, last_seen_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,'active',COALESCE($6,NOW()),NOW())
-ON CONFLICT (source_key, vod_id, line_key) DO UPDATE SET
-line_label = EXCLUDED.line_label, sort_order = EXCLUDED.sort_order,
-resource_status = 'active', last_seen_at = EXCLUDED.last_seen_at, updated_at = NOW()
-RETURNING id`, episode.SourceKey, episode.VodID, lineKey, lineLabel, episode.LineOrder, nullableTime(episode.LastSeenAt)).Scan(&lineID); err != nil {
-			return fmt.Errorf("upsert resource play line %s/%s/%s: %w", episode.SourceKey, episode.VodID, lineKey, err)
-		}
-		episode.LineID = lineID
-		if _, err := store.database.Exec(ctx, `INSERT INTO resource_episode_candidates
-(line_id, media_id, media_unit_id, season_number, episode_key, episode_label, play_url,
- format, quality, sort_order, resource_status, last_seen_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12,NOW()),NOW())
-ON CONFLICT (line_id, season_number, episode_key, quality) DO UPDATE SET
-media_id = COALESCE(EXCLUDED.media_id, resource_episode_candidates.media_id),
-media_unit_id = COALESCE(EXCLUDED.media_unit_id, resource_episode_candidates.media_unit_id),
-episode_label = EXCLUDED.episode_label, play_url = EXCLUDED.play_url,
-format = EXCLUDED.format, sort_order = EXCLUDED.sort_order,
-resource_status = 'active', last_seen_at = EXCLUDED.last_seen_at, updated_at = NOW()`,
-			lineID, nullableMediaID(episode.MediaID), nullableMediaID(episode.MediaUnitID), season,
-			episode.EpisodeKey, episode.EpisodeLabel, episode.PlayURL, episode.Format, episode.Quality,
-			episode.SortOrder, status, nullableTime(episode.LastSeenAt)); err != nil {
-			return fmt.Errorf("upsert resource episode candidate %s/%s/%s/%s: %w", episode.SourceKey, episode.VodID, lineKey, episode.EpisodeKey, err)
-		}
-	}
-	return nil
-}
-
-// nullableUnitInt 把非正数转成 NULL 写库。
-func nullableUnitInt(value int) any {
-	if value <= 0 {
-		return nil
-	}
-	return value
-}
-
-// ListResourceCandidates 取某一集的所有播放候选（播放页换源用）。
-func (store *PostgresStore) ListResourceCandidates(ctx context.Context, mediaID, seasonNumber int, episodeKey string) ([]ResourceCandidate, error) {
-	if mediaID <= 0 || seasonNumber < 1 || episodeKey == "" {
-		return []ResourceCandidate{}, nil
-	}
-	return store.listResourceCandidates(ctx, resourceCandidateSelect+`
-WHERE candidate.media_id = $1 AND candidate.season_number = $2 AND candidate.episode_key = $3
-  AND candidate.resource_status NOT IN ('retired', 'deleted')
-  AND line.resource_status NOT IN ('retired', 'deleted')`+playableCandidateFilter+`
-ORDER BY line.sort_order ASC, candidate.sort_order ASC`, mediaID, seasonNumber, episodeKey)
-}
-
-// ListAllEpisodes 取某部作品的全部集次和各自的可用线路数（播放页选集网格用）。
-func (store *PostgresStore) ListAllEpisodes(ctx context.Context, mediaID int) ([]EpisodeInfo, error) {
-	if mediaID <= 0 {
-		return nil, nil
-	}
-	rows, err := store.database.Query(ctx, `SELECT candidate.season_number, candidate.episode_key,
-		MIN(candidate.episode_label) AS episode_label, COUNT(DISTINCT candidate.line_id) AS source_count
-		FROM resource_episode_candidates candidate
-		JOIN resource_play_lines line ON line.id = candidate.line_id
-		JOIN vod_items resource ON resource.source_key = line.source_key AND resource.vod_id = line.vod_id
-		WHERE candidate.media_id = $1
-		  AND candidate.resource_status NOT IN ('retired','deleted')
-		  AND line.resource_status NOT IN ('retired','deleted')`+playableCandidateFilter+`
-		GROUP BY candidate.season_number, candidate.episode_key
-		ORDER BY candidate.season_number ASC, candidate.episode_key ASC`, mediaID)
-	if err != nil {
-		return nil, fmt.Errorf("list all episodes: %w", err)
-	}
-	defer rows.Close()
-	var result []EpisodeInfo
-	for rows.Next() {
-		var ep EpisodeInfo
-		if err := rows.Scan(&ep.SeasonNumber, &ep.EpisodeKey, &ep.EpisodeLabel, &ep.SourceCount); err != nil {
-			return nil, fmt.Errorf("scan episode info: %w", err)
-		}
-		result = append(result, ep)
-	}
-	return result, rows.Err()
-}
-
-// ListUnitResourceCandidates 按季集 ID 取播放候选。
-func (store *PostgresStore) ListUnitResourceCandidates(ctx context.Context, mediaUnitID int) ([]ResourceCandidate, error) {
-	if mediaUnitID <= 0 {
-		return []ResourceCandidate{}, nil
-	}
-	return store.listResourceCandidates(ctx, resourceCandidateSelect+`
-WHERE candidate.media_unit_id = $1
-  AND candidate.resource_status NOT IN ('retired', 'deleted')
-  AND line.resource_status NOT IN ('retired', 'deleted')`+playableCandidateFilter+`
-ORDER BY line.sort_order ASC, candidate.sort_order ASC`, mediaUnitID)
-}
-
-const playableCandidateFilter = `
-  AND COALESCE(candidate.play_url, '') <> ''
-  AND COALESCE(resource.resource_status, 'active') <> 'removed'
-  AND COALESCE(resource.vod_play_url, '') <> ''`
-
-const resourceCandidateSelect = `SELECT candidate.id, line.id, line.line_key, line.line_label, line.sort_order,
-line.source_key, line.vod_id, candidate.media_id, candidate.media_unit_id, candidate.season_number,
-candidate.episode_key, candidate.episode_label, candidate.play_url, candidate.sort_order, candidate.format, candidate.quality,
-candidate.resource_status, candidate.last_seen_at, candidate.last_accessed_at,
-COALESCE(resource.success_count, 0)::INTEGER,
-COALESCE(resource.failure_count, 0)::INTEGER,
-COALESCE(resource.avg_speed_ms, 0)::INTEGER,
-COALESCE(link.confidence, 0)
-FROM resource_episode_candidates candidate
-JOIN resource_play_lines line ON line.id = candidate.line_id
-JOIN vod_items resource ON resource.source_key = line.source_key AND resource.vod_id = line.vod_id
-LEFT JOIN resource_media_links link ON link.source_key = line.source_key AND link.vod_id = line.vod_id
-`
-
-// listResourceCandidates 是上面几个查询的公共扫描逻辑。
-func (store *PostgresStore) listResourceCandidates(ctx context.Context, query string, arguments ...any) ([]ResourceCandidate, error) {
-	rows, err := store.database.Query(ctx, query, arguments...)
-	if err != nil {
-		return nil, fmt.Errorf("list resource candidates: %w", err)
-	}
-	defer rows.Close()
-	result := make([]ResourceCandidate, 0)
-	for rows.Next() {
-		var candidate ResourceCandidate
-		var mediaID, mediaUnitID *int
-		var lastSeen, lastAccessed *time.Time
-		if err := rows.Scan(&candidate.CandidateID, &candidate.LineID, &candidate.LineKey, &candidate.LineLabel, &candidate.LineOrder,
-			&candidate.SourceKey, &candidate.VodID, &mediaID, &mediaUnitID, &candidate.SeasonNumber,
-			&candidate.EpisodeKey, &candidate.EpisodeLabel, &candidate.PlayURL, &candidate.SortOrder,
-			&candidate.Format, &candidate.Quality, &candidate.ResourceStatus, &lastSeen, &lastAccessed,
-			&candidate.SuccessCount, &candidate.FailureCount, &candidate.AvgLoadMs, &candidate.MappingConfidence); err != nil {
-			return nil, fmt.Errorf("scan resource candidate: %w", err)
-		}
-		if mediaID != nil {
-			candidate.MediaID = *mediaID
-		}
-		if mediaUnitID != nil {
-			candidate.MediaUnitID = *mediaUnitID
-		}
-		if lastSeen != nil {
-			candidate.LastSeenAt = *lastSeen
-		}
-		if lastAccessed != nil {
-			candidate.LastAccessedAt = *lastAccessed
-		}
-		result = append(result, candidate)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate resource candidates: %w", err)
-	}
-	return result, nil
 }
 
 // FindResourceLink 取某条资源的媒体关联。

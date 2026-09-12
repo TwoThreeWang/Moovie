@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaview"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
@@ -17,14 +18,14 @@ func NewPostgresStore(executor database.Executor) *PostgresStore {
 }
 
 // movie_id 继续保存公开 URL 使用的豆瓣标识；media_id 是数据库内部规范外键。
-const recordColumns = `um.id, um.user_id, um.movie_id,
-COALESCE(NULLIF(media.title, ''), um.title),
-COALESCE(NULLIF(media.poster, ''), um.poster),
-COALESCE(NULLIF(media.year, ''), um.year),
+var recordColumns = `um.id, um.user_id, um.movie_id,
+` + mediaview.Column("title", "COALESCE(display_resource.vod_name,um.title)") + `,
+` + mediaview.Column("poster", "COALESCE(display_resource.vod_pic,um.poster)") + `,
+` + mediaview.Column("year", "COALESCE(display_resource.vod_year,um.year)") + `,
 um.status, um.rating, um.comment, um.created_at, um.updated_at`
 
 // recordSource 是各查询共用的表和关联，海报优先取 media 表的。
-const recordSource = ` FROM user_movies um LEFT JOIN media ON media.id = um.media_id`
+var recordSource = ` FROM user_movies um LEFT JOIN media ON media.id = um.media_id ` + mediaview.ResourceJoin("um.movie_id") + ``
 
 // Upsert 标记或更新一条片单记录，同一部片子换状态时覆盖原记录。
 func (store *PostgresStore) Upsert(ctx context.Context, record Record) error {

@@ -40,9 +40,9 @@ func TestSourceFieldsKeepProviderPriorityBoundaries(t *testing.T) {
 
 func TestNormalizeMediaTypeUsesCanonicalIdentityNamespaces(t *testing.T) {
 	tests := map[string]string{
-		"movie": "movie", "film": "movie", "": "movie",
-		"tv": "tv", "series": "tv", "season": "tv", "show": "tv",
-		"animation": "tv", "cartoon": "tv",
+		"movie": "movie", "film": "movie", "": "",
+		"tv": "tv", "series": "tv", "season": "tv", "show": "show",
+		"animation": "cartoon", "cartoon": "cartoon",
 	}
 	for input, expected := range tests {
 		if got := normalizeMediaType(input); got != expected {

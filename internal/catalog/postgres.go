@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"fmt"
+	"github.com/TwoThreeWang/Moovie/new/internal/mediatype"
 	"math"
 	"strconv"
 	"strings"
@@ -183,10 +184,7 @@ func (store *PostgresStore) Upsert(ctx context.Context, movie Movie) error {
 	if movie.ReviewsUpdatedAt.IsZero() {
 		movie.ReviewsUpdatedAt = time.Unix(0, 0).UTC()
 	}
-	mediaType := "movie"
-	if strings.EqualFold(strings.TrimSpace(movie.MediaType), "tv") {
-		mediaType = "tv"
-	}
+	mediaType := mediatype.Normalize(movie.MediaType)
 	externalType := ""
 	if season := mediaidentity.TitleSeasonNumber(movie.Title, movie.OriginalTitle); season > 0 {
 		externalType = fmt.Sprintf("tv_season_%d", season)
@@ -487,4 +485,10 @@ func parseEmbedding(text string) ([]float32, error) {
 		vector = append(vector, float32(value))
 	}
 	return vector, nil
+}
+
+// SaveReviews 只更新短评，避免用先前读取的整条作品覆盖刚完成的资料合并。
+func (store *PostgresStore) SaveReviews(ctx context.Context, id, reviews string, at time.Time) error {
+	_, err := store.database.Exec(ctx, `UPDATE media SET reviews_json=$2,reviews_updated_at=$3 WHERE douban_id=$1`, id, reviews, at)
+	return err
 }

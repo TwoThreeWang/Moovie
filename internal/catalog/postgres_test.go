@@ -44,7 +44,7 @@ func TestPostgresStoreScopesIMDbIdentityForSeasonPages(t *testing.T) {
 	if err := store.Upsert(t.Context(), Movie{DoubanID: "36444323", Title: "末日地堡 第二季", IMDbID: "tt14688458"}); err != nil {
 		t.Fatal(err)
 	}
-	if fake.arguments[18] != "tv_season_2" || fake.arguments[19] != "movie" || !strings.Contains(fake.execQuery, "WHEN $19 <> '' THEN $19") {
+	if fake.arguments[18] != "tv_season_2" || fake.arguments[19] != "" || !strings.Contains(fake.execQuery, "WHEN $19 <> '' THEN $19") {
 		t.Fatalf("season external identity = %#v/query=%s", fake.arguments[18], fake.execQuery)
 	}
 }
@@ -200,7 +200,7 @@ func TestPostgresMetadataRefreshQueueUsesUnifiedWorkerJobs(t *testing.T) {
 	if err := store.ScheduleActiveContentRefreshes(t.Context(), 10); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"playback_attempt_events", "played_10s", "INTERVAL '24 hours'", "INTERVAL '3 days'", "active_content"} {
+	for _, expected := range []string{"playback_results", "event.succeeded", "INTERVAL '24 hours'", "INTERVAL '3 days'", "active_content"} {
 		if !strings.Contains(fake.execQuery, expected) {
 			t.Fatalf("active refresh query missing %q: %s", expected, fake.execQuery)
 		}

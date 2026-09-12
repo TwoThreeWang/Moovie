@@ -111,16 +111,8 @@ func (handler *Handler) todayUpdates(c *gin.Context) {
 		if episodeKey == "" {
 			episodeKey = mediaidentity.EpisodeLabel(unit.SeasonNumber, unit.EpisodeNumber)
 		}
-		var playable bool
-		if handler.episodeReader != nil {
-			candidates, candidateErr := handler.episodeReader.ListResourceCandidates(c.Request.Context(), mediaID, unit.SeasonNumber, episodeKey)
-			if candidateErr != nil {
-				requestmeta.Logger(c.Request.Context()).Warn("today updates: load episode candidates failed",
-					"user_id", userID, "media_id", mediaID, "episode_key", episodeKey, "error", candidateErr)
-			} else {
-				playable = len(candidates) > 0
-			}
-		}
+		playable := unit.HasResource
+
 		updates = append(updates, TodayUpdate{
 			MediaID:       mediaID,
 			DoubanID:      record.DoubanID,

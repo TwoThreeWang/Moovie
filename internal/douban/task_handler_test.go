@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
-	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
 func TestTaskHandlerRunsThroughUnifiedDispatcher(t *testing.T) {

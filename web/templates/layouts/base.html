@@ -48,7 +48,7 @@
     {{ range .JSONLD }}<script type="application/ld+json">{{ . }}</script>{{ end }}
 
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=4.3.4">
+    <link rel="stylesheet" href="/static/css/style.css?v=4.3.5">
 
     <!-- htmx -->
     <script src="/static/js/htmx.min.js?v=0.1" defer></script>
@@ -60,7 +60,6 @@
     <script async defer src="https://pingoo.c2v2.com/pingoo.js" site-id="4"></script>
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-CGYQX86P0P"></script>
-    <meta name="juicyads-site-verification" content="3912beb23b3848a09668cb7bd744bb13">
     <meta name="Trafficstars" content="90090">
     <script>
     window.dataLayer = window.dataLayer || [];
@@ -182,13 +181,13 @@
                     </svg>
                     <span>M3U8 播放器</span>
                 </a>
-                <a href="/iptv" class="nav-item {{ if eq .ActiveMenu "iptv" }}active{{ end }}">
+                <!-- <a href="/iptv" class="nav-item {{ if eq .ActiveMenu "iptv" }}active{{ end }}">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
                         <polyline points="17 2 12 7 7 2"></polyline>
                     </svg>
                     <span>IPTV 直播</span>
-                </a>
+                </a> -->
             </nav>
 
             <div class="sidebar-section">

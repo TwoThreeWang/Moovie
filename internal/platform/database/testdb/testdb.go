@@ -1,17 +1,16 @@
-// Package testdb 让测试连 .env.local 里配置的本地数据库。
+// Package testdb 仅连接显式指定的独立测试数据库。
 package testdb
 
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
@@ -98,32 +97,27 @@ VALUES ($1,$2,'feature','feature') ON CONFLICT (id) DO NOTHING`, unitID, mediaID
 
 // truncate 清空除 schema_migrations 外的所有表。
 func truncate(ctx context.Context, pool *database.Pool) error {
-	_, err := pool.Exec(ctx, `DO $$ DECLARE t text; BEGIN
-FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'schema_migrations'
-LOOP EXECUTE 'TRUNCATE '||quote_ident(t)||' RESTART IDENTITY CASCADE'; END LOOP; END $$`)
+	_, err := pool.Exec(ctx, `DO $$ DECLARE tables text; BEGIN
+SELECT string_agg(quote_ident(tablename),',') INTO tables FROM pg_tables
+WHERE schemaname='public' AND tablename<>'schema_migrations';
+IF tables IS NOT NULL THEN EXECUTE 'TRUNCATE '||tables||' RESTART IDENTITY CASCADE'; END IF;
+END $$`)
 	return err
 }
 
-// open 从当前目录逐级往上找 .env.local，用里面的连接串建连接池。
+// open 只允许显式指定测试库，禁止测试的 TRUNCATE 误清开发或生产数据。
 func open() (*database.Pool, error) {
-	dir, _ := os.Getwd()
-	path := ""
-	for path == "" {
-		if candidate := filepath.Join(dir, ".env.local"); fileExists(candidate) {
-			path = candidate
-		} else if parent := filepath.Dir(dir); parent != dir {
-			dir = parent
-		} else {
-			return nil, fmt.Errorf("未找到 .env.local")
-		}
+	dsn := os.Getenv("MOOVIE_TEST_DATABASE_URL")
+	if dsn == "" {
+		return nil, fmt.Errorf("请设置 MOOVIE_TEST_DATABASE_URL，库名必须以 moovie_test_ 开头")
 	}
-	cfg, err := config.DatabaseConfigFromDotEnv(path)
-	if err != nil {
-		return nil, err
+	parsed, err := url.Parse(dsn)
+	if err != nil || !strings.HasPrefix(strings.TrimPrefix(parsed.Path, "/"), "moovie_test_") {
+		return nil, fmt.Errorf("拒绝连接非独立测试库")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	pool, err := database.Connect(ctx, cfg.DSN(), 8)
+	pool, err := database.Connect(ctx, dsn, 8)
 	if err != nil {
 		return nil, err
 	}
@@ -132,10 +126,4 @@ func open() (*database.Pool, error) {
 		return nil, err
 	}
 	return pool, nil
-}
-
-// fileExists 判断文件是否存在。
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

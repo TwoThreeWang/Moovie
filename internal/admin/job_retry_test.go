@@ -15,10 +15,10 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 type jobRetrierStub struct {

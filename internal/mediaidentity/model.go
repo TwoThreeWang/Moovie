@@ -10,11 +10,14 @@
 //	media_field_sources   字段级来源优先级（谁写的这个字段、优先级多少）
 //	media_source_snapshots 各来源最近一次抓取的记录
 //	resource_media_links  资源 → 媒体的关联
-//	resource_play_lines / resource_episode_candidates  资源的播放线路与分集候选
-//	playback_attempt_events  播放质量埋点
+//	vod_items             唯一的播放列表，线路和候选实时解析
+//	playback_results       短期起播结果
 package mediaidentity
 
-import "time"
+import (
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaunits"
+	"time"
+)
 
 // Media 是资料、资源和历史共同引用的规范媒体身份。
 // 来源专属元数据仍保存在各自表中；该模型只保留识别和展示作品所需的稳定字段。
@@ -69,18 +72,7 @@ type Alias struct {
 }
 
 // MediaUnit 是可播放的最小单位：电影是一个 feature，剧集是每一集 episode。
-type MediaUnit struct {
-	ID             int
-	MediaID        int
-	UnitType       string
-	SeasonNumber   int
-	EpisodeNumber  int
-	AbsoluteNumber int
-	EpisodeKey     string
-	Title          string
-	AirDate        time.Time
-	RuntimeMinutes int
-}
+type MediaUnit = mediaunits.Unit
 
 // ResourceLink 是「某个资源站的某条资源」到规范媒体的关联。
 // IsLocked 表示人工确认过，自动匹配不能再改它。
@@ -96,39 +88,38 @@ type ResourceLink struct {
 
 // Episode 是一条播放候选：某个资源站、某条线路、某一集的播放地址。
 type Episode struct {
-	CandidateID    int
-	LineID         int
-	LineKey        string
-	LineLabel      string
-	LineOrder      int
-	SourceKey      string
-	VodID          string
-	MediaID        int
-	MediaUnitID    int
-	UnitType       string
-	SeasonNumber   int
-	EpisodeKey     string
-	EpisodeLabel   string
-	PlayURL        string
-	SortOrder      int
-	Format         string
-	Quality        string
-	ResourceStatus string
-	LastSeenAt     time.Time
-	LastAccessedAt time.Time
+	CandidateKey    string
+	PlaybackVersion string
+	Part            string
+	LineKey         string
+	LineLabel       string
+	LineOrder       int
+	SourceKey       string
+	VodID           string
+	MediaID         int
+	MediaUnitID     int
+	UnitType        string
+	SeasonNumber    int
+	EpisodeKey      string
+	EpisodeLabel    string
+	PlayURL         string
+	SortOrder       int
+	Format          string
+	Quality         string
+	ResourceStatus  string
+	LastSeenAt      time.Time
+	LastAccessedAt  time.Time
 }
 
-// PlaybackAttemptEvent 是播放器上报的一次播放事件（开始/首帧/卡顿/失败等）。
+// PlaybackAttemptEvent 只上报一次起播的最终结果；不保存播放过程明细。
 type PlaybackAttemptEvent struct {
-	AttemptID          string
-	CandidateSessionID string
-	EventType          string
-	CandidateID        int
-	MediaUnitID        int
-	SourceKey          string
-	VodID              string
-	ElapsedMs          int
-	Reason             string
+	AttemptID       string
+	EventType       string
+	MediaUnitID     int
+	SourceKey       string
+	VodID           string
+	PlaybackVersion string
+	ElapsedMs       int
 }
 
 // ResourceCandidate 是带质量统计的播放候选，播放页按这些数据给线路排序。

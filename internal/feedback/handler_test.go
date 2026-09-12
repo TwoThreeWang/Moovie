@@ -12,9 +12,9 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestAnonymousAndAuthenticatedFeedbackListsPreservePrivacyAndValidation(t *testing.T) {

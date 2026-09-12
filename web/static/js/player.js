@@ -86,25 +86,33 @@ function createPlaybackAttemptId() {
     return 'attempt-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 }
 
-function reportPlaybackEvent(eventType, elapsedMs, reason, context) {
-    if (!context || !context.attempt_id || !context.candidate_id || !context.media_unit_id) return;
-    fetch('/api/v2/playback/events', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        credentials: 'same-origin',
-        keepalive: true,
-        body: JSON.stringify({
-            attempt_id: context.attempt_id,
-            candidate_session_id: context.candidate_session_id || '',
-            event_type: eventType,
-            candidate_id: context.candidate_id,
-            media_unit_id: context.media_unit_id,
-            source_key: context.sourceKey,
-            vod_id: context.vodId,
-            elapsed_ms: Math.max(0, Math.round(elapsedMs || 0)),
-            reason: reason || ''
-        })
-    }).catch(function() {});
+// 每次地址尝试只提交一个起播结果；相同 attempt_id 的网络重试由数据库去重。
+function reportPlaybackResult(succeeded, elapsedMs, context) {
+    if (!context || context._result_reported || !context.attempt_id || !context.playback_version) return;
+    context._result_reported = true;
+    var body = JSON.stringify({
+        attempt_id: context.attempt_id, event_type: succeeded ? 'success' : 'failure',
+        media_unit_id: context.media_unit_id || 0, source_key: context.sourceKey, vod_id: context.vodId,
+        playback_version: context.playback_version, elapsed_ms: succeeded ? Math.max(1, Math.min(120000, Math.round(elapsedMs))) : 0
+    });
+    function send(retry) {
+        fetch('/api/v2/playback/events', { method: 'POST', headers: {'Content-Type':'application/json'},
+            credentials:'same-origin', keepalive:true, body:body
+        }).then(function(response) { if (response.status >= 500 && retry) setTimeout(function(){send(false);},1000); })
+          .catch(function(){ if(retry) setTimeout(function(){send(false);},1000); });
+    }
+    send(true);
+}
+
+function playbackCandidateURL(candidate, options) {
+    var path = options.entryPage === 'watch' && options.douban_id
+        ? '/watch/' + encodeURIComponent(options.douban_id)
+        : '/play/' + encodeURIComponent(candidate.source_key) + '/' + encodeURIComponent(candidate.vod_id);
+    var query = new URLSearchParams({ep: options.episode_key || '', source_key:candidate.source_key, vod_id:candidate.vod_id,
+        candidate:candidate.candidate_key || ''});
+    if (options.media_unit_id) query.set('unit', options.media_unit_id);
+    if (candidate.part) query.set('part', candidate.part);
+    return path + '?' + query.toString();
 }
 
 var MAX_AUTOMATIC_FAILOVERS = 2;
@@ -121,7 +129,6 @@ function readFailoverState(options) {
     } catch (e) {
         state = {};
     }
-    if (!Array.isArray(state.failed_candidate_ids)) state.failed_candidate_ids = [];
     if (!Array.isArray(state.failed_candidate_keys)) state.failed_candidate_keys = [];
     state.switch_count = Math.max(0, Number(state.switch_count) || 0);
     return state;
@@ -134,107 +141,41 @@ function writeFailoverState(options, state) {
 }
 
 function failoverCandidateKey(candidate) {
-    var candidateID = Number(candidate.candidate_id) || 0;
-    if (candidateID > 0) return 'candidate:' + candidateID;
-    return 'resource:' + (candidate.source_key || '') + ':' + (candidate.vod_id || '') + ':' + (candidate.play_url || '');
+    return candidate.candidate_key || ((candidate.source_key || '') + ':' + (candidate.vod_id || '') + ':' + (candidate.play_url || ''));
 }
 
 function rememberFailedCandidate(state, candidate) {
-    var candidateID = Number(candidate.candidate_id) || 0;
     var key = failoverCandidateKey(candidate);
-    if (candidateID > 0 && state.failed_candidate_ids.indexOf(candidateID) === -1) {
-        state.failed_candidate_ids.push(candidateID);
-    }
-    if (state.failed_candidate_keys.indexOf(key) === -1) {
-        state.failed_candidate_keys.push(key);
-    }
+    if (state.failed_candidate_keys.indexOf(key) === -1) state.failed_candidate_keys.push(key);
 }
 
-// 自动换源只在前后端开关都开启时执行，并严格限制在同一规范剧集内。
+// 换地址直接走统一页面入口，新页面自然重置计时与播放器状态，避免复用旧闭包。
 function failoverToHealthyEpisode(options) {
-    if (!options || !options.auto_failover || !options.media_unit_id ||
-        options.sourceKey === 'iptv' || options.sourceKey === 'manual') {
-        return Promise.resolve(false);
-    }
-    if (options._failover_in_progress) return Promise.resolve(true);
-
+    if (!options || !options.media_unit_id || options.auto_failover !== true || options._failover_in_progress) return Promise.resolve(false);
     var state = readFailoverState(options);
-    rememberFailedCandidate(state, {
-        candidate_id: options.candidate_id,
-        source_key: options.sourceKey,
-        vod_id: options.vodId,
-        play_url: options._current_url || ''
-    });
-    state.candidate_session_id = state.candidate_session_id || options.candidate_session_id || createPlaybackAttemptId();
-    options.candidate_session_id = state.candidate_session_id;
-    writeFailoverState(options, state);
-    if (state.switch_count >= MAX_AUTOMATIC_FAILOVERS) return Promise.resolve(false);
-
-    options._failover_in_progress = true;
-    var endpoint = '/api/v2/media-units/' + encodeURIComponent(options.media_unit_id) + '/playback-candidates';
-    return fetch(endpoint, { credentials: 'same-origin' })
-        .then(function(response) { return response.ok ? response.json() : null; })
-        .then(function(payload) {
-            if (!payload || payload.auto_failover_enabled !== true ||
-                Number(payload.unit_id) !== Number(options.media_unit_id)) return false;
-
-            var candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
-            var next = null;
-            for (var i = 0; i < candidates.length; i++) {
-                var candidate = candidates[i] || {};
-                var candidateID = Number(candidate.candidate_id) || 0;
-                var candidateKey = failoverCandidateKey(candidate);
-                if (!candidate.play_url || Number(candidate.mapping_confidence) < MIN_AUTOMATIC_MAPPING_CONFIDENCE) continue;
-                if (candidateID > 0 && state.failed_candidate_ids.indexOf(candidateID) !== -1) continue;
-                if (state.failed_candidate_keys.indexOf(candidateKey) !== -1) continue;
-                next = candidate;
-                break;
+    rememberFailedCandidate(state, {candidate_key:options.candidate_key, source_key:options.sourceKey, vod_id:options.vodId, play_url:options._current_url});
+    writeFailoverState(options,state);
+    if(state.switch_count >= MAX_AUTOMATIC_FAILOVERS) return Promise.resolve(false);
+    options._failover_in_progress=true;
+    return fetch('/api/v2/media-units/'+encodeURIComponent(options.media_unit_id)+'/playback-candidates',{credentials:'same-origin'})
+      .then(function(response){return response.ok ? response.json() : null;})
+      .then(function(payload){
+        if(!payload || Number(payload.unit_id)!==Number(options.media_unit_id) || !payload.auto_failover_enabled) return false;
+        var candidates=payload.candidates || [];
+        for(var i=0;i<candidates.length;i++) {
+            var next=candidates[i];
+            if(!next.play_url || Number(next.mapping_confidence)<MIN_AUTOMATIC_MAPPING_CONFIDENCE || (next.part || '')!==(options.part || '') || state.failed_candidate_keys.indexOf(failoverCandidateKey(next))!==-1) continue;
+            state.switch_count++;writeFailoverState(options,state);
+            if(currentArt && currentArt.currentTime>5) {
+                Storage.upsert({id:next.source_key+next.vod_id,sourceKey:next.source_key,vodId:next.vod_id,
+                    episode:options.episode,lastTime:currentArt.currentTime,entry_page:options.entryPage,
+                    douban_id:options.douban_id,media_id:options.media_id,media_unit_id:options.media_unit_id,
+                    season_number:options.season_number,episode_key:options.episode_key,updatedAt:Date.now()});
             }
-            if (!next || !currentArt || typeof currentArt.switchUrl !== 'function') return false;
-
-            var art = currentArt;
-            var resumePosition = Math.max(0, Number(art.currentTime) || 0);
-            state.switch_count++;
-            writeFailoverState(options, state);
-
-            reportPlaybackEvent('source_switched', 0, 'automatic', options);
-            options.candidate_id = Number(next.candidate_id) || 0;
-            options.sourceKey = next.source_key || '';
-            options.vodId = next.vod_id || '';
-            options.episode_key = next.episode_key || options.episode_key || '';
-            options.attempt_id = createPlaybackAttemptId();
-            options._attempt_started_at = Date.now();
-            options._load_reported = false;
-            options._current_url = next.play_url;
-            reportPlaybackEvent('attempt_started', 0, 'automatic_failover', options);
-
-            if (art.notice) art.notice.show = '当前线路异常，正在自动切换备用线路…';
-            art.once('video:canplay', function() {
-                if (resumePosition > 0) art.currentTime = resumePosition;
-                options._recovery_requested = false;
-                if (art.notice) art.notice.show = '已自动切换到 ' + (next.line_label || next.source_key || '备用线路');
-                if (art.video) art.video.play().catch(function() {});
-            });
-
-            try {
-                var switched = art.switchUrl(next.play_url);
-                options._recovery_requested = false;
-                if (switched && typeof switched.then === 'function') {
-                    switched.catch(function() {
-                        rememberFailedCandidate(state, next);
-                        writeFailoverState(options, state);
-                    });
-                }
-                return true;
-            } catch (e) {
-                options._recovery_requested = false;
-                rememberFailedCandidate(state, next);
-                writeFailoverState(options, state);
-                return false;
-            }
-        })
-        .catch(function() { return false; })
-        .finally(function() { options._failover_in_progress = false; });
+            window.location.assign(playbackCandidateURL(next,options));return true;
+        }
+        return false;
+      }).catch(function(){return false;}).finally(function(){options._failover_in_progress=false;});
 }
 
 function recoverPlaybackOrShowAlternatives(options) {
@@ -248,7 +189,6 @@ function showFailoverAlternatives(options) {
     if (!options || !options.media_unit_id || options.sourceKey === 'iptv' || options.sourceKey === 'manual') {
         return Promise.resolve(false);
     }
-    var currentKey = options.sourceKey + ':' + options.vodId;
     var endpoint = '/api/v2/media-units/' + encodeURIComponent(options.media_unit_id) + '/playback-candidates';
     return fetch(endpoint, { credentials: 'same-origin' })
         .then(function(response) { return response.ok ? response.json() : null; })
@@ -259,7 +199,7 @@ function showFailoverAlternatives(options) {
             for (var i = 0; i < resources.length; i++) {
                 var resource = resources[i] || {};
                 var key = (resource.source_key || '') + ':' + (resource.vod_id || '');
-                if (!resource.source_key || !resource.vod_id || key === currentKey) continue;
+                if (!resource.source_key || !resource.vod_id || failoverCandidateKey(resource)===options.candidate_key || (resource.part || '')!==(options.part || '')) continue;
                 alternatives.push(resource);
             }
             if (alternatives.length === 0) return false;
@@ -301,11 +241,7 @@ function showAlternativeSourcesUI(alternatives, options) {
             btn.addEventListener('mouseover', function() { btn.style.borderColor = '#f60c3e'; });
             btn.addEventListener('mouseout', function() { btn.style.borderColor = '#555'; });
             btn.addEventListener('click', function() {
-                reportPlaybackEvent('source_switched', 0, 'manual', options);
-                var query = '?ep=' + encodeURIComponent(res.episode_label || options.episode || res.episode_key);
-                if (res.line_label) query += '&source=' + encodeURIComponent(res.line_label);
-                if (options.douban_id) query += '&douban_id=' + encodeURIComponent(options.douban_id);
-                window.location.href = '/play/' + encodeURIComponent(res.source_key) + '/' + encodeURIComponent(res.vod_id) + query;
+                window.location.assign(playbackCandidateURL(res,options));
             });
             list.appendChild(btn);
         })(alternatives[i]);
@@ -1017,25 +953,22 @@ function initPlayer(containerId, url, options) {
     // 加载速度统计
     const startTime = Date.now();
     options._attempt_started_at = startTime;
-    if (options.media_unit_id) {
-        var existingFailoverState = readFailoverState(options);
-        options.candidate_session_id = existingFailoverState.candidate_session_id || options.candidate_session_id || createPlaybackAttemptId();
-        existingFailoverState.candidate_session_id = options.candidate_session_id;
-        writeFailoverState(options, existingFailoverState);
-    }
-    options.attempt_id = options.attempt_id || createPlaybackAttemptId();
-    var firstFrameLoadTime = 0;
+    options.attempt_id = createPlaybackAttemptId();
+    options._result_reported = false;
+    options._played_10s_reported = false;
+    options._recovery_requested = false;
+    var canPlayLoadTime = 0;
     var effectivePlaybackMs = 0;
     var lastPlaybackTick = 0;
     var terminalAttempt = false;
-    reportPlaybackEvent('attempt_started', 0, '', options);
+
 
     function recoverAfterFatal(reason, elapsedMs, fallbackMessage) {
         if (options._recovery_requested) return;
         options._recovery_requested = true;
         clearTimeout(timeoutTimer);
         terminalAttempt = true;
-        reportPlaybackEvent('fatal_error', elapsedMs, reason, options);
+        reportPlaybackResult(false, 0, options);
         if (typeof options.onPlaybackError === 'function') {
             try { options.onPlaybackError({ reason: reason, elapsedMs: elapsedMs }); } catch (e) {}
         }
@@ -1172,7 +1105,6 @@ function initPlayer(containerId, url, options) {
                     });
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         console.log('[Player] HLS manifest 解析完成');
-                        reportPlaybackEvent('manifest_loaded', Date.now() - startTime, '', options);
                         hls._bufferTimer = setTimeout(() => {
                             hls.config.maxBufferLength = 40;
                             hls.config.maxMaxBufferLength = 90;
@@ -1211,7 +1143,7 @@ function initPlayer(containerId, url, options) {
                         console.log('[Player] FLV 加载完成');
                         const loadTime = Date.now() - startTime;
                         console.log('视频加载成功，耗时:', loadTime, '毫秒');
-                        reportPlaybackEvent('manifest_loaded', loadTime, '', options);
+
                     });
                 } else {
                     console.error('[Player] 不支持 FLV 播放');
@@ -1268,7 +1200,6 @@ function initPlayer(containerId, url, options) {
                 art._recoverTimer = null;
             };
             var waitingHandler = function() {
-                reportPlaybackEvent('rebuffer', 0, 'waiting', options);
                 lastPlaybackTick = 0;
                 if (recoverTimer) return;
                 var adCandidate = adSkipFindRecoveryCandidate(adState, video.currentTime);
@@ -1301,9 +1232,9 @@ function initPlayer(containerId, url, options) {
         art.once('video:canplay', () => {
             clearTimeout(timeoutTimer);
             const loadTime = Date.now() - startTime;
-            firstFrameLoadTime = loadTime;
+            canPlayLoadTime = loadTime;
             console.log('视频加载成功，耗时:', loadTime, '毫秒');
-            reportPlaybackEvent('first_frame', loadTime, '', options);
+
             if (typeof options.onPlaybackReady === 'function') {
                 try { options.onPlaybackReady({ elapsedMs: loadTime }); } catch (e) {}
             }
@@ -1328,9 +1259,9 @@ function initPlayer(containerId, url, options) {
                 effectivePlaybackMs += Math.min(playbackNow - lastPlaybackTick, 2000);
             }
             lastPlaybackTick = playbackNow;
-            if (effectivePlaybackMs >= 10000 && !options._played_10s_reported) {
+            if (!terminalAttempt && effectivePlaybackMs >= 10000 && !options._played_10s_reported) {
                 options._played_10s_reported = true;
-                reportPlaybackEvent('played_10s', effectivePlaybackMs, '', options);
+                reportPlaybackResult(true, canPlayLoadTime || (Date.now()-startTime), options);
                 if (options.media_unit_id) {
                     try { sessionStorage.removeItem('moovie_failover:unit:' + options.media_unit_id); } catch (e) {}
                 }
@@ -1369,7 +1300,6 @@ function initPlayer(containerId, url, options) {
         // 自动播放下一集：视频结束时触发
         art.on('video:ended', function() {
             terminalAttempt = true;
-            reportPlaybackEvent('ended', effectivePlaybackMs, '', options);
             if (autoPlayState) {
                 autoPlayState.trigger();
             }
@@ -1384,7 +1314,6 @@ function initPlayer(containerId, url, options) {
 
         // 播放器销毁时清理
         art.on('destroy', function() {
-            if (!terminalAttempt) reportPlaybackEvent('abandoned', effectivePlaybackMs, '', options);
             clearTimeout(timeoutTimer);
             if (art._recoverTimer) clearTimeout(art._recoverTimer);
             if (art._waitingHandler && art.video) {

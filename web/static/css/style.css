@@ -860,7 +860,8 @@ to { transform: rotate(360deg); }
 .episodes-list { display: flex; flex-wrap: wrap; gap: 10px; }
 .ep-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 60px; padding: 8px 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; font-size: 0.875rem; color: var(--text); transition: 0.2s ease; }
 .episodes-list > .ep-btn[hidden] { display: none; }
-.ep-btn:hover { border-color: var(--primary-text); color: var(--primary-text); }
+.ep-btn:not(:disabled):hover { border-color: var(--primary-text); color: var(--primary-text); }
+.ep-btn:disabled { opacity: .45; cursor: not-allowed; }
 .ep-btn.active { background: var(--primary-solid); border-color: var(--primary-text); color: white; }
 .episode-navigation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 8px; margin: 10px 0 14px; }
 .episode-navigation:empty { display: none; }

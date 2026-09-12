@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestLegacyHistoryRoutesAreRemoved(t *testing.T) {
@@ -94,7 +94,7 @@ func TestDashboardHistoryPreservesPaginationAndFragments(t *testing.T) {
 
 func TestRecentHistoryUsesCanonicalEpisodeAcrossSources(t *testing.T) {
 	testdb.Media(t, testdb.Pool(t), 7, 9)
-	if _, err := testdb.Pool(t).Exec(t.Context(), `UPDATE media SET douban_id = '1292052' WHERE id = 9`); err != nil {
+	if _, err := testdb.Pool(t).Exec(t.Context(), `UPDATE media SET douban_id = '1292052',title='影片',poster='https://image.example/poster.jpg' WHERE id = 9`); err != nil {
 		t.Fatal(err)
 	}
 	testdb.MediaUnit(t, testdb.Pool(t), 70, 7)

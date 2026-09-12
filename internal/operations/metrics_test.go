@@ -48,14 +48,14 @@ func TestMetricsSnapshotAgainstConfiguredPostgres(t *testing.T) {
 }
 
 func TestMetricsSnapshotDecodesOperationalDomains(t *testing.T) {
-	payload := []byte(`{"generated_at":"2026-08-04T12:00:00.000Z","window_hours":24,"media":{"total":7,"completeness_low":1,"completeness_medium":2,"completeness_high":4},"matches":{"exact":3,"automatic":1,"review":2,"conflict":0,"unmatched_resources":5},"search":{"ok":10,"empty":2,"timeout":1,"error":0},"history":{"total":8,"with_media":6,"resource_only":2},"playback":{"attempts":10,"first_frames":9,"played_10s":8,"fatal_errors":1,"source_switches":2,"successful_switches":1,"wrong_unit_sessions":0,"first_frame_rate":90,"played_10s_rate":80,"switch_success_rate":50,"startup_p50_ms":300,"startup_p90_ms":900},"refresh":{"due_media":2,"pending":1,"running":1,"failed":0,"oldest_pending_seconds":30,"provider_success":4,"provider_failure":1,"provider_unchanged":2},"resources":{"active":12,"removed":1,"broken":2},"popularity":{"movie":{"item_count":40,"age_seconds":60,"expires_in_seconds":3540,"sources":{"douban":30,"tmdb":20,"activity":10}}}}`)
+	payload := []byte(`{"generated_at":"2026-08-04T12:00:00.000Z","window_hours":24,"media":{"total":7,"completeness_low":1,"completeness_medium":2,"completeness_high":4},"matches":{"exact":3,"automatic":1,"review":2,"conflict":0,"unmatched_resources":5},"search":{"ok":10,"empty":2,"timeout":1,"error":0},"history":{"total":8,"with_media":6,"resource_only":2},"playback":{"results":10,"successes":8,"failures":2,"success_rate":80,"source_switches":2,"successful_switches":1,"wrong_unit_sessions":0,"first_frame_rate":90,"played_10s_rate":80,"switch_success_rate":50,"startup_p50_ms":300,"startup_p90_ms":900},"refresh":{"due_media":2,"pending":1,"running":1,"failed":0,"oldest_pending_seconds":30,"provider_success":4,"provider_failure":1,"provider_unchanged":2},"resources":{"active":12,"removed":1,"broken":2},"popularity":{"movie":{"item_count":40,"age_seconds":60,"expires_in_seconds":3540,"sources":{"douban":30,"tmdb":20,"activity":10}}}}`)
 	database := &metricsDatabase{row: metricsRow{payload: payload}}
 	store := NewMetricsStore(database)
 	snapshot, err := store.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Media.Total != 7 || snapshot.Playback.PlayedTenSecondsRate != 80 || snapshot.Playback.WrongUnitSessions != 0 || snapshot.Popularity["movie"].Sources["tmdb"] != 20 {
+	if snapshot.Media.Total != 7 || snapshot.Playback.SuccessRate != 80 || snapshot.Playback.Failures != 2 || snapshot.Popularity["movie"].Sources["tmdb"] != 20 {
 		t.Fatalf("snapshot = %+v", snapshot)
 	}
 	if _, err := store.Snapshot(context.Background()); err != nil || database.queries != 1 {
@@ -63,8 +63,19 @@ func TestMetricsSnapshotDecodesOperationalDomains(t *testing.T) {
 	}
 }
 
+func TestMetricsSnapshotUsesMigratedSchema(t *testing.T) {
+	pool := testdb.Pool(t)
+	snapshot, err := NewMetricsStore(pool).Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.GeneratedAt == "" || snapshot.Playback.Results != 0 {
+		t.Fatalf("unexpected empty database snapshot: %+v", snapshot)
+	}
+}
+
 func TestMetricsQueryCorrelatesFailoverAndDoesNotSelectSensitiveURLs(t *testing.T) {
-	for _, required := range []string{"candidate_session_id", "source_switched", "played_10s", "COUNT(DISTINCT media_unit_id) > 1", "latest_popularity"} {
+	for _, required := range []string{"playback_results", "succeeded", "load_ms", "latest_popularity"} {
 		if !strings.Contains(metricsSnapshotSQL, required) {
 			t.Fatalf("metrics query missing %q", required)
 		}

@@ -7,8 +7,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -131,16 +129,7 @@ func main() {
 	dispatcher.Handle(recommendation.TaskRefresh, 5*time.Minute, recommendationRefresher.Handle)
 	dispatcher.Handle(operations.TaskCleanup, 30*time.Minute, operationsService.HandleCleanup)
 	dispatcher.Handle(operations.TaskHealthCheck, 5*time.Minute, operationsService.HandleHealthCheck)
-	dispatcher.Handle(mediaidentity.TaskQualityRefresh, time.Minute, func(ctx context.Context, job workqueue.Job) error {
-		var p struct {
-			SourceKey string `json:"source_key"`
-			VodID     string `json:"vod_id"`
-		}
-		if err := json.Unmarshal(job.Payload, &p); err != nil || p.SourceKey == "" || p.VodID == "" {
-			return workqueue.Terminal(fmt.Errorf("invalid quality refresh payload"))
-		}
-		return mediaStore.RefreshQuality(ctx, p.SourceKey, p.VodID)
-	})
+
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: "metadata_schedule", SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: catalog.TaskIMDbBackfill, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute, InitialDelay: 30 * time.Second})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: douban.TaskDaily, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour, InitialDelay: time.Minute})

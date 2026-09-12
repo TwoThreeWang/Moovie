@@ -35,7 +35,7 @@ func TestPostgresStorePreservesLegacyIdentityOrderingAndOwnership(t *testing.T) 
 	if !strings.Contains(fake.query, "WHERE um.user_id = $1 AND um.status = $2 ORDER BY um.updated_at DESC LIMIT $3 OFFSET $4") || !reflect.DeepEqual(fake.arguments, []any{7, StatusWatched, 24, 48}) {
 		t.Fatalf("list query/args = %s / %#v", fake.query, fake.arguments)
 	}
-	for _, expected := range []string{"LEFT JOIN media ON media.id = um.media_id", "COALESCE(NULLIF(media.title, ''), um.title)", "COALESCE(NULLIF(media.poster, ''), um.poster)", "COALESCE(NULLIF(media.year, ''), um.year)"} {
+	for _, expected := range []string{"LEFT JOIN media ON media.id = um.media_id", "CASE WHEN media.id IS NOT NULL THEN media.title ELSE", "CASE WHEN media.id IS NOT NULL THEN media.poster ELSE", "CASE WHEN media.id IS NOT NULL THEN media.year ELSE"} {
 		if !strings.Contains(fake.query, expected) {
 			t.Fatalf("canonical display projection missing %q: %s", expected, fake.query)
 		}

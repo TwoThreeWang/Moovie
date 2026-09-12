@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -249,7 +249,7 @@ func TestPlayPageSelectsDefaultSourceEpisodeAndPreservesSEO(t *testing.T) {
 		t.Fatalf("resource play page unexpectedly gained canonical for %s", cfg.SiteURL)
 	}
 
-	backup := performRequest(router, "/play/source/42?source=%E5%A4%87%E7%94%A8%E6%BA%90%20B", nil)
+	backup := performRequest(router, "/play/source/42?ep=%E6%AD%A3%E7%89%87&source=%E5%A4%87%E7%94%A8%E6%BA%90%20B", nil)
 	if backup.Code != http.StatusOK || !strings.Contains(backup.Body.String(), "backup.example") || !strings.Contains(backup.Body.String(), "main.m3u8") {
 		t.Fatalf("backup source status/body = %d/%s", backup.Code, backup.Body.String())
 	}
@@ -263,14 +263,14 @@ func TestConfirmedResourceUsesCanonicalDisplayOnPlayAndTVBox(t *testing.T) {
 		VodContent: "资源简介", VodPlayUrl: "正片$https://video.example/main.m3u8",
 	})
 	media := mediaidentity.Media{
-		ID: 7, DoubanID: "1292052", Title: "主资料标题", Poster: "canonical-poster", Year: "2026",
+		ID: 7, MediaType: "movie", DoubanID: "1292052", Title: "主资料标题", Poster: "canonical-poster", Year: "2026",
 		Summary: "主资料简介", Genres: "剧情,犯罪", Countries: "中国",
 	}
 	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(linkedMediaResolverStub{media: media}))
 
 	play := performRequest(router, "/play/source/42", nil)
 	body := play.Body.String()
-	for _, expected := range []string{"<title>《主资料标题》(正片) - 在线播放免费高清线路 - Moovie影牛</title>", "主资料简介", "/movie/1292052?title="} {
+	for _, expected := range []string{"<title>《主资料标题》 - 在线播放免费高清线路 - Moovie影牛</title>", "主资料简介", "/movie/1292052?title="} {
 		if play.Code != http.StatusOK || !strings.Contains(body, expected) {
 			t.Fatalf("canonical play page missing %q: status=%d", expected, play.Code)
 		}
@@ -295,7 +295,7 @@ func TestPlayPageUsesOptionalIdentityForWatchedButton(t *testing.T) {
 	})
 	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithUserMovieStore(marker))
 
-	guest := performRequest(router, "/play/source/42", nil)
+	guest := performRequest(router, "/api/htmx/watch-actions?douban_id=1292052&redirect=%2Fplay%2Fsource%2F42", nil)
 	if guest.Code != http.StatusOK || !strings.Contains(guest.Body.String(), `/auth/login?redirect=%2Fplay%2Fsource%2F42`) {
 		t.Fatalf("guest watched action = %d/%s", guest.Code, guest.Body.String())
 	}
@@ -304,7 +304,7 @@ func TestPlayPageUsesOptionalIdentityForWatchedButton(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/play/source/42", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/htmx/watch-actions?douban_id=1292052&redirect=%2Fplay%2Fsource%2F42", nil)
 	request.AddCookie(&http.Cookie{Name: "token", Value: token})
 	authenticated := httptest.NewRecorder()
 	router.ServeHTTP(authenticated, request)
@@ -325,14 +325,14 @@ func TestWatchPageUsesFirstStoredEpisodeWhenQueryIsEmpty(t *testing.T) {
 	})
 	reader := combinedEpisodeReader{
 		all: func(context.Context, int) ([]mediaidentity.EpisodeInfo, error) {
-			return []mediaidentity.EpisodeInfo{{SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片", SourceCount: 1}}, nil
+			return []mediaidentity.EpisodeInfo{{SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片", SourceCount: 1, HasResource: true}}, nil
 		},
 		byEpisode: episodeReaderFunc(func(_ context.Context, mediaID, season int, episodeKey string) ([]mediaidentity.ResourceCandidate, error) {
 			if mediaID != 7 || season != 1 || episodeKey != "正片" {
 				t.Fatalf("candidate lookup = %d/%d/%s", mediaID, season, episodeKey)
 			}
 			return []mediaidentity.ResourceCandidate{{Episode: mediaidentity.Episode{
-				CandidateID: 9, LineID: 8, LineLabel: "默认源", SourceKey: "source", VodID: "42",
+				CandidateKey: "candidate-9", LineLabel: "默认源", SourceKey: "source", VodID: "42",
 				MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片",
 				PlayURL: "https://video.example/main.m3u8",
 			}, MappingConfidence: 1}}, nil
@@ -414,16 +414,16 @@ func TestPlaybackCandidatesV2KeepsExactUnitAndRankedOrder(t *testing.T) {
 			t.Fatalf("unit lookup = %d", unitID)
 		}
 		return []mediaidentity.ResourceCandidate{
-			{Episode: mediaidentity.Episode{CandidateID: 71, LineID: 61, SourceKey: "original", VodID: "a", MediaID: 7, MediaUnitID: 51, SeasonNumber: 1, EpisodeKey: "S01E03", PlayURL: "slow"}, SuccessCount: 1, FailureCount: 4, MappingConfidence: 1},
-			{Episode: mediaidentity.Episode{CandidateID: 72, LineID: 62, SourceKey: "healthy", VodID: "b", MediaID: 7, MediaUnitID: 51, SeasonNumber: 1, EpisodeKey: "S01E03", PlayURL: "fast"}, SuccessCount: 90, FailureCount: 10, MappingConfidence: 0.95},
-			{Episode: mediaidentity.Episode{CandidateID: 73, MediaID: 7, MediaUnitID: 99, PlayURL: "wrong-unit"}},
+			{Episode: mediaidentity.Episode{CandidateKey: "candidate-71", SourceKey: "original", VodID: "a", MediaID: 7, MediaUnitID: 51, SeasonNumber: 1, EpisodeKey: "S01E03", PlayURL: "slow"}, SuccessCount: 1, FailureCount: 4, MappingConfidence: 1},
+			{Episode: mediaidentity.Episode{CandidateKey: "candidate-72", SourceKey: "healthy", VodID: "b", MediaID: 7, MediaUnitID: 51, SeasonNumber: 1, EpisodeKey: "S01E03", PlayURL: "fast"}, SuccessCount: 90, FailureCount: 10, MappingConfidence: 0.95},
+			{Episode: mediaidentity.Episode{CandidateKey: "candidate-73", MediaID: 7, MediaUnitID: 99, PlayURL: "wrong-unit"}},
 		}, nil
 	}}
 	router, _ := playbackTestRouter(t, search.NewPostgresStore(testdb.Pool(t)), staticPopularProvider{}, WithEpisodeReader(reader))
 	payload := decodeJSON(t, performRequest(router, "/api/v2/media-units/51/playback-candidates", nil))
 	candidates := payload["candidates"].([]any)
 	// 排序已固定启用：健康度更高的 72 必须排在 71 之前，且不同单元的 73 仍被排除。
-	if len(candidates) != 2 || candidates[0].(map[string]any)["candidate_id"] != float64(72) || candidates[1].(map[string]any)["candidate_id"] != float64(71) {
+	if len(candidates) != 2 || candidates[0].(map[string]any)["candidate_key"] != "candidate-72" || candidates[1].(map[string]any)["candidate_key"] != "candidate-71" {
 		t.Fatalf("candidate payload = %#v", payload)
 	}
 }
@@ -436,20 +436,21 @@ func TestPlaybackEventV2ForwardsIdempotentAttemptIdentity(t *testing.T) {
 		return true, nil
 	})
 	router, _ := playbackTestRouter(t, search.NewPostgresStore(testdb.Pool(t)), staticPopularProvider{}, WithPlaybackEventWriter(writer))
-	request := httptest.NewRequest(http.MethodPost, "/api/v2/playback/events", bytes.NewBufferString(`{"attempt_id":"attempt-123456","candidate_session_id":"session-123456","event_type":"played_10s","candidate_id":71,"media_unit_id":51,"source_key":"source","vod_id":"42","elapsed_ms":10000}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/v2/playback/events", bytes.NewBufferString(`{"attempt_id":"attempt-123456","playback_version":"0123456789abcdef0123456789abcdef","event_type":"success","media_unit_id":51,"source_key":"source","vod_id":"42","elapsed_ms":10000}`))
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"accepted":true`) || recorded.AttemptID != "attempt-123456" || recorded.CandidateSessionID != "session-123456" || recorded.MediaUnitID != 51 {
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"accepted":true`) || recorded.AttemptID != "attempt-123456" || recorded.PlaybackVersion != "0123456789abcdef0123456789abcdef" || recorded.MediaUnitID != 51 {
 		t.Fatalf("event response/record = %d/%s/%+v", recorder.Code, recorder.Body.String(), recorded)
 	}
 }
 
 func playbackTestRouter(t *testing.T, store *search.PostgresStore, popular PopularProvider, options ...HandlerOption) (*gin.Engine, config.Config) {
 	t.Helper()
+	_, _ = store.CreateSite(t.Context(), search.Site{Key: "source", Enabled: true})
 	gin.SetMode(gin.TestMode)
 	cfg := config.Config{SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret"}
-	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"player", "player_embed", "iptv", "tvbox", "play", "watch", "404"})
+	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"player", "player_embed", "iptv", "tvbox", "watch", "404"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,71 +490,17 @@ func decodeJSON(t *testing.T, recorder *httptest.ResponseRecorder) map[string]an
 	return payload
 }
 
-// indexingMediaResolver 既能按豆瓣 ID 解析媒体，又实现了 EpisodeWriter，
-// 用来验证 /watch 在查不到候选时会现场补录索引，而不是直接 302 回搜索页。
-type indexingMediaResolver struct {
-	media   mediaidentity.Media
-	indexed *bool
-}
-
-func (resolver indexingMediaResolver) FindByDoubanID(_ context.Context, doubanID string) (mediaidentity.Media, error) {
-	media := resolver.media
-	media.DoubanID = doubanID
-	return media, nil
-}
-
-func (resolver indexingMediaResolver) UpsertEpisodes(_ context.Context, episodes []mediaidentity.Episode) error {
-	if len(episodes) > 0 {
-		*resolver.indexed = true
-	}
-	return nil
-}
-
-// 搜索结果直接链到 /watch 并带上 source_key/vod_id；若剧集索引尚未回填，
-// 应当就地补录后继续播，而不是弹回搜索页。
-func TestWatchPageIndexesResourceFromQueryInsteadOfRedirecting(t *testing.T) {
-	testdb.User(t, testdb.Pool(t), 7)
+// 播放请求只读：没有持久化单元时也能解析指名资源，不补写索引。
+func TestWatchPageParsesResourceWithoutWritingIndexes(t *testing.T) {
 	store := search.NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(t.Context(), search.VodItem{
-		SourceKey: "source", VodId: "42", VodName: "测试影片", VodDoubanId: "1292052",
-		VodPlayUrl: "正片$https://video.example/main.m3u8",
-	})
-	indexed := false
-	resolver := indexingMediaResolver{
-		media:   mediaidentity.Media{ID: 7, Title: "测试影片", MediaType: "movie"},
-		indexed: &indexed,
+	if err := store.Upsert(t.Context(), search.VodItem{SourceKey: "source", VodId: "42", VodName: "影片", VodPlayUrl: "正片$https://video.example/main.m3u8"}); err != nil {
+		t.Fatal(err)
 	}
-	// 补录之前查不到任何候选，补录之后才返回，还原「卡片先出现、索引后落库」的真实时序。
-	reader := combinedEpisodeReader{
-		all: func(context.Context, int) ([]mediaidentity.EpisodeInfo, error) {
-			if !indexed {
-				return nil, nil
-			}
-			return []mediaidentity.EpisodeInfo{{SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片", SourceCount: 1}}, nil
-		},
-		byEpisode: episodeReaderFunc(func(context.Context, int, int, string) ([]mediaidentity.ResourceCandidate, error) {
-			if !indexed {
-				return nil, nil
-			}
-			return []mediaidentity.ResourceCandidate{{Episode: mediaidentity.Episode{
-				CandidateID: 9, LineID: 8, LineLabel: "默认源", SourceKey: "source", VodID: "42",
-				MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: "正片", EpisodeLabel: "正片",
-				PlayURL: "https://video.example/main.m3u8",
-			}, MappingConfidence: 1}}, nil
-		}),
-	}
-	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(resolver), WithEpisodeReader(reader))
-
+	resolver := mediaResolverFunc(func(context.Context, string) (mediaidentity.Media, error) { return mediaidentity.Media{}, nil })
+	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(resolver))
 	response := performRequest(router, "/watch/1292052?source_key=source&vod_id=42", nil)
-	if response.Code != http.StatusOK || !indexed {
-		t.Fatalf("watch page did not index on demand: status=%d location=%s indexed=%v",
-			response.Code, response.Header().Get("Location"), indexed)
-	}
-
-	// 没有 source_key/vod_id 可补录时仍然回搜索页，原行为不变。
-	indexed = false
-	if plain := performRequest(router, "/watch/1292052", nil); plain.Code != http.StatusFound {
-		t.Fatalf("watch page without resource hints = %d, want 302", plain.Code)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), "artplayer-app") {
+		t.Fatalf("response = %d", response.Code)
 	}
 }
 
@@ -579,7 +526,7 @@ func TestWatchPageFallsBackToDirectResourcePlayWhenCanonicalMediaIsMissing(t *te
 			response.Code, response.Header().Get("Location"))
 	}
 	// entryPage 区分两套播放页；豆瓣 ID 必须从路径上带过去，否则短评和推荐整块消失。
-	if !strings.Contains(body, "entryPage: 'play'") ||
+	if !strings.Contains(body, "entryPage: 'watch'") ||
 		!strings.Contains(body, `https:\/\/video.example\/orphan.m3u8`) ||
 		!strings.Contains(body, "douban_id=1292052") {
 		t.Fatalf("play fallback lost the resource or the douban id: %s", body)
@@ -587,7 +534,7 @@ func TestWatchPageFallsBackToDirectResourcePlayWhenCanonicalMediaIsMissing(t *te
 
 	// 资源本身不存在时没东西可播，仍然回搜索页。
 	missing := performRequest(router, "/watch/1292052?source_key=source&vod_id=999", nil)
-	if missing.Code != http.StatusFound {
+	if missing.Code != http.StatusNotFound {
 		t.Fatalf("watch with a dead resource = %d, want 302", missing.Code)
 	}
 }
@@ -608,13 +555,13 @@ func TestPlayerPagesShareTheSamePlayerAndLazySections(t *testing.T) {
 	reader := combinedEpisodeReader{
 		all: func(context.Context, int) ([]mediaidentity.EpisodeInfo, error) {
 			return []mediaidentity.EpisodeInfo{
-				{SeasonNumber: 1, EpisodeKey: "S01E01", EpisodeLabel: "第01集", SourceCount: 1},
-				{SeasonNumber: 1, EpisodeKey: "S01E02", EpisodeLabel: "第02集", SourceCount: 1},
+				{SeasonNumber: 1, EpisodeKey: "S01E01", EpisodeLabel: "第01集", SourceCount: 1, HasResource: true},
+				{SeasonNumber: 1, EpisodeKey: "S01E02", EpisodeLabel: "第02集", SourceCount: 1, HasResource: true},
 			}, nil
 		},
 		byEpisode: episodeReaderFunc(func(context.Context, int, int, string) ([]mediaidentity.ResourceCandidate, error) {
 			return []mediaidentity.ResourceCandidate{{Episode: mediaidentity.Episode{
-				CandidateID: 9, LineID: 8, LineLabel: "默认源", SourceKey: "source", VodID: "42",
+				CandidateKey: "candidate-9", LineLabel: "默认源", SourceKey: "source", VodID: "42",
 				MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: "S01E01", EpisodeLabel: "第01集",
 				PlayURL: "https://video.example/ep1.m3u8",
 			}, MappingConfidence: 1}}, nil
@@ -625,8 +572,8 @@ func TestPlayerPagesShareTheSamePlayerAndLazySections(t *testing.T) {
 	shared := []string{
 		`<div id="artplayer-app"></div>`,                      // play_container.html
 		`class="play-disclaimer"`,                             // play_container.html 里挂的免责条
-		`src="/static/js/player.js?v=4.3"`,                    // play_scripts.html
-		`id="episode-navigation"`,                            // 手动上一集 / 下一集
+		`src="/static/js/player.js?v=5.0"`,                    // play_scripts.html
+		`id="episode-navigation"`,                             // 手动上一集 / 下一集
 		`data-episode-list`,                                   // 长集数折叠
 		`npm/artplayer-plugin-danmuku`,                        // play_scripts.html：弹幕插件
 		`hx-get="/api/htmx/movie-comments?douban_id=1292052"`, // play_comments.html
@@ -645,69 +592,25 @@ func TestPlayerPagesShareTheSamePlayerAndLazySections(t *testing.T) {
 	}
 }
 
-// 电影的"分集"其实是 720P / HD中字 / TC国语 这些清晰度版本，各家资源站叫法还不一样。
-// 它们必须折叠成一个正片单元：选集网格和上下集导航都不出现，版本改挂到线路列表的
-// chip 上，并且同一条线路的多个版本都要保留、都能点到。
-func TestWatchMovieCollapsesQualityVariantsIntoSourceChips(t *testing.T) {
-	testdb.User(t, testdb.Pool(t), 7)
-	store := search.NewPostgresStore(testdb.Pool(t))
-	_ = store.Upsert(t.Context(), search.VodItem{
-		SourceKey: "source", VodId: "42", VodName: "测试影片", VodDoubanId: "1292052",
-		VodPlayUrl: "HD中字$https://video.example/hd.m3u8#TC国语$https://video.example/tc.m3u8",
-	})
-	resolver := mediaResolverFunc(func(_ context.Context, doubanID string) (mediaidentity.Media, error) {
-		return mediaidentity.Media{ID: 7, DoubanID: doubanID, Title: "测试影片", MediaType: "movie"}, nil
-	})
-	candidate := func(quality, playURL string) mediaidentity.ResourceCandidate {
-		return mediaidentity.ResourceCandidate{Episode: mediaidentity.Episode{
-			CandidateID: 9, LineID: 8, LineLabel: "默认源", SourceKey: "source", VodID: "42",
-			MediaID: 7, MediaUnitID: 6, SeasonNumber: 1, EpisodeKey: mediaidentity.FeatureEpisodeKey,
-			EpisodeLabel: quality, Quality: quality, PlayURL: playURL,
-		}, MappingConfidence: 1}
+// 电影只展示一个正片，允许旧清晰度书签，TC 不能进入可选来源。
+func TestWatchMovieFiltersTCAndAcceptsLegacyVersionLink(t *testing.T) {
+	pool := testdb.Pool(t)
+	store := search.NewPostgresStore(pool)
+	if _, err := store.CreateSite(t.Context(), search.Site{Key: "source", Enabled: true}); err != nil {
+		t.Fatal(err)
 	}
-	reader := combinedEpisodeReader{
-		all: func(context.Context, int) ([]mediaidentity.EpisodeInfo, error) {
-			return []mediaidentity.EpisodeInfo{{SeasonNumber: 1, EpisodeKey: mediaidentity.FeatureEpisodeKey,
-				EpisodeLabel: "HD中字", SourceCount: 1}}, nil
-		},
-		byEpisode: episodeReaderFunc(func(context.Context, int, int, string) ([]mediaidentity.ResourceCandidate, error) {
-			return []mediaidentity.ResourceCandidate{
-				candidate("HD中字", "https://video.example/hd.m3u8"),
-				candidate("TC国语", "https://video.example/tc.m3u8"),
-			}, nil
-		}),
+	if err := store.Upsert(t.Context(), search.VodItem{SourceKey: "source", VodId: "42", VodName: "影片", VodDoubanId: "1292052", TypeName: "电影", VodPlayUrl: "HD中字$https://video.example/hd.m3u8#TC国语$https://video.example/tc.m3u8"}); err != nil {
+		t.Fatal(err)
 	}
-	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(resolver), WithEpisodeReader(reader))
-
-	response := performRequest(router, "/watch/1292052", nil)
-	if response.Code != http.StatusOK {
-		t.Fatalf("/watch/1292052 = %d, want 200", response.Code)
-	}
+	identity := mediaidentity.NewPostgresStore(pool)
+	router, _ := playbackTestRouter(t, store, staticPopularProvider{}, WithMediaResolver(identity), WithEpisodeReader(identity))
+	response := performRequest(router, "/watch/1292052?ep=720P&source_key=source&vod_id=42", nil)
 	body := response.Body.String()
-	for _, forbidden := range []string{`id="episodesGrid"`, `id="episode-navigation"`} {
-		if strings.Contains(body, forbidden) {
-			t.Fatalf("电影不该渲染 %s", forbidden)
-		}
+	if response.Code != 200 || !strings.Contains(body, "artplayer-app") || strings.Contains(body, `id="episodesGrid"`) || strings.Contains(body, "tc.m3u8") {
+		t.Fatalf("legacy movie status=%d", response.Code)
 	}
-	// 电影没有选集网格，但顶部快捷浮层和下方的线路区块都要在。
-	for _, required := range []string{`id="sourcePanelTop"`, `id="sourcePanel"`} {
-		if !strings.Contains(body, required) {
-			t.Fatalf("电影缺少线路列表 %s", required)
-		}
-	}
-	// 两个版本都要在线路列表里，并且 data-version 能把同线路的它们区分开。
-	for _, required := range []string{`data-version="HD中字"`, `data-version="TC国语"`,
-		`class="watch-version-tag">HD中字<`, `class="watch-version-tag">TC国语<`} {
-		if strings.Count(body, required) != 2 {
-			t.Fatalf("线路 chip %q 出现 %d 次，两块列表各应有一次", required, strings.Count(body, required))
-		}
-	}
-
-	// ver 决定播哪一个版本；没有它，同线路的第二个版本永远点不到。
-	// 链接里同时带着折叠前的 ep=HD中字（换源链接和老书签都会带），不能因此查不到候选。
-	tc := performRequest(router, "/watch/1292052?source_key=source&vod_id=42&ep="+
-		url.QueryEscape("HD中字")+"&ver="+url.QueryEscape("TC国语"), nil)
-	if !strings.Contains(tc.Body.String(), `video.example\/tc.m3u8`) { // 模板在 JS 上下文里会转义斜杠
-		t.Fatal("ver=TC国语 没有切到对应的播放地址")
+	blocked := performRequest(router, "/watch/1292052?ep=720P&source_key=source&vod_id=42&ver="+url.QueryEscape("TC国语"), nil)
+	if strings.Contains(blocked.Body.String(), `id="artplayer-app"`) || !strings.Contains(blocked.Body.String(), "所选线路或版本已不可用") {
+		t.Fatal("explicit unavailable version must not silently switch")
 	}
 }

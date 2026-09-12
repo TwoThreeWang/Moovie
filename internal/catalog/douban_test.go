@@ -55,8 +55,8 @@ func TestDoubanProviderUsesSuccessfulDetailEndpointForCanonicalMediaType(t *test
 	if err := provider.Fetch(t.Context(), "30181230", false); err != nil {
 		t.Fatal(err)
 	}
-	if len(database.arguments) != 20 || database.arguments[19] != "tv" {
-		t.Fatalf("legacy media type = %#v, want tv", database.arguments)
+	if len(database.arguments) != 0 {
+		t.Fatalf("canonical path must not overwrite fields via legacy Upsert: %#v", database.arguments)
 	}
 	if writer.media.MediaType != "tv" {
 		t.Fatalf("canonical media type = %q, want tv", writer.media.MediaType)
@@ -69,8 +69,8 @@ func TestDoubanProviderUsesSuccessfulDetailEndpointForCanonicalMediaType(t *test
 	}
 }
 
-func TestCanonicalDoubanMediaTypeCollapsesNonMovieEndpointsToTV(t *testing.T) {
-	tests := map[string]string{"movie": "movie", "tv": "tv", "show": "tv"}
+func TestCanonicalDoubanMediaTypePreservesFourTypes(t *testing.T) {
+	tests := map[string]string{"movie": "movie", "tv": "tv", "show": "show"}
 	for endpointType, expected := range tests {
 		if got := canonicalDoubanMediaType(endpointType); got != expected {
 			t.Fatalf("canonicalDoubanMediaType(%q) = %q, want %q", endpointType, got, expected)
@@ -138,7 +138,7 @@ func TestDoubanSuggestionsPreferLocalAndProxyExternalImages(t *testing.T) {
 	})}
 	provider := NewDoubanProvider(client, store)
 	local, err := provider.Suggest(t.Context(), "肖申克")
-	if err != nil || len(local) != 1 || local[0].ID != "1292052" || local[0].Img != "local-poster" || local[0].Type != "movie" {
+	if err != nil || len(local) != 1 || local[0].ID != "1292052" || local[0].Img != "local-poster" || local[0].Type != "" {
 		t.Fatalf("local suggestions/error = %+v/%v", local, err)
 	}
 

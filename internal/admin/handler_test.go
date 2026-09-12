@@ -18,10 +18,10 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/operations"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
 	"github.com/gin-gonic/gin"
-	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestAdminPagesAndMutationsRequireRoleAndPreserveMainFlows(t *testing.T) {
@@ -135,9 +135,9 @@ func TestAdminPagesAndMutationsRequireRoleAndPreserveMainFlows(t *testing.T) {
 }
 
 func TestAdminMatchReviewRequiresReasonAndRecordsOneDecision(t *testing.T) {
-	testdb.Media(t, testdb.Pool(t), 7, 8)
+	testdb.Media(t, testdb.Pool(t), 7, 8, 9)
 	router, _, searchStore, _, token, userToken := adminTestRouter(t)
-	item := search.VodItem{SourceKey: "demo", VodId: "review-1", VodName: "待复核资源", VodYear: "2026"}
+	item := search.VodItem{SourceKey: "demo", VodId: "review-1", VodName: "待复核资源", VodPlayUrl: "正片$https://video.example/main.m3u8", VodYear: "2026"}
 	if err := searchStore.Upsert(t.Context(), item); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestAdminMatchReviewRequiresReasonAndRecordsOneDecision(t *testing.T) {
 		t.Fatalf("repeated decision = %d/%s", repeated.Code, repeated.Body.String())
 	}
 
-	_ = searchStore.Upsert(t.Context(), search.VodItem{SourceKey: "demo", VodId: "review-2", VodName: "API 待复核资源"})
+	_ = searchStore.Upsert(t.Context(), search.VodItem{SourceKey: "demo", VodId: "review-2", VodName: "API 待复核资源", VodPlayUrl: "正片$https://video.example/review2.m3u8"})
 	_ = mediaidentity.NewPostgresStore(testdb.Pool(t)).RecordDetailedMatchCandidate(t.Context(), "demo", "review-2", 8, 0.74, "weighted_features", search.MatchStatusReview, `{"features":{"title":{"score":0.4}}}`)
 	forbiddenAPI := request(router, http.MethodGet, "/api/v2/admin/media-matches", userToken, false)
 	if forbiddenAPI.Code != http.StatusForbidden {

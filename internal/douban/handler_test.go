@@ -13,10 +13,10 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/identity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
-	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
-	"github.com/gin-gonic/gin"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
+	"github.com/gin-gonic/gin"
 )
 
 func TestBindStatusAndUnbindPreserveLegacyRoutes(t *testing.T) {

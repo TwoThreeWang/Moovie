@@ -30,14 +30,12 @@
             </div>
             <div class="watch-source-body">
                 {{ range .EpisodeSources }}
-                <div class="watch-source-chip {{ if .IsCurrent }}active{{ end }}"
-                     data-source-key="{{ .SourceKey }}" data-vod-id="{{ .VodID }}" data-version="{{ .VersionLabel }}"
-                     onclick="switchSource(this)">
+                <a class="watch-source-chip {{ if .IsCurrent }}active{{ end }}" href="{{ .PlayLink }}">
                     <span class="watch-source-name">{{ .SourceLabel }}</span>
                     {{ if .VersionLabel }}<span class="watch-version-tag">{{ .VersionLabel }}</span>{{ end }}
                     {{ if .SpeedLabel }}<span class="watch-speed">{{ .SpeedLabel }}</span>{{ end }}
                     <span class="watch-quality-tag {{ .QualityClass }}">{{ .QualityLabel }}</span>
-                </div>
+                </a>
                 {{ end }}
             </div>
         </div>
@@ -112,11 +110,12 @@
         <div class="watch-section">
             <div class="episodes-list" id="episodesGrid" data-episode-list>
                 {{ range .EpisodeGrid }}
-                <div class="ep-btn {{ if .IsPlaying }}active{{ end }}"
-                     data-ep-key="{{ .EpisodeKey }}" data-ep-label="{{ .EpisodeLabel }}"
-                     onclick="switchEpisode(this)">
-                    {{ .EpisodeLabel }}
-                </div>
+                {{ if .HasResource }}
+                <a class="ep-btn {{ if .IsPlaying }}active{{ end }}" href="{{ .PlayLink }}"
+                   data-ep-key="{{ .EpisodeKey }}" data-ep-label="{{ .EpisodeLabel }}">{{ .EpisodeLabel }}</a>
+                {{ else }}
+                <button class="ep-btn" disabled aria-disabled="true" title="资源待同步">{{ .EpisodeLabel }}</button>
+                {{ end }}
                 {{ end }}
             </div>
         </div>
@@ -133,14 +132,12 @@
             </div>
             <div class="watch-source-body">
                 {{ range .EpisodeSources }}
-                <div class="watch-source-chip {{ if .IsCurrent }}active{{ end }}"
-                     data-source-key="{{ .SourceKey }}" data-vod-id="{{ .VodID }}" data-version="{{ .VersionLabel }}"
-                     onclick="switchSource(this)">
+                <a class="watch-source-chip {{ if .IsCurrent }}active{{ end }}" href="{{ .PlayLink }}">
                     <span class="watch-source-name">{{ .SourceLabel }}</span>
                     {{ if .VersionLabel }}<span class="watch-version-tag">{{ .VersionLabel }}</span>{{ end }}
                     {{ if .SpeedLabel }}<span class="watch-speed">{{ .SpeedLabel }}</span>{{ end }}
                     <span class="watch-quality-tag {{ .QualityClass }}">{{ .QualityLabel }}</span>
-                </div>
+                </a>
                 {{ end }}
             </div>
         </div>
@@ -184,16 +181,12 @@
         </div>
         <center>
 <br>
+<!-- trafficstars -->
 <script
   src="https://cdn.runative-syndicate.com/sdk/v1/ms.js"
   data-ts-spot="bcd58c99afb2436da1d79c35e967cd2d"
   async defer
 ></script>
-<!-- JuicyAds v3.0 -->
-<script type="text/javascript" data-cfasync="false" async src="https://poweredby.jads.co/js/jads.js"></script>
-<ins id="1126340" data-width="300" data-height="250"></ins>
-<script type="text/javascript" data-cfasync="false" async>(adsbyjuicy = window.adsbyjuicy || []).push({'adzone':1126340});</script>
-<!--JuicyAds END-->
         </center>
 
     </div>
@@ -204,13 +197,8 @@
 document.addEventListener('DOMContentLoaded', function() {
     var doubanID = '{{ .DoubanID }}';
     var episode = '{{ .Episode }}';
-    var episodeList = Array.prototype.map.call(document.querySelectorAll('#episodesGrid .ep-btn'), function(el) {
-        var epLabel = el.getAttribute('data-ep-label');
-        var url = new URL(window.location.href);
-        url.searchParams.set('ep', epLabel);
-        url.searchParams.set('source_key', '{{ .SourceKey }}');
-        url.searchParams.set('vod_id', '{{ .VodID }}');
-        return { title: el.classList.contains('active') ? episode : epLabel, url: url.pathname + url.search };
+    var episodeList = Array.prototype.map.call(document.querySelectorAll('#episodesGrid a.ep-btn'), function(el) {
+        return { title: el.getAttribute('data-ep-label'), url: el.getAttribute('href') };
     });
 
     // --- Player init ---
@@ -222,11 +210,12 @@ document.addEventListener('DOMContentLoaded', function() {
             douban_id: doubanID,
             media_id: {{ .MediaID }},
             media_unit_id: {{ .MediaUnitID }},
-            candidate_id: {{ .CandidateID }},
-            candidate_session_id: '{{ .CandidateSessionID }}',
+            candidate_key: '{{ .CandidateKey }}',
+            playback_version: '{{ .PlaybackVersion }}',
+            part: '{{ .Part }}',
 			season_number: {{ .SeasonNumber }},
 			episode_key: '{{ .EpisodeKey }}',
-			entryPage: 'watch',
+			entryPage: '{{ .EntryPage }}',
 			auto_failover: {{ if .AutoFailoverEnabled }}true{{ else }}false{{ end }},
             sourceKey: '{{ .SourceKey }}',
             vodId: '{{ .VodID }}',
@@ -239,27 +228,6 @@ document.addEventListener('DOMContentLoaded', function() {
             loginURL: '/auth/login?redirect={{ .FullPath }}'
         });
     }
-
-    // --- Episode switching (page reload) ---
-    window.switchEpisode = function(el) {
-        var epLabel = el.getAttribute('data-ep-label');
-        var url = new URL(window.location.href);
-        url.searchParams.set('ep', epLabel);
-        window.location.href = url.pathname + url.search;
-    };
-
-    // --- Source switching (page reload, stay on watch page) ---
-    window.switchSource = function(el) {
-        if (el.classList.contains('active')) return;
-        var sk = el.getAttribute('data-source-key');
-        var vid = el.getAttribute('data-vod-id');
-        var ver = el.getAttribute('data-version');
-        var url = '/watch/' + doubanID + '?source_key=' + encodeURIComponent(sk) + '&vod_id=' + encodeURIComponent(vid);
-        // 同一条线路可能有多个清晰度版本，ver 才能定位到点中的那一条。
-        if (ver) url += '&ver=' + encodeURIComponent(ver);
-        if (episode) url += '&ep=' + encodeURIComponent(episode);
-        window.location.href = url;
-    };
 
     // --- Source panel toggle ---
     // 两块线路列表：顶部 sourcePanelTop 是播放器旁的快捷浮层，

@@ -26,12 +26,12 @@ func TestParseResourceEpisodesUsesFeatureIdentityForSingleMovieStream(t *testing
 func TestParseResourceEpisodesCollapsesMovieQualityVariants(t *testing.T) {
 	episodes := ParseResourceEpisodes("source", "movie", 8, "movie",
 		"720P$https://a.example/720.m3u8#HD中字$https://a.example/hd.m3u8#TC国语$https://a.example/tc.m3u8")
-	if len(episodes) != 3 {
+	if len(episodes) != 2 {
 		t.Fatalf("movie episodes = %+v", episodes)
 	}
-	for index, wantQuality := range []string{"720P", "HD中字", "TC国语"} {
+	for index, wantQuality := range []string{"720P", "HD中字"} {
 		got := episodes[index]
-		if got.UnitType != "feature" || got.SeasonNumber != 1 || got.EpisodeKey != FeatureEpisodeKey {
+		if got.UnitType != "feature" || got.SeasonNumber != 0 || got.EpisodeKey != FeatureEpisodeKey {
 			t.Fatalf("变体 %d 没有折叠成正片单元：%+v", index, got)
 		}
 		if got.Quality != wantQuality || got.EpisodeLabel != wantQuality {

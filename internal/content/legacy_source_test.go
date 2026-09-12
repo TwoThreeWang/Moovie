@@ -18,7 +18,7 @@ func TestTemplateInventoryMatchesLegacySource(t *testing.T) {
 		newFiles := relativeFiles(t, filepath.Join(newRoot, directory))
 		legacyFiles := relativeFiles(t, filepath.Join(legacyRoot, directory))
 		if directory == "pages" {
-			legacyFiles = removeStrings(legacyFiles, "square.html")
+			legacyFiles = removeStrings(legacyFiles, "square.html", "play.html")
 			legacyFiles = append(legacyFiles, "admin_jobs.html", "admin_matches.html", "watch.html")
 			legacyFiles = append(legacyFiles, "cinema.html")
 			sort.Strings(legacyFiles)
@@ -105,7 +105,6 @@ func TestFrozenPublicFilesMatchLegacySource(t *testing.T) {
 		"templates/pages/player_embed.html",
 		"templates/pages/iptv.html",
 		"templates/pages/tvbox.html",
-		"templates/pages/play.html",
 		"templates/pages/login.html",
 		"templates/pages/register.html",
 		"templates/pages/dashboard.html",
@@ -184,7 +183,6 @@ var reviewedHTMXLoadingFiles = map[string]bool{
 	"pages/foryou.html":                          true,
 	"pages/login.html":                           true,
 	"pages/movie.html":                           true,
-	"pages/play.html":                            true,
 	"pages/register.html":                        true,
 	"pages/recommendations.html":                 true,
 	"pages/trends.html":                          true,
@@ -359,9 +357,6 @@ func TestReviewedHTMXLoadingEnhancements(t *testing.T) {
 			`auto_failover: {{ if .AutoFailoverEnabled }}true{{ else }}false{{ end }}`,
 			`poster: '{{ proxyImg .View.Poster }}'`,
 		},
-		"templates/pages/play.html": {
-			`poster: '{{ proxyImg .View.Poster }}'`,
-		},
 		"templates/pages/admin_dashboard.html": {
 			`href="/admin/matches"`,
 			`<span>匹配复核</span>`,
@@ -379,13 +374,13 @@ func TestReviewedHTMXLoadingEnhancements(t *testing.T) {
 			`function failoverToHealthyEpisode(options)`,
 			`var MAX_AUTOMATIC_FAILOVERS = 2`,
 			`var MIN_AUTOMATIC_MAPPING_CONFIDENCE = 0.90`,
-			`payload.auto_failover_enabled !== true`,
-			`Number(payload.unit_id) !== Number(options.media_unit_id)`,
+			`!payload.auto_failover_enabled`,
+			`Number(payload.unit_id)!==Number(options.media_unit_id)`,
 			`/api/v2/media-units/`,
 			`media_unit_id: context.media_unit_id`,
-			`candidate_session_id: context.candidate_session_id || ''`,
+			`playback_version: context.playback_version`,
 			`sessionStorage.removeItem('moovie_failover:unit:'`,
-			`event_type: eventType`,
+			`event_type: succeeded ? 'success' : 'failure'`,
 		},
 		"static/js/app.js": {
 			`container.replaceChildren(...rows)`,
@@ -595,7 +590,6 @@ func TestReviewedFrontendQualityEnhancements(t *testing.T) {
 		"templates/pages/discover.html":          {`<style>`, `href="javascript:void(0)"`},
 		"templates/pages/foryou.html":            {`<center>`},
 		"templates/pages/movie.html":             {`<style>`, `EmbeddingContent`, `Moovie 推荐语`},
-		"templates/pages/play.html":              {`<center>`},
 		"templates/pages/recommendations.html":   {`\n.page-title {`, `\n.page-subtitle {`, `\n.section-title {`},
 		"templates/pages/search.html":            {`<style>`, `<center>`},
 		"templates/partials/foryou_movies.html":  {`\n.section-title {`, `\n.section-header {`, `\n.htmx-indicator {`, `\n.btn-outline {`},

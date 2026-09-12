@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/TwoThreeWang/Moovie/new/internal/mediatype"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -261,14 +262,15 @@ func (provider *DoubanProvider) Fetch(ctx context.Context, doubanID string, _ bo
 			// 成功的详情端点已经给出了可靠类型，旧表和规范合并都直接使用它，
 			// 不再先按 movie 落库、再等待规范合并纠正。
 			movie.MediaType = canonicalDoubanMediaType(mediaType)
-			if err := provider.store.Upsert(ctx, movie); err != nil {
-				return nil, fmt.Errorf("save Douban movie: %w", err)
+			if provider.canonical == nil {
+				if err := provider.store.Upsert(ctx, movie); err != nil {
+					return nil, fmt.Errorf("save Douban movie: %w", err)
+				}
 			}
 			mediaID, syncErr := syncCanonical(ctx, provider.canonical, movie, movie.MediaType, "douban", response,
 				mediaidentity.ExternalID{Provider: "douban", ExternalID: movie.DoubanID, IsPrimary: true})
 			if syncErr != nil {
-				// 分阶段迁移期间继续保留旧豆瓣同步路径。
-				return nil, nil
+				return nil, fmt.Errorf("merge Douban metadata: %w", syncErr)
 			}
 			if aliasWriter, ok := provider.canonical.(mediaidentity.AliasWriter); ok {
 				for _, alias := range response.AKA {
@@ -324,8 +326,14 @@ func (provider *DoubanProvider) FetchReviews(ctx context.Context, doubanID strin
 			}
 			movie.ReviewsJSON = string(encoded)
 			movie.ReviewsUpdatedAt = time.Now()
-			if err := provider.store.Upsert(ctx, *movie); err != nil {
-				return nil, fmt.Errorf("save Douban reviews: %w", err)
+			if writer, ok := provider.store.(interface {
+				SaveReviews(context.Context, string, string, time.Time) error
+			}); ok {
+				if err := writer.SaveReviews(ctx, doubanID, movie.ReviewsJSON, movie.ReviewsUpdatedAt); err != nil {
+					return nil, err
+				}
+			} else if err := provider.store.Upsert(ctx, *movie); err != nil {
+				return nil, err
 			}
 			return nil, nil
 		}
@@ -381,7 +389,7 @@ func (provider *DoubanProvider) Suggest(ctx context.Context, keyword string) ([]
 	if err == nil && len(local) > 0 {
 		results := make([]Suggestion, 0, len(local))
 		for _, movie := range local {
-			results = append(results, Suggestion{ID: movie.DoubanID, Title: movie.Title, SubTitle: movie.OriginalTitle, Type: inferMovieType(movie.Genres), Year: movie.Year, Img: movie.Poster})
+			results = append(results, Suggestion{ID: movie.DoubanID, Title: movie.Title, SubTitle: movie.OriginalTitle, Type: fallbackMovieType(movie), Year: movie.Year, Img: movie.Poster})
 		}
 		return results, nil
 	}
@@ -507,22 +515,8 @@ func mapRexxarMovie(response rexxarMovie) Movie {
 	return movie
 }
 
-// fallbackMovieType 是本地数据库兜底专用的分类器。豆瓣真实的 genres 字段
-// 只是「剧情/动作/悬疑」这类内容标签，几乎不会出现「电视剧」「综艺」字样，
-// inferMovieType 在这些词上的匹配对本地库里的真实数据基本不命中——直接拿它给
-// 兜底分组会导致电影和非电影混进同一个池子。这里先用可靠的 media.media_type
-// （电影/非电影二分，写入时来自豆瓣详情端点，比猜内容标签靠谱）做硬隔离，
-// 保证电影绝不会串进剧集/综艺/动漫，反之亦然；非电影桶内部仍用 inferMovieType
-// 按关键词细分剧集/综艺/动漫，但匹配不到时归入剧集而不是电影。
-func fallbackMovieType(movie Movie) string {
-	if movie.MediaType != "tv" {
-		return "movie"
-	}
-	if subType := inferMovieType(movie.Genres); subType != "movie" {
-		return subType
-	}
-	return "tv"
-}
+// fallbackMovieType 直接保留规范四分类；未知值不归入电影池。
+func fallbackMovieType(movie Movie) string { return mediatype.Normalize(movie.MediaType) }
 
 // inferMovieType 从类型标签里猜是剧集/综艺/动漫，猜不出算电影。
 // 注意：豆瓣的 genres 多是「剧情/动作」这种内容标签，这个函数命中率不高，
@@ -543,9 +537,4 @@ func inferMovieType(genres string) string {
 
 // 豆瓣详情端点是规范媒体身份的权威来源。类型标签属于展示元数据，
 // 经常省略“电视剧”等词，不能据此判断，否则剧集可能被静默归类为电影。
-func canonicalDoubanMediaType(endpointType string) string {
-	if strings.EqualFold(strings.TrimSpace(endpointType), "movie") {
-		return "movie"
-	}
-	return "tv"
-}
+func canonicalDoubanMediaType(endpointType string) string { return mediatype.Normalize(endpointType) }

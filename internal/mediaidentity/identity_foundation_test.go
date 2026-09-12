@@ -55,51 +55,6 @@ func TestEnsureMediaUnitCreatesStableFeatureAndEpisodeIdentities(t *testing.T) {
 	}
 }
 
-func TestUpsertEpisodesBindsStructuredResourceToMediaUnit(t *testing.T) {
-	executor := &identityFoundationExecutor{rowValues: []int{51, 61}}
-	store := NewPostgresStore(executor)
-	if err := store.UpsertEpisodes(t.Context(), []Episode{{
-		SourceKey: "source", VodID: "42", MediaID: 7, UnitType: "episode",
-		SeasonNumber: 2, EpisodeKey: "S02E03", EpisodeLabel: "第三集", PlayURL: "https://video.example/3.m3u8",
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	if len(executor.execQueries) != 1 || !strings.Contains(executor.execQueries[0], "resource_episode_candidates") || strings.Contains(executor.execQueries[0], "resource_episodes\n") {
-		t.Fatalf("resource episode query = %#v", executor.execQueries)
-	}
-	arguments := executor.execArguments[0]
-	if len(arguments) != 12 || arguments[0] != 61 || arguments[1] != 7 || arguments[2] != 51 || arguments[3] != 2 || arguments[4] != "S02E03" {
-		t.Fatalf("resource episode arguments = %#v", arguments)
-	}
-	if len(executor.rowQueries) != 2 || !strings.Contains(executor.rowQueries[1], "resource_play_lines") {
-		t.Fatalf("resource line/candidate writes = rows:%#v args:%#v", executor.rowQueries, executor.execArguments)
-	}
-}
-
-func TestUpsertEpisodesPreservesDefaultAndBackupLinesForSameEpisode(t *testing.T) {
-	executor := &identityFoundationExecutor{rowValues: []int{71, 72}}
-	store := NewPostgresStore(executor)
-	episodes := []Episode{
-		{LineKey: "default", LineLabel: "默认源", LineOrder: 0, SourceKey: "source", VodID: "42", SeasonNumber: 1, EpisodeKey: "S01E01", EpisodeLabel: "第一集", PlayURL: "https://a.example/1.m3u8"},
-		{LineKey: "line-02", LineLabel: "备用源 B", LineOrder: 1, SourceKey: "source", VodID: "42", SeasonNumber: 1, EpisodeKey: "S01E01", EpisodeLabel: "第一集", PlayURL: "https://b.example/1.m3u8"},
-	}
-	if err := store.UpsertEpisodes(t.Context(), episodes); err != nil {
-		t.Fatal(err)
-	}
-	if len(executor.rowQueries) != 2 || len(executor.execQueries) != 2 {
-		t.Fatalf("multi-line writes = rows:%d execs:%d", len(executor.rowQueries), len(executor.execQueries))
-	}
-	candidateWrites := 0
-	for _, query := range executor.execQueries {
-		if strings.Contains(query, "INSERT INTO resource_episode_candidates") {
-			candidateWrites++
-		}
-	}
-	if candidateWrites != 2 {
-		t.Fatalf("candidate writes = %d", candidateWrites)
-	}
-}
-
 func TestRecordMatchCandidatePersistsReviewEvidence(t *testing.T) {
 	executor := &identityFoundationExecutor{}
 	store := NewPostgresStore(executor)
@@ -113,18 +68,6 @@ func TestRecordMatchCandidatePersistsReviewEvidence(t *testing.T) {
 	arguments := executor.execArguments[0]
 	if len(arguments) != 7 || arguments[0] != "source" || arguments[1] != "42" || arguments[2] != 7 || arguments[3] != 0.7 || arguments[5] != "review" {
 		t.Fatalf("candidate arguments = %#v", arguments)
-	}
-}
-
-func TestLinkResourceBindsOnlyStructuredEpisodeRows(t *testing.T) {
-	executor := &identityFoundationExecutor{}
-	store := NewPostgresStore(executor)
-	if err := store.LinkResource(t.Context(), ResourceLink{SourceKey: "source", VodID: "42", MediaID: 7, Confidence: 0.9, MatchedBy: "weighted_features"}); err != nil {
-		t.Fatal(err)
-	}
-	if len(executor.execQueries) != 2 || !strings.Contains(executor.execQueries[0], "resource_media_links") ||
-		!strings.Contains(executor.execQueries[1], "resource_episode_candidates") {
-		t.Fatalf("resource identity binding queries = %#v", executor.execQueries)
 	}
 }
 

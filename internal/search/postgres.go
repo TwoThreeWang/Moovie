@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaunits"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/TwoThreeWang/Moovie/new/internal/playurl"
 )
 
 // PostgresStore 是 search 域所有存储接口的唯一实现，
@@ -22,7 +24,7 @@ const vodItemColumns = `resource.source_key, resource.vod_id, resource.vod_name,
        resource.vod_total, resource.vod_serial, resource.vod_area, resource.vod_lang, resource.vod_year,
        resource.vod_duration, resource.vod_time, resource.vod_douban_id, resource.vod_content,
        resource.vod_play_url, resource.type_name, resource.last_visited_at,
-       resource.avg_speed_ms,
+       COALESCE(resource.total_load_ms / NULLIF(resource.success_count,0),0),
        (resource.success_count + resource.failure_count)::INTEGER,
        resource.failure_count,
        COALESCE(resource.resource_status, 'active'),
@@ -163,7 +165,9 @@ func (store *PostgresStore) Search(ctx context.Context, keyword string) ([]VodIt
 	rows, err := store.database.Query(ctx, `SELECT `+vodItemColumns+`
 FROM (
     SELECT * FROM vod_items
-    WHERE vod_name LIKE $1 OR vod_sub LIKE $1 OR vod_en LIKE $1
+    WHERE (vod_name LIKE $1 OR vod_sub LIKE $1 OR vod_en LIKE $1)
+      AND resource_status NOT IN ('removed','retired','deleted') AND vod_play_url<>''
+      AND EXISTS(SELECT 1 FROM sites WHERE sites.key=vod_items.source_key AND sites.enabled)
     ORDER BY last_visited_at DESC
     LIMIT $2
 ) resource `+resourceMediaLinkJoin+`
@@ -171,7 +175,7 @@ ORDER BY resource.last_visited_at DESC`, pattern, searchRowBudget)
 	if err != nil {
 		return nil, fmt.Errorf("search vod items: %w", err)
 	}
-	return scanVodItems(rows)
+	return scanPlayableVodItems(rows)
 }
 
 // FindBySourceID 按 (来源, 资源ID) 精确取一条资源。
@@ -191,15 +195,17 @@ WHERE resource.source_key = $1 AND resource.vod_id = $2 LIMIT 1`, sourceKey, vod
 // SearchByDoubanID 按豆瓣 ID 找出所有对应资源。
 func (store *PostgresStore) SearchByDoubanID(ctx context.Context, doubanID string) ([]VodItem, error) {
 	rows, err := store.database.Query(ctx, `SELECT `+vodItemColumns+` FROM vod_items resource `+resourceMediaLinkJoin+`
-WHERE resource.vod_douban_id = $1 ORDER BY resource.last_visited_at DESC`, doubanID)
+WHERE resource.vod_douban_id = $1 AND resource.resource_status NOT IN ('removed','retired','deleted')
+AND EXISTS(SELECT 1 FROM sites WHERE sites.key=resource.source_key AND sites.enabled)
+ORDER BY resource.last_visited_at DESC`, doubanID)
 	if err != nil {
 		return nil, fmt.Errorf("search vod items by douban id: %w", err)
 	}
-	return scanVodItems(rows)
+	return scanPlayableVodItems(rows)
 }
 
 func (store *PostgresStore) LoadStats(ctx context.Context, sourceKey, vodID string) (*LoadStats, error) {
-	rows, err := store.database.Query(ctx, `SELECT avg_speed_ms, success_count + failure_count, failure_count
+	rows, err := store.database.Query(ctx, `SELECT COALESCE(total_load_ms / NULLIF(success_count,0),0), success_count + failure_count, failure_count
 FROM vod_items WHERE source_key = $1 AND vod_id = $2`, sourceKey, vodID)
 	if err != nil {
 		return nil, fmt.Errorf("get load stats: %w", err)
@@ -254,12 +260,45 @@ func scanVodItems(rows database.Rows) ([]VodItem, error) {
 	return items, nil
 }
 
+// scanPlayableVodItems 防御历史未清洗数据，列表不暴露全禁用资源。
+func scanPlayableVodItems(rows database.Rows) ([]VodItem, error) {
+	items, err := scanVodItems(rows)
+	if err != nil {
+		return nil, err
+	}
+	out := items[:0]
+	for _, item := range items {
+		item.VodPlayUrl = playurl.Clean(item.VodPlayUrl, item.VodRemarks)
+		if item.VodPlayUrl != "" {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
 // Upsert 写入或更新一条资源。metadata_hash 用来判断内容是否真的变了：
 // 内容没变时 metadata_version 保持不变，避免每次抓取都触发下游刷新。
 func (store *PostgresStore) Upsert(ctx context.Context, item VodItem) error {
+	return database.InTransaction(ctx, store.database, func(db database.Executor) error {
+		return NewPostgresStore(db).upsert(ctx, item)
+	})
+}
+
+func (store *PostgresStore) upsert(ctx context.Context, item VodItem) error {
 	now := time.Now()
 	if item.LastVisitedAt.IsZero() {
 		item.LastVisitedAt = now
+	}
+	item.VodPlayUrl = playurl.Clean(item.VodPlayUrl, item.VodRemarks)
+	if item.VodPlayUrl == "" {
+		// 已有资源清空可播状态，不能忽略更新后继续播放旧地址；全新空资源不入库。
+		_, err := store.database.Exec(ctx, `UPDATE vod_items SET vod_play_url='', resource_status='removed',
+updated_at=NOW(),total_load_ms=0,success_count=0,failure_count=0,playback_cleaned=TRUE
+WHERE source_key=$1 AND vod_id=$2 AND (vod_play_url<>'' OR resource_status<>'removed')`, item.SourceKey, item.VodId)
+		if err != nil {
+			return err
+		}
+		return mediaunits.ReconcileResource(ctx, store.database, item.SourceKey, item.VodId)
 	}
 	metadataHash := StableResourceHash(item)
 	_, err := store.database.Exec(ctx, `
@@ -276,11 +315,19 @@ INSERT INTO vod_items (
     $26, $26, 'active', $27, 1, $28
 )
 ON CONFLICT (source_key, vod_id) DO UPDATE SET
+    playback_cleaned = TRUE,
     vod_name = EXCLUDED.vod_name,
     vod_sub = EXCLUDED.vod_sub,
     vod_remarks = EXCLUDED.vod_remarks,
     vod_time = EXCLUDED.vod_time,
     vod_play_url = EXCLUDED.vod_play_url,
+    type_name = EXCLUDED.type_name,
+    vod_pic = EXCLUDED.vod_pic, vod_actor = EXCLUDED.vod_actor, vod_director = EXCLUDED.vod_director,
+    vod_content = EXCLUDED.vod_content, vod_class = EXCLUDED.vod_class, vod_year = EXCLUDED.vod_year,
+    vod_area = EXCLUDED.vod_area, vod_duration = EXCLUDED.vod_duration, vod_douban_id = EXCLUDED.vod_douban_id,
+    total_load_ms = CASE WHEN vod_items.vod_play_url=EXCLUDED.vod_play_url THEN vod_items.total_load_ms ELSE 0 END,
+    success_count = CASE WHEN vod_items.vod_play_url=EXCLUDED.vod_play_url THEN vod_items.success_count ELSE 0 END,
+    failure_count = CASE WHEN vod_items.vod_play_url=EXCLUDED.vod_play_url THEN vod_items.failure_count ELSE 0 END,
     last_visited_at = EXCLUDED.last_visited_at,
     last_seen_at = NOW(), last_discovered_at = NOW(), resource_status = 'active',
     stale_at = NULL, updated_at = NOW(),
@@ -300,7 +347,10 @@ ON CONFLICT (source_key, vod_id) DO UPDATE SET
 	if err != nil {
 		return fmt.Errorf("upsert vod item: %w", err)
 	}
-	return nil
+	if err := store.fillResourceMedia(ctx, item, true); err != nil {
+		return err
+	}
+	return mediaunits.ReconcileResource(ctx, store.database, item.SourceKey, item.VodId)
 }
 
 // ListEnabled 取启用中的资源站。
@@ -420,19 +470,27 @@ VALUES ($1,$2,$3,$4,$4) RETURNING id`, site.Key, site.BaseURL, site.Enabled, now
 
 // UpdateSite 空字符串表示不修改该字段。
 func (store *PostgresStore) UpdateSite(ctx context.Context, site Site) error {
-	if _, err := store.database.Exec(ctx, `UPDATE sites SET
-key = CASE WHEN $2 = '' THEN key ELSE $2 END,
-base_url = CASE WHEN $3 = '' THEN base_url ELSE $3 END,
-enabled = $4, updated_at = $5 WHERE id = $1`, site.ID, site.Key, site.BaseURL, site.Enabled, time.Now().Unix()); err != nil {
-		return fmt.Errorf("update site: %w", err)
-	}
-	return nil
+	return database.InTransaction(ctx, store.database, func(db database.Executor) error {
+		var oldKey string
+		if err := db.QueryRow(ctx, `SELECT key FROM sites WHERE id=$1 FOR UPDATE`, site.ID).Scan(&oldKey); err != nil {
+			return err
+		}
+		if _, err := db.Exec(ctx, `UPDATE sites SET key=CASE WHEN $2='' THEN key ELSE $2 END,
+ base_url=CASE WHEN $3='' THEN base_url ELSE $3 END,enabled=$4,updated_at=$5 WHERE id=$1`, site.ID, site.Key, site.BaseURL, site.Enabled, time.Now().Unix()); err != nil {
+			return err
+		}
+		return mediaunits.ReconcileQuery(ctx, db, `SELECT DISTINCT media_id FROM resource_media_links WHERE source_key=$1 OR source_key=$2 ORDER BY media_id`, oldKey, site.Key)
+	})
 }
 
-// DeleteSite 删除资源网。
 func (store *PostgresStore) DeleteSite(ctx context.Context, id uint) error {
-	_, err := store.database.Exec(ctx, `DELETE FROM sites WHERE id = $1`, id)
-	return err
+	return database.InTransaction(ctx, store.database, func(db database.Executor) error {
+		var key string
+		if err := db.QueryRow(ctx, `DELETE FROM sites WHERE id=$1 RETURNING key`, id).Scan(&key); err != nil {
+			return err
+		}
+		return mediaunits.ReconcileQuery(ctx, db, `SELECT DISTINCT media_id FROM resource_media_links WHERE source_key=$1 ORDER BY media_id`, key)
+	})
 }
 
 // DeleteInactive 名字叫 Delete，实际只把长期未出现的资源标记为 stale（见内部注释）。
@@ -452,7 +510,10 @@ WHERE COALESCE(v.resource_status, 'active') = 'active'
 // 但保留每个媒体的最后一条资源（确保媒体至少有一个可用来源）。
 func (store *PostgresStore) PurgeStaleResources(ctx context.Context, staleDays int) (int, error) {
 	cutoff := time.Now().AddDate(0, 0, -staleDays)
-	affected, err := store.database.Exec(ctx, `DELETE FROM vod_items v
+	var affected int64
+	err := database.InTransaction(ctx, store.database, func(db database.Executor) error {
+		var err error
+		affected, err = db.Exec(ctx, `DELETE FROM vod_items v
 WHERE v.resource_status = 'stale'
   AND COALESCE(v.last_seen_at, v.last_visited_at) < $1
   AND COALESCE(v.last_played_at, '1970-01-01') < $1
@@ -463,6 +524,11 @@ WHERE v.resource_status = 'stale'
        AND (sibling.source_key, sibling.vod_id) <> (link.source_key, link.vod_id)
       WHERE link.source_key = v.source_key AND link.vod_id = v.vod_id
   )`, cutoff)
+		if err != nil {
+			return err
+		}
+		return mediaunits.ReconcileQuery(ctx, db, `SELECT DISTINCT l.media_id FROM resource_media_links l LEFT JOIN vod_items v USING(source_key,vod_id) WHERE v.source_key IS NULL ORDER BY l.media_id`)
+	})
 	return int(affected), err
 }
 

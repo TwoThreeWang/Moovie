@@ -37,7 +37,7 @@ func TestSyncV2AppliesUpsertAndDelete(t *testing.T) {
 		t.Fatalf("sync result should be empty: %#v", result)
 	}
 	records, err := store.ListByUser(t.Context(), 42, 10, 0)
-	if err != nil || len(records) != 1 || records[0].Title != "测试影片" {
+	if err != nil || len(records) != 1 || records[0].LastTime != 60 || records[0].Title != "" {
 		t.Fatalf("upsert not applied: records=%+v, err=%v", records, err)
 	}
 
@@ -74,10 +74,6 @@ func TestBrowserHistoryClientUsesOnlyScopedCursorOutbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	play, err := os.ReadFile(filepath.Join("..", "..", "web", "templates", "pages", "play.html"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, expected := range []string{"/api/v2/history/sync", "moovie_history_cursor_v2", "moovie_history_outbox_v2", "historyUserScope()", "keepalive: true"} {
 		if !strings.Contains(string(app), expected) {
 			t.Fatalf("app.js missing %q", expected)
@@ -94,7 +90,7 @@ func TestBrowserHistoryClientUsesOnlyScopedCursorOutbox(t *testing.T) {
 	}
 	if !strings.Contains(string(player), "entry_page: options.entryPage === 'watch' ? 'watch' : 'play'") ||
 		!strings.Contains(string(app), "entry_page: item.entry_page === 'watch' ? 'watch' : 'play'") ||
-		!strings.Contains(string(watch), "entryPage: 'watch'") || !strings.Contains(string(play), "entryPage: 'play'") {
+		!strings.Contains(string(watch), "entryPage: '{{ .EntryPage }}'") {
 		t.Fatal("player progress does not preserve whether playback started on play or watch")
 	}
 	if !strings.Contains(string(watch), "document.addEventListener('DOMContentLoaded', function()") {
@@ -139,7 +135,7 @@ func TestSyncV2StaleOperationDoesNotOverwriteNewerRecord(t *testing.T) {
 	}
 
 	records, err := store.ListByUser(t.Context(), 42, 10, 0)
-	if err != nil || len(records) != 1 || records[0].Title != "新记录" {
+	if err != nil || len(records) != 1 || records[0].Source != "slow" || records[0].LastTime != 30 {
 		t.Fatalf("stale operation should not overwrite: records=%+v, err=%v", records, err)
 	}
 }
@@ -238,4 +234,3 @@ func syncV2Request(t *testing.T, router http.Handler, token string, request Sync
 	}
 	return result
 }
-

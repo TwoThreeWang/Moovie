@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/TwoThreeWang/Moovie/new/internal/mediatype"
 	"sort"
 	"strings"
 	"sync"
@@ -98,6 +99,11 @@ type PlaybackSummaryReader interface {
 type UnifiedCatalog interface {
 	SearchUnifiedMedia(ctx context.Context, query UnifiedQuery) ([]UnifiedItem, error)
 	ListUnifiedResources(ctx context.Context, mediaIDs []int) ([]VodItem, error)
+}
+
+// UnifiedMediaReader 为列表提供一次批量读取，避免资源侧先返回时使用旧资料。
+type UnifiedMediaReader interface {
+	ListUnifiedMedia(context.Context, []int) ([]UnifiedItem, error)
 }
 
 // UnifiedSearchOption 是统一搜索服务的可选装配项。
@@ -230,16 +236,39 @@ func (service *UnifiedSearchService) SearchUnified(ctx context.Context, query Un
 			ResourceDurationMS: resourceDuration, ResourceUnavailable: true, CatalogDurationMS: catalogDuration, CatalogFallback: catalogFallback}, resourceErr
 	}
 
+	// 资源搜索可能刚刚创建关联，或用别名命中了规范搜索未返回的作品。
+	if reader, ok := service.catalog.(UnifiedMediaReader); ok {
+		var missing []int
+		seen := map[int]bool{}
+		for _, r := range resourceResult.Items {
+			if r.MediaID > 0 && groups[r.MediaID] == nil && !seen[r.MediaID] {
+				missing = append(missing, r.MediaID)
+				seen[r.MediaID] = true
+			}
+		}
+		canonical, err := reader.ListUnifiedMedia(ctx, missing)
+		if err != nil {
+			return UnifiedResult{}, err
+		}
+		for _, m := range canonical {
+			groups[m.MediaID] = &m
+			order = append(order, m.MediaID)
+		}
+	}
+
 	unmatched := make([]UnifiedResource, 0)
 	for _, resource := range resourceResult.Items {
 		if query.excludes(resource.SourceKey, resource.VodId) {
 			continue
 		}
-		if query.Year != "" && strings.TrimSpace(resource.VodYear) != query.Year {
-			continue
-		}
-		if query.MediaType != "" && normalizeMediaType(resource.TypeName) != query.MediaType {
-			continue
+		if canonical := groups[resource.MediaID]; canonical != nil {
+			if query.Year != "" && canonical.Year != query.Year || query.MediaType != "" && canonical.MediaType != query.MediaType {
+				continue
+			}
+		} else {
+			if query.Year != "" && strings.TrimSpace(resource.VodYear) != query.Year || query.MediaType != "" && normalizeMediaType(resource.TypeName) != query.MediaType {
+				continue
+			}
 		}
 		if resource.MediaID <= 0 {
 			if len(unmatched) < query.Limit {
@@ -262,6 +291,9 @@ func (service *UnifiedSearchService) SearchUnified(ctx context.Context, query Un
 			break
 		}
 		group := groups[mediaID]
+		if query.Year != "" && group.Year != query.Year || query.MediaType != "" && group.MediaType != query.MediaType {
+			continue
+		}
 		finalizeUnifiedItem(group)
 		items = append(items, *group)
 	}
@@ -318,6 +350,21 @@ func (service *UnifiedSearchService) RefreshPlayback(ctx context.Context, result
 	for _, item := range items {
 		if item.MediaID > 0 {
 			mediaIDs = append(mediaIDs, item.MediaID)
+		}
+	}
+	if metadata, ok := service.catalog.(UnifiedMediaReader); ok {
+		canonical, err := metadata.ListUnifiedMedia(ctx, mediaIDs)
+		if err != nil {
+			return result, err
+		}
+		byID := map[int]UnifiedItem{}
+		for _, m := range canonical {
+			byID[m.MediaID] = m
+		}
+		for i, m := range items {
+			if updated, found := byID[m.MediaID]; found {
+				items[i] = updated
+			}
 		}
 	}
 	summaries, err := reader.ListPlaybackSummaries(ctx, mediaIDs)
@@ -526,19 +573,5 @@ func resourceSuccessRate(sampleCount, failedCount int) float64 {
 	return float64(successes) / float64(sampleCount)
 }
 
-// normalizeMediaType 把资源站五花八门的分类名归一成 movie / tv 两类，识别不了返回空串。
-// 搜索和聚合搜索两条路径共用这一份，不能各自分化：
-// 过滤用的归一跟写入用的归一一旦不一致，搜出来的片就会被自己的类型筛掉。
-func normalizeMediaType(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	switch {
-	case value == "movie" || value == "film" || strings.Contains(value, "电影"):
-		return "movie"
-	case value == "tv" || value == "series" || value == "season" || value == "show" || value == "animation" ||
-		strings.Contains(value, "电视") || strings.Contains(value, "连续剧") || strings.Contains(value, "动漫") || strings.Contains(value, "综艺") ||
-		strings.HasSuffix(value, "剧"):
-		return "tv"
-	default:
-		return ""
-	}
-}
+// normalizeMediaType 与采集、规范作品使用相同四分类。
+func normalizeMediaType(value string) string { return mediatype.Normalize(value) }

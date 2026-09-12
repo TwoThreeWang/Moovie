@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/TwoThreeWang/Moovie/new/internal/workqueue"
 )
 
 func statusResponse(request *http.Request, status int, header http.Header, body string) *http.Response {

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/TwoThreeWang/Moovie/new/internal/mediaview"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/TwoThreeWang/Moovie/new/internal/playurl"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -15,7 +17,9 @@ import (
 // 对应三个不同的唯一索引，所以下面有两段几乎一样的 SQL。
 // 末尾的 WHERE EXCLUDED.activity_at >= ... 保证晚到的旧数据不会覆盖新进度。
 func upsertPlaybackPosition(ctx context.Context, executor database.Executor, userID int, operation SyncOperation) error {
-	if operation.Season < 1 {
+	if operation.EpisodeKey == "feature" {
+		operation.Season = 0
+	} else if operation.Season < 1 {
 		operation.Season = 1
 	}
 	if operation.EpisodeKey == "" {
@@ -32,7 +36,7 @@ func upsertPlaybackPosition(ctx context.Context, executor database.Executor, use
 			return fmt.Errorf("resolve playback media: %w", err)
 		}
 	}
-	mediaUnitID, err := resolvePlaybackMediaUnit(ctx, executor, operation)
+	mediaUnitID, err := resolvePlaybackMediaUnit(ctx, executor, &operation)
 	if err != nil {
 		return err
 	}
@@ -118,60 +122,50 @@ WHERE media_unit_id IS NULL AND media_id IS NOT NULL`
 WHERE media_unit_id IS NULL AND media_id IS NULL`
 }
 
-// resolvePlaybackMediaUnit 尽量把进度挂到规范季集上：
-// 先按 media_id + 集号找，再退回按资源的候选反查（该资源只对应唯一一集时也认）。
-// 实在找不到就返回 0，进度按资源身份保存。
-func resolvePlaybackMediaUnit(ctx context.Context, executor database.Executor, operation SyncOperation) (int, error) {
-	if operation.MediaUnitID > 0 {
-		return operation.MediaUnitID, nil
-	}
-	if operation.MediaID > 0 {
-		var mediaUnitID int
-		err := executor.QueryRow(ctx, `SELECT id FROM media_units
-WHERE media_id = $1 AND (episode_key = $2 OR ($3 = 1 AND unit_type = 'feature'))
-ORDER BY CASE WHEN episode_key = $2 THEN 0 ELSE 1 END, id LIMIT 1`, operation.MediaID, operation.EpisodeKey, operation.Season).Scan(&mediaUnitID)
-		if err == nil {
-			return mediaUnitID, nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return 0, fmt.Errorf("resolve playback media unit: %w", err)
+// resolvePlaybackMediaUnit 直接使用规范内容身份；不再通过已删除的候选表反查。
+func resolvePlaybackMediaUnit(ctx context.Context, executor database.Executor, operation *SyncOperation) (int, error) {
+	if operation.MediaID <= 0 && operation.Source != "" && operation.VodID != "" {
+		if err := executor.QueryRow(ctx, `SELECT COALESCE((SELECT media_id FROM resource_media_links WHERE source_key=$1 AND vod_id=$2),0)`, operation.Source, operation.VodID).Scan(&operation.MediaID); err != nil {
+			return 0, err
 		}
 	}
-	if operation.Source == "" || operation.VodID == "" {
+	if operation.MediaID <= 0 {
 		return 0, nil
 	}
-	var mediaUnitID *int
-	err := executor.QueryRow(ctx, `WITH candidates AS (
-    SELECT candidate.media_unit_id, candidate.season_number, candidate.episode_key, candidate.last_seen_at
-    FROM resource_episode_candidates candidate
-    JOIN resource_play_lines line ON line.id = candidate.line_id
-    WHERE line.source_key = $1 AND line.vod_id = $2 AND candidate.media_unit_id IS NOT NULL
-), exact_match AS (
-    SELECT media_unit_id FROM candidates WHERE season_number = $3 AND episode_key = $4
-    ORDER BY last_seen_at DESC NULLS LAST LIMIT 1
-), only_candidate AS (
-    SELECT MIN(media_unit_id) AS media_unit_id FROM candidates HAVING COUNT(DISTINCT media_unit_id) = 1
-)
-SELECT COALESCE((SELECT media_unit_id FROM exact_match), (SELECT media_unit_id FROM only_candidate))`,
-		operation.Source, operation.VodID, operation.Season, operation.EpisodeKey).Scan(&mediaUnitID)
-	if errors.Is(err, pgx.ErrNoRows) || mediaUnitID == nil {
+	var id int
+	var err error
+	if operation.MediaUnitID > 0 {
+		err = executor.QueryRow(ctx, `SELECT id FROM media_units WHERE id=$1 AND media_id=$2`, operation.MediaUnitID, operation.MediaID).Scan(&id)
+	} else {
+		err = executor.QueryRow(ctx, `SELECT id FROM media_units WHERE media_id=$1 AND
+   (season_number=$2 AND episode_key=$3 OR unit_type='feature' AND $4)
+   ORDER BY CASE WHEN episode_key=$3 THEN 0 ELSE 1 END,id LIMIT 1`, operation.MediaID, operation.Season, operation.EpisodeKey,
+			operation.EpisodeKey == "feature" || operation.EpisodeKey == "S01E01" || playurl.IsVersion(operation.Episode) || playurl.IsVersion(operation.EpisodeKey)).Scan(&id)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("resolve resource playback unit: %w", err)
+		return 0, err
 	}
-	return *mediaUnitID, nil
+	// 使用单元真实身份回写，避免旧版本标签和资源反查结果留在进度中。
+	err = executor.QueryRow(ctx, `SELECT media_id,season_number,episode_key FROM media_units WHERE id=$1`, id).Scan(&operation.MediaID, &operation.Season, &operation.EpisodeKey)
+	if operation.EpisodeKey == "feature" && playurl.MoviePart(operation.Episode) == "" {
+		operation.Episode = "正片"
+	}
+	return id, err
 }
 
 // playbackPositionSelect 是进度查询的公共部分，标题和海报优先取 media 表的（更准更新）。
-const playbackPositionSelect = `SELECT position.id, position.user_id, position.media_id, position.media_unit_id,
+var playbackPositionSelect = `SELECT position.id, position.user_id, position.media_id, position.media_unit_id,
 COALESCE(media.douban_id, ''), position.last_vod_id,
-COALESCE(NULLIF(media.title, ''), position.title),
-COALESCE(NULLIF(media.poster, ''), position.poster), position.episode,
+` + mediaview.Column("title", "COALESCE(display_resource.vod_name,position.title)") + `,
+` + mediaview.Column("poster", "COALESCE(display_resource.vod_pic,position.poster)") + `, position.episode,
 position.season_number, position.episode_key, position.progress_percent, position.position_seconds,
 position.duration_seconds, position.last_source_key, position.entry_page, position.activity_at, position.updated_at,
 COALESCE(media.genres, '')
-FROM playback_positions position LEFT JOIN media ON media.id = position.media_id`
+FROM playback_positions position LEFT JOIN media ON media.id = position.media_id
+LEFT JOIN vod_items display_resource ON media.id IS NULL AND display_resource.source_key=position.last_source_key AND display_resource.vod_id=position.last_vod_id`
 
 // queryPlaybackPositions 按给定条件查询进度记录。
 func queryPlaybackPositions(ctx context.Context, executor database.Executor, predicate string, arguments ...any) ([]Record, error) {

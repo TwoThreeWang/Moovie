@@ -3,8 +3,8 @@
 //
 // 主要涉及的表：
 //
-//	resource_episode_candidates / resource_play_lines  播放候选（由 mediaidentity 写入）
-//	playback_attempt_events  播放质量埋点
+//	vod_items / media_units  原始列表实时解析与规范选集
+//	playback_results        短期起播结果
 //	popularity_snapshot_runs / popularity_snapshots    热门榜快照
 //
 // 热门榜有三层来源，从上到下依次兜底：

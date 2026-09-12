@@ -61,18 +61,12 @@ type HistoryMetrics struct {
 	ResourceOnly int64 `json:"resource_only"`
 }
 
-// PlaybackMetrics 是播放质量指标：首帧率、播满 10 秒率、换源成功率、启动耗时分位数。
+// PlaybackMetrics 只统计已收到的最终起播结果，不伪装成全量尝试漏斗。
 type PlaybackMetrics struct {
-	Attempts               int64   `json:"attempts"`
-	FirstFrames            int64   `json:"first_frames"`
-	PlayedTenSeconds       int64   `json:"played_10s"`
-	FatalErrors            int64   `json:"fatal_errors"`
-	SourceSwitches         int64   `json:"source_switches"`
-	SuccessfulSwitches     int64   `json:"successful_switches"`
-	WrongUnitSessions      int64   `json:"wrong_unit_sessions"`
-	FirstFrameRate         float64 `json:"first_frame_rate"`
-	PlayedTenSecondsRate   float64 `json:"played_10s_rate"`
-	SwitchSuccessRate      float64 `json:"switch_success_rate"`
+	Results                int64   `json:"results"`
+	Successes              int64   `json:"successes"`
+	Failures               int64   `json:"failures"`
+	SuccessRate            float64 `json:"success_rate"`
 	StartupP50Milliseconds int64   `json:"startup_p50_ms"`
 	StartupP90Milliseconds int64   `json:"startup_p90_ms"`
 }
@@ -163,9 +157,9 @@ func (store *MetricsStore) DeleteExpiredTelemetry(ctx context.Context, before ti
 		statement string
 	}{
 		{"playback events", `WITH expired AS (
-    SELECT id FROM playback_attempt_events WHERE created_at < $1 ORDER BY id LIMIT $2
+    SELECT attempt_id FROM playback_results WHERE created_at < LEAST($1,NOW()-INTERVAL '30 days') ORDER BY created_at LIMIT $2
 )
-DELETE FROM playback_attempt_events events USING expired WHERE events.id = expired.id`},
+DELETE FROM playback_results results USING expired WHERE results.attempt_id = expired.attempt_id`},
 	} {
 		for deleted := 0; deleted < budget; {
 			chunk := min(telemetryDeleteChunk, budget-deleted)
@@ -194,30 +188,10 @@ WHERE generated_at < $1 AND id NOT IN (SELECT id FROM latest)`, before)
 }
 
 // metricsSnapshotSQL 是指标快照的大查询，用一次往返取全部指标。
-const metricsSnapshotSQL = `WITH event_window AS (
-    SELECT * FROM playback_attempt_events WHERE created_at >= NOW() - INTERVAL '24 hours'
-), event_totals AS (
-    SELECT COUNT(DISTINCT attempt_id) FILTER (WHERE event_type = 'attempt_started') AS attempts,
-           COUNT(DISTINCT attempt_id) FILTER (WHERE event_type = 'first_frame') AS first_frames,
-           COUNT(DISTINCT attempt_id) FILTER (WHERE event_type = 'played_10s') AS played_10s,
-           COUNT(DISTINCT attempt_id) FILTER (WHERE event_type = 'fatal_error') AS fatal_errors
-    FROM event_window
-), switched_sessions AS (
-    SELECT candidate_session_id, MIN(created_at) FILTER (WHERE event_type = 'source_switched') AS switched_at
-    FROM event_window WHERE candidate_session_id <> '' GROUP BY candidate_session_id
-), switch_totals AS (
-    SELECT COUNT(*) FILTER (WHERE switched_at IS NOT NULL) AS switched,
-           COUNT(*) FILTER (WHERE switched_at IS NOT NULL AND EXISTS (
-               SELECT 1 FROM event_window success
-               WHERE success.candidate_session_id = switched_sessions.candidate_session_id
-                 AND success.event_type = 'played_10s' AND success.created_at > switched_sessions.switched_at
-           )) AS successful
-    FROM switched_sessions
-), wrong_units AS (
-    SELECT COUNT(*) AS total FROM (
-        SELECT candidate_session_id FROM event_window WHERE candidate_session_id <> ''
-        GROUP BY candidate_session_id HAVING COUNT(DISTINCT media_unit_id) > 1
-    ) invalid
+const metricsSnapshotSQL = `WITH result_window AS (
+    SELECT * FROM playback_results WHERE created_at >= NOW()-INTERVAL '24 hours'
+), result_totals AS (
+    SELECT COUNT(*) AS results,COUNT(*) FILTER(WHERE succeeded) AS successes,COUNT(*) FILTER(WHERE NOT succeeded) AS failures FROM result_window
 ), latest_popularity AS (
     SELECT DISTINCT ON (media_type) media_type, item_count, source_status, generated_at, expires_at
     FROM popularity_snapshot_runs WHERE status = 'ready'
@@ -251,18 +225,12 @@ SELECT JSONB_BUILD_OBJECT(
 		'resource_only', (SELECT COUNT(*) FROM playback_positions WHERE media_id IS NULL)
     ),
     'playback', JSONB_BUILD_OBJECT(
-        'attempts', COALESCE((SELECT attempts FROM event_totals), 0),
-        'first_frames', COALESCE((SELECT first_frames FROM event_totals), 0),
-        'played_10s', COALESCE((SELECT played_10s FROM event_totals), 0),
-        'fatal_errors', COALESCE((SELECT fatal_errors FROM event_totals), 0),
-        'source_switches', COALESCE((SELECT switched FROM switch_totals), 0),
-        'successful_switches', COALESCE((SELECT successful FROM switch_totals), 0),
-        'wrong_unit_sessions', COALESCE((SELECT total FROM wrong_units), 0),
-        'first_frame_rate', COALESCE((SELECT ROUND(100.0 * first_frames / NULLIF(attempts, 0), 2) FROM event_totals), 0),
-        'played_10s_rate', COALESCE((SELECT ROUND(100.0 * played_10s / NULLIF(attempts, 0), 2) FROM event_totals), 0),
-        'switch_success_rate', COALESCE((SELECT ROUND(100.0 * successful / NULLIF(switched, 0), 2) FROM switch_totals), 0),
-        'startup_p50_ms', COALESCE((SELECT PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY elapsed_ms)::bigint FROM event_window WHERE event_type = 'first_frame'), 0),
-        'startup_p90_ms', COALESCE((SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY elapsed_ms)::bigint FROM event_window WHERE event_type = 'first_frame'), 0)
+        'results',(SELECT results FROM result_totals),
+        'successes',(SELECT successes FROM result_totals),
+        'failures',(SELECT failures FROM result_totals),
+        'success_rate',COALESCE((SELECT ROUND(100.0*successes/NULLIF(results,0),2) FROM result_totals),0),
+        'startup_p50_ms',COALESCE((SELECT PERCENTILE_CONT(0.50) WITHIN GROUP(ORDER BY load_ms)::bigint FROM result_window WHERE succeeded),0),
+        'startup_p90_ms',COALESCE((SELECT PERCENTILE_CONT(0.90) WITHIN GROUP(ORDER BY load_ms)::bigint FROM result_window WHERE succeeded),0)
     ),
     'refresh', JSONB_BUILD_OBJECT(
         'due_media', (SELECT COUNT(*) FROM media WHERE next_refresh_at IS NOT NULL AND next_refresh_at <= NOW()),

@@ -1,63 +1,68 @@
 package mediaidentity
 
 import (
-	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/TwoThreeWang/Moovie/new/internal/playurl"
 )
 
-func TestRecordPlaybackEventIsCandidateBoundAndIdempotent(t *testing.T) {
-	executor := &identityFoundationExecutor{}
-	store := NewPostgresStore(executor)
-	accepted, err := store.RecordPlaybackEvent(t.Context(), PlaybackAttemptEvent{
-		AttemptID: "attempt-123456", CandidateSessionID: "session-123456", EventType: "fatal_error", CandidateID: 71,
-		MediaUnitID: 51, SourceKey: "source", VodID: "42", ElapsedMs: 30000, Reason: "manifest timeout",
-	})
-	if err != nil || !accepted {
-		t.Fatalf("accepted/error = %v/%v", accepted, err)
+// 同一尝试并发重传只记一次；新播放列表不能接受旧页面的结果。
+func TestPlaybackResultsAreAtomicAndVersionBound(t *testing.T) {
+	pool := testdb.Pool(t)
+	raw := "正片$https://video.example/main.m3u8"
+	_, err := pool.Exec(t.Context(), `INSERT INTO sites(key,base_url,enabled) VALUES('source','https://source.example',TRUE)`)
+	if err != nil {
+		t.Fatal(err)
 	}
-	query := executor.execQueries[0]
-	for _, expected := range []string{
-		"candidate.id = $3 AND candidate.media_unit_id = $4",
-		"line.source_key = $5 AND line.vod_id = $6",
-		"ON CONFLICT (attempt_id, event_type) DO NOTHING",
-		"INSERT INTO worker_jobs",
-		"quality_refreshed_at",
-		"candidate_session_id",
-		"UPDATE vod_items resource",
-		"last_played_at = CASE WHEN inserted.event_type IN ('played_10s', 'ended')",
-	} {
-		if !strings.Contains(query, expected) {
-			t.Fatalf("event query missing %q: %s", expected, query)
-		}
+	_, err = pool.Exec(t.Context(), `INSERT INTO vod_items(source_key,vod_id,vod_name,vod_play_url,updated_at) VALUES('source','42','影片',$1,'2020-01-01')`, raw)
+	if err != nil {
+		t.Fatal(err)
 	}
-	arguments := executor.execArguments[0]
-	if len(arguments) != 9 || arguments[0] != "attempt-123456" || arguments[8] != "session-123456" {
-		t.Fatalf("event arguments = %#v", arguments)
+	store := NewPostgresStore(pool)
+	event := PlaybackAttemptEvent{AttemptID: "attempt-123456", SourceKey: "source", VodID: "42", EventType: "success", PlaybackVersion: playurl.Version(raw), ElapsedMs: 800}
+	var wg sync.WaitGroup
+	for range 12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := store.RecordPlaybackEvent(t.Context(), event); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	var successes, failures, total, results int
+	var updated time.Time
+	err = pool.QueryRow(t.Context(), `SELECT success_count,failure_count,total_load_ms,updated_at,(SELECT count(*) FROM playback_results) FROM vod_items WHERE source_key='source' AND vod_id='42'`).Scan(&successes, &failures, &total, &updated, &results)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if successes != 1 || failures != 0 || total != 800 || results != 1 || updated.Year() != 2020 {
+		t.Fatalf("stats=%d/%d/%d results=%d updated=%v", successes, failures, total, results, updated)
+	}
+	event.EventType = "failure"
+	if accepted, err := store.RecordPlaybackEvent(t.Context(), event); err != nil || accepted {
+		t.Fatalf("second terminal=%v/%v", accepted, err)
+	}
+	if _, err := pool.Exec(t.Context(), `UPDATE vod_items SET vod_play_url='正片$https://video.example/new.m3u8',success_count=0,total_load_ms=0 WHERE vod_id='42'`); err != nil {
+		t.Fatal(err)
+	}
+	event.AttemptID = "attempt-stale"
+	if accepted, err := store.RecordPlaybackEvent(t.Context(), event); err != nil || accepted {
+		t.Fatalf("stale=%v/%v", accepted, err)
+	}
+	event.PlaybackVersion = playurl.Version("正片$https://video.example/new.m3u8")
+	if accepted, err := store.RecordPlaybackEvent(t.Context(), event); err != nil || !accepted {
+		t.Fatalf("failure=%v/%v", accepted, err)
 	}
 }
 
 func TestRecordPlaybackEventRejectsUnboundIdentity(t *testing.T) {
 	store := NewPostgresStore(&identityFoundationExecutor{})
 	if _, err := store.RecordPlaybackEvent(t.Context(), PlaybackAttemptEvent{AttemptID: "short"}); err == nil {
-		t.Fatal("invalid playback event was accepted")
-	}
-}
-
-func TestResourceCandidateQueryReadsFromVodItems(t *testing.T) {
-	for _, expected := range []string{
-		"SELECT candidate.id, line.id",
-		"JOIN vod_items resource",
-		"resource.success_count",
-		"resource.failure_count",
-		"resource.avg_speed_ms",
-		"resource_media_links",
-		"COALESCE(candidate.play_url, '') <> ''",
-		"COALESCE(resource.resource_status, 'active') <> 'removed'",
-		"COALESCE(resource.vod_play_url, '') <> ''",
-	} {
-		query := resourceCandidateSelect + playableCandidateFilter
-		if !strings.Contains(query, expected) {
-			t.Fatalf("candidate query missing %q: %s", expected, query)
-		}
+		t.Fatal("invalid result accepted")
 	}
 }
