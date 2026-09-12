@@ -625,10 +625,14 @@ WHERE id = $1`, mediaID, contentHash,
 	// 两者必须同时成立，并不冲突。
 	metadataReady := state.Title != "" && (state.Summary != "" || state.OriginalTitle != "") && completeness >= 70
 	if semanticChanged && doubanID != "" && metadataReady {
-		_, _ = store.database.Exec(ctx, `INSERT INTO worker_jobs
+		// $1 同时喂给 subject_key 和 jsonb_build_object，后者形参是 "any"，
+		// 不显式 ::text 的话 Postgres 在 Parse 阶段就报 42P18 推断不出类型。
+		if _, err := store.database.Exec(ctx, `INSERT INTO worker_jobs
 (task_type, subject_key, payload, reason, status, priority, available_at)
-VALUES ('embedding', $1, jsonb_build_object('douban_id', $1), 'semantic_change', 'pending', 0, NOW())
-ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO NOTHING`, doubanID)
+VALUES ('embedding', $1, jsonb_build_object('douban_id', $1::text), 'semantic_change', 'pending', 0, NOW())
+ON CONFLICT (task_type, subject_key) WHERE status IN ('pending', 'running') DO NOTHING`, doubanID); err != nil {
+			return fmt.Errorf("enqueue embedding job: %w", err)
+		}
 	}
 	return nil
 }
