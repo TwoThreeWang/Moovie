@@ -156,6 +156,42 @@ func TestDoubanSuggestionsPreferLocalAndProxyExternalImages(t *testing.T) {
 	}
 }
 
+// 联想是全站打豆瓣最频繁的一条路径，两道闸都要守住：
+// 同一个关键词在冷却期内只问一次，限流拒绝时直接放弃而不是排队等豆瓣。
+func TestSuggestExternalDeduplicatesKeywordAndGivesUpWhenRateLimited(t *testing.T) {
+	requests := 0
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return jsonResponse(request, http.StatusOK, `[{"id":"1291546","title":"霸王别姬","type":"movie","year":"1993","img":"https://img3.doubanio.com/a.jpg"}]`), nil
+	})}
+	store := NewPostgresStore(testdb.Pool(t))
+	provider := NewDoubanProvider(client, store, WithDoubanRequestInterval(0))
+	first, err := provider.SuggestExternal(t.Context(), "霸王别姬")
+	if err != nil || len(first) != 1 || requests != 1 {
+		t.Fatalf("first/requests/error = %+v/%d/%v", first, requests, err)
+	}
+	repeat, err := provider.SuggestExternal(t.Context(), " 霸王别姬 ")
+	if err != nil || len(repeat) != 0 || requests != 1 {
+		t.Fatalf("repeat/requests/error = %+v/%d/%v", repeat, requests, err)
+	}
+
+	// 用 Wait 的老写法会在这里干等一小时（测试直接超时），而且排队期间还占着后台抓取的额度。
+	limited := NewDoubanProvider(client, store, WithDoubanRequestInterval(time.Hour))
+	if _, err := limited.SuggestExternal(t.Context(), "编舟记"); err != nil || requests != 2 {
+		t.Fatalf("requests/error = %d/%v", requests, err)
+	}
+	blocked, err := limited.SuggestExternal(t.Context(), "情书")
+	if err != nil || len(blocked) != 0 || requests != 2 {
+		t.Fatalf("blocked/requests/error = %+v/%d/%v", blocked, requests, err)
+	}
+
+	// 冷却设成 0 是线上的回退开关：去重整个关掉，行为退回改动之前的每次都问。
+	disabled := NewDoubanProvider(client, store, WithDoubanRequestInterval(0), WithSearchDiscoveryCooldown(0))
+	if _, err := disabled.SuggestExternal(t.Context(), "霸王别姬"); err != nil || requests != 3 {
+		t.Fatalf("requests/error = %d/%v", requests, err)
+	}
+}
+
 func jsonResponse(request *http.Request, status int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: status, Header: http.Header{"Content-Type": {"application/json"}},

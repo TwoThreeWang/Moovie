@@ -25,6 +25,11 @@ import (
 // 这里把全进程的豆瓣请求串行化，出问题时 Pause 还会让大家一起冷却。
 const defaultDoubanRequestInterval = 200 * time.Millisecond
 
+// searchDiscoveryCooldown 是同一个关键词再次询问豆瓣联想的最小间隔。
+// 取 24 小时是因为第一次询问就把命中的条目排进了资料抓取队列，一天足够 worker 抓完入库，
+// 之后这个词走本地 media 就能命中，不必再问豆瓣。
+const searchDiscoveryCooldown = 24 * time.Hour
+
 // DoubanProvider 抓取豆瓣的主资料、短评、热门榜和搜索联想。
 // singleflight 合并同一条目的并发抓取，limiter 保证全进程对豆瓣的请求不超频。
 type DoubanProvider struct {
@@ -37,6 +42,8 @@ type DoubanProvider struct {
 	popular     map[string]popularCacheEntry
 	canonical   CanonicalWriter
 	limiter     *outbound.Limiter
+	// discoveryCooldown 是同一个关键词再问豆瓣联想的最小间隔，见 searchDiscoveryCooldown。
+	discoveryCooldown time.Duration
 }
 
 // DoubanOption 是豆瓣抓取器的可选装配项。
@@ -52,10 +59,16 @@ func WithDoubanRequestInterval(interval time.Duration) DoubanOption {
 	return func(provider *DoubanProvider) { provider.limiter = outbound.NewLimiter(interval) }
 }
 
+// WithSearchDiscoveryCooldown 覆盖关键词联想的去重冷却，0 表示不去重、每次都问豆瓣。
+func WithSearchDiscoveryCooldown(cooldown time.Duration) DoubanOption {
+	return func(provider *DoubanProvider) { provider.discoveryCooldown = cooldown }
+}
+
 // NewDoubanProvider 创建豆瓣抓取器。
 func NewDoubanProvider(client *http.Client, store Store, options ...DoubanOption) *DoubanProvider {
 	provider := &DoubanProvider{client: client, store: store, base: "https://m.douban.com", suggestBase: "https://movie.douban.com",
-		popular: make(map[string]popularCacheEntry), limiter: outbound.NewLimiter(defaultDoubanRequestInterval)}
+		popular: make(map[string]popularCacheEntry), limiter: outbound.NewLimiter(defaultDoubanRequestInterval),
+		discoveryCooldown: searchDiscoveryCooldown}
 	for _, option := range options {
 		option(provider)
 	}
@@ -396,17 +409,27 @@ func (provider *DoubanProvider) Suggest(ctx context.Context, keyword string) ([]
 	return provider.SuggestExternal(ctx, keyword)
 }
 
-// SuggestExternal 直接调豆瓣的联想接口。
-// 走 limiter 是必须的：搜索页每次本地不足 5 条就会打一次这个接口，
-// 不限速迟早被豆瓣 429，而 429 之后所有豆瓣抓取都会一起变慢。
-// limiter.Wait 认 ctx，所以调用方给的超时仍然说了算。
+// SuggestExternal 直接调豆瓣的联想接口。下拉联想和搜索页兜底都走这里，
+// 是全站对豆瓣请求量最大的一条路径，所以两道闸都设在这个函数里，而不是各个调用方。
+//
+// 第一道是关键词冷却：一个词在冷却期内全站只问一次豆瓣，跨实例、跨重启有效。
+// 第二道是 limiter.Allow：前台联想拿不到名额就放弃，不排队。用 Wait 的老做法有两个问题——
+// 用户白等，以及 Wait 在拿锁时就把名额占住、超时也不退还，会把额度从同进程的后台资料抓取那里抢走。
+//
+// 顺序是先冷却后限速：限速在前的话，重复关键词也要占掉限速名额，
+// 真正的新词反而抢不到。代价是限速拒绝时这个词的冷却已经写下去了，
+// 但那只发生在豆瓣请求已经打满的时候，且最多冷却一轮就自愈。
 func (provider *DoubanProvider) SuggestExternal(ctx context.Context, keyword string) ([]Suggestion, error) {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
 		return []Suggestion{}, nil
 	}
-	if err := provider.limiter.Wait(ctx); err != nil {
+	claimed, err := provider.store.ClaimSearchDiscovery(ctx, keyword, provider.discoveryCooldown)
+	if err != nil {
 		return nil, err
+	}
+	if !claimed || !provider.limiter.Allow() {
+		return []Suggestion{}, nil
 	}
 	endpoint := strings.TrimRight(provider.suggestBase, "/") + "/j/subject_suggest?q=" + url.QueryEscape(keyword)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)

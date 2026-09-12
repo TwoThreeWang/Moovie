@@ -29,6 +29,37 @@ func TestAppleCMSCrawlerMapsValuesAndFiltersCategories(t *testing.T) {
 	}
 }
 
+// 解说和 TC 枪版不予收录；后台维护的分类屏蔽词仍然只匹配分类名，不能顺手扩大到标题。
+func TestIngestBlocksNarrationAndTelecineWithoutWideningCategoryFilters(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		item       VodItem
+		restricted []string
+		blocked    bool
+	}{
+		{name: "类型是电影解说", item: VodItem{VodName: "肖申克的救赎", TypeName: "电影解说"}, blocked: true},
+		{name: "标题带影视解说", item: VodItem{VodName: "9分钟看完《盗梦空间》影视解说", TypeName: "电影"}, blocked: true},
+		{name: "vod_class 带解说", item: VodItem{VodName: "盗梦空间", VodClass: "电影解说"}, blocked: true},
+		{name: "备注是TC", item: VodItem{VodName: "哪吒", VodRemarks: "TC抢先版"}, blocked: true},
+		{name: "备注是HD-TC", item: VodItem{VodName: "哪吒", VodRemarks: "HD-TC"}, blocked: true},
+		{name: "标题带TC版", item: VodItem{VodName: "哪吒(TC版)", VodRemarks: "更新至01集"}, blocked: true},
+		// tc 夹在英文单词里不能算枪版，否则 Catch / Watchmen 这类片名全被拦掉。
+		{name: "英文片名里的tc", item: VodItem{VodName: "Catch Me If You Can", VodRemarks: "HD中字"}},
+		{name: "Watchmen", item: VodItem{VodName: "Watchmen", TypeName: "动作片"}},
+		{name: "TCL不是枪版", item: VodItem{VodName: "TCL纪录片", VodRemarks: "正片"}},
+		{name: "干净条目", item: VodItem{VodName: "肖申克的救赎", TypeName: "电影", VodRemarks: "HD国语"}},
+		// 后台分类屏蔽词的口径不变：只看分类名，标题里出现同样的词不拦。
+		{name: "分类命中屏蔽词", item: VodItem{VodName: "某片", TypeName: "伦理片"}, restricted: []string{"伦理"}, blocked: true},
+		{name: "标题命中屏蔽词不拦", item: VodItem{VodName: "伦理学导论", TypeName: "纪录片"}, restricted: []string{"伦理"}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := ingestBlocked(testCase.item, testCase.restricted); got != testCase.blocked {
+				t.Fatalf("ingestBlocked(%+v) = %v, want %v", testCase.item, got, testCase.blocked)
+			}
+		})
+	}
+}
+
 func TestAppleCMSCrawlerRejectsNon200AndInvalidJSON(t *testing.T) {
 	for _, testCase := range []struct {
 		name   string

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/TwoThreeWang/Moovie/new/internal/mediatype"
 	"math"
@@ -9,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/TwoThreeWang/Moovie/new/internal/content"
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
+	"github.com/TwoThreeWang/Moovie/new/internal/mediatitle"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 )
 
@@ -403,15 +407,26 @@ func sitemapCondition(kind content.SitemapKind) (string, error) {
 }
 
 // Suggest 按标题模糊搜索，完全相同 > 前缀匹配 > 其他，同档再按年份和评分排。
+// 别名口径与统一搜索（search.SearchUnifiedMedia）保持一致：两边都用 mediatitle.Normalize
+// 去查 media_aliases。下拉联想本地漏掉的每一个词都会变成一次豆瓣请求，
+// 所以这里绝不能比搜索页更难命中。
 func (store *PostgresStore) Suggest(ctx context.Context, keyword string, limit int) ([]Movie, error) {
+	keyword = strings.TrimSpace(keyword)
+	normalizedPattern := ""
+	if normalized := mediatitle.Normalize(keyword); normalized != "" {
+		normalizedPattern = "%" + normalized + "%"
+	}
 	rows, err := store.database.Query(ctx, `SELECT `+movieColumns+` FROM media m
-	WHERE m.title ILIKE $1 OR m.original_title ILIKE $1
+	WHERE m.title ILIKE $1 OR m.original_title ILIKE $1 OR EXISTS (
+	    SELECT 1 FROM media_aliases alias
+	    WHERE alias.media_id = m.id AND $5 <> '' AND alias.normalized_alias LIKE $5
+	)
 	ORDER BY CASE
 	    WHEN LOWER(m.title) = LOWER($2) OR LOWER(m.original_title) = LOWER($2) THEN 0
 	    WHEN m.title ILIKE $3 OR m.original_title ILIKE $3 THEN 1
 	    ELSE 2
 	END, NULLIF(m.year, '') ASC NULLS LAST, m.rating_douban DESC, m.updated_at DESC
-	LIMIT $4`, "%"+keyword+"%", strings.TrimSpace(keyword), strings.TrimSpace(keyword)+"%", limit)
+	LIMIT $4`, "%"+keyword+"%", keyword, keyword+"%", limit, normalizedPattern)
 	if err != nil {
 		return nil, fmt.Errorf("suggest movies: %w", err)
 	}
@@ -428,6 +443,42 @@ func (store *PostgresStore) Suggest(ctx context.Context, keyword string, limit i
 		return nil, fmt.Errorf("iterate movie suggestions: %w", err)
 	}
 	return movies, nil
+}
+
+// ClaimSearchDiscovery 判断这个关键词现在该不该去问豆瓣联想，true 表示名额归本次调用。
+//
+// 抢名额和记账在同一条语句里完成，所以多个实例并发搜同一个词也只有一个会真正发请求。
+// 记在数据库而不是内存：进程内搜索缓存只有几百条、重启即失效、每个实例各存各的，
+// 量大时长尾关键词会被不断挤出缓存，同一个词反复变成豆瓣请求。
+//
+// 冷却期内返回 false 是安全的：第一次询问已经把命中的条目排进了资料抓取队列，
+// 冷却结束前它们应该已经进了 media 表，后续搜索直接走本地支路。
+func (store *PostgresStore) ClaimSearchDiscovery(ctx context.Context, keyword string, cooldown time.Duration) (bool, error) {
+	normalized := mediatitle.Normalize(keyword)
+	if normalized == "" || cooldown <= 0 {
+		return normalized != "", nil
+	}
+	var claimed string
+	err := store.database.QueryRow(ctx, `INSERT INTO search_discovery_probes (keyword, probed_at) VALUES ($1, NOW())
+ON CONFLICT (keyword) DO UPDATE SET probed_at = NOW()
+    WHERE search_discovery_probes.probed_at < NOW() - make_interval(secs => $2)
+RETURNING keyword`, normalized, cooldown.Seconds()).Scan(&claimed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("claim search discovery: %w", err)
+	}
+	return true, nil
+}
+
+// PurgeSearchDiscoveryProbes 删除过期的关键词探测记录，由运维清理任务调用。
+func (store *PostgresStore) PurgeSearchDiscoveryProbes(ctx context.Context, before time.Time) (int, error) {
+	affected, err := store.database.Exec(ctx, `DELETE FROM search_discovery_probes WHERE probed_at < $1`, before)
+	if err != nil {
+		return 0, fmt.Errorf("purge search discovery probes: %w", err)
+	}
+	return int(affected), nil
 }
 
 // Popular 取有评分且已生成向量的影片，按评分倒序（上游热门接口挂了时兜底用）。

@@ -58,7 +58,7 @@ func WithUnifiedSearcher(searcher UnifiedSearcher) HandlerOption {
 func NewHandler(cfg config.Config, searcher Searcher, options ...HandlerOption) *Handler {
 	cacheEntries := cfg.Search.CacheEntries
 	if cacheEntries <= 0 {
-		cacheEntries = 200
+		cacheEntries = 2000
 	}
 	cacheTTL := cfg.Search.CacheTTL
 	if cacheTTL <= 0 {

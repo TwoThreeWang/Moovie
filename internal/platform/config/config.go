@@ -79,6 +79,10 @@ type CatalogConfig struct {
 	// worker 并发一高，多个 douban_metadata 任务会同时把请求打到同一个出口 IP 上，
 	// 单个任务自己退避没用，得让全进程的豆瓣请求排成队——这个值就是队列的节奏。
 	DoubanRequestInterval time.Duration
+	// SearchDiscoveryCooldown 是同一个搜索关键词再次询问豆瓣联想的最小间隔。
+	// 合适的值取决于 worker 排空资料抓取队列的速度：冷却期内这个词不会再问豆瓣，
+	// 靠的是第一次询问排进去的抓取任务已经把条目写进 media。设为 0 表示不去重、每次都问。
+	SearchDiscoveryCooldown time.Duration
 	// WikidataEndpoint 和 WikidataUserAgent 用于批量补齐豆瓣→IMDb 映射。
 	// 维基媒体要求请求带上能说明来源和联系方式的 User-Agent，默认 UA 会被拒绝。
 	WikidataEndpoint  string
@@ -155,7 +159,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	cacheEntries, err := positiveIntEnv("SEARCH_CACHE_ENTRIES", 200)
+	cacheEntries, err := positiveIntEnv("SEARCH_CACHE_ENTRIES", 2000)
 	if err != nil {
 		return Config{}, err
 	}
@@ -259,6 +263,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	searchDiscoveryCooldownHours, err := nonNegativeIntEnv("SEARCH_DISCOVERY_COOLDOWN_HOURS", 24)
+	if err != nil {
+		return Config{}, err
+	}
 	imdbBackfillBatch, err := positiveIntEnv("IMDB_BACKFILL_BATCH", 200)
 	if err != nil {
 		return Config{}, err
@@ -320,13 +328,14 @@ func Load() (Config, error) {
 			CFAPIToken:   env("CF_API_TOKEN", ""),
 			CFAIModel:    env("CF_AI_MODEL", "custom-alibaba-coding/kimi-k2.5"),
 
-			AITimeout:             time.Duration(catalogAITimeoutSeconds) * time.Second,
-			IMDbLookupInterval:    time.Duration(imdbLookupIntervalMilliseconds) * time.Millisecond,
-			DoubanRequestInterval: time.Duration(doubanRequestIntervalMilliseconds) * time.Millisecond,
-			WikidataEndpoint:      strings.TrimRight(env("WIKIDATA_SPARQL_URL", ""), "/"),
-			WikidataUserAgent:     env("WIKIDATA_USER_AGENT", ""),
-			IMDbBackfillBatch:     imdbBackfillBatch,
-			WikidataTimeout:       time.Duration(wikidataTimeoutSeconds) * time.Second,
+			AITimeout:               time.Duration(catalogAITimeoutSeconds) * time.Second,
+			IMDbLookupInterval:      time.Duration(imdbLookupIntervalMilliseconds) * time.Millisecond,
+			DoubanRequestInterval:   time.Duration(doubanRequestIntervalMilliseconds) * time.Millisecond,
+			SearchDiscoveryCooldown: time.Duration(searchDiscoveryCooldownHours) * time.Hour,
+			WikidataEndpoint:        strings.TrimRight(env("WIKIDATA_SPARQL_URL", ""), "/"),
+			WikidataUserAgent:       env("WIKIDATA_USER_AGENT", ""),
+			IMDbBackfillBatch:       imdbBackfillBatch,
+			WikidataTimeout:         time.Duration(wikidataTimeoutSeconds) * time.Second,
 		},
 		Danmaku: DanmakuConfig{APIBase: strings.TrimRight(env("DANMU_API_BASE", ""), "/")},
 		Database: DatabaseConfig{

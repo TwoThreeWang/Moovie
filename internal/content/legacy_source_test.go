@@ -300,8 +300,12 @@ func isReviewedHTMXLoadingFile(relativePath string) bool {
 // play.html 和 watch.html 里抽出来的共用片段（批次 2），旧站是在两个页面里各抄一份的。
 // 抽出来之后两边渲染出的 HTML 不变，由 playback 包的
 // TestPlayerPagesShareTheSamePlayerAndLazySections 把关。
+// fetching.html 修了旧站带过来的一个 bug：超时提示用 style.display = ” 显示，
+// 而置空只是删掉行内样式、元素退回样式表的 display:none，
+// 结果 30 秒后加载态消失、超时提示也没出来，页面整片空白。
 var reviewedTemplateDrift = map[string]bool{
 	"pages/changelog.html":         true,
+	"pages/fetching.html":          true,
 	"partials/air_schedule.html":   true,
 	"partials/today_updates.html":  true,
 	"partials/play_container.html": true,
@@ -548,6 +552,10 @@ func TestReviewedFrontendQualityEnhancements(t *testing.T) {
 		"templates/pages/movie.html": {
 			`<details class="movie-cast-details">`,
 			`class="rating-num rating-num-refresh"`,
+		},
+		// 超时提示必须显式指定 display，置空会让它退回样式表里的 display:none。
+		"templates/pages/fetching.html": {
+			`document.getElementById('fetching-timeout').style.display = 'block';`,
 		},
 		"templates/pages/iptv.html": {
 			`id="iptv-playback-status"`,

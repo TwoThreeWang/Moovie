@@ -143,6 +143,11 @@ func (handler *Handler) renderPlayback(c *gin.Context, entry, doubanID, sourceKe
 		part = playurl.MoviePart(requested)
 	}
 	best, found := selectSource(candidates, sourceKey, vodID, c.Query("source"), c.Query("ver"), c.Query("candidate"), part)
+	// fallback to first candidate if specified source not available
+	if !found && len(candidates) > 0 {
+		best = candidates[0]
+		found = true
+	}
 	episode := key
 	for _, info := range infos {
 		if info.EpisodeKey == key && info.SeasonNumber == season {

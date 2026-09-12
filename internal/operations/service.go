@@ -16,16 +16,18 @@ import (
 
 // 各类数据的保留天数与清理批量上限，以及两个后台任务的类型名。
 const (
-	stalePurgeDays            = 90
-	siteStatRetentionDays     = 7
-	completedJobRetentionDays = 3
-	failedJobRetentionDays    = 3
-	jobCleanupBatchSize       = 1000
+	stalePurgeDays        = 90
+	siteStatRetentionDays = 7
+	// 关键词探测记录只在冷却期内有意义，冷却是 24 小时，留 2 天足够覆盖时钟误差。
+	searchDiscoveryRetentionDays = 2
+	completedJobRetentionDays    = 3
+	failedJobRetentionDays       = 3
+	jobCleanupBatchSize          = 1000
 	// 遥测读取方最长只看 7 天，留 30 天是给排查留余量，不是给查询用的。
 	telemetryRetentionDays = 30
 	// 每天每张表最多删 100 万行：够排空存量积压，又不会让一次清理跑太久。
 	telemetryCleanupBudget = 1_000_000
-	siteAlertMinSamples = 5
+	siteAlertMinSamples    = 5
 	siteAlertCooldown      = 24 * time.Hour
 	TaskCleanup            = "operations_cleanup"
 	TaskHealthCheck        = "site_health_check"
@@ -51,6 +53,7 @@ type Service struct {
 	lastAlert        map[string]time.Time
 	jobCleanup       func(context.Context, time.Time, time.Time, int) (int, error)
 	telemetryCleanup func(context.Context, time.Time, int) (int, error)
+	discoveryCleanup func(context.Context, time.Time) (int, error)
 }
 
 // ServiceOption 用于注入可选的清理能力。
@@ -66,6 +69,10 @@ func WithTelemetryCleanup(cleanup func(context.Context, time.Time, int) (int, er
 	return func(service *Service) { service.telemetryCleanup = cleanup }
 }
 
+// WithSearchDiscoveryCleanup 注入搜索关键词探测记录的清理。
+func WithSearchDiscoveryCleanup(cleanup func(context.Context, time.Time) (int, error)) ServiceOption {
+	return func(service *Service) { service.discoveryCleanup = cleanup }
+}
 
 // NewService 创建运维服务。
 func NewService(store Store, options ...ServiceOption) *Service {
@@ -102,6 +109,12 @@ func (service *Service) HandleCleanup(ctx context.Context, _ workqueue.Job) erro
 		before := service.now().AddDate(0, 0, -telemetryRetentionDays)
 		operations = append(operations, cleanupOperation{name: "expired playback telemetry", run: func() (int, error) {
 			return service.telemetryCleanup(ctx, before, telemetryCleanupBudget)
+		}})
+	}
+	if service.discoveryCleanup != nil {
+		before := service.now().AddDate(0, 0, -searchDiscoveryRetentionDays)
+		operations = append(operations, cleanupOperation{name: "expired search discovery probes", run: func() (int, error) {
+			return service.discoveryCleanup(ctx, before)
 		}})
 	}
 	var failures []error

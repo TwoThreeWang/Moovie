@@ -115,7 +115,8 @@ func main() {
 	metricsStore := operations.NewMetricsStore(pool)
 	operationsService := operations.NewService(searchStore,
 		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs),
-		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry))
+		operations.WithTelemetryCleanup(metricsStore.DeleteExpiredTelemetry),
+		operations.WithSearchDiscoveryCleanup(movies.PurgeSearchDiscoveryProbes))
 	dispatcher := workqueue.NewDispatcher(queueStore, cfg.Worker.Concurrency, cfg.Worker.Poll)
 	for _, taskType := range []string{catalog.RefreshProviderDouban, catalog.RefreshProviderReviews, catalog.RefreshProviderTMDB, catalog.RefreshProviderEmbedding} {
 		dispatcher.Handle(taskType, 10*time.Minute, metadataHandler.Handle)

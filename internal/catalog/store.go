@@ -1,6 +1,9 @@
 package catalog
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Store 是 catalog 需要的存储能力集合，实现见 postgres.go。
 type Store interface {
@@ -11,6 +14,7 @@ type Store interface {
 	DeleteByDoubanID(ctx context.Context, doubanID string) error
 	Latest(ctx context.Context, limit int) ([]Movie, error)
 	Suggest(ctx context.Context, keyword string, limit int) ([]Movie, error)
+	ClaimSearchDiscovery(ctx context.Context, keyword string, cooldown time.Duration) (bool, error)
 	Popular(ctx context.Context, limit int) ([]Movie, error)
 	UpdateEmbedding(ctx context.Context, doubanID, content string, embedding []float32) error
 	Count(ctx context.Context) (int, error)

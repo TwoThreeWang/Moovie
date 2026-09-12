@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/outbound"
@@ -65,7 +66,7 @@ func (crawler *AppleCMSCrawler) Search(ctx context.Context, baseURL, keyword, so
 	items := make([]VodItem, 0, len(payload.List))
 	for _, raw := range payload.List {
 		item := mapAppleCMSItem(raw, sourceKey)
-		if item.VodPlayUrl == "" || categoryBlocked(item.TypeName, restrictedCategories) {
+		if item.VodPlayUrl == "" || ingestBlocked(item, restrictedCategories) {
 			continue
 		}
 		items = append(items, item)
@@ -128,6 +129,34 @@ func categoryBlocked(typeName string, restricted []string) bool {
 	for _, keyword := range restricted {
 		if strings.Contains(typeName, keyword) {
 			return true
+		}
+	}
+	return false
+}
+
+// ingestBlockedKeywords 是固定不予收录的关键词。后台维护的分类屏蔽词只看分类名，
+// 而解说类资源经常分类写「电影」、标题才带「电影解说」，所以这份列表标题也要看。
+var ingestBlockedKeywords = []string{"影视解说", "电影解说"}
+
+// telecineRelease 匹配 TC（枪版）标记，通常出现在备注里，如「TC」「HD-TC」「TC抢先版」。
+// 前后必须不是英文字母，否则 catch、watch 这类词里的 tc 会被误伤。
+var telecineRelease = regexp.MustCompile(`(?i)(^|[^a-z])tc([^a-z]|$)`)
+
+// ingestBlocked 判断一条资源是否不予收录。除了后台维护的分类屏蔽词（只匹配分类名），
+// 解说和 TC 枪版这两类固定规则要把标题、分类、备注一起看。
+// 拦在抓取阶段，这些条目既不会写进 vod_items，也不会出现在搜索结果里。
+func ingestBlocked(item VodItem, restricted []string) bool {
+	if categoryBlocked(item.TypeName, restricted) {
+		return true
+	}
+	for _, field := range []string{item.VodName, item.TypeName, item.VodClass, item.VodRemarks} {
+		if telecineRelease.MatchString(field) {
+			return true
+		}
+		for _, keyword := range ingestBlockedKeywords {
+			if strings.Contains(field, keyword) {
+				return true
+			}
 		}
 	}
 	return false

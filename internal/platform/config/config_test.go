@@ -136,7 +136,7 @@ func TestLoadUsesIsolatedDefaults(t *testing.T) {
 	if cfg.Search.SourceTimeout != 10*time.Second || cfg.Search.TotalTimeout != 30*time.Second {
 		t.Fatalf("search timeouts = %s/%s", cfg.Search.SourceTimeout, cfg.Search.TotalTimeout)
 	}
-	if cfg.Search.CacheTTL != 3*time.Hour || cfg.Search.CacheEntries != 200 || !cfg.Search.BreakerEnabled {
+	if cfg.Search.CacheTTL != 3*time.Hour || cfg.Search.CacheEntries != 2000 || !cfg.Search.BreakerEnabled {
 		t.Fatalf("search cache/breaker defaults changed: %+v", cfg.Search)
 	}
 	if cfg.Search.SourceMaxConcurrency != 6 || cfg.Search.BackgroundMaxConcurrency != 8 {
@@ -166,6 +166,9 @@ func TestLoadUsesIsolatedDefaults(t *testing.T) {
 	// AI Gateway 的超时必须远大于搜索源超时，否则非流式 chat completion 必然超时。
 	if cfg.Catalog.AITimeout != 120*time.Second || cfg.Catalog.AITimeout <= cfg.Search.SourceTimeout {
 		t.Fatalf("catalog AI timeout = %s (search source timeout %s)", cfg.Catalog.AITimeout, cfg.Search.SourceTimeout)
+	}
+	if cfg.Catalog.SearchDiscoveryCooldown != 24*time.Hour {
+		t.Fatalf("search discovery cooldown = %s", cfg.Catalog.SearchDiscoveryCooldown)
 	}
 	if cfg.Catalog.IMDbLookupInterval != 1200*time.Millisecond || cfg.Catalog.IMDbBackfillBatch != 200 {
 		t.Fatalf("IMDb lookup interval = %s, backfill batch = %d", cfg.Catalog.IMDbLookupInterval, cfg.Catalog.IMDbBackfillBatch)

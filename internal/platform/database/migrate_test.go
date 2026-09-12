@@ -17,7 +17,7 @@ func TestEmbeddedMigrationsIncludeCanonicalCutover(t *testing.T) {
 	for _, migration := range migrations {
 		versions = append(versions, migration.version)
 	}
-	expectedVersions := make([]string, 65)
+	expectedVersions := make([]string, 66)
 	for index := range expectedVersions {
 		expectedVersions[index] = fmt.Sprintf("%04d", index+1)
 	}

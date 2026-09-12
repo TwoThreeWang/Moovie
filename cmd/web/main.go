@@ -167,7 +167,8 @@ func main() {
 	// ── 阶段 4：Service 层（业务逻辑）──────────────────────────────
 	// 数据提供者：豆瓣（抓取影片元数据、短评）和 TMDB（剧照、英文信息）。
 	// 抓取到的元数据会通过 canonicalStore 写入 media_identity 表建立规范映射。
-	doubanOptions := []catalog.DoubanOption{catalog.WithDoubanRequestInterval(cfg.Catalog.DoubanRequestInterval)}
+	doubanOptions := []catalog.DoubanOption{catalog.WithDoubanRequestInterval(cfg.Catalog.DoubanRequestInterval),
+		catalog.WithSearchDiscoveryCooldown(cfg.Catalog.SearchDiscoveryCooldown)}
 	tmdbOptions := []catalog.TMDBOption{}
 	if canonicalStore != nil {
 		doubanOptions = append(doubanOptions, catalog.WithDoubanCanonicalWriter(canonicalStore))

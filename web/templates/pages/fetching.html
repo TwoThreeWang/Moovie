@@ -27,8 +27,10 @@
 
 <script>
 setTimeout(function() {
+    // 必须写成 'block'：置空只是删掉行内样式，元素会退回样式表里的 display:none，
+    // 结果就是加载态没了、超时提示也没出来，页面整片空白。
     document.getElementById('fetching-loading').style.display = 'none';
-    document.getElementById('fetching-timeout').style.display = '';
+    document.getElementById('fetching-timeout').style.display = 'block';
 }, 30000);
 </script>
 

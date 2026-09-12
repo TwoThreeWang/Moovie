@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/content"
+	"github.com/TwoThreeWang/Moovie/new/internal/mediatitle"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
 )
 
 func TestPostgresStorePreservesIndependentEnrichmentOnSparseMetadataUpdate(t *testing.T) {
@@ -139,13 +141,75 @@ func TestPostgresSuggestRanksTitleMatchThenYear(t *testing.T) {
 	if _, err := store.Suggest(t.Context(), "末日地堡", 5); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"ILIKE $1", "LOWER(m.title) = LOWER($2)", "m.title ILIKE $3", "NULLIF(m.year, '') ASC", "LIMIT $4"} {
+	for _, expected := range []string{"ILIKE $1", "LOWER(m.title) = LOWER($2)", "m.title ILIKE $3",
+		"media_aliases", "alias.normalized_alias LIKE $5", "NULLIF(m.year, '') ASC", "LIMIT $4"} {
 		if !strings.Contains(fake.query, expected) {
 			t.Fatalf("suggest query missing %q: %s", expected, fake.query)
 		}
 	}
-	if !reflect.DeepEqual(fake.arguments, []any{"%末日地堡%", "末日地堡", "末日地堡%", 5}) {
+	if !reflect.DeepEqual(fake.arguments, []any{"%末日地堡%", "末日地堡", "末日地堡%", 5, "%末日地堡%"}) {
 		t.Fatalf("suggest arguments = %#v", fake.arguments)
+	}
+}
+
+// 下拉联想的别名口径必须和统一搜索一致：本地漏掉一个词，就等于多打一次豆瓣联想。
+func TestPostgresSuggestMatchesNormalizedAliases(t *testing.T) {
+	pool := testdb.Pool(t)
+	store := NewPostgresStore(pool)
+	if err := store.Upsert(t.Context(), Movie{DoubanID: "1292052", Title: "肖申克的救赎", Genres: "剧情"}); err != nil {
+		t.Fatal(err)
+	}
+	movie, err := store.FindByDoubanID(t.Context(), "1292052")
+	if err != nil || movie == nil {
+		t.Fatalf("movie/error = %+v/%v", movie, err)
+	}
+	if _, err := pool.Exec(t.Context(), `INSERT INTO media_aliases (media_id, alias, normalized_alias, source, alias_type)
+VALUES ($1, $2, $3, 'test', 'aka')`, movie.ID, "月黑高飞", mediatitle.Normalize("月黑高飞")); err != nil {
+		t.Fatal(err)
+	}
+	matched, err := store.Suggest(t.Context(), " 月黑高飞 ", 5)
+	if err != nil || len(matched) != 1 || matched[0].DoubanID != "1292052" {
+		t.Fatalf("alias suggestions/error = %+v/%v", matched, err)
+	}
+	missing, err := store.Suggest(t.Context(), "完全不相干的词", 5)
+	if err != nil || len(missing) != 0 {
+		t.Fatalf("unexpected suggestions/error = %+v/%v", missing, err)
+	}
+}
+
+// 关键词去重是靠数据库跨实例、跨重启生效的，所以必须按真库的 ON CONFLICT 语义验证。
+func TestClaimSearchDiscoveryDeduplicatesKeywordWithinCooldown(t *testing.T) {
+	pool := testdb.Pool(t)
+	store := NewPostgresStore(pool)
+	claimed, err := store.ClaimSearchDiscovery(t.Context(), "沙丘3", time.Hour)
+	if err != nil || !claimed {
+		t.Fatalf("first claim = %v/%v", claimed, err)
+	}
+	// 归一化之后是同一个词，多敲的空格和大小写不该换来第二次豆瓣请求。
+	if repeat, err := store.ClaimSearchDiscovery(t.Context(), " 沙丘3 ", time.Hour); err != nil || repeat {
+		t.Fatalf("repeat claim = %v/%v", repeat, err)
+	}
+	if other, err := store.ClaimSearchDiscovery(t.Context(), "编舟记", time.Hour); err != nil || !other {
+		t.Fatalf("other keyword claim = %v/%v", other, err)
+	}
+	if blank, err := store.ClaimSearchDiscovery(t.Context(), "   ", time.Hour); err != nil || blank {
+		t.Fatalf("blank claim = %v/%v", blank, err)
+	}
+	// 冷却到期必须放行，否则库里暂时没有的词会被永久拉黑，再也发现不了。
+	if _, err := pool.Exec(t.Context(), `UPDATE search_discovery_probes SET probed_at = NOW() - INTERVAL '2 hours'`); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := store.ClaimSearchDiscovery(t.Context(), "沙丘3", time.Hour); err != nil || !again {
+		t.Fatalf("claim after cooldown = %v/%v", again, err)
+	}
+	// 清理只删过期行：刚刚续期的"沙丘3"要留下，两小时前的"编舟记"才该删。
+	purged, err := store.PurgeSearchDiscoveryProbes(t.Context(), time.Now().Add(-time.Hour))
+	if err != nil || purged != 1 {
+		t.Fatalf("purged/error = %d/%v", purged, err)
+	}
+	var remaining int
+	if err := pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM search_discovery_probes`).Scan(&remaining); err != nil || remaining != 1 {
+		t.Fatalf("remaining/error = %d/%v", remaining, err)
 	}
 }
 
