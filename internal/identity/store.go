@@ -7,6 +7,8 @@ type Store interface {
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	FindByID(ctx context.Context, id int) (*User, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	CountUsers(ctx context.Context) (int, error)
+	ListUsersPage(ctx context.Context, limit, offset int) ([]User, error)
 	Create(ctx context.Context, user User) (*User, error)
 	UpdateUsername(ctx context.Context, userID int, username string) error
 	UpdateEmail(ctx context.Context, userID int, email string) error

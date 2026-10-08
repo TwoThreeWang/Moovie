@@ -181,7 +181,7 @@ func main() {
 	doubanClient := douban.NewClient(sourceClient)
 	doubanService := douban.NewService(doubanClient, libraryStore, doubanJobStore) // 豆瓣标记同步（想看/已看导入）
 	reportService := report.NewService(reportStore, libraryStore, catalogStore)    // 月度观影报告
-	doubanTaskHandler := douban.NewTaskHandler(doubanJobStore, doubanUserStore, doubanService, douban.WithMonthlyGenerator(reportService))
+	doubanTaskHandler := douban.NewTaskHandler(doubanJobStore, doubanUserStore, doubanService)
 	metricsStore := operations.NewMetricsStore(nil)
 	if databasePool != nil {
 		metricsStore = operations.NewMetricsStore(databasePool)
@@ -289,6 +289,10 @@ func main() {
 		workerDispatcher.Handle(douban.TaskSync, 30*time.Minute, doubanTaskHandler.Handle)
 		workerDispatcher.Handle(douban.TaskDaily, 30*time.Minute, doubanTaskHandler.HandleDaily)
 		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: douban.TaskDaily, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour, InitialDelay: time.Minute})
+		workerDispatcher.Handle(report.TaskMonthly, 30*time.Minute, func(ctx context.Context, _ workqueue.Job) error {
+			return reportService.GeneratePreviousMonth(ctx)
+		})
+		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: report.TaskMonthly, SubjectKey: "global", Reason: "scheduled", Priority: 10}, Interval: 24 * time.Hour, InitialDelay: time.Minute})
 		workerDispatcher.Handle(operations.TaskCleanup, 30*time.Minute, operationsService.HandleCleanup)
 		workerDispatcher.Handle(operations.TaskHealthCheck, 5*time.Minute, operationsService.HandleHealthCheck)
 		workerDispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: operations.TaskCleanup, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour})

@@ -58,6 +58,49 @@ func TestGenerateFreezesMonthlyStatsPersonaPercentileAndPosterWall(t *testing.T)
 	}
 }
 
+func TestGeneratePreviousMonthBackfillsMissingReportsWithoutChangingGeneratedOnes(t *testing.T) {
+	pool := testdb.Pool(t)
+	testdb.User(t, pool, 7, 8, 9)
+	reports := NewPostgresStore(pool)
+	libraryStore := library.NewPostgresStore(pool)
+	created := time.Date(2026, time.September, 15, 12, 0, 0, 0, time.Local)
+	for _, userID := range []int{7, 8, 9} {
+		if err := libraryStore.Upsert(t.Context(), library.Record{
+			UserID: userID, MovieID: "1292052", Title: "电影", Status: library.StatusWatched,
+			CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := reports.Save(t.Context(), MonthlyReport{UserID: 7, YearMonth: "2026-09", Status: StatusGenerated, WatchedCount: 99}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reports.Save(t.Context(), MonthlyReport{UserID: 9, YearMonth: "2026-09", Status: StatusFailed}); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(reports, libraryStore, catalog.NewPostgresStore(pool))
+	service.now = func() time.Time { return time.Date(2026, time.October, 8, 12, 0, 0, 0, time.Local) }
+	if err := service.GeneratePreviousMonth(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ userID, count int }{{7, 99}, {8, 1}, {9, 1}} {
+		report, err := reports.GetByUserAndMonth(t.Context(), tc.userID, "2026-09")
+		if err != nil || report == nil || report.Status != StatusGenerated || report.WatchedCount != tc.count {
+			t.Fatalf("user %d report = %+v, error = %v", tc.userID, report, err)
+		}
+	}
+	if err := libraryStore.Upsert(t.Context(), library.Record{UserID: 8, MovieID: "1292053", Title: "第二部", Status: library.StatusWatched, CreatedAt: created, UpdatedAt: created}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.GeneratePreviousMonth(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	report, err := reports.GetByUserAndMonth(t.Context(), 8, "2026-09")
+	if err != nil || report == nil || report.WatchedCount != 1 {
+		t.Fatalf("generated report changed: %+v, error = %v", report, err)
+	}
+}
+
 func TestGenerateRejectsInvalidOrEmptyMonthAndPersistsFailure(t *testing.T) {
 	testdb.User(t, testdb.Pool(t), 7)
 	reports := NewPostgresStore(testdb.Pool(t))

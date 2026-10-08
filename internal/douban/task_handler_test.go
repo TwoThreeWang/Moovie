@@ -42,20 +42,6 @@ func TestTaskHandlerRunsThroughUnifiedDispatcher(t *testing.T) {
 	}
 }
 
-func TestDailyTaskGeneratesMonthlyReportOnFirstDay(t *testing.T) {
-	queue := workqueue.NewPostgresStore(testdb.Pool(t))
-	handler := NewTaskHandler(NewQueueJobStore(queue), identity.NewPostgresStore(testdb.Pool(t)), &recordingExecutor{}, WithMonthlyGenerator(&recordingMonthlyGenerator{}))
-	generator := &recordingMonthlyGenerator{}
-	handler.monthly = generator
-	handler.now = func() time.Time { return time.Date(2026, time.August, 1, 3, 0, 0, 0, time.Local) }
-	if err := handler.HandleDaily(t.Context(), workqueue.Job{}); err != nil {
-		t.Fatal(err)
-	}
-	if generator.calls.Load() != 1 {
-		t.Fatalf("monthly calls = %d", generator.calls.Load())
-	}
-}
-
 type recordingExecutor struct {
 	fullCalls atomic.Int32
 	called    chan struct{}
@@ -69,10 +55,3 @@ func (executor *recordingExecutor) SyncFull(context.Context, int, string, int) e
 	return nil
 }
 func (*recordingExecutor) SyncIncremental(context.Context, int, string, int) error { return nil }
-
-type recordingMonthlyGenerator struct{ calls atomic.Int32 }
-
-func (generator *recordingMonthlyGenerator) GeneratePreviousMonth(context.Context) error {
-	generator.calls.Add(1)
-	return nil
-}

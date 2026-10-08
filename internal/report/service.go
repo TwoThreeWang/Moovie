@@ -102,7 +102,7 @@ func (service *Service) Generate(ctx context.Context, userID int, yearMonth stri
 	return nil
 }
 
-// GeneratePreviousMonth 给所有有记录的用户批量生成上个月的报告，由每日任务触发。
+// GeneratePreviousMonth 补齐上个月尚未生成的报告；已生成的报告保持不变。
 func (service *Service) GeneratePreviousMonth(ctx context.Context) error {
 	now := service.now()
 	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local).AddDate(0, -1, 0)
@@ -112,8 +112,17 @@ func (service *Service) GeneratePreviousMonth(ctx context.Context) error {
 		return err
 	}
 	var generationError error
+	yearMonth := start.Format("2006-01")
 	for userID := range counts {
-		if err := service.Generate(ctx, userID, start.Format("2006-01"), counts); err != nil {
+		existing, err := service.store.GetByUserAndMonth(ctx, userID, yearMonth)
+		if err != nil {
+			generationError = errors.Join(generationError, err)
+			continue
+		}
+		if existing != nil && existing.Status == StatusGenerated {
+			continue
+		}
+		if err := service.Generate(ctx, userID, yearMonth, counts); err != nil {
 			generationError = errors.Join(generationError, err)
 		}
 	}

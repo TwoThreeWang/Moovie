@@ -111,7 +111,7 @@ func main() {
 	recommendationRefresher := recommendation.NewRefresher(recommendation.NewSnapshotStore(pool), recommendationService)
 	syncService := douban.NewService(douban.NewClient(client), libraryStore, jobs)
 	reportService := report.NewService(reports, libraryStore, movies)
-	doubanHandler := douban.NewTaskHandler(jobs, users, syncService, douban.WithMonthlyGenerator(reportService))
+	doubanHandler := douban.NewTaskHandler(jobs, users, syncService)
 	metricsStore := operations.NewMetricsStore(pool)
 	operationsService := operations.NewService(searchStore,
 		operations.WithJobQueueCleanup(metricsStore.DeleteExpiredJobs),
@@ -125,6 +125,9 @@ func main() {
 	dispatcher.Handle(catalog.TaskIMDbBackfill, 5*time.Minute, imdbBackfill.Handle)
 	dispatcher.Handle(douban.TaskSync, 30*time.Minute, doubanHandler.Handle)
 	dispatcher.Handle(douban.TaskDaily, 30*time.Minute, doubanHandler.HandleDaily)
+	dispatcher.Handle(report.TaskMonthly, 30*time.Minute, func(ctx context.Context, _ workqueue.Job) error {
+		return reportService.GeneratePreviousMonth(ctx)
+	})
 	dispatcher.Handle(playback.TaskPopularityRefresh, 15*time.Minute, popularityRefresher.Handle)
 	dispatcher.Handle(playback.TaskSiteTrendingRefresh, 2*time.Minute, popularityRefresher.HandleSiteTrending)
 	dispatcher.Handle(recommendation.TaskRefresh, 5*time.Minute, recommendationRefresher.Handle)
@@ -134,6 +137,7 @@ func main() {
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: "metadata_schedule", SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: catalog.TaskIMDbBackfill, SubjectKey: "global", Reason: "scheduled"}, Interval: time.Minute, InitialDelay: 30 * time.Second})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: douban.TaskDaily, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour, InitialDelay: time.Minute})
+	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: report.TaskMonthly, SubjectKey: "global", Reason: "scheduled", Priority: 10}, Interval: 24 * time.Hour, InitialDelay: time.Minute})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskPopularityRefresh, SubjectKey: "global", Reason: "scheduled", Priority: 10}, Interval: 24 * time.Hour})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: playback.TaskSiteTrendingRefresh, SubjectKey: "global", Reason: "scheduled", Priority: 10}, Interval: 24 * time.Hour})
 	dispatcher.Schedule(workqueue.Schedule{Spec: workqueue.Spec{TaskType: operations.TaskCleanup, SubjectKey: "global", Reason: "scheduled"}, Interval: 24 * time.Hour})

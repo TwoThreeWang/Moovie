@@ -9,6 +9,9 @@ package report
 
 import "time"
 
+// TaskMonthly 是自动补齐上月观影小记的队列任务类型。
+const TaskMonthly = "monthly_report"
+
 // Status 是报告生成状态。
 type Status string
 

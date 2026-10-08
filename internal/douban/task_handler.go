@@ -27,26 +27,17 @@ type SyncExecutor interface {
 	SyncIncremental(ctx context.Context, userID int, doubanUserID string, jobID int) error
 }
 
-// MonthlyGenerator 是可选的月报生成器，每日任务顺带触发上月月报。
-type MonthlyGenerator interface{ GeneratePreviousMonth(context.Context) error }
-
 // TaskHandler 是豆瓣同步的任务处理器。
 type TaskHandler struct {
 	jobs     JobStore
 	users    UserStore
 	executor SyncExecutor
-	monthly  MonthlyGenerator
 	now      func() time.Time
 	logger   *slog.Logger
 }
 
 // TaskHandlerOption 用于注入可选依赖。
 type TaskHandlerOption func(*TaskHandler)
-
-// WithMonthlyGenerator 注入月报生成器。
-func WithMonthlyGenerator(generator MonthlyGenerator) TaskHandlerOption {
-	return func(handler *TaskHandler) { handler.monthly = generator }
-}
 
 // WithLogger 替换日志器。
 func WithLogger(logger *slog.Logger) TaskHandlerOption {
@@ -110,7 +101,7 @@ func (handler *TaskHandler) Handle(ctx context.Context, job workqueue.Job) error
 	return err
 }
 
-// HandleDaily 是每日定时任务：给所有绑定豆瓣的用户排增量同步，并触发上月月报。
+// HandleDaily 是每日定时任务：给所有绑定豆瓣的用户排增量同步。
 func (handler *TaskHandler) HandleDaily(ctx context.Context, _ workqueue.Job) error {
 	failed, err := handler.jobs.RetryableBefore(ctx, handler.now().Add(-24*time.Hour), 50)
 	if err != nil {
@@ -135,9 +126,6 @@ func (handler *TaskHandler) HandleDaily(ctx context.Context, _ workqueue.Job) er
 				return err
 			}
 		}
-	}
-	if handler.monthly != nil && handler.now().Day() == 1 {
-		return handler.monthly.GeneratePreviousMonth(ctx)
 	}
 	return nil
 }
