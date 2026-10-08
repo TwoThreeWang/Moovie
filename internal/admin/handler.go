@@ -29,7 +29,8 @@ import (
 
 // UserStore 是后台需要的账号读写接口。
 type UserStore interface {
-	ListUsers(ctx context.Context) ([]identity.User, error)
+	CountUsers(ctx context.Context) (int, error)
+	ListUsersPage(ctx context.Context, limit, offset int) ([]identity.User, error)
 	UpdateRole(ctx context.Context, userID int, role string) error
 	Delete(ctx context.Context, userID int) error
 }
@@ -380,23 +381,38 @@ func matchAPIError(c *gin.Context, status int, code, message string) {
 
 // dashboard 渲染后台首页的几个数量统计。
 func (handler *Handler) dashboard(c *gin.Context) {
-	users, _ := handler.users.ListUsers(c.Request.Context())
+	userCount, _ := handler.users.CountUsers(c.Request.Context())
 	sites, _ := handler.search.ListSites(c.Request.Context())
 	movieCount, _ := handler.movies.Count(c.Request.Context())
 	feedbackCount, _ := handler.feedback.CountPending(c.Request.Context())
 	handler.page(c, "admin_dashboard.html", "管理后台 - Moovie影牛", gin.H{
-		"UserCount": len(users), "SiteCount": len(sites), "MovieCount": movieCount, "FeedbackCount": feedbackCount,
+		"UserCount": userCount, "SiteCount": len(sites), "MovieCount": movieCount, "FeedbackCount": feedbackCount,
 	})
 }
 
 // userList 渲染用户管理页。
 func (handler *Handler) userList(c *gin.Context) {
-	users, err := handler.users.ListUsers(c.Request.Context())
+	const pageSize = 20
+	total, err := handler.users.CountUsers(c.Request.Context())
 	if err != nil {
 		c.String(http.StatusInternalServerError, "")
 		return
 	}
-	handler.page(c, "admin_users.html", "用户管理 - Moovie影牛", gin.H{"Users": users})
+	pages := max(1, (total+pageSize-1)/pageSize)
+	page, err := positiveInt(c.Query("page"))
+	if err != nil {
+		page = 1
+	}
+	page = min(page, pages)
+	users, err := handler.users.ListUsersPage(c.Request.Context(), pageSize, (page-1)*pageSize)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "")
+		return
+	}
+	handler.page(c, "admin_users.html", "用户管理 - Moovie影牛", gin.H{
+		"Users": users, "TotalUsers": total, "Page": page, "Pages": pages,
+		"PreviousPage": page - 1, "NextPage": page + 1,
+	})
 }
 
 // userRole 修改用户角色，不允许改自己的，防止把自己降权锁在门外。

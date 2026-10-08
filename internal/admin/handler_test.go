@@ -145,6 +145,32 @@ WHERE source_key = 'demo'`); err != nil {
 	}
 }
 
+func TestAdminUsersPagination(t *testing.T) {
+	router, _, _, _, _, adminToken, _ := adminTestRouter(t)
+	_, err := testdb.Pool(t).Exec(t.Context(), `INSERT INTO users (email, username, password_hash)
+SELECT 'member-' || n || '@example.com', 'member-' || n, '' FROM generate_series(1, 21) AS n`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := request(router, http.MethodGet, "/admin/users", adminToken, false)
+	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "23 位用户") ||
+		!strings.Contains(first.Body.String(), "member-21@example.com") ||
+		strings.Contains(first.Body.String(), "admin@example.com") ||
+		!strings.Contains(first.Body.String(), `/admin/users?page=2`) {
+		t.Fatalf("first page = %d/%s", first.Code, first.Body.String())
+	}
+	second := request(router, http.MethodGet, "/admin/users?page=2", adminToken, false)
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), "admin@example.com") ||
+		strings.Contains(second.Body.String(), "member-21@example.com") ||
+		!strings.Contains(second.Body.String(), `/admin/users?page=1`) {
+		t.Fatalf("second page = %d/%s", second.Code, second.Body.String())
+	}
+	last := request(router, http.MethodGet, "/admin/users?page=999", adminToken, false)
+	if last.Code != http.StatusOK || !strings.Contains(last.Body.String(), "第 2 / 2 页") {
+		t.Fatalf("out of range page = %d/%s", last.Code, last.Body.String())
+	}
+}
+
 func TestAdminMediaManagementSearchesAndQueuesRecoveryTasks(t *testing.T) {
 	router, _, _, _, mediaManager, adminToken, userToken := adminTestRouter(t)
 	pool := testdb.Pool(t)

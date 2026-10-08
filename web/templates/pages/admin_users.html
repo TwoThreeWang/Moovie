@@ -20,7 +20,7 @@
     <div class="admin-card">
         <div class="admin-card-header">
             <h3>用户列表</h3>
-            <span class="badge">{{ if .Users }}{{ len .Users }}{{ else }}0{{ end }} 位用户</span>
+            <span class="badge">{{ .TotalUsers }} 位用户</span>
         </div>
         <div class="admin-table-wrapper">
             <table class="admin-table">
@@ -67,6 +67,13 @@
             </table>
         </div>
     </div>
+    {{ if gt .Pages 1 }}
+    <nav class="queue-pagination" aria-label="用户列表分页">
+        {{ if gt .Page 1 }}<a class="btn btn-secondary" href="/admin/users?page={{ .PreviousPage }}">上一页</a>{{ else }}<span></span>{{ end }}
+        <span class="pagination-info">第 {{ .Page }} / {{ .Pages }} 页</span>
+        {{ if lt .Page .Pages }}<a class="btn btn-secondary" href="/admin/users?page={{ .NextPage }}">下一页</a>{{ else }}<span></span>{{ end }}
+    </nav>
+    {{ end }}
 </div>
 
 <script>
@@ -106,12 +113,7 @@ async function deleteUser(userId, username) {
         });
 
         if (response.ok) {
-            // 移除表格行
-            const row = document.getElementById(`user-row-${userId}`);
-            if (row) {
-                row.remove();
-            }
-            showToast('用户已删除');
+            window.location.reload();
         } else {
             const data = await response.json();
             alert(data.error || '删除失败');

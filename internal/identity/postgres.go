@@ -30,7 +30,25 @@ func (store *PostgresStore) FindByID(ctx context.Context, id int) (*User, error)
 
 // ListUsers 列出全部账号，供后台使用。
 func (store *PostgresStore) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := store.database.Query(ctx, `SELECT `+userColumns+` FROM users ORDER BY id DESC`)
+	return store.listUsers(ctx, `SELECT `+userColumns+` FROM users ORDER BY id DESC`)
+}
+
+// CountUsers 返回账号总数，供后台统计和分页使用。
+func (store *PostgresStore) CountUsers(ctx context.Context) (int, error) {
+	var count int
+	if err := store.database.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count users: %w", err)
+	}
+	return count, nil
+}
+
+// ListUsersPage 按 ID 倒序读取一页账号。
+func (store *PostgresStore) ListUsersPage(ctx context.Context, limit, offset int) ([]User, error) {
+	return store.listUsers(ctx, `SELECT `+userColumns+` FROM users ORDER BY id DESC LIMIT $1 OFFSET $2`, limit, offset)
+}
+
+func (store *PostgresStore) listUsers(ctx context.Context, query string, args ...any) ([]User, error) {
+	rows, err := store.database.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
