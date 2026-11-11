@@ -32,7 +32,9 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/httpserver"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/mailcheck"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/outbound"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/pow"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/playback"
 	"github.com/TwoThreeWang/Moovie/new/internal/recommendation"
@@ -364,7 +366,10 @@ func main() {
 	}
 	historyHandler := history.NewHandler(historyStore, cfg.AppSecret, historyOptions...)
 	libraryHandler := library.NewHandler(libraryStore, cfg.AppSecret)
-	identityHandler := identity.NewHandler(cfg, identityStore, identity.WithHistoryCounter(historyStore), identity.WithLibraryCounter(libraryStore), identity.WithMonthlyReportReader(reportStore), identity.WithFeedbackCounter(feedbackStore))
+	// 登录、注册、反馈共用一个工作量证明签发器：密钥随进程生成，已用挑战记在进程内存里。
+	humanCheck := pow.MustNewIssuer(pow.DefaultBits)
+	identityHandler := identity.NewHandler(cfg, identityStore, identity.WithHistoryCounter(historyStore), identity.WithLibraryCounter(libraryStore), identity.WithMonthlyReportReader(reportStore), identity.WithFeedbackCounter(feedbackStore),
+		identity.WithHumanCheck(humanCheck), identity.WithEmailDomainChecker(mailcheck.New(nil)))
 	doubanHandler := douban.NewHandler(cfg, doubanUserStore, doubanJobStore, doubanService, doubanTaskHandler)
 	reportHandler := report.NewHandler(cfg, doubanUserStore, libraryStore, reportStore, reportService, socialStore)
 	catalogHandlerOptions := []catalog.HandlerOption{
@@ -393,7 +398,7 @@ func main() {
 	contentHandler := content.NewHandler(cfg, catalog.NewSitemapProvider(catalogStore), collection.NewSitemapProvider(collectionStore))
 	recommendationHandler := recommendation.NewHandler(cfg, recommendationService, recommendationSnapshots).WithRefreshQueue(queueStore)
 	socialHandler := social.NewHandler(cfg, socialStore)
-	feedbackHandler := feedback.NewHandler(cfg, feedbackStore)
+	feedbackHandler := feedback.NewHandler(cfg, feedbackStore, feedback.WithHumanCheck(humanCheck))
 	danmakuClient := outbound.NewClient(25*time.Second, cfg.OutboundMaxConnsPerHost)
 	danmakuService := danmaku.NewService(danmakuStore, danmakuClient, cfg.Danmaku.APIBase)
 	danmakuHandler := danmaku.NewHandler(cfg, danmakuService)

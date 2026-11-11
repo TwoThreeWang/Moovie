@@ -1,0 +1,13 @@
+{{/*
+  表单人机校验字段，调用方式：{{ template "pow_fields.html" .PowToken }}
+  - pow_token：服务端签发的工作量证明挑战，pow.js 读取后在后台求解；
+  - pow_nonce：求解结果，由 pow.js 在提交前填入；
+  - mv_extra_note：陷阱字段，移到屏幕外、不可聚焦、对读屏隐藏，真人不会填，填了就拒绝。
+  页面需要同时引入 /static/js/pow.js。
+*/}}
+<input type="hidden" name="pow_token" value="{{ . }}">
+<input type="hidden" name="pow_nonce" value="">
+<div style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden" aria-hidden="true">
+    <label>请勿填写此项<input type="text" name="mv_extra_note" value="" autocomplete="off" tabindex="-1"></label>
+</div>
+<noscript><p class="auth-hint">提交此表单需要启用 JavaScript，用于完成安全校验。</p></noscript>

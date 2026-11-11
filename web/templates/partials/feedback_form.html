@@ -1,0 +1,30 @@
+{{/*
+  反馈表单。反馈页首次渲染和提交出错时都用它：出错时整块替换（hx-swap="outerHTML"），
+  带上错误提示、用户已填的内容和一个新的人机校验挑战。
+  数据：PowToken、Error、Type、MovieURL、Content。
+*/}}
+<form class="feedback-form" hx-post="/api/feedback" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']">
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+    {{ template "pow_fields.html" .PowToken }}
+    <div class="form-group">
+        <label for="type">反馈类型</label>
+        <select id="type" name="type" required>
+            <option value="bug"{{ if eq .Type "bug" }} selected{{ end }}>Bug 报告</option>
+            <option value="request"{{ if eq .Type "request" }} selected{{ end }}>求片</option>
+            <option value="suggestion"{{ if eq .Type "suggestion" }} selected{{ end }}>功能建议</option>
+            <option value="dmca"{{ if eq .Type "dmca" }} selected{{ end }}>版权投诉</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="movie_url">相关链接（可选）</label>
+        <input type="url" id="movie_url" name="movie_url" value="{{ .MovieURL }}" placeholder="如有相关页面，请粘贴链接">
+    </div>
+
+    <div class="form-group">
+        <label for="content">详细描述</label>
+        <textarea id="content" name="content" rows="5" required placeholder="请详细描述您的反馈内容...">{{ .Content }}</textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">提交反馈</button>
+</form>

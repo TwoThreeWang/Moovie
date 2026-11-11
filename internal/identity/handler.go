@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/mail"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/pow"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -33,7 +35,32 @@ type Handler struct {
 	feedbackCounter interface {
 		CountByUser(ctx context.Context, userID int) (int, error)
 	}
+	// humanCheck 是登录、注册表单的工作量证明校验；没注入时使用默认难度的独立签发器。
+	humanCheck *pow.Issuer
+	// mailDomains 判断邮箱域名能否收信；没注入时不检查（测试和离线环境）。
+	mailDomains EmailDomainChecker
 }
+
+// EmailDomainChecker 判断邮箱地址的域名能否收信，mailcheck.Checker 满足它。
+type EmailDomainChecker interface {
+	CanReceive(ctx context.Context, address string) bool
+}
+
+// 表单 scope：注册页签发的挑战不能拿去登录，反之亦然。
+const (
+	scopeLogin    = "login"
+	scopeRegister = "register"
+)
+
+// 面向用户的提示。人机校验失败统一一句话，不告诉脚本具体哪一项没过。
+const (
+	messageHumanCheckFailed = "安全校验失败，请稍候重新提交"
+	messageDomainCannotMail = "该邮箱域名无法接收邮件，请检查是否拼写错误"
+	// 注册在没有邮箱验证的前提下无法完全隐藏「邮箱已注册」：成功会直接登录，失败总要给个理由。
+	// 这里不说「已被注册」，引导去登录；真正的防枚举成本来自前面的人机校验。
+	messageRegisterUnavailable = "无法使用该邮箱注册，如果你已有账号，请直接登录"
+	messageEmailUnavailable    = "该邮箱不可用，请换一个邮箱"
+)
 
 // HandlerOption 用于注入可选的计数来源。
 type HandlerOption func(*Handler)
@@ -66,11 +93,24 @@ func WithFeedbackCounter(counter interface {
 	return func(handler *Handler) { handler.feedbackCounter = counter }
 }
 
+// WithHumanCheck 注入共享的工作量证明签发器。
+func WithHumanCheck(issuer *pow.Issuer) HandlerOption {
+	return func(handler *Handler) { handler.humanCheck = issuer }
+}
+
+// WithEmailDomainChecker 注入邮箱域名 MX 检查。
+func WithEmailDomainChecker(checker EmailDomainChecker) HandlerOption {
+	return func(handler *Handler) { handler.mailDomains = checker }
+}
+
 // NewHandler 创建账号处理器。
 func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handler {
 	handler := &Handler{config: cfg, store: store, now: time.Now}
 	for _, option := range options {
 		option(handler)
+	}
+	if handler.humanCheck == nil {
+		handler.humanCheck = pow.MustNewIssuer(pow.DefaultBits)
 	}
 	return handler
 }
@@ -93,23 +133,44 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/dashboard/settings/ad-skip", require, handler.updateAdSkip)
 }
 
+// authForm 是登录、注册页重新渲染时要带回去的内容。
+type authForm struct {
+	Error    string
+	Email    string
+	Redirect string
+	IsPublic bool
+}
+
 // loginPage 渲染登录页。
 func (handler *Handler) loginPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "login.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "登录 - " + handler.config.SiteName}, gin.H{"Redirect": c.Query("redirect")}))
+	handler.renderAuthPage(c, scopeLogin, http.StatusOK, authForm{Redirect: c.Query("redirect")})
 }
 
 // login 校验邮箱密码并下发登录 Cookie。
-// 账号不存在和密码错误返回同一句提示，避免暴露哪些邮箱已注册。
+// 先做人机校验，再查库比对密码。账号不存在和密码错误返回同一句提示，
+// 账号不存在时也跑一次 bcrypt，让两种情况的耗时一致，避免靠响应时间判断邮箱是否已注册。
 func (handler *Handler) login(c *gin.Context) {
 	email, password := c.PostForm("email"), c.PostForm("password")
 	redirect := safeRedirect(c.PostForm("redirect"))
+	form := authForm{Email: email, Redirect: redirect}
+	if !handler.passHumanCheck(c, scopeLogin) {
+		form.Error = messageHumanCheckFailed
+		handler.renderAuthPage(c, scopeLogin, http.StatusForbidden, form)
+		return
+	}
 	user, err := handler.store.FindByEmail(c.Request.Context(), email)
-	if err != nil || user == nil || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
-		handler.renderLoginError(c, http.StatusOK, "邮箱或密码错误")
+	passwordHash := dummyPasswordHash()
+	if err == nil && user != nil {
+		passwordHash = []byte(user.PasswordHash)
+	}
+	if bcrypt.CompareHashAndPassword(passwordHash, []byte(password)) != nil || err != nil || user == nil {
+		form.Error = "邮箱或密码错误"
+		handler.renderAuthPage(c, scopeLogin, http.StatusOK, form)
 		return
 	}
 	if err := handler.issueToken(c, user); err != nil {
-		handler.renderLoginError(c, http.StatusInternalServerError, "登录失败，请重试")
+		form.Error = "登录失败，请重试"
+		handler.renderAuthPage(c, scopeLogin, http.StatusInternalServerError, form)
 		return
 	}
 	c.Redirect(http.StatusFound, redirect)
@@ -117,45 +178,58 @@ func (handler *Handler) login(c *gin.Context) {
 
 // registerPage 渲染注册页。
 func (handler *Handler) registerPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "register.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "注册 - " + handler.config.SiteName}, nil))
+	handler.renderAuthPage(c, scopeRegister, http.StatusOK, authForm{IsPublic: true})
 }
 
-// register 注册新账号：校验邮箱格式、两次密码一致、长度至少 6 位，
+// register 注册新账号：人机校验、邮箱格式、两次密码一致、长度至少 6 位、邮箱域名能收信，
 // 默认用户名取邮箱 @ 前的部分，主页默认公开，注册成功直接登录。
 func (handler *Handler) register(c *gin.Context) {
 	email, password, confirmation := c.PostForm("email"), c.PostForm("password"), c.PostForm("confirm_password")
+	form := authForm{Email: email, IsPublic: c.PostForm("is_public") == "on"}
+	fail := func(status int, message string) {
+		form.Error = message
+		handler.renderAuthPage(c, scopeRegister, status, form)
+	}
+	if !handler.passHumanCheck(c, scopeRegister) {
+		fail(http.StatusForbidden, messageHumanCheckFailed)
+		return
+	}
 	if !validEmail(email) {
-		handler.renderRegisterError(c, http.StatusOK, "请输入有效的邮箱地址")
+		fail(http.StatusOK, "请输入有效的邮箱地址")
 		return
 	}
 	if password != confirmation {
-		handler.renderRegisterError(c, http.StatusOK, "两次输入的密码不一致")
+		fail(http.StatusOK, "两次输入的密码不一致")
 		return
 	}
 	if len(password) < 6 {
-		handler.renderRegisterError(c, http.StatusOK, "密码至少需要 6 个字符")
+		fail(http.StatusOK, "密码至少需要 6 个字符")
+		return
+	}
+	if !handler.canReceiveMail(c, email) {
+		fail(http.StatusOK, messageDomainCannotMail)
 		return
 	}
 	if existing, _ := handler.store.FindByEmail(c.Request.Context(), email); existing != nil {
-		handler.renderRegisterError(c, http.StatusOK, "该邮箱已被注册")
+		fail(http.StatusOK, messageRegisterUnavailable)
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		handler.renderRegisterError(c, http.StatusInternalServerError, "注册失败，请重试")
+		fail(http.StatusInternalServerError, "注册失败，请重试")
 		return
 	}
 	username := strings.Split(email, "@")[0]
 	// 主页默认公开：片场的精选短评和片友推荐都只认 is_public=true 的用户，
 	// 默认关着等于社区从第一天起就没有公共内容。注册表单里的开关默认勾选，
 	// 想安静看片的人可以在这里或设置页关掉。
-	user, err := handler.store.Create(c.Request.Context(), User{Email: email, Username: username, PasswordHash: string(hash), Role: "user", Avatar: "🎬", IsPublic: c.PostForm("is_public") == "on", CreatedAt: handler.now()})
+	user, err := handler.store.Create(c.Request.Context(), User{Email: email, Username: username, PasswordHash: string(hash), Role: "user", Avatar: "🎬", IsPublic: form.IsPublic, CreatedAt: handler.now()})
 	if err != nil {
-		handler.renderRegisterError(c, http.StatusInternalServerError, "注册失败，请重试")
+		fail(http.StatusInternalServerError, "注册失败，请重试")
 		return
 	}
 	if err := handler.issueToken(c, user); err != nil {
-		handler.renderRegisterError(c, http.StatusInternalServerError, "注册失败，请重试")
+		fail(http.StatusInternalServerError, "注册失败，请重试")
 		return
 	}
 	c.Redirect(http.StatusFound, "/")
@@ -234,20 +308,33 @@ func (handler *Handler) updateUsername(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=username")
 }
 
-// updateEmail 修改邮箱，需检查未被其他账号占用。
+// updateEmail 修改邮箱：必须输入当前密码，新邮箱格式有效、域名能收信、未被其他账号占用。
+// 先验密码再查占用，没有密码就没法拿这个接口逐个试探哪些邮箱已注册。
 func (handler *Handler) updateEmail(c *gin.Context) {
+	user := handler.currentUser(c)
+	if user == nil {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(c.PostForm("current_password"))) != nil {
+		handler.renderSettings(c, user, "", "当前密码错误")
+		return
+	}
 	email := strings.TrimSpace(c.PostForm("email"))
-	if email == "" || !strings.Contains(email, "@") {
-		handler.settingsError(c, "请输入有效的邮箱地址")
+	if !validEmail(email) {
+		handler.renderSettings(c, user, "", "请输入有效的邮箱地址")
 		return
 	}
-	userID := auth.UserID(c)
-	if existing, _ := handler.store.FindByEmail(c.Request.Context(), email); existing != nil && existing.ID != userID {
-		handler.settingsError(c, "该邮箱已被其他账号使用")
+	if !handler.canReceiveMail(c, email) {
+		handler.renderSettings(c, user, "", messageDomainCannotMail)
 		return
 	}
-	if err := handler.store.UpdateEmail(c.Request.Context(), userID, email); err != nil {
-		handler.settingsError(c, "邮箱更新失败")
+	if existing, _ := handler.store.FindByEmail(c.Request.Context(), email); existing != nil && existing.ID != user.ID {
+		handler.renderSettings(c, user, "", messageEmailUnavailable)
+		return
+	}
+	if err := handler.store.UpdateEmail(c.Request.Context(), user.ID, email); err != nil {
+		handler.renderSettings(c, user, "", "邮箱更新失败")
 		return
 	}
 	c.Redirect(http.StatusFound, "/dashboard/settings?success=email")
@@ -353,15 +440,47 @@ func (handler *Handler) issueToken(c *gin.Context, user *User) error {
 	return nil
 }
 
-// renderLoginError 带错误信息重新渲染登录页。
-func (handler *Handler) renderLoginError(c *gin.Context, status int, message string) {
-	c.HTML(status, "login.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "登录 - Moovie影牛"}, gin.H{"Error": message}))
+// renderAuthPage 是登录、注册页唯一的渲染入口：每次渲染都签发新挑战，
+// 出错重新渲染时带回用户已填的邮箱，避免某条分支忘了签发挑战导致表单再也提交不了。
+func (handler *Handler) renderAuthPage(c *gin.Context, scope string, status int, form authForm) {
+	page, title := "login.html", "登录 - "+handler.config.SiteName
+	if scope == scopeRegister {
+		page, title = "register.html", "注册 - "+handler.config.SiteName
+	}
+	challenge, err := handler.humanCheck.Issue(scope)
+	if err != nil {
+		slog.Error("issue human check challenge failed", "scope", scope, "error", err)
+	}
+	// 带挑战的页面不能被浏览器或 CDN 缓存，否则多人会拿到同一个挑战。
+	c.Header("Cache-Control", "no-store")
+	c.HTML(status, page, platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title}, gin.H{
+		"Error": form.Error, "Email": form.Email, "Redirect": form.Redirect, "IsPublic": form.IsPublic, "PowToken": challenge,
+	}))
 }
 
-// renderRegisterError 带错误信息重新渲染注册页。
-func (handler *Handler) renderRegisterError(c *gin.Context, status int, message string) {
-	c.HTML(status, "register.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "注册 - Moovie影牛"}, gin.H{"Error": message}))
+// passHumanCheck 校验陷阱字段和工作量证明，失败只记日志不告诉用户原因。
+func (handler *Handler) passHumanCheck(c *gin.Context, scope string) bool {
+	if err := handler.humanCheck.CheckForm(c.PostForm, scope); err != nil {
+		slog.Info("human check rejected", "scope", scope, "reason", err.Error(), "client_ip", c.ClientIP())
+		return false
+	}
+	return true
 }
+
+// canReceiveMail 检查邮箱域名能否收信；没注入检查器时放行。
+func (handler *Handler) canReceiveMail(c *gin.Context, email string) bool {
+	return handler.mailDomains == nil || handler.mailDomains.CanReceive(c.Request.Context(), email)
+}
+
+// dummyPasswordHash 返回一个固定的 bcrypt 哈希，账号不存在时拿它比对，
+// 让「账号不存在」和「密码错误」花的时间一样。首次使用时生成，代价与真实哈希相同。
+var dummyPasswordHash = sync.OnceValue(func() []byte {
+	hash, err := bcrypt.GenerateFromPassword([]byte("moovie-timing-equalizer"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	return hash
+})
 
 // safeRedirect 只允许站内相对路径跳转，防止被构造成钓鱼跳转到外站。
 func safeRedirect(value string) string {

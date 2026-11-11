@@ -1,6 +1,7 @@
 package feedback
 
 import (
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -8,18 +9,40 @@ import (
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/pow"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
 )
 
 // Handler 提供反馈页面、提交接口和后台管理接口。
 type Handler struct {
-	config config.Config
-	store  Store
+	config     config.Config
+	store      Store
+	humanCheck *pow.Issuer
+}
+
+// scopeFeedback 是反馈表单的人机校验 scope。
+const scopeFeedback = "feedback"
+
+// HandlerOption 是 Handler 的可选装配项。
+type HandlerOption func(*Handler)
+
+// WithHumanCheck 注入共享的工作量证明签发器；不注入时使用默认难度的独立签发器。
+func WithHumanCheck(issuer *pow.Issuer) HandlerOption {
+	return func(handler *Handler) { handler.humanCheck = issuer }
 }
 
 // NewHandler 创建反馈处理器。
-func NewHandler(cfg config.Config, store Store) *Handler { return &Handler{config: cfg, store: store} }
+func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handler {
+	handler := &Handler{config: cfg, store: store}
+	for _, option := range options {
+		option(handler)
+	}
+	if handler.humanCheck == nil {
+		handler.humanCheck = pow.MustNewIssuer(pow.DefaultBits)
+	}
+	return handler
+}
 
 // Register 注册路由：前台可选登录，后台要求登录且必须是管理员。
 func (handler *Handler) Register(router *gin.Engine) {
@@ -34,30 +57,54 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.PUT("/admin/feedback/:id/reply", require, requireAdmin, handler.adminReply)
 }
 
-// page 渲染反馈页。
-func (handler *Handler) page(c *gin.Context) {
-	c.HTML(http.StatusOK, "feedback.html", platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "反馈建议 - " + handler.config.SiteName, Canonical: platformweb.CanonicalURL(handler.config.SiteURL, "/feedback")}, nil))
+// feedbackForm 是反馈表单的回填内容。
+type feedbackForm struct {
+	Error, Type, MovieURL, Content string
 }
 
-// submit 提交反馈，返回 HTMX 片段而不是 JSON；内容上限 5000 字。
+// page 渲染反馈页。
+func (handler *Handler) page(c *gin.Context) {
+	data := platformweb.NewData(c, handler.config, platformweb.Metadata{Title: "反馈建议 - " + handler.config.SiteName, Canonical: platformweb.CanonicalURL(handler.config.SiteURL, "/feedback")}, nil)
+	for key, value := range handler.formData(feedbackForm{Type: TypeBug}) {
+		data[key] = value
+	}
+	c.Header("Cache-Control", "no-store")
+	c.HTML(http.StatusOK, "feedback.html", data)
+}
+
+// submit 提交反馈：先做人机校验再校验内容（上限 5000 字）。
+// 出错时返回整个表单片段（错误提示 + 已填内容 + 新挑战），由 hx-swap="outerHTML" 原位替换。
+// 状态码用 200：HTMX 默认不替换 4xx 响应，返回 400 的话错误提示根本显示不出来。
 func (handler *Handler) submit(c *gin.Context) {
 	content := strings.TrimSpace(c.PostForm("content"))
 	feedbackType := strings.TrimSpace(c.PostForm("type"))
 	movieURL := strings.TrimSpace(c.PostForm("movie_url"))
+	form := feedbackForm{Type: feedbackType, MovieURL: movieURL, Content: content}
+	fail := func(status int, message string) {
+		form.Error = message
+		c.Header("Cache-Control", "no-store")
+		c.HTML(status, "partials/feedback_form.html", handler.formData(form))
+	}
+	if err := handler.humanCheck.CheckForm(c.PostForm, scopeFeedback); err != nil {
+		slog.Info("human check rejected", "scope", scopeFeedback, "reason", err.Error(), "client_ip", c.ClientIP())
+		fail(http.StatusOK, "安全校验失败，请稍候重新提交")
+		return
+	}
 	if content == "" {
-		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(`<div class="alert alert-error">请填写反馈内容</div>`))
+		fail(http.StatusOK, "请填写反馈内容")
 		return
 	}
 	if len([]rune(content)) > 5000 {
-		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(`<div class="alert alert-error">反馈内容不能超过 5000 个字符</div>`))
+		fail(http.StatusOK, "反馈内容不能超过 5000 个字符")
 		return
 	}
 	if !validType(feedbackType) {
-		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(`<div class="alert alert-error">反馈类型无效</div>`))
+		form.Type = TypeBug
+		fail(http.StatusOK, "反馈类型无效")
 		return
 	}
 	if movieURL != "" && !validURL(movieURL) {
-		c.Data(http.StatusBadRequest, "text/html; charset=utf-8", []byte(`<div class="alert alert-error">相关链接无效</div>`))
+		fail(http.StatusOK, "相关链接无效")
 		return
 	}
 	record := Feedback{Type: feedbackType, Content: content, MovieURL: movieURL}
@@ -65,10 +112,19 @@ func (handler *Handler) submit(c *gin.Context) {
 		record.UserID = &userID
 	}
 	if _, err := handler.store.Create(c.Request.Context(), record); err != nil {
-		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(`<div class="alert alert-error">提交失败，请重试</div>`))
+		fail(http.StatusOK, "提交失败，请重试")
 		return
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<div class="alert alert-success">感谢您的反馈！我们会尽快处理。</div>`))
+}
+
+// formData 组装反馈表单模板数据，每次都签发新的人机校验挑战。
+func (handler *Handler) formData(form feedbackForm) gin.H {
+	challenge, err := handler.humanCheck.Issue(scopeFeedback)
+	if err != nil {
+		slog.Error("issue human check challenge failed", "scope", scopeFeedback, "error", err)
+	}
+	return gin.H{"PowToken": challenge, "Error": form.Error, "Type": form.Type, "MovieURL": form.MovieURL, "Content": form.Content}
 }
 
 // publicList 渲染公开的反馈列表。

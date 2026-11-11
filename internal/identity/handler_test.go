@@ -6,13 +6,16 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/database/testdb"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/pow"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -35,12 +38,12 @@ func TestAuthPagesPreserveLegacyTemplatesAndRedirectField(t *testing.T) {
 
 func TestRegisterValidatesAndCreatesLegacyBcryptUser(t *testing.T) {
 	router, store, now := identityTestRouter(t, "test")
-	invalid := postForm(router, "/auth/register", url.Values{"email": {"bad"}, "password": {"123456"}, "confirm_password": {"123456"}})
+	invalid := postSolvedForm(t, router, "/auth/register", url.Values{"email": {"bad"}, "password": {"123456"}, "confirm_password": {"123456"}})
 	if invalid.Code != http.StatusOK || !strings.Contains(invalid.Body.String(), "请输入有效的邮箱地址") {
 		t.Fatalf("invalid register = %d/%s", invalid.Code, invalid.Body.String())
 	}
 
-	registered := postForm(router, "/auth/register", url.Values{"email": {"person@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}, "is_public": {"on"}})
+	registered := postSolvedForm(t, router, "/auth/register", url.Values{"email": {"person@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}, "is_public": {"on"}})
 	if registered.Code != http.StatusFound || registered.Header().Get("Location") != "/" {
 		t.Fatalf("register status/location = %d/%q", registered.Code, registered.Header().Get("Location"))
 	}
@@ -53,7 +56,7 @@ func TestRegisterValidatesAndCreatesLegacyBcryptUser(t *testing.T) {
 	if !user.IsPublic {
 		t.Fatalf("勾选公开后 IsPublic 应为 true: %+v", user)
 	}
-	quiet := postForm(router, "/auth/register", url.Values{"email": {"quiet@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}})
+	quiet := postSolvedForm(t, router, "/auth/register", url.Values{"email": {"quiet@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}})
 	if quiet.Code != http.StatusFound {
 		t.Fatalf("取消勾选注册 = %d", quiet.Code)
 	}
@@ -75,11 +78,11 @@ func TestLoginUsesExistingHashAndRejectsOpenRedirect(t *testing.T) {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("secret1"), bcrypt.DefaultCost)
 	_, _ = store.Create(t.Context(), User{Email: "person@example.com", Username: "person", PasswordHash: string(hash), Role: "user", CreatedAt: now})
 
-	bad := postForm(router, "/auth/login", url.Values{"email": {"person@example.com"}, "password": {"wrong"}})
+	bad := postSolvedForm(t, router, "/auth/login", url.Values{"email": {"person@example.com"}, "password": {"wrong"}})
 	if bad.Code != http.StatusOK || !strings.Contains(bad.Body.String(), "邮箱或密码错误") {
 		t.Fatalf("bad login = %d/%s", bad.Code, bad.Body.String())
 	}
-	loggedIn := postForm(router, "/auth/login", url.Values{"email": {"person@example.com"}, "password": {"secret1"}, "redirect": {"//evil.example"}})
+	loggedIn := postSolvedForm(t, router, "/auth/login", url.Values{"email": {"person@example.com"}, "password": {"secret1"}, "redirect": {"//evil.example"}})
 	if loggedIn.Code != http.StatusFound || loggedIn.Header().Get("Location") != "/" {
 		t.Fatalf("login status/location = %d/%q", loggedIn.Code, loggedIn.Header().Get("Location"))
 	}
@@ -204,10 +207,20 @@ func identityTestRouter(t *testing.T, environment string) (*gin.Engine, *Postgre
 
 func identityTestRouterWithOptions(t *testing.T, environment string, options ...HandlerOption) (*gin.Engine, *PostgresStore, time.Time) {
 	t.Helper()
+	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+	store := NewPostgresStore(testdb.Pool(t))
+	return buildIdentityRouter(t, environment, store, options...), store, now
+}
+
+// buildIdentityRouter 用给定 store 装配路由。
+// 默认注入低难度、时钟每读一次前进 3 秒的签发器：既能快速求解，又天然满足「签发后至少 2 秒」。
+// 需要精确控制时间的用例自己传 WithHumanCheck，后面的选项会覆盖这个默认值。
+func buildIdentityRouter(t *testing.T, environment string, store Store, options ...HandlerOption) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
 	cfg := config.Config{Env: environment, SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret", JWTExpiry: 72 * time.Hour}
-	store := NewPostgresStore(testdb.Pool(t))
+	options = append([]HandlerOption{WithHumanCheck(steppingIssuer(t))}, options...)
 	handler := NewHandler(cfg, store, options...)
 	handler.now = func() time.Time { return now }
 	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"login", "register", "dashboard", "settings"})
@@ -217,7 +230,7 @@ func identityTestRouterWithOptions(t *testing.T, environment string, options ...
 	router := gin.New()
 	router.HTMLRender = renderer
 	handler.Register(router)
-	return router, store, now
+	return router
 }
 
 func authenticatedForm(router http.Handler, token, path string, values url.Values) *httptest.ResponseRecorder {
@@ -227,6 +240,52 @@ func authenticatedForm(router http.Handler, token, path string, values url.Value
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 	return recorder
+}
+
+// steppingIssuer 返回难度 4 位、每次读时钟都前进 3 秒的签发器。
+func steppingIssuer(t *testing.T) *pow.Issuer {
+	t.Helper()
+	issuer, err := pow.NewIssuer(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Date(2026, time.November, 11, 12, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	issuer.SetClock(func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		clock = clock.Add(3 * time.Second)
+		return clock
+	})
+	return issuer
+}
+
+// powTokenPattern 从页面里取出服务端签发的挑战。
+var powTokenPattern = regexp.MustCompile(`name="pow_token" value="([^"]*)"`)
+
+// challengeFrom 从 HTML 中取出挑战，没有就让测试失败——每个带表单的页面都必须签发挑战。
+func challengeFrom(t *testing.T, body string) string {
+	t.Helper()
+	match := powTokenPattern.FindStringSubmatch(body)
+	if match == nil || match[1] == "" {
+		t.Fatalf("page has no pow challenge: %s", body)
+	}
+	return match[1]
+}
+
+// postSolvedForm 像浏览器一样先打开表单页拿挑战、求解，再提交表单。
+func postSolvedForm(t *testing.T, router http.Handler, path string, values url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	page := httptest.NewRecorder()
+	router.ServeHTTP(page, httptest.NewRequest(http.MethodGet, path, nil))
+	token := challengeFrom(t, page.Body.String())
+	solved := url.Values{}
+	for key, list := range values {
+		solved[key] = list
+	}
+	solved.Set(pow.TokenField, token)
+	solved.Set(pow.NonceField, pow.Solve(token))
+	return postForm(router, path, solved)
 }
 
 func postForm(router http.Handler, path string, values url.Values) *httptest.ResponseRecorder {

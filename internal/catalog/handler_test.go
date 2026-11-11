@@ -351,11 +351,51 @@ func TestShedBackgroundTaskReturnsBusyAndClearsDeduplicationKey(t *testing.T) {
 func TestRefreshMediaQueuesCanonicalID(t *testing.T) {
 	queue := &recordingRefreshQueue{jobID: 43}
 	router := catalogTestRouterWithOptions(t, NewPostgresStore(testdb.Pool(t)), nil, WithRefreshQueue(queue))
-	request := httptest.NewRequest(http.MethodPost, "/api/v2/media/9/refresh", nil)
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, request)
+	token, _ := auth.Sign(auth.Claims{UserID: 7, Role: "user", Issued: time.Now().Unix(), Expiry: time.Now().Add(time.Hour).Unix()}, "secret")
+	refresh := func(withToken bool, headers map[string]string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/v2/media/9/refresh", nil)
+		if withToken {
+			request.AddCookie(&http.Cookie{Name: "token", Value: token})
+		}
+		for key, value := range headers {
+			request.Header.Set(key, value)
+		}
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		return recorder
+	}
+
+	// 游客不能触发刷新；HTMX 请求被带去登录页并记住当前影片。
+	anonymous := refresh(false, map[string]string{"HX-Request": "true", "HX-Current-URL": "https://moovie.example/movie/1292052?tab=info"})
+	if anonymous.Code != http.StatusUnauthorized || anonymous.Header().Get("HX-Redirect") != "/auth/login?redirect=%2Fmovie%2F1292052%3Ftab%3Dinfo" || len(queue.mediaIDs) != 0 {
+		t.Fatalf("anonymous refresh = %d/%q/%#v", anonymous.Code, anonymous.Header().Get("HX-Redirect"), queue.mediaIDs)
+	}
+
+	recorder := refresh(true, nil)
 	if recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), `"job_id":43`) || len(queue.mediaIDs) != 1 || queue.mediaIDs[0] != 9 {
 		t.Fatalf("media refresh = %d/%s/%#v", recorder.Code, recorder.Body.String(), queue.mediaIDs)
+	}
+	for index := 1; index < refreshPerUserPerHour; index++ {
+		if response := refresh(true, nil); response.Code != http.StatusAccepted {
+			t.Fatalf("refresh %d = %d", index, response.Code)
+		}
+	}
+	if limited := refresh(true, nil); limited.Code != http.StatusTooManyRequests || len(queue.mediaIDs) != refreshPerUserPerHour {
+		t.Fatalf("over limit = %d, queued %d", limited.Code, len(queue.mediaIDs))
+	}
+}
+
+func TestCurrentPagePathKeepsOnlySiteRelativeTarget(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://moovie.example/movie/1?x=1": "/movie/1?x=1",
+		"":                                   "/",
+		"javascript:alert(1)":                "/",
+		"https://evil.example//evil.example": "/",
+		"/movie/2":                           "/movie/2",
+	} {
+		if got := currentPagePath(raw); got != want {
+			t.Fatalf("currentPagePath(%q) = %q, want %q", raw, got, want)
+		}
 	}
 }
 

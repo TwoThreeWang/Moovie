@@ -120,7 +120,13 @@
                         <div class="settings-field">
                             <label for="email">邮箱</label>
                             <div class="settings-field-input">
-                                <input type="email" id="email" name="email" value="{{ .User.Email }}" placeholder="请输入邮箱" required>
+                                <input type="email" id="email" name="email" value="{{ .User.Email }}" placeholder="请输入邮箱" autocomplete="email" required>
+                            </div>
+                        </div>
+                        <div class="settings-field">
+                            <label for="email_current_password">当前密码</label>
+                            <div class="settings-field-input">
+                                <input type="password" id="email_current_password" name="current_password" placeholder="修改邮箱需要验证当前密码" autocomplete="current-password" required>
                                 <button type="submit" class="btn btn-primary btn-sm">保存</button>
                             </div>
                         </div>

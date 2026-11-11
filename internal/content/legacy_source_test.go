@@ -31,6 +31,8 @@ func TestTemplateInventoryMatchesLegacySource(t *testing.T) {
 			// 旧站把这些内容各写了一遍在两个页面里，没有独立文件可比对。
 			legacyFiles = append(legacyFiles, "play_container.html", "play_scripts.html",
 				"play_comments.html", "play_similar.html")
+			// 人机校验字段和可重新渲染的反馈表单是新增 partial。
+			legacyFiles = append(legacyFiles, "pow_fields.html", "feedback_form.html")
 			sort.Strings(legacyFiles)
 		}
 		if strings.Join(newFiles, "\n") != strings.Join(legacyFiles, "\n") {
@@ -45,7 +47,8 @@ func TestStaticAssetInventoryOnlyAddsReviewedCSRFRuntime(t *testing.T) {
 	newFiles := relativeFiles(t, newRoot)
 	legacyFiles := relativeFiles(t, legacyRoot)
 	legacyFiles = removeStrings(legacyFiles, ".DS_Store")
-	wanted := append(append([]string(nil), legacyFiles...), "js/csrf.js")
+	// pow.js 是表单人机校验（工作量证明）的求解器，旧站没有对应文件。
+	wanted := append(append([]string(nil), legacyFiles...), "js/csrf.js", "js/pow.js")
 	sort.Strings(wanted)
 	if strings.Join(newFiles, "\n") != strings.Join(wanted, "\n") {
 		t.Fatalf("static asset inventory drift:\nwant=%v\nnew=%v", wanted, newFiles)
@@ -309,6 +312,10 @@ var reviewedTemplateDrift = map[string]bool{
 	"partials/play_scripts.html":   true,
 	"partials/play_comments.html":  true,
 	"partials/play_similar.html":   true,
+	// 登录、注册、反馈接入工作量证明人机校验：pow_fields 是共用的挑战/陷阱字段，
+	// feedback_form 是从 feedback.html 抽出的表单，出错时带新挑战整块替换。旧站都没有。
+	"partials/pow_fields.html":    true,
+	"partials/feedback_form.html": true,
 }
 
 func isReviewedTemplateDrift(relativePath string) bool {
@@ -348,7 +355,12 @@ func TestReviewedHTMXLoadingEnhancements(t *testing.T) {
 		"templates/pages/feedback.html": {
 			`hx-indicator="#feedback-list-loading"`,
 			`id="feedback-list-loading"`,
+			`{{ template "feedback_form.html" . }}`,
+		},
+		// 反馈表单抽成 partial，提交出错时整块带新挑战换回来。
+		"templates/partials/feedback_form.html": {
 			`hx-disabled-elt="find button[type='submit']"`,
+			`{{ template "pow_fields.html" .PowToken }}`,
 		},
 		"templates/pages/search.html": {
 			`hx-get="/api/htmx/search?q=`,

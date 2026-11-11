@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/TwoThreeWang/Moovie/new/internal/mediaidentity"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/auth"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
+	"github.com/TwoThreeWang/Moovie/new/internal/platform/ratelimit"
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/requestmeta"
 	platformweb "github.com/TwoThreeWang/Moovie/new/internal/platform/web"
 	"github.com/TwoThreeWang/Moovie/new/internal/search"
@@ -117,7 +119,13 @@ type Handler struct {
 	refreshQueue RefreshQueue
 	httpClient   *http.Client
 	crawling     sync.Map
+	// refreshLimiter 按用户 ID 限制手动刷新次数：手动刷新会绕过「豆瓣查无此片」的冷却，
+	// 不限次就能被拿来反复打豆瓣上游。
+	refreshLimiter *ratelimit.PerIP
 }
+
+// 手动刷新资料的频率上限：每个用户每小时最多 refreshPerUserPerHour 次。
+const refreshPerUserPerHour = 10
 
 // HandlerOption 是 Handler 的可选装配项，下面这一组 WithXxx 都只是往结构体里塞一个依赖。
 type HandlerOption func(*Handler)
@@ -189,7 +197,8 @@ func WithAirScheduleReader(reader AirScheduleReader) HandlerOption {
 
 // NewHandler 构造详情页 Handler，并给出站 HTTP Client 套上图片代理的安全拦截。
 func NewHandler(cfg config.Config, store Store, options ...HandlerOption) *Handler {
-	handler := &Handler{config: cfg, store: store, httpClient: &http.Client{Timeout: 15 * time.Second}}
+	handler := &Handler{config: cfg, store: store, httpClient: &http.Client{Timeout: 15 * time.Second},
+		refreshLimiter: ratelimit.NewPerIP(refreshPerUserPerHour, time.Hour)}
 	for _, option := range options {
 		option(handler)
 	}
@@ -303,9 +312,22 @@ func (handler *Handler) movieSuggest(c *gin.Context) {
 
 // refreshMediaV2 是手动触发资料刷新的接口，立即返回任务 ID，不等抓取完成。
 func (handler *Handler) refreshMediaV2(c *gin.Context) {
+	userID := auth.UserID(c)
+	if userID <= 0 {
+		// 刷新按钮对所有访客显示；游客点了之后由 HTMX 带去登录页，登录后回到当前影片。
+		if c.GetHeader("HX-Request") != "" {
+			c.Header("HX-Redirect", "/auth/login?redirect="+url.QueryEscape(currentPagePath(c.GetHeader("HX-Current-URL"))))
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "请先登录后再刷新资料"})
+		return
+	}
 	mediaID, err := strconv.Atoi(c.Param("media_id"))
 	if err != nil || mediaID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的影视ID"})
+		return
+	}
+	if !handler.refreshLimiter.Allow(strconv.Itoa(userID)) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "刷新太频繁，请稍后再试"})
 		return
 	}
 	queue, ok := handler.refreshQueue.(MediaRefreshQueue)
@@ -319,6 +341,19 @@ func (handler *Handler) refreshMediaV2(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"message": "已加入刷新队列", "job_id": jobID, "media_id": mediaID})
+}
+
+// currentPagePath 从 HX-Current-URL 里取站内路径，取不到时回到首页。
+// 只保留 path 和 query，登录页还会再用 safeRedirect 过滤一次。
+func currentPagePath(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") {
+		return "/"
+	}
+	if parsed.RawQuery != "" {
+		return parsed.Path + "?" + parsed.RawQuery
+	}
+	return parsed.Path
 }
 
 // reviewList 返回短评片段。只有本地短评为空时才排抓取任务；

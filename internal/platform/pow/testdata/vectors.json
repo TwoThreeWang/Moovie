@@ -1,0 +1,34 @@
+{
+ "salt": "00112233445566778899aabbccddeeff",
+ "hashes": {
+  "": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "abc": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq": "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3",
+  "00112233445566778899aabbccddeeff:0": "4c1b85a42e1a1b46afb5d2406d3a43b8a9438d5f5944b6c5f60e85014516a02f",
+  "影牛:42": "8dff29ccdc499d659c0671c7edce78c1c3c9fb758e68aaecab44db7e8cc4452b"
+ },
+ "solutions": [
+  {
+   "bits": 8,
+   "nonce": "55",
+   "hash": "007be068c7ab6e69f17a55184407a65b543fab3ddaba7f4bcdd2000c464353f9"
+  },
+  {
+   "bits": 12,
+   "nonce": "2888",
+   "hash": "0009b8241882247d89770121dafca4007d6f7dace63185298d7c28f351b72831"
+  },
+  {
+   "bits": 16,
+   "nonce": "140894",
+   "hash": "0000b94175c1997145715c7da012d1866ee143737993b8915d9d5e04edfc93d9"
+  },
+  {
+   "bits": 20,
+   "nonce": "445142",
+   "hash": "00000cd3787ffddc6829e87038069f6941b2e2f291a46a1db610c41275b380bc"
+  }
+ ],
+ "_comment": "由 Python hashlib 独立计算（与 Go/JS 实现无关），Go 测试和 pow.js 的 node 测试共用这组向量。solutions 里的 nonce 是从 0 递增找到的第一个解。"
+}
