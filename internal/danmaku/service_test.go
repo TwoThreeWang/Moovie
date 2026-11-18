@@ -24,6 +24,11 @@ func TestNormalizationAndExternalConversionMatchLegacyFormats(t *testing.T) {
 	if buildVodKey(title, season, parseEpisode("第3集")) != buildVodKey("庆余年", 2, parseEpisode("03")) {
 		t.Fatal("equivalent episode labels produced different keys")
 	}
+	for label, want := range map[string]int{"S01E05": 5, "s02e12": 12, "S01E05:上": 5, "S01E123": 123, "正片": 0, "S01": 0} {
+		if got := parseEpisode(label); got != want {
+			t.Errorf("parseEpisode(%q) = %d, want %d", label, got, want)
+		}
+	}
 	if sanitized := sanitizeText(" 换行\n零宽\u200b  字符 "); sanitized != "换行 零宽 字符" {
 		t.Fatalf("sanitizeText() = %q", sanitized)
 	}

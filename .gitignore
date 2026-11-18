@@ -7,7 +7,8 @@
 *.test
 bin/
 /datamigrate
-
+/new
+/tvui-lab
 # Go
 coverage.out
 *.out

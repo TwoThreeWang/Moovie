@@ -18,6 +18,8 @@ var (
 	episodePure     = regexp.MustCompile(`^\s*(\d{1,4})\s*$`)
 	episodeCJK      = regexp.MustCompile(`第\s*([0-9一二三四五六七八九十百零两]+)\s*[集话話期]`)
 	episodeEnglish  = regexp.MustCompile(`(?i)^\s*e(?:p|pisode)?\.?\s*(\d{1,4})\s*$`)
+	// 播放页（/watch/豆瓣ID）传来的是规范化的集键，如 "S01E05"、分上下集的 "S01E05:上"。
+	episodeKeyed = regexp.MustCompile(`(?i)^\s*s\d{1,2}\s*e(\d{1,4})\b`)
 )
 
 // buildVodKey 生成弹幕归档键「片名|S01|E003」。
@@ -55,7 +57,8 @@ func splitSeason(title string) (int, string) {
 	return season, clean
 }
 
-// parseEpisode 解析集号，支持纯数字、「第3集」、「E03」三种写法。
+// parseEpisode 解析集号，支持纯数字、「第3集」、「E03」、「S01E03」四种写法。
+// 认不出的返回 0，上游会按电影匹配，每集拿到的都是同一份弹幕，所以新的集名写法都要加在这里。
 func parseEpisode(raw string) int {
 	value := strings.TrimSpace(raw)
 	if matches := episodePure.FindStringSubmatch(value); len(matches) == 2 {
@@ -66,6 +69,10 @@ func parseEpisode(raw string) int {
 		return chineseNumber(matches[1])
 	}
 	if matches := episodeEnglish.FindStringSubmatch(value); len(matches) == 2 {
+		number, _ := strconv.Atoi(matches[1])
+		return number
+	}
+	if matches := episodeKeyed.FindStringSubmatch(value); len(matches) == 2 {
 		number, _ := strconv.Atoi(matches[1])
 		return number
 	}
