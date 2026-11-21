@@ -191,6 +191,7 @@ func TestLoadUsesIsolatedDefaults(t *testing.T) {
 func TestLoadUsesSampledAccessLogsInProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("SITE_URL", "https://example.com")
+	t.Setenv("NEXT_SITE_URL", "https://next.example.com")
 	t.Setenv("DB_NAME", "moovie_new")
 	t.Setenv("APP_SECRET", strings.Repeat("s", minimumProductionSecretBytes))
 	t.Setenv("HTTP_ACCESS_LOG_SAMPLE_PERCENT", "")
@@ -317,6 +318,14 @@ func TestValidateRejectsInsecureProductionSiteURL(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsInsecureProductionNextSiteURL(t *testing.T) {
+	cfg := validProductionConfig()
+	cfg.NextSiteURL = "http://next.example.com"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "NEXT_SITE_URL") {
+		t.Fatalf("Validate() error = %v, want NEXT_SITE_URL https rejection", err)
+	}
+}
+
 func TestValidateAcceptsHardenedProductionConfig(t *testing.T) {
 	if err := validProductionConfig().Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -334,14 +343,15 @@ func TestValidateRejectsRelativeSiteURL(t *testing.T) {
 
 func validProductionConfig() Config {
 	return Config{
-		Env:       "production",
-		Port:      "5008",
-		SiteName:  "Moovie影牛",
-		SiteURL:   "https://example.com",
-		WebRoot:   "./web",
-		AppSecret: strings.Repeat("a", minimumProductionSecretBytes),
-		JobsInWeb: true,
-		Database:  DatabaseConfig{Name: "moovie_new"},
+		Env:         "production",
+		Port:        "5008",
+		SiteName:    "Moovie影牛",
+		SiteURL:     "https://example.com",
+		NextSiteURL: "https://next.example.com",
+		WebRoot:     "./web",
+		AppSecret:   strings.Repeat("a", minimumProductionSecretBytes),
+		JobsInWeb:   true,
+		Database:    DatabaseConfig{Name: "moovie_new"},
 	}
 }
 

@@ -53,7 +53,7 @@ func getPage(router http.Handler, path string) *httptest.ResponseRecorder {
 
 func TestAuthPagesAlwaysIssueFreshUncachedChallenges(t *testing.T) {
 	router, _, _ := identityTestRouter(t, "test")
-	for _, path := range []string{"/auth/login", "/auth/register"} {
+	for _, path := range []string{"/auth/login"} {
 		first, second := getPage(router, path), getPage(router, path)
 		if challengeFrom(t, first.Body.String()) == challengeFrom(t, second.Body.String()) {
 			t.Fatalf("%s reused a challenge", path)
@@ -87,7 +87,11 @@ func TestHumanCheckRejectsBotSubmissionsBeforeTouchingTheDatabase(t *testing.T) 
 	credentials := url.Values{"email": {"person@example.com"}, "password": {"secret1"}}
 
 	loginToken := challengeFrom(t, getPage(router, "/auth/login").Body.String())
-	registerToken := challengeFrom(t, getPage(router, "/auth/register").Body.String())
+	// 别的表单（比如反馈）签发的挑战不能拿来登录。
+	otherToken, err := issuer.Issue("feedback")
+	if err != nil {
+		t.Fatal(err)
+	}
 	loginNonce := pow.Solve(loginToken)
 	with := func(extra map[string]string) url.Values {
 		values := url.Values{}
@@ -120,7 +124,7 @@ func TestHumanCheckRejectsBotSubmissionsBeforeTouchingTheDatabase(t *testing.T) 
 	assertRejected("missing nonce", postForm(router, "/auth/login", with(map[string]string{pow.TokenField: loginToken})))
 	assertRejected("missing challenge", postForm(router, "/auth/login", with(nil)))
 	assertRejected("wrong nonce", postForm(router, "/auth/login", with(map[string]string{pow.TokenField: loginToken, pow.NonceField: unsolvedNonce(loginToken)})))
-	assertRejected("register challenge on login", postForm(router, "/auth/login", with(map[string]string{pow.TokenField: registerToken, pow.NonceField: pow.Solve(registerToken)})))
+	assertRejected("other scope challenge on login", postForm(router, "/auth/login", with(map[string]string{pow.TokenField: otherToken, pow.NonceField: pow.Solve(otherToken)})))
 	assertRejected("trap filled", postForm(router, "/auth/login", with(map[string]string{pow.TokenField: loginToken, pow.NonceField: loginNonce, pow.TrapField: "https://spam.example"})))
 
 	// 以上失败都没有消耗挑战，正确提交可以登录；同一挑战再交一次就是重放。
@@ -130,33 +134,6 @@ func TestHumanCheckRejectsBotSubmissionsBeforeTouchingTheDatabase(t *testing.T) 
 	}
 	counting.lookups.Store(0)
 	assertRejected("replay", postForm(router, "/auth/login", with(map[string]string{pow.TokenField: loginToken, pow.NonceField: loginNonce})))
-}
-
-func TestRegisterChecksMailDomainAndHidesExistingAccounts(t *testing.T) {
-	router, store, now := identityTestRouterWithOptions(t, "test", WithEmailDomainChecker(fakeDomains{"gmial.con": true}))
-	_, _ = store.Create(t.Context(), User{Email: "taken@example.com", Username: "taken", PasswordHash: "x", Role: "user", CreatedAt: now})
-	form := func(email string) url.Values {
-		return url.Values{"email": {email}, "password": {"secret1"}, "confirm_password": {"secret1"}}
-	}
-
-	typo := postSolvedForm(t, router, "/auth/register", form("person@gmial.con"))
-	if !strings.Contains(typo.Body.String(), messageDomainCannotMail) || !strings.Contains(typo.Body.String(), `value="person@gmial.con"`) {
-		t.Fatalf("typo domain = %d/%s", typo.Code, typo.Body.String())
-	}
-	if user, _ := store.FindByEmail(t.Context(), "person@gmial.con"); user != nil {
-		t.Fatal("account created for undeliverable domain")
-	}
-	// 取消勾选「公开主页」后出错，重新渲染时保持不勾选。
-	unchecked := postSolvedForm(t, router, "/auth/register", form("person@gmial.con"))
-	if strings.Contains(unchecked.Body.String(), `name="is_public" checked`) {
-		t.Fatal("unchecked is_public came back checked")
-	}
-
-	taken := postSolvedForm(t, router, "/auth/register", form("taken@example.com"))
-	body := taken.Body.String()
-	if !strings.Contains(body, messageRegisterUnavailable) || strings.Contains(body, "已被注册") {
-		t.Fatalf("taken email = %d/%s", taken.Code, body)
-	}
 }
 
 func TestLoginComparesAgainstDummyHashForUnknownAccounts(t *testing.T) {

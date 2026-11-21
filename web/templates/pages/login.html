@@ -15,6 +15,11 @@
             <h1 class="auth-title">欢迎回来</h1>
             <p class="auth-desc">登录你的账号继续探索精彩内容</p>
 
+            <div class="next-notice">
+                <p class="next-notice-text"><strong>影牛新版已上线。</strong>你的账号已经在新版，用同一个邮箱和密码就能登录。</p>
+                <a class="btn btn-primary btn-sm" href="{{ .NextSiteURL }}/auth/login">去新版登录</a>
+            </div>
+
             {{ if .Error }}
             <div class="auth-alert auth-alert-error">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
@@ -57,7 +62,7 @@
             <script src="/static/js/pow.js?v=1.0" defer></script>
 
             <div class="auth-footer">
-                <p>还没有账号？<a href="/auth/register">立即注册</a></p>
+                <p>还没有账号？<a href="/auth/register">去新版注册</a></p>
             </div>
         </div>
     </div>

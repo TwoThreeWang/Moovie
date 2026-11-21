@@ -624,7 +624,7 @@ func (handler *Handler) movieActions(c *gin.Context) {
 
 	c.HTML(http.StatusOK, "partials/movie_actions.html", gin.H{
 		"Playback": playback, "DoubanID": doubanID,
-		"IsWish": isWish, "IsWatched": isWatched,
+		"IsWish": isWish, "IsWatched": isWatched, "LoggedIn": userID > 0,
 		"WatchedByCount": watchedByCount, "WishByCount": wishByCount,
 		"Title": c.Query("title"), "Poster": c.Query("poster"), "Year": c.Query("year"),
 	})

@@ -34,6 +34,15 @@
         </div>
     </div>
 
+    <div class="next-notice">
+        <p class="next-notice-text">
+            <strong>你的账号已经搬到新版。</strong>用同一个邮箱和密码登录新版就能继续用。
+            {{ if .User.DoubanUserID }}你已绑定豆瓣，新版会自动同步豆瓣上的想看和看过。{{ else }}在新版的设置里绑定豆瓣后，豆瓣上的想看和看过会自动同步过去。{{ end }}
+            之前的想看、看过和短评已经同步到新版，之后在老站新加的不会再同步过去。
+        </p>
+        <a class="btn btn-primary btn-sm" href="{{ .NextURL }}">去新版</a>
+    </div>
+
     <!-- ====== 主内容区 ====== -->
     <div class="main-grid">
         <div class="content-main" id="content-main" style="overflow-x: hidden;">

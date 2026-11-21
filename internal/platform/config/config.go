@@ -22,10 +22,12 @@ const minimumProductionSecretBytes = 32
 
 // Config 保存重构应用运行所需的进程级配置，各功能模块的配置也会在加载时统一校验。
 type Config struct {
-	Env                     string
-	Port                    string
-	SiteName                string
-	SiteURL                 string
+	Env      string
+	Port     string
+	SiteName string
+	SiteURL  string
+	// NextSiteURL 是新版影牛的地址。老站已关闭注册，注册入口跳转到新站。
+	NextSiteURL             string
 	WebRoot                 string
 	ShutdownTimeout         time.Duration
 	JWTExpiry               time.Duration
@@ -281,6 +283,7 @@ func Load() (Config, error) {
 		Port:            env("PORT", "5008"),
 		SiteName:        env("SITE_NAME", "Moovie影牛"),
 		SiteURL:         strings.TrimRight(env("SITE_URL", "http://localhost:5008"), "/"),
+		NextSiteURL:     strings.TrimRight(env("NEXT_SITE_URL", "http://localhost:5200"), "/"),
 		WebRoot:         env("WEB_ROOT", "./web"),
 		ShutdownTimeout: time.Duration(shutdownSeconds) * time.Second,
 		JWTExpiry:       time.Duration(jwtExpiryHours) * time.Hour,
@@ -371,6 +374,10 @@ func (c Config) Validate() error {
 	if err != nil || parsedSiteURL.Host == "" || (parsedSiteURL.Scheme != "http" && parsedSiteURL.Scheme != "https") {
 		return errors.New("SITE_URL must be an absolute http or https URL")
 	}
+	parsedNextSiteURL, err := url.Parse(c.NextSiteURL)
+	if err != nil || parsedNextSiteURL.Host == "" || (parsedNextSiteURL.Scheme != "http" && parsedNextSiteURL.Scheme != "https") {
+		return errors.New("NEXT_SITE_URL must be an absolute http or https URL")
+	}
 	if c.Database.Name == "" {
 		return errors.New("DB_NAME must not be empty")
 	}
@@ -428,6 +435,9 @@ func (c Config) Validate() error {
 	if c.Env == "production" {
 		if parsedSiteURL.Scheme != "https" {
 			return errors.New("SITE_URL must use https in production")
+		}
+		if parsedNextSiteURL.Scheme != "https" {
+			return errors.New("NEXT_SITE_URL must use https in production")
 		}
 		if c.AppSecret == defaultProductionSecret || len([]byte(c.AppSecret)) < minimumProductionSecretBytes {
 			return fmt.Errorf("APP_SECRET must contain at least %d bytes and must be replaced in production", minimumProductionSecretBytes)

@@ -10,6 +10,7 @@
     {{ end }}
     {{ template "user_movie_buttons.html" (dict "DoubanID" .DoubanID "Title" .Title "Poster" .Poster "Year" .Year "IsWish" .IsWish "IsWatched" .IsWatched) }}
 </div>
+{{ if .LoggedIn }}<p class="next-hint">新版已上线，之后在老站新标记的想看、看过不会再同步过去。</p>{{ end }}
 {{ if or (gt .WatchedByCount 0) (gt .WishByCount 0) }}
 <div class="movie-social-stats">
     {{ if gt .WatchedByCount 0 }}<span>{{ .WatchedByCount }} 人看过</span>{{ end }}

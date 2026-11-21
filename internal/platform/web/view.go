@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"net/url"
 	"strings"
 
 	"github.com/TwoThreeWang/Moovie/new/internal/platform/config"
@@ -41,6 +42,9 @@ type ViewModel struct {
 	UserInfo     any
 	Keyword      string
 	Bypass       bool
+	// NextSiteURL 是新版地址，NextURL 是当前页面在新版里对应的地址，给"去新版"的提示用。
+	NextSiteURL string
+	NextURL     string
 }
 
 // NewViewModel 从当前请求构造基础视图模型，Robots 默认允许收录。
@@ -49,13 +53,15 @@ func NewViewModel(c *gin.Context, cfg config.Config, metadata Metadata) ViewMode
 		metadata.Robots = "index, follow"
 	}
 	view := ViewModel{
-		Metadata:   metadata,
-		SiteName:   cfg.SiteName,
-		SiteUrl:    cfg.SiteURL,
-		Path:       c.Request.URL.Path,
-		FullPath:   c.Request.RequestURI,
-		Referer:    c.Request.Referer(),
-		ActiveMenu: ActiveMenu(c.Request.URL.Path, c.Query("type")),
+		Metadata:    metadata,
+		SiteName:    cfg.SiteName,
+		SiteUrl:     cfg.SiteURL,
+		Path:        c.Request.URL.Path,
+		FullPath:    c.Request.RequestURI,
+		Referer:     c.Request.Referer(),
+		ActiveMenu:  ActiveMenu(c.Request.URL.Path, c.Query("type")),
+		NextSiteURL: cfg.NextSiteURL,
+		NextURL:     NextPageURL(cfg.NextSiteURL, c.Request.URL),
 	}
 	if user, exists := c.Get("user_info"); exists {
 		view.UserInfo = user
@@ -71,12 +77,42 @@ func NewData(c *gin.Context, cfg config.Config, metadata Metadata, extra gin.H) 
 		"Robots": view.Robots, "Canonical": view.Canonical, "Cover": view.Cover, "JSONLD": view.JSONLD,
 		"SiteName": view.SiteName, "SiteUrl": view.SiteUrl, "Path": view.Path,
 		"FullPath": view.FullPath, "Referer": view.Referer, "ActiveMenu": view.ActiveMenu,
-		"UserInfo": view.UserInfo,
+		"UserInfo":    view.UserInfo,
+		"NextSiteURL": view.NextSiteURL, "NextURL": view.NextURL,
 	}
 	for key, value := range extra {
 		data[key] = value
 	}
 	return data
+}
+
+// NextPageURL 把老站的页面地址换成新版里对应的页面，让用户点"去新版"时直接看到同一部片子、
+// 同一个列表。新版没有对应页面的地址，一律去新版首页。
+func NextPageURL(nextSiteURL string, page *url.URL) string {
+	path := page.Path
+	switch {
+	case path == "/dashboard":
+		path = "/me"
+	case path == "/dashboard/settings":
+		path = "/settings"
+	case path == "/search":
+		if keyword := strings.TrimSpace(page.Query().Get("q")); keyword != "" {
+			return nextSiteURL + "/search?q=" + url.QueryEscape(keyword)
+		}
+	case path == "/discover/cartoon":
+		path = "/discover/anime"
+	case path == "/discover/trending":
+		path = "/discover"
+	// 新版接住了这三类老地址，按豆瓣 ID 跳到对应作品。
+	case strings.HasPrefix(path, "/movie/"), strings.HasPrefix(path, "/watch/"), strings.HasPrefix(path, "/similar/"):
+		path = page.EscapedPath()
+	case path == "/discover/movie", path == "/discover/tv", path == "/discover/show",
+		path == "/discover", path == "/list", path == "/foryou", path == "/cinema",
+		path == "/notifications", path == "/feedback", path == "/changelog", path == "/auth/login":
+	default:
+		path = "/"
+	}
+	return nextSiteURL + path
 }
 
 // CanonicalURL 拼出页面的规范链接，避免同一内容出现多个可收录地址。

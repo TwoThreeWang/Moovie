@@ -46,20 +46,14 @@ type EmailDomainChecker interface {
 	CanReceive(ctx context.Context, address string) bool
 }
 
-// 表单 scope：注册页签发的挑战不能拿去登录，反之亦然。
-const (
-	scopeLogin    = "login"
-	scopeRegister = "register"
-)
+// scopeLogin 是登录表单的挑战 scope：别的表单签发的挑战不能拿来登录。
+const scopeLogin = "login"
 
 // 面向用户的提示。人机校验失败统一一句话，不告诉脚本具体哪一项没过。
 const (
 	messageHumanCheckFailed = "安全校验失败，请稍候重新提交"
 	messageDomainCannotMail = "该邮箱域名无法接收邮件，请检查是否拼写错误"
-	// 注册在没有邮箱验证的前提下无法完全隐藏「邮箱已注册」：成功会直接登录，失败总要给个理由。
-	// 这里不说「已被注册」，引导去登录；真正的防枚举成本来自前面的人机校验。
-	messageRegisterUnavailable = "无法使用该邮箱注册，如果你已有账号，请直接登录"
-	messageEmailUnavailable    = "该邮箱不可用，请换一个邮箱"
+	messageEmailUnavailable = "该邮箱不可用，请换一个邮箱"
 )
 
 // HandlerOption 用于注入可选的计数来源。
@@ -120,7 +114,6 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.GET("/auth/login", handler.loginPage)
 	router.POST("/auth/login", handler.login)
 	router.GET("/auth/register", handler.registerPage)
-	router.POST("/auth/register", handler.register)
 	router.GET("/auth/logout", handler.logout)
 	require := auth.Require(handler.config.AppSecret, handler.config.Env == "production")
 	router.GET("/dashboard", require, handler.dashboard)
@@ -133,12 +126,11 @@ func (handler *Handler) Register(router *gin.Engine) {
 	router.POST("/dashboard/settings/ad-skip", require, handler.updateAdSkip)
 }
 
-// authForm 是登录、注册页重新渲染时要带回去的内容。
+// authForm 是登录页重新渲染时要带回去的内容。
 type authForm struct {
 	Error    string
 	Email    string
 	Redirect string
-	IsPublic bool
 }
 
 // loginPage 渲染登录页。
@@ -176,63 +168,9 @@ func (handler *Handler) login(c *gin.Context) {
 	c.Redirect(http.StatusFound, redirect)
 }
 
-// registerPage 渲染注册页。
+// registerPage 跳转到新版的注册页：老站不再开放注册。
 func (handler *Handler) registerPage(c *gin.Context) {
-	handler.renderAuthPage(c, scopeRegister, http.StatusOK, authForm{IsPublic: true})
-}
-
-// register 注册新账号：人机校验、邮箱格式、两次密码一致、长度至少 6 位、邮箱域名能收信，
-// 默认用户名取邮箱 @ 前的部分，主页默认公开，注册成功直接登录。
-func (handler *Handler) register(c *gin.Context) {
-	email, password, confirmation := c.PostForm("email"), c.PostForm("password"), c.PostForm("confirm_password")
-	form := authForm{Email: email, IsPublic: c.PostForm("is_public") == "on"}
-	fail := func(status int, message string) {
-		form.Error = message
-		handler.renderAuthPage(c, scopeRegister, status, form)
-	}
-	if !handler.passHumanCheck(c, scopeRegister) {
-		fail(http.StatusForbidden, messageHumanCheckFailed)
-		return
-	}
-	if !validEmail(email) {
-		fail(http.StatusOK, "请输入有效的邮箱地址")
-		return
-	}
-	if password != confirmation {
-		fail(http.StatusOK, "两次输入的密码不一致")
-		return
-	}
-	if len(password) < 6 {
-		fail(http.StatusOK, "密码至少需要 6 个字符")
-		return
-	}
-	if !handler.canReceiveMail(c, email) {
-		fail(http.StatusOK, messageDomainCannotMail)
-		return
-	}
-	if existing, _ := handler.store.FindByEmail(c.Request.Context(), email); existing != nil {
-		fail(http.StatusOK, messageRegisterUnavailable)
-		return
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		fail(http.StatusInternalServerError, "注册失败，请重试")
-		return
-	}
-	username := strings.Split(email, "@")[0]
-	// 主页默认公开：片场的精选短评和片友推荐都只认 is_public=true 的用户，
-	// 默认关着等于社区从第一天起就没有公共内容。注册表单里的开关默认勾选，
-	// 想安静看片的人可以在这里或设置页关掉。
-	user, err := handler.store.Create(c.Request.Context(), User{Email: email, Username: username, PasswordHash: string(hash), Role: "user", Avatar: "🎬", IsPublic: form.IsPublic, CreatedAt: handler.now()})
-	if err != nil {
-		fail(http.StatusInternalServerError, "注册失败，请重试")
-		return
-	}
-	if err := handler.issueToken(c, user); err != nil {
-		fail(http.StatusInternalServerError, "注册失败，请重试")
-		return
-	}
-	c.Redirect(http.StatusFound, "/")
+	c.Redirect(http.StatusFound, handler.config.NextSiteURL+"/auth/register")
 }
 
 // logout 清除登录 Cookie。
@@ -440,13 +378,10 @@ func (handler *Handler) issueToken(c *gin.Context, user *User) error {
 	return nil
 }
 
-// renderAuthPage 是登录、注册页唯一的渲染入口：每次渲染都签发新挑战，
+// renderAuthPage 是登录页唯一的渲染入口：每次渲染都签发新挑战，
 // 出错重新渲染时带回用户已填的邮箱，避免某条分支忘了签发挑战导致表单再也提交不了。
 func (handler *Handler) renderAuthPage(c *gin.Context, scope string, status int, form authForm) {
 	page, title := "login.html", "登录 - "+handler.config.SiteName
-	if scope == scopeRegister {
-		page, title = "register.html", "注册 - "+handler.config.SiteName
-	}
 	challenge, err := handler.humanCheck.Issue(scope)
 	if err != nil {
 		slog.Error("issue human check challenge failed", "scope", scope, "error", err)
@@ -454,7 +389,7 @@ func (handler *Handler) renderAuthPage(c *gin.Context, scope string, status int,
 	// 带挑战的页面不能被浏览器或 CDN 缓存，否则多人会拿到同一个挑战。
 	c.Header("Cache-Control", "no-store")
 	c.HTML(status, page, platformweb.NewData(c, handler.config, platformweb.Metadata{Title: title}, gin.H{
-		"Error": form.Error, "Email": form.Email, "Redirect": form.Redirect, "IsPublic": form.IsPublic, "PowToken": challenge,
+		"Error": form.Error, "Email": form.Email, "Redirect": form.Redirect, "PowToken": challenge,
 	}))
 }
 

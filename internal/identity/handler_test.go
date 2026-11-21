@@ -29,47 +29,16 @@ func TestAuthPagesPreserveLegacyTemplatesAndRedirectField(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "欢迎回来") || !strings.Contains(recorder.Body.String(), `value="/play/source/42"`) {
 		t.Fatalf("login status/body = %d/%s", recorder.Code, recorder.Body.String())
 	}
-	register := httptest.NewRecorder()
-	router.ServeHTTP(register, httptest.NewRequest(http.MethodGet, "/auth/register", nil))
-	if register.Code != http.StatusOK || !strings.Contains(register.Body.String(), "创建账号") {
-		t.Fatalf("register status/body = %d/%s", register.Code, register.Body.String())
-	}
 }
 
-func TestRegisterValidatesAndCreatesLegacyBcryptUser(t *testing.T) {
-	router, store, now := identityTestRouter(t, "test")
-	invalid := postSolvedForm(t, router, "/auth/register", url.Values{"email": {"bad"}, "password": {"123456"}, "confirm_password": {"123456"}})
-	if invalid.Code != http.StatusOK || !strings.Contains(invalid.Body.String(), "请输入有效的邮箱地址") {
-		t.Fatalf("invalid register = %d/%s", invalid.Code, invalid.Body.String())
-	}
-
-	registered := postSolvedForm(t, router, "/auth/register", url.Values{"email": {"person@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}, "is_public": {"on"}})
-	if registered.Code != http.StatusFound || registered.Header().Get("Location") != "/" {
-		t.Fatalf("register status/location = %d/%q", registered.Code, registered.Header().Get("Location"))
-	}
-	user, _ := store.FindByEmail(t.Context(), "person@example.com")
-	if user == nil || user.Username != "person" || user.Role != "user" || user.Avatar != "🎬" || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("secret1")) != nil {
-		t.Fatalf("created user = %+v", user)
-	}
-	// 注册表单默认勾选公开：片场的精选短评和片友推荐只认 is_public=true，
-	// 这个勾没落库的话新用户写的短评永远进不了社区。
-	if !user.IsPublic {
-		t.Fatalf("勾选公开后 IsPublic 应为 true: %+v", user)
-	}
-	quiet := postSolvedForm(t, router, "/auth/register", url.Values{"email": {"quiet@example.com"}, "password": {"secret1"}, "confirm_password": {"secret1"}})
-	if quiet.Code != http.StatusFound {
-		t.Fatalf("取消勾选注册 = %d", quiet.Code)
-	}
-	if hidden, _ := store.FindByEmail(t.Context(), "quiet@example.com"); hidden == nil || hidden.IsPublic {
-		t.Fatalf("取消勾选后 IsPublic 应为 false: %+v", hidden)
-	}
-	cookie := responseCookie(t, registered, "token")
-	claims, err := auth.Parse(cookie.Value, "secret", now)
-	if err != nil || claims.UserID != user.ID || claims.Email != user.Email {
-		t.Fatalf("claims/error = %+v/%v", claims, err)
-	}
-	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode || cookie.Secure {
-		t.Fatalf("test cookie = %+v", cookie)
+// 老站不再开放注册，注册入口跳到新版的注册页。
+func TestRegisterRedirectsToNextSite(t *testing.T) {
+	// 跳转不碰账号库，不需要测试库。
+	router := buildIdentityRouter(t, "test", nil)
+	register := httptest.NewRecorder()
+	router.ServeHTTP(register, httptest.NewRequest(http.MethodGet, "/auth/register", nil))
+	if register.Code != http.StatusFound || register.Header().Get("Location") != "https://next.moovie.example/auth/register" {
+		t.Fatalf("register status/location = %d/%q", register.Code, register.Header().Get("Location"))
 	}
 }
 
@@ -219,11 +188,11 @@ func buildIdentityRouter(t *testing.T, environment string, store Store, options 
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
-	cfg := config.Config{Env: environment, SiteName: "Moovie影牛", SiteURL: "https://moovie.example", AppSecret: "secret", JWTExpiry: 72 * time.Hour}
+	cfg := config.Config{Env: environment, SiteName: "Moovie影牛", SiteURL: "https://moovie.example", NextSiteURL: "https://next.moovie.example", AppSecret: "secret", JWTExpiry: 72 * time.Hour}
 	options = append([]HandlerOption{WithHumanCheck(steppingIssuer(t))}, options...)
 	handler := NewHandler(cfg, store, options...)
 	handler.now = func() time.Time { return now }
-	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"login", "register", "dashboard", "settings"})
+	renderer, err := platformweb.LoadRenderer(filepath.Join("..", "..", "web", "templates"), []string{"login", "dashboard", "settings"})
 	if err != nil {
 		t.Fatal(err)
 	}

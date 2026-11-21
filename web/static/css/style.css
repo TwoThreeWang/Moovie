@@ -1679,3 +1679,15 @@ body .htmx-panel-indicator.htmx-request { animation-duration: 1ms; }
 .comment-reply-login-hint a {
     color: var(--primary, #4f8cff);
 }
+
+/* ==================== 新版上线提示 ==================== */
+.next-banner { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--primary-alpha); border-bottom: 1px solid var(--primary-alpha-high); color: var(--text); font-size: var(--fs-small); }
+.next-banner-text { flex: 1; min-width: 0; line-height: 1.5; }
+.next-banner-link { flex-shrink: 0; padding: 4px 12px; border-radius: var(--radius-sm); background: var(--primary-solid); color: var(--on-primary); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.next-banner-link:hover { background: var(--primary-solid-hover); }
+.next-banner-close { flex-shrink: 0; width: 28px; height: 28px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.next-banner-close:hover { background: var(--primary-alpha-high); color: var(--text); }
+.next-notice { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--primary-alpha-high); border-radius: var(--radius); background: var(--primary-alpha); color: var(--text); font-size: var(--fs-small); text-align: left; }
+.next-notice-text { flex: 1 1 240px; line-height: 1.6; }
+.next-notice .btn { flex-shrink: 0; text-decoration: none; }
+.next-hint { margin-top: 8px; color: var(--text-muted); font-size: var(--fs-caption); }

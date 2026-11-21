@@ -48,7 +48,7 @@
     {{ range .JSONLD }}<script type="application/ld+json">{{ . }}</script>{{ end }}
 
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=4.3.6">
+    <link rel="stylesheet" href="/static/css/style.css?v=4.3.7">
 
     <!-- htmx -->
     <script src="/static/js/htmx.min.js?v=0.1" defer></script>
@@ -326,6 +326,29 @@
                     </button>
                 </div>
             </header>
+
+            {{/* 新版上线提示。登录页和用户中心有自己的提示卡片，不重复显示。关掉后 7 天内不再出现。 */}}
+            {{ if and .NextSiteURL (ne .Path "/auth/login") (ne .Path "/dashboard") }}
+            <div class="next-banner" id="next-banner" role="region" aria-label="新版上线提示">
+                <p class="next-banner-text">{{ if .UserInfo }}影牛新版上线了，你的账号已经搬过去，用同一个邮箱和密码就能登录。{{ else }}影牛新版上线了，老站已停止注册。{{ end }}</p>
+                <a class="next-banner-link" href="{{ .NextURL }}">去新版</a>
+                <button type="button" class="next-banner-close" aria-label="关闭提示，7 天内不再显示" onclick="dismissNextBanner()">×</button>
+            </div>
+            <script>
+                (function () {
+                    try {
+                        if (Number(localStorage.getItem('next-banner-hidden-until')) > Date.now()) {
+                            document.getElementById('next-banner').remove();
+                        }
+                    } catch (e) {}
+                })();
+                function dismissNextBanner() {
+                    try { localStorage.setItem('next-banner-hidden-until', String(Date.now() + 7 * 24 * 3600 * 1000)); } catch (e) {}
+                    var banner = document.getElementById('next-banner');
+                    if (banner) banner.remove();
+                }
+            </script>
+            {{ end }}
 
             <div class="content-wrapper {{ .ContentClass }}">
                 {{ template "content" . }}

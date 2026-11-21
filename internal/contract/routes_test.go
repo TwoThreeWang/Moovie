@@ -7,7 +7,7 @@ import (
 )
 
 func TestFinalRouteInventory(t *testing.T) {
-	const expected = 142
+	const expected = 141
 	if len(Routes) != expected {
 		t.Fatalf("route count = %d, want %d", len(Routes), expected)
 	}

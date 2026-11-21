@@ -67,7 +67,6 @@ var Routes = []Route{
 	{Method: "GET", Path: "/auth/login", Surface: SurfaceAuth},
 	{Method: "POST", Path: "/auth/login", Surface: SurfaceAuth},
 	{Method: "GET", Path: "/auth/register", Surface: SurfaceAuth},
-	{Method: "POST", Path: "/auth/register", Surface: SurfaceAuth},
 	{Method: "GET", Path: "/auth/logout", Surface: SurfaceAuth},
 
 	{Method: "GET", Path: "/dashboard", Surface: SurfaceDashboard},
